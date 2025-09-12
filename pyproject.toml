@@ -1,0 +1,55 @@
+[project]
+name = "verec"
+version = "0.1.0"
+authors = [
+  { name = "Roman Nuterman" }
+]
+maintainers = [
+  { name="Roman Nuterman", email="nuterman@nbi.ku.dk" },
+]
+description = "Versatile Earth-system coupler for atmosphere, ocean, sea-ice, and land components"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+"numpy>=2.0.1",
+"xesmf>=0.8",
+"pytest>=7.4.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Operating System :: Unix",
+    "Operating System :: MacOS",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Oceanography",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+xarray = ["xarray>=2023.7"]
+sci = ["scipy>=1.9"]
+
+[tool.setuptools.packages.find]
+where = ["verec"]
+
+[build-system]
+requires = ["flit_core<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["verec"]
+
+[tool.mypy]
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
