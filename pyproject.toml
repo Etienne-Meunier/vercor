@@ -39,8 +39,10 @@ sci = ["scipy>=1.9"]
 where = ["verec"]
 
 [build-system]
-requires = ["setuptools>=65.0.0", "wheel", "versioneer[toml]"]
-build-backend = "setuptools.build_meta"
+#requires = ["setuptools", "versioneer[toml]"]
+#build-backend = "setuptools.build_meta"
+requires = ["flit_core<4", "versioneer[toml]"]
+build-backend = "flit_core.buildapi"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

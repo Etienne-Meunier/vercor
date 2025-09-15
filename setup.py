@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import versioneer  # noqa: E402
 from setuptools import setup, find_packages
 
@@ -25,6 +26,7 @@ MINIMUM_VERSIONS = {
 }
 
 here = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(here)
 
 def parse_requirements(reqfile):
     requirements = []

@@ -1,23 +1,16 @@
 import numpy as np
 from datetime import datetime
 
-from verec import Coupler, Clock, RectilinearGrid, Exchange
+from verec import Coupler, Clock, Exchange
 from verec.coupler import RunSequence
 from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import XESMFBilinear, XESMFConservative_normed
-
-# Helper to build rectilinear grid
-
-def make_grid(name, nx, ny, x0, x1, y0, y1):
-    x = np.linspace(x0, x1, nx, dtype=float)
-    y = np.linspace(y0, y1, ny, dtype=float)
-    return RectilinearGrid(name=name, x=x, y=y)
+from verec.regridders import XESMFBilinear, make_rectilinear_grid
 
 # Build grids
-atm_grid = make_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
-ocn_grid = make_grid("ocn-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
-ice_grid = make_grid("ice-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
-lnd_grid = make_grid("lnd-grid", 96, 48, 0.0, 360.0, -60.0, 60.0)
+atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
+ocn_grid = make_rectilinear_grid("ocn-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
+ice_grid = make_rectilinear_grid("ice-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
+lnd_grid = make_rectilinear_grid("lnd-grid", 96, 48, 0.0, 360.0, -60.0, 60.0)
 
 # Build components
 ATM = Atmosphere("ATM", atm_grid)

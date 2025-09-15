@@ -44,11 +44,19 @@ class Coupler:
         for ex in self.exchanges:
             key = (ex.src, ex.dst)
             if key not in self._regridders:
-                srcg = self.components[ex.src].grid
-                srcm = self.components[ex.src].grid.mask if self.components[ex.src].grid.mask else None
-                dstg = self.components[ex.dst].grid
-                dstm = self.components[ex.dst].grid.mask if self.components[ex.dst].grid.mask else None
-                self._regridders[key] = ex.build(srcg, srcm, dstg, dstm)
+                src_grid = self.components[ex.src].grid
+                src_mask = (
+                    self.components[ex.src].grid.mask
+                    if self.components[ex.src].grid.mask
+                    else None
+                )
+                dst_grid = self.components[ex.dst].grid
+                dst_mask = (
+                    self.components[ex.dst].grid.mask
+                    if self.components[ex.dst].grid.mask
+                    else None
+                )
+                self._regridders[key] = ex.build(src_grid, src_mask, dst_grid, dst_mask)
 
         # Initialize components
         for name, comp in self.components.items():
@@ -75,7 +83,7 @@ class Coupler:
     def run(self) -> None:
         self.initialize()
         for n, t, dt in self.clock.iter():
-            logger.info(f"=== Step {n} t={t} dt={dt} ===")
+            logger.info(f" ====== Step: {n:05d} ====== Date: {t} ====== Δt: {dt} ")
             # Pre-step exchanges
             self._do_exchanges("pre")
             # Step components in declared order

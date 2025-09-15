@@ -15,7 +15,11 @@ class Exchange:
     when: str = "pre"  # "pre" or "post" component stepping
 
     def build(
-        self, src_grid, src_mask, dst_grid, dst_mask,
+        self,
+        src_grid,
+        src_mask,
+        dst_grid,
+        dst_mask,
     ) -> Union[XESMFBilinear, XESMFConservative_normed]:
         regridder = self.regridder_factory(src_grid, src_mask, dst_grid, dst_mask)
         return regridder.prepare()

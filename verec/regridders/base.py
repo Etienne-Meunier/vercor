@@ -33,4 +33,4 @@ class Regridder(abc.ABC):
             self.ds_out["mask"] = self.dst_mask
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(src_grid={self.src_grid}, dst_grid={self.dst_grid})"
+        return f"{self.__class__.__name__}(\n src_grid={self.src_grid},\n dst_grid={self.dst_grid})"
