@@ -12,7 +12,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
 "numpy>=2.0.1",
-"xesmf>=0.8",
+"xesmf>=0.8.9",
 "pytest>=7.4.0",
 ]
 classifiers = [
@@ -39,8 +39,8 @@ sci = ["scipy>=1.9"]
 where = ["verec"]
 
 [build-system]
-requires = ["flit_core<4"]
-build-backend = "flit_core.buildapi"
+requires = ["setuptools>=65.0.0", "wheel", "versioneer[toml]"]
+build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
