@@ -23,14 +23,14 @@ class Regridder(abc.ABC):
     def _define_src_dst_grids_and_masks(self) -> None:
         xs, ys = self.src_grid.x, self.src_grid.y
         xd, yd = self.dst_grid.x, self.dst_grid.y
-        self.ds_in = {"lat": ("lat", ys), "lon": ("lon", xs)}
-        self.ds_out = {"lat": ("lat", yd), "lon": ("lon", xd)}
+        self.ds_in = {"lat": ys, "lon": xs}
+        self.ds_out = {"lat": yd, "lon": xd}
 
         # 0 for invalid points, 1 for valid points
-        if hasattr(self, "src_mask"):
-            self.ds_in["mask"] = ("mask", self.src_mask)
-        if hasattr(self, "dst_mask"):
-            self.ds_out["mask"] = ("mask", self.dst_mask)
+        if hasattr(self, "src_mask") and self.src_mask is not None:
+            self.ds_in["mask"] = self.src_mask
+        if hasattr(self, "dst_mask") and self.dst_mask is not None:
+            self.ds_out["mask"] = self.dst_mask
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(src_grid={self.src_grid}, dst_grid={self.dst_grid})"
