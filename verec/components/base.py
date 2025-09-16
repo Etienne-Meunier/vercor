@@ -1,7 +1,6 @@
 import abc
 from typing import Dict, List
 from dataclasses import dataclass, field
-import numpy as np
 from ..grid import RectilinearGrid
 from ..fields import Field
 

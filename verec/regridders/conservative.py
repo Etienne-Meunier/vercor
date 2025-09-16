@@ -1,4 +1,3 @@
-import numpy as np
 from .base import Regridder
 from ..fields import Field
 

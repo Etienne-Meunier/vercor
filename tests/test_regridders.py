@@ -26,4 +26,3 @@ def test_xESMF_regridders(atm_grid, ocn_grid):
     # assert regridder.regridder is None
     # regridder.prepare()
     # assert regridder.regridder is not None
-

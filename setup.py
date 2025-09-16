@@ -28,6 +28,7 @@ MINIMUM_VERSIONS = {
 here = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(here)
 
+
 def parse_requirements(reqfile):
     requirements = []
 

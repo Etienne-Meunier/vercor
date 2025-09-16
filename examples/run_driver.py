@@ -1,4 +1,3 @@
-import numpy as np
 from datetime import datetime
 
 from verec import Coupler, Clock, Exchange
