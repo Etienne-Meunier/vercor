@@ -11,7 +11,7 @@ description = "Versatile Earth-system coupler for atmosphere, ocean, sea-ice, an
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-"numpy>=2.0.1",
+"numpy>=2.2.6",
 "xesmf>=0.8.9",
 "pytest>=7.4.0",
 ]
@@ -32,15 +32,10 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-xarray = ["xarray>=2023.7"]
-sci = ["scipy>=1.9"]
-
-[tool.setuptools.packages.find]
-where = ["verec"]
+xarray = ["xarray>=2025.1.2"]
+sci = ["scipy>=1.9.3"]
 
 [build-system]
-#requires = ["setuptools", "versioneer[toml]"]
-#build-backend = "setuptools.build_meta"
 requires = ["flit_core<4", "versioneer[toml]"]
 build-backend = "flit_core.buildapi"
 
