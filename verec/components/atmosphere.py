@@ -1,6 +1,6 @@
 import numpy as np
-from .base import Component
-from ..fields import Field
+from verec.components.base import Component
+from verec.fields import Field
 
 
 class Atmosphere(Component):

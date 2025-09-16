@@ -2,12 +2,12 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Union
 import logging
 
-from .components import Atmosphere, Ocean, SeaIce, Land
-from .regridders import XESMFBilinear, XESMFConservative_normed
+from verec.components import Atmosphere, Ocean, SeaIce, Land
+from verec.regridders import XESMFBilinear, XESMFConservative_normed
 
-from .clock import Clock
-from .exchange import Exchange
-from .run_sequence import RunSequence
+from verec.clock import Clock
+from verec.exchange import Exchange
+from verec.run_sequence import RunSequence
 
 
 logger = logging.getLogger("VerEC.coupler")

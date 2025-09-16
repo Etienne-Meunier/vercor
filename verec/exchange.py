@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, List, Union
-
-from .regridders.bilinear import XESMFBilinear
-from .regridders.conservative import XESMFConservative_normed
+from verec.regridders import XESMFBilinear, XESMFConservative_normed
 
 
 @dataclass

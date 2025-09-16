@@ -1,8 +1,8 @@
 import numpy as np
 
-from ..grid import RectilinearGrid
-from .base import Component
-from ..fields import Field
+from verec.grid import RectilinearGrid
+from verec.components.base import Component
+from verec.fields import Field
 
 
 class Land(Component):
