@@ -10,16 +10,24 @@ class Regridder(abc.ABC):
     src_mask: Any
     dst_grid: Any
     dst_mask: Any
+    regridder: Any = None
 
     @abc.abstractmethod
     def prepare(self, reuse_weights: bool, extrap_method: str):
         raise NotImplementedError
 
-    @abc.abstractmethod
     def __call__(self, field: Field) -> Field:
-        raise NotImplementedError
+        data = field.data
+        out = self.regridder(data)
+        return Field(
+            name=field.name,
+            data=out,
+            grid=self.dst_grid,
+            units=field.units,
+            attrs=field.attrs,
+        )
 
-    def _define_src_dst_grids_and_masks(self) -> None:
+    def _define_rectilinear_src_dst_grids_and_masks(self) -> None:
         longitude_src, latitude_src = self.src_grid.longitude, self.src_grid.latitude
         longitude_dst, latitude_dst = self.dst_grid.longitude, self.dst_grid.latitude
         self.field_in = {"lat": latitude_src, "lon": longitude_src}

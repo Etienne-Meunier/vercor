@@ -1,5 +1,6 @@
+import numpy as np
 from verec.regridders.base import Regridder
-from verec.fields import Field
+from verec.regridders.interpolators.bilinear import Bilinear
 
 
 class XESMFBilinear(Regridder):
@@ -13,7 +14,7 @@ class XESMFBilinear(Regridder):
         except Exception as e:
             raise RuntimeError("xESMF adapter requires xesmf installed") from e
 
-        self._define_src_dst_grids_and_masks()
+        self._define_rectilinear_src_dst_grids_and_masks()
 
         # Add an option to reuse weights if weights are precomputed and saved to a file
         self.regridder = xe.Regridder(
@@ -26,13 +27,30 @@ class XESMFBilinear(Regridder):
 
         return self
 
-    def __call__(self, field: Field) -> Field:
-        data = field.data
-        out = self.regridder(data)
-        return Field(
-            name=field.name,
-            data=out,
-            grid=self.dst_grid,
-            units=field.units,
-            attrs=field.attrs,
+
+class BilinearRectilinear(Regridder):
+    def prepare(
+        self,
+        reuse_weights: bool = False,
+        extrap_method: str | None = "nearest",
+        periodic_longitude=True,
+        nan_renorm=True,
+        idw_k=8,
+        idw_eps=1e-12,
+        fill_value=np.nan
+    ) -> "BilinearRectilinear":
+
+        self._define_rectilinear_src_dst_grids_and_masks()
+
+        self.regridder = Bilinear(
+            self.field_in,
+            self.field_out,
+            periodic_longitude=periodic_longitude,
+            nan_renorm=nan_renorm,
+            extrapolation_mode=extrap_method,
+            idw_k=idw_k,
+            idw_eps=idw_eps,
+            fill_value=fill_value,
         )
+
+        return self

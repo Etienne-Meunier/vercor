@@ -13,7 +13,7 @@ class XESMFConservative_normed(Regridder):
         except Exception as e:
             raise RuntimeError("xESMF adapter requires xesmf installed") from e
 
-        self._define_src_dst_grids_and_masks()
+        self._define_rectilinear_src_dst_grids_and_masks()
 
         # Add an option to reuse weights if weights are precomputed and saved to a file
         self.regridder = xe.Regridder(
@@ -25,14 +25,3 @@ class XESMFConservative_normed(Regridder):
         )
 
         return self
-
-    def __call__(self, field: Field) -> Field:
-        data = field.data
-        out = self.regridder(data)
-        return Field(
-            name=field.name,
-            data=out,
-            grid=self.dst_grid,
-            units=field.units,
-            attrs=field.attrs,
-        )
