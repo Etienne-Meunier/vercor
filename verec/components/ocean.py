@@ -21,13 +21,12 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, coupler) -> None:
-        ny, nx = self.grid.shape
+        nlat, nlon = self.grid.shape
         self.state["SST"] = Field(
-            "SST", 273.15 + 15.0 * np.ones((ny, nx)), self.grid, units="K"
+            "SST", 273.15 + 15.0 * np.ones((nlat, nlon)), self.grid, units="K"
         )
 
-    def step(self, dt, t, coupler) -> None:
-        ny, nx = self.grid.shape
+    def step(self, dt, time, coupler) -> None:
         SST = self.state["SST"].data
         SHF = self.state.get("SHF")
         LHF = self.state.get("LHF")

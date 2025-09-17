@@ -15,12 +15,12 @@ class Land(Component):
         super().__init__(name, grid, inputs=["LHF"], outputs=["SOILM"])
 
     def initialize(self, coupler) -> None:
-        ny, nx = self.grid.shape
+        nlat, nlon = self.grid.shape
         self.state["SOILM"] = Field(
-            "SOILM", 0.3 * np.ones((ny, nx)), self.grid, units="1"
+            "SOILM", 0.3 * np.ones((nlat, nlon)), self.grid, units="1"
         )
 
-    def step(self, dt, t, coupler) -> None:
+    def step(self, dt, time, coupler) -> None:
         LHF = self.state.get("LHF")
         soil = self.state["SOILM"].data
         evap = 1e-9 * (LHF.data if LHF is not None else 0.0)  # tiny dt scaling

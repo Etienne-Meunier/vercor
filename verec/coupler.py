@@ -36,24 +36,24 @@ class Coupler:
     def add_exchange(self, ex: Exchange) -> None:
         self.exchanges.append(ex)
         logger.info(
-            f"Added exchange {ex.name}: {ex.src} -> {ex.dst} {ex.field_names} [{ex.when}]"
+            f"Added exchange {ex.name}: {ex.source} -> {ex.destination} {ex.field_names} [{ex.when}]"
         )
 
     def initialize(self) -> None:
         # Build regridders per (src, dst)
         for ex in self.exchanges:
-            key = (ex.src, ex.dst)
+            key = (ex.source, ex.destination)
             if key not in self._regridders:
-                src_grid = self.components[ex.src].grid
+                src_grid = self.components[ex.source].grid
                 src_mask = (
-                    self.components[ex.src].grid.mask
-                    if self.components[ex.src].grid.mask
+                    self.components[ex.source].grid.mask
+                    if self.components[ex.source].grid.mask
                     else None
                 )
-                dst_grid = self.components[ex.dst].grid
+                dst_grid = self.components[ex.destination].grid
                 dst_mask = (
-                    self.components[ex.dst].grid.mask
-                    if self.components[ex.dst].grid.mask
+                    self.components[ex.destination].grid.mask
+                    if self.components[ex.destination].grid.mask
                     else None
                 )
                 self._regridders[key] = ex.build(src_grid, src_mask, dst_grid, dst_mask)
@@ -67,9 +67,9 @@ class Coupler:
         for ex in self.exchanges:
             if ex.when != when:
                 continue
-            src = self.components[ex.src]
-            dst = self.components[ex.dst]
-            regridder = self._regridders[(ex.src, ex.dst)]
+            src = self.components[ex.source]
+            dst = self.components[ex.destination]
+            regridder = self._regridders[(ex.source, ex.destination)]
             src_fields = src.export_fields()
             out_fields = {}
             for fname in ex.field_names:
@@ -78,16 +78,18 @@ class Coupler:
                 out_fields[fname] = regridder(src_fields[fname])
             if out_fields:
                 dst.receive_fields(out_fields)
-                logger.debug(f"Exchanged {list(out_fields)} from {ex.src} to {ex.dst}")
+                logger.debug(
+                    f"Exchanged {list(out_fields)} from {ex.source} to {ex.destination}"
+                )
 
     def run(self) -> None:
         self.initialize()
-        for n, t, dt in self.clock.iter():
-            logger.info(f" ====== Step: {n:05d} ====== Date: {t} ====== Δt: {dt} ")
+        for n, time, dt in self.clock.iter():
+            logger.info(f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} ")
             # Pre-step exchanges
             self._do_exchanges("pre")
             # Step components in declared order
             for cname in self.runseq:
-                self.components[cname].step(dt, t, self)
+                self.components[cname].step(dt, time, self)
             # Post-step exchanges
             self._do_exchanges("post")

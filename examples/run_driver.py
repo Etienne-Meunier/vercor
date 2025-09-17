@@ -30,8 +30,8 @@ for comp in [ATM, OCN, ICE, LND]:
 # Exchanges
 cpl.add_exchange(Exchange(
     name="ATM_to_OCN",
-    src="ATM",
-    dst="OCN",
+    source="ATM",
+    destination="OCN",
     field_names=["SHF", "LHF"],
     regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
     when="pre",
@@ -39,8 +39,8 @@ cpl.add_exchange(Exchange(
 
 cpl.add_exchange(Exchange(
     name="OCN_to_ATM",
-    src="OCN",
-    dst="ATM",
+    source="OCN",
+    destination="ATM",
     field_names=["SST"],
     regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
     when="pre",
@@ -48,8 +48,8 @@ cpl.add_exchange(Exchange(
 
 cpl.add_exchange(Exchange(
     name="OCN_to_ICE",
-    src="OCN",
-    dst="ICE",
+    source="OCN",
+    destination="ICE",
     field_names=["SST"],
     regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
     when="pre",
@@ -57,8 +57,8 @@ cpl.add_exchange(Exchange(
 
 cpl.add_exchange(Exchange(
     name="ATM_to_LND",
-    src="ATM",
-    dst="LND",
+    source="ATM",
+    destination="LND",
     field_names=["LHF"],
     regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
     when="post",

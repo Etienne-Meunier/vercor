@@ -20,16 +20,16 @@ class Regridder(abc.ABC):
         raise NotImplementedError
 
     def _define_src_dst_grids_and_masks(self) -> None:
-        xs, ys = self.src_grid.x, self.src_grid.y
-        xd, yd = self.dst_grid.x, self.dst_grid.y
-        self.ds_in = {"lat": ys, "lon": xs}
-        self.ds_out = {"lat": yd, "lon": xd}
+        longitude_src, latitude_src = self.src_grid.longitude, self.src_grid.latitude
+        longitude_dst, latitude_dst = self.dst_grid.longitude, self.dst_grid.latitude
+        self.field_in = {"lat": latitude_src, "lon": longitude_src}
+        self.field_out = {"lat": latitude_dst, "lon": longitude_dst}
 
         # 0 for invalid points, 1 for valid points
         if hasattr(self, "src_mask") and self.src_mask is not None:
-            self.ds_in["mask"] = self.src_mask
+            self.field_in["mask"] = self.src_mask
         if hasattr(self, "dst_mask") and self.dst_mask is not None:
-            self.ds_out["mask"] = self.dst_mask
+            self.field_out["mask"] = self.dst_mask
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(\n src_grid={self.src_grid},\n dst_grid={self.dst_grid})"

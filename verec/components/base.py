@@ -18,7 +18,7 @@ class Component(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def step(self, dt, t, coupler):
+    def step(self, dt, time, coupler):
         raise NotImplementedError
 
     def export_fields(self) -> Dict[str, Field]:

@@ -1,13 +1,12 @@
 from dataclasses import dataclass
-from typing import Callable, List, Union
-from verec.regridders import XESMFBilinear, XESMFConservative_normed
+from typing import Any, Callable, List
 
 
 @dataclass
 class Exchange:
     name: str
-    src: str  # component name
-    dst: str  # component name
+    source: str  # component name
+    destination: str  # component name
     field_names: List[str]
     regridder_factory: Callable  # (src_grid, dst_grid) -> Regridder
     when: str = "pre"  # "pre" or "post" component stepping
@@ -18,6 +17,6 @@ class Exchange:
         src_mask,
         dst_grid,
         dst_mask,
-    ) -> Union[XESMFBilinear, XESMFConservative_normed]:
+    ) -> Any:
         regridder = self.regridder_factory(src_grid, src_mask, dst_grid, dst_mask)
         return regridder.prepare()

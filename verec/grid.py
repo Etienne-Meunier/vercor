@@ -18,22 +18,28 @@ class Grid(abc.ABC):
 
 @dataclass
 class RectilinearGrid(Grid):
-    x: Optional[np.ndarray] = None  # 1D centers or 2D centers
-    y: Optional[np.ndarray] = None  # 1D centers or 2D centers
+    longitude: Optional[np.ndarray] = None  # 1D centers
+    latitude: Optional[np.ndarray] = None  # 1D centers
 
     def __post_init__(self) -> None:
-        if self.x is None or self.y is None:
-            raise ValueError("x and y must not be None for RectilinearGrid.")
-        if self.x.ndim != 1 or self.y.ndim != 1:
+        if self.longitude is None or self.latitude is None:
             raise ValueError(
-                "RectilinearGrid expects 1D x and y coordinate arrays (centers)."
+                "longitude and latitude must not be None for RectilinearGrid."
             )
-        if not (np.all(np.diff(self.x) > 0) and np.all(np.diff(self.y) > 0)):
+        if self.longitude.ndim != 1 or self.latitude.ndim != 1:
+            raise ValueError(
+                "RectilinearGrid expects 1D longitude and latitude coordinate arrays (centers)."
+            )
+        if not (
+            np.all(np.diff(self.longitude) > 0) and np.all(np.diff(self.latitude) > 0)
+        ):
             # Monotonic increasing required for built-in regridders.
-            raise ValueError("x and y must be strictly increasing.")
+            raise ValueError("longitude and latitude must be strictly increasing.")
 
     @property
     def shape(self) -> tuple[int, int]:
-        if self.x is None or self.y is None:
-            raise ValueError("x and y must not be None to determine shape.")
-        return (self.y.size, self.x.size)  # (ny, nx), row-major
+        if self.longitude is None or self.latitude is None:
+            raise ValueError(
+                "longitude and latitude must not be None to determine shape."
+            )
+        return (self.latitude.size, self.longitude.size)  # (ny, nx), row-major

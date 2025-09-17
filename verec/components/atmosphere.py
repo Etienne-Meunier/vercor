@@ -20,7 +20,7 @@ class Atmosphere(Component):
         self.state["SHF"] = Field("SHF", np.zeros((ny, nx)), self.grid, units="W m-2")
         self.state["LHF"] = Field("LHF", np.zeros((ny, nx)), self.grid, units="W m-2")
 
-    def step(self, dt, t, coupler) -> None:
+    def step(self, dt, time, coupler) -> None:
         # Bulk formula toy: flux proportional to (TA2M - SST)
         SST = self.state.get("SST")
         if SST is None:

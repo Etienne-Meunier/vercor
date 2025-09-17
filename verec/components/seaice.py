@@ -15,12 +15,12 @@ class SeaIce(Component):
         super().__init__(name, grid, inputs=["SST"], outputs=["ICEFRAC"])
 
     def initialize(self, coupler) -> None:
-        ny, nx = self.grid.shape
+        nlat, nlon = self.grid.shape
         self.state["ICEFRAC"] = Field(
-            "ICEFRAC", np.zeros((ny, nx)), self.grid, units="1"
+            "ICEFRAC", np.zeros((nlat, nlon)), self.grid, units="1"
         )
 
-    def step(self, dt, t, coupler) -> None:
+    def step(self, dt, time, coupler) -> None:
         SST = self.state.get("SST")
         if SST is None:
             return

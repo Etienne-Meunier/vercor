@@ -17,8 +17,8 @@ class XESMFBilinear(Regridder):
 
         # Add an option to reuse weights if weights are precomputed and saved to a file
         self.regridder = xe.Regridder(
-            self.ds_in,
-            self.ds_out,
+            self.field_in,
+            self.field_out,
             method="bilinear",
             extrap_method=extrap_method,
             reuse_weights=reuse_weights,
