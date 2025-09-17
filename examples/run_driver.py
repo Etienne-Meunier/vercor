@@ -3,7 +3,7 @@ from datetime import datetime
 from verec import Coupler, Clock, Exchange
 from verec.coupler import RunSequence
 from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import XESMFBilinear, make_rectilinear_grid
+from verec.regridders import XESMFBilinearRectilinear, make_rectilinear_grid
 
 # Build grids
 atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
@@ -33,7 +33,7 @@ cpl.add_exchange(Exchange(
     source="ATM",
     destination="OCN",
     field_names=["SHF", "LHF"],
-    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
+    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinearRectilinear(sg, sm, dg, dm),
     when="pre",
 ))
 
@@ -42,7 +42,7 @@ cpl.add_exchange(Exchange(
     source="OCN",
     destination="ATM",
     field_names=["SST"],
-    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
+    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinearRectilinear(sg, sm, dg, dm),
     when="pre",
 ))
 
@@ -51,7 +51,7 @@ cpl.add_exchange(Exchange(
     source="OCN",
     destination="ICE",
     field_names=["SST"],
-    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
+    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinearRectilinear(sg, sm, dg, dm),
     when="pre",
 ))
 
@@ -60,7 +60,7 @@ cpl.add_exchange(Exchange(
     source="ATM",
     destination="LND",
     field_names=["LHF"],
-    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinear(sg, sm, dg, dm),
+    regridder_factory=lambda sg, sm, dg, dm: XESMFBilinearRectilinear(sg, sm, dg, dm),
     when="post",
 ))
 

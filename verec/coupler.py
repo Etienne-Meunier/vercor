@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Union
 import logging
 
 from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import XESMFBilinear, XESMFConservative_normed
+from verec.regridders import XESMFBilinearRectilinear, XESMFConservative_normed
 
 from verec.clock import Clock
 from verec.exchange import Exchange
@@ -24,7 +24,7 @@ class Coupler:
     )
     exchanges: List[Exchange] = field(default_factory=list)
     _regridders: Dict[
-        Tuple[str, str], Union[XESMFBilinear, XESMFConservative_normed]
+        Tuple[str, str], Union[XESMFBilinearRectilinear, XESMFConservative_normed]
     ] = field(default_factory=dict)
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:

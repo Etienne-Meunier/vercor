@@ -1,12 +1,12 @@
 import numpy as np
 from verec.regridders.base import Regridder
-from verec.regridders.interpolators.bilinear import Bilinear
+from verec.interpolators.bilinear_rectilinear import Bilinear
 
 
-class XESMFBilinear(Regridder):
+class XESMFBilinearRectilinear(Regridder):
     def prepare(
         self, reuse_weights: bool = False, extrap_method: str | None = "nearest_s2d"
-    ) -> "XESMFBilinear":
+    ) -> "XESMFBilinearRectilinear":
         """Prepare the regridder by initializing xESMF with the source and destination grids."""
 
         try:
@@ -37,7 +37,7 @@ class BilinearRectilinear(Regridder):
         nan_renorm=True,
         idw_k=8,
         idw_eps=1e-12,
-        fill_value=np.nan
+        fill_value=np.nan,
     ) -> "BilinearRectilinear":
 
         self._define_rectilinear_src_dst_grids_and_masks()
