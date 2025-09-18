@@ -29,11 +29,13 @@ for comp in [ATM, OCN, ICE, LND]:
     cpl.register(comp)
 
 # Exchanges
+# scalar fields (vector field)) 
+#["SHF", "LHF", ("u10m", "v10m")]
 cpl.add_exchange(Exchange(
     name="ATM_to_OCN",
     source="ATM",
     destination="OCN",
-    field_names=["SHF", "LHF", "u10m", "v10m"],
+    field_names=[("u10m", "v10m"), "SHF", "LHF"],
     regridder_factory=lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm),
     when="pre",
 ))

@@ -1,9 +1,14 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Union
 import logging
+from itertools import chain
 
 from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import BilinearRectilinear, XESMFBilinearRectilinear, XESMFConservative_normed
+from verec.regridders import (
+    BilinearRectilinear,
+    XESMFBilinearRectilinear,
+    XESMFConservative_normed,
+)
 
 from verec.clock import Clock
 from verec.exchange import Exchange
@@ -25,7 +30,7 @@ class Coupler:
     exchanges: List[Exchange] = field(default_factory=list)
     _regridders: Dict[
         Tuple[str, str],
-        Union[BilinearRectilinear, XESMFBilinearRectilinear, XESMFConservative_normed]
+        Union[BilinearRectilinear, XESMFBilinearRectilinear, XESMFConservative_normed],
     ] = field(default_factory=dict)
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
@@ -68,17 +73,39 @@ class Coupler:
         for ex in self.exchanges:
             if ex.when != when:
                 continue
+
             source = self.components[ex.source]
             destination = self.components[ex.destination]
             regridder = self._regridders[(ex.source, ex.destination)]
             source_fields = source.export_fields()
             destination_fields = {}
+
             for fname in ex.field_names:
-                if fname not in source_fields:
+                # Handle case where fname is a tuple (e.g., (src_name, dst_name))
+                src_fname, alt_fname = None, None
+                if isinstance(fname, tuple):
+                    src_fname, alt_fname = fname
+                else:
+                    src_fname = fname
+                    alt_fname = None
+
+                # Check if either string in tuple is in source_fields
+                if src_fname not in source_fields and (
+                    alt_fname is None or alt_fname not in source_fields
+                ):
                     continue
-                destination_fields[fname] = regridder(source_fields[fname])
+
+                if isinstance(fname, tuple) and alt_fname is not None:
+                    # Regrid vector field
+                    destination_fields[src_fname], destination_fields[alt_fname] = (
+                        regridder(source_fields[src_fname], source_fields[alt_fname])
+                    )
+                else:
+                    # Regrid scalar field
+                    destination_fields[src_fname] = regridder(source_fields[src_fname])
+
             if destination_fields:
-                destination.receive_fields(destination_fields)
+                destination.import_fields(destination_fields)
                 logger.debug(
                     f"Exchanged {list(destination_fields)} from {ex.source} to {ex.destination}"
                 )

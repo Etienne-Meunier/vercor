@@ -9,8 +9,8 @@ from verec.fields import Field
 class Component(abc.ABC):
     name: str
     grid: RectilinearGrid
-    inputs: List[str] = field(default_factory=list)
-    outputs: List[str] = field(default_factory=list)
+    # inputs: List[str] = field(default_factory=list)
+    # outputs: List[str] = field(default_factory=list)
     state: Dict[str, Field] = field(default_factory=dict)
 
     @abc.abstractmethod
@@ -22,9 +22,9 @@ class Component(abc.ABC):
         raise NotImplementedError
 
     def export_fields(self) -> Dict[str, Field]:
-        return {k: v for k, v in self.state.items() if k in self.outputs}
+        return {k: v for k, v in self.state.items()}
 
-    def receive_fields(self, fields: Dict[str, Field]) -> None:
+    def import_fields(self, fields: Dict[str, Field]) -> None:
         # simplistic merge/overwrite
         for name, fld in fields.items():
             self.state[name] = fld

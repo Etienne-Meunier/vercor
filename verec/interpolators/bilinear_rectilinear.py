@@ -507,31 +507,3 @@ class Bilinear:
         v_t = np.where(self.tgt_mask, v_t, self.fill_value)
 
         return u_t.reshape(self.tshape), v_t.reshape(self.tshape)
-
-
-    def __call__(self, *args, src_mask=None) -> Any:
-        """
-        Call with positional args for fields and optional src_mask as a keyword-only arg.
-
-        Supported calls:
-          - __call__(scalar_src, src_mask=...) -> scalar interpolation
-          - __call__(u_src, v_src, src_mask=...) -> vector interpolation
-
-        src_mask must be provided as a keyword argument. Passing a mask as a positional
-        second argument is not allowed and will raise a TypeError to avoid ambiguity.
-        """
-        if len(args) == 0:
-            raise TypeError("Must provide either scalar_src or (u_src, v_src) as positional arguments")
-
-        if len(args) == 1:
-            scalar_src = args[0]
-            return self.apply_scalar(scalar_src, src_mask=src_mask)
-
-        if len(args) == 2:
-            a0, a1 = args
-            # Disallow passing mask as positional second argument
-            if isinstance(a1, np.ndarray) and a1.dtype == bool:
-                raise TypeError("src_mask must be passed as a keyword argument: src_mask=...")
-            return self.apply_vector(a0, a1, src_mask=src_mask)
-
-        raise TypeError("Too many positional arguments; provide either (scalar,) or (u_src, v_src)")

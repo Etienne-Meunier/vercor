@@ -1,3 +1,4 @@
+from verec.fields import Field
 from verec.regridders.base import Regridder
 
 
@@ -24,3 +25,14 @@ class XESMFConservative_normed(Regridder):
         )
 
         return self
+
+    def __call__(self, field: Field) -> Field:
+        data = field.data
+        out = self.regridder(data)
+        return Field(
+            name=field.name,
+            data=out,
+            grid=self.dst_grid,
+            units=field.units,
+            attrs=field.attrs,
+        )

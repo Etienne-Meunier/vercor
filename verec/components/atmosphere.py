@@ -10,7 +10,8 @@ class Atmosphere(Component):
     """
 
     def __init__(self, name, grid) -> None:
-        super().__init__(name, grid, inputs=["SST"], outputs=["SHF", "LHF", "TA2M"])
+        # super().__init__(name, grid, inputs=["SST"], outputs=["SHF", "LHF", "TA2M", "u10m", "v10m"])
+        super().__init__(name, grid)
 
     def initialize(self, coupler) -> None:
         ny, nx = self.grid.shape
@@ -37,9 +38,10 @@ class Atmosphere(Component):
 
         # Update wind (toy)
         lat = np.array(self.grid.latitude)
-        lon = np.array(self.grid.longitude)
-        u10m = np.cos(np.deg2rad(lon))                # zonal flow varying with latitude
-        v10m = 0.5 * np.sin(np.deg2rad(lat - 180.0))  # small meridional perturbation
+        lon = np.array(self.grid.longitude) - 180.0
+        latitudes, longitudes = np.meshgrid(lat, lon, indexing="ij")
+        u10m = np.cos(np.deg2rad(latitudes))  # zonal flow varying with latitude
+        v10m = 0.5 * np.sin(np.deg2rad(longitudes))  # small meridional perturbation
 
         self.state["SHF"] = Field("SHF", SHF, self.grid, units="W m-2")
         self.state["LHF"] = Field("LHF", LHF, self.grid, units="W m-2")

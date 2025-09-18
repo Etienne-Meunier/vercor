@@ -16,17 +16,6 @@ class Regridder(abc.ABC):
     def prepare(self, reuse_weights: bool, extrap_method: str):
         raise NotImplementedError
 
-    def __call__(self, field: Field) -> Field:
-        data = field.data
-        out = self.regridder(data)
-        return Field(
-            name=field.name,
-            data=out,
-            grid=self.dst_grid,
-            units=field.units,
-            attrs=field.attrs,
-        )
-
     def _define_rectilinear_src_dst_grids_and_masks(self) -> None:
         longitude_src, latitude_src = self.src_grid.longitude, self.src_grid.latitude
         longitude_dst, latitude_dst = self.dst_grid.longitude, self.dst_grid.latitude

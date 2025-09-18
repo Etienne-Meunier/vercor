@@ -12,7 +12,9 @@ class Ocean(Component):
     """
 
     def __init__(self, name: str, grid: RectilinearGrid, H: float = 30.0) -> None:
-        super().__init__(name, grid, inputs=["SHF", "LHF"], outputs=["SST"])
+        # super().__init__(name, grid, inputs=["SHF", "LHF"], outputs=["SST"])
+        super().__init__(name, grid)
+
         self.H = H  # mixed-layer depth [m]
         self.rho = 1025.0
         self.cp = 3990.0

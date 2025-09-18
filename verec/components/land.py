@@ -12,7 +12,8 @@ class Land(Component):
     """
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
-        super().__init__(name, grid, inputs=["LHF"], outputs=["SOILM"])
+        # super().__init__(name, grid, inputs=["LHF"], outputs=["SOILM"])
+        super().__init__(name, grid)
 
     def initialize(self, coupler) -> None:
         nlat, nlon = self.grid.shape
