@@ -19,6 +19,8 @@ class Atmosphere(Component):
         )
         self.state["SHF"] = Field("SHF", np.zeros((ny, nx)), self.grid, units="W m-2")
         self.state["LHF"] = Field("LHF", np.zeros((ny, nx)), self.grid, units="W m-2")
+        self.state["u10m"] = Field("u10m", np.zeros((ny, nx)), self.grid, units="m s-1")
+        self.state["v10m"] = Field("v10m", np.zeros((ny, nx)), self.grid, units="m s-1")
 
     def step(self, dt, time, coupler) -> None:
         # Bulk formula toy: flux proportional to (TA2M - SST)
@@ -33,8 +35,17 @@ class Atmosphere(Component):
         SHF = -C * dT  # ocean heat gain positive when SST < TA
         LHF = -0.5 * SHF
 
+        # Update wind (toy)
+        lat = np.array(self.grid.latitude)
+        lon = np.array(self.grid.longitude)
+        u10m = np.cos(np.deg2rad(lon))                # zonal flow varying with latitude
+        v10m = 0.5 * np.sin(np.deg2rad(lat - 180.0))  # small meridional perturbation
+
         self.state["SHF"] = Field("SHF", SHF, self.grid, units="W m-2")
         self.state["LHF"] = Field("LHF", LHF, self.grid, units="W m-2")
+
+        self.state["u10m"] = Field("u10m", u10m, self.grid, units="m s-1")
+        self.state["v10m"] = Field("v10m", v10m, self.grid, units="m s-1")
 
         # Relax TA2M toward SST weakly (toy boundary layer)
         self.state["TA2M"].data = TA - 0.01 * dT

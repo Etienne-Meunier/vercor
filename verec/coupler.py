@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Union
 import logging
 
 from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import XESMFBilinearRectilinear, XESMFConservative_normed
+from verec.regridders import BilinearRectilinear, XESMFBilinearRectilinear, XESMFConservative_normed
 
 from verec.clock import Clock
 from verec.exchange import Exchange
@@ -24,7 +24,8 @@ class Coupler:
     )
     exchanges: List[Exchange] = field(default_factory=list)
     _regridders: Dict[
-        Tuple[str, str], Union[XESMFBilinearRectilinear, XESMFConservative_normed]
+        Tuple[str, str],
+        Union[BilinearRectilinear, XESMFBilinearRectilinear, XESMFConservative_normed]
     ] = field(default_factory=dict)
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
@@ -67,19 +68,19 @@ class Coupler:
         for ex in self.exchanges:
             if ex.when != when:
                 continue
-            src = self.components[ex.source]
-            dst = self.components[ex.destination]
+            source = self.components[ex.source]
+            destination = self.components[ex.destination]
             regridder = self._regridders[(ex.source, ex.destination)]
-            src_fields = src.export_fields()
-            out_fields = {}
+            source_fields = source.export_fields()
+            destination_fields = {}
             for fname in ex.field_names:
-                if fname not in src_fields:
+                if fname not in source_fields:
                     continue
-                out_fields[fname] = regridder(src_fields[fname])
-            if out_fields:
-                dst.receive_fields(out_fields)
+                destination_fields[fname] = regridder(source_fields[fname])
+            if destination_fields:
+                destination.receive_fields(destination_fields)
                 logger.debug(
-                    f"Exchanged {list(out_fields)} from {ex.source} to {ex.destination}"
+                    f"Exchanged {list(destination_fields)} from {ex.source} to {ex.destination}"
                 )
 
     def run(self) -> None:
