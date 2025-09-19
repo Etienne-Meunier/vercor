@@ -13,7 +13,7 @@ class Regridder(abc.ABC):
     regridder: Any = None
 
     @abc.abstractmethod
-    def prepare(self, reuse_weights: bool, extrap_method: str):
+    def prepare(self) -> "Regridder":
         raise NotImplementedError
 
     def _define_rectilinear_src_dst_grids_and_masks(self) -> None:

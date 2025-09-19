@@ -3,9 +3,7 @@ from verec.regridders.base import Regridder
 
 
 class XESMFConservative_normed(Regridder):
-    def prepare(
-        self, reuse_weights: bool = False, extrap_method: str | None = None
-    ) -> "XESMFConservative_normed":
+    def prepare(self) -> "XESMFConservative_normed":
         """Prepare the regridder by initializing xESMF with the source and destination grids."""
 
         try:
@@ -17,11 +15,7 @@ class XESMFConservative_normed(Regridder):
 
         # Add an option to reuse weights if weights are precomputed and saved to a file
         self.regridder = xe.Regridder(
-            self.field_in,
-            self.field_out,
-            method="conservative_normed",
-            reuse_weights=reuse_weights,
-            extrap_method=extrap_method,
+            self.field_in, self.field_out, method="conservative_normed"
         )
 
         return self

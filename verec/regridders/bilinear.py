@@ -6,9 +6,7 @@ from verec.interpolators.bilinear_rectilinear import Bilinear
 
 
 class XESMFBilinearRectilinear(Regridder):
-    def prepare(
-        self, reuse_weights: bool = False, extrap_method: str | None = "nearest_s2d"
-    ) -> "XESMFBilinearRectilinear":
+    def prepare(self) -> "XESMFBilinearRectilinear":
         """Prepare the regridder by initializing xESMF with the source and destination grids."""
 
         try:
@@ -23,8 +21,7 @@ class XESMFBilinearRectilinear(Regridder):
             self.field_in,
             self.field_out,
             method="bilinear",
-            extrap_method=extrap_method,
-            reuse_weights=reuse_weights,
+            extrap_method="nearest_s2d",
         )
 
         return self
@@ -42,28 +39,18 @@ class XESMFBilinearRectilinear(Regridder):
 
 
 class BilinearRectilinear(Regridder):
-    def prepare(
-        self,
-        reuse_weights: bool = False,
-        extrap_method: str | None = "nearest",
-        periodic_longitude=True,
-        nan_renorm=True,
-        idw_k=8,
-        idw_eps=1e-12,
-        fill_value=np.nan,
-    ) -> "BilinearRectilinear":
-
+    def prepare(self) -> "BilinearRectilinear":
         self._define_rectilinear_src_dst_grids_and_masks()
 
         self.regridder = Bilinear(
             self.field_in,
             self.field_out,
-            periodic_longitude=periodic_longitude,
-            nan_renorm=nan_renorm,
-            extrapolation_mode=extrap_method,
-            idw_k=idw_k,
-            idw_eps=idw_eps,
-            fill_value=fill_value,
+            periodic_longitude=True,
+            nan_renorm=True,
+            extrapolation_mode="nearest",
+            idw_k=8,
+            idw_eps=1e-12,
+            fill_value=np.nan,
         )
 
         return self

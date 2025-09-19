@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Dict, List, Tuple, Union, Callable
+from typing import Dict, List, Tuple, Union
+from collections.abc import Callable
 import logging
 
 from verec.components import Atmosphere, Ocean, SeaIce, Land
@@ -13,6 +14,7 @@ from verec.regridders import (
 from verec.fields import Field
 from verec.clock import Clock
 from verec.exchange import Exchange
+from verec.regridders.base import Regridder
 from verec.run_sequence import RunSequence
 
 
@@ -23,24 +25,36 @@ logging.basicConfig(level=logging.INFO)
 def _scalar_field_interpolate(
     field_name: str,
     source_fields: Dict[str, Field],
-    regridder: Callable,
+    regridder: Regridder,
 ) -> Field:
+    if not callable(regridder):
+        raise TypeError("Regridder must be callable for scalar field interpolation")
+
     destination_field = regridder(source_fields[field_name])
+
     return destination_field
 
 
 def _vector_field_interpolate(
     field_name: Tuple[str, str],
     source_fields: Dict[str, Field],
-    regridder: Callable,
+    regridder: Regridder,
 ) -> Tuple[Field, Field]:
     if len(field_name) == 2:
         src_field_name, alt_field_name = field_name
     else:
         raise ValueError("Vector field name must be a tuple of two strings")
-    destination_field_lon, destination_field_lat = regridder(
-        source_fields[src_field_name], source_fields[alt_field_name]
-    )
+    # Validate that regridder is callable and supports two arguments
+    if not callable(regridder):
+        raise TypeError("Regridder must be callable for vector field interpolation")
+    try:
+        destination_field_lon, destination_field_lat = regridder(
+            source_fields[src_field_name], source_fields[alt_field_name]
+        )
+    except Exception as e:
+        raise TypeError(
+            "Regridder for vector fields must accept two arguments and return a tuple of two Fields"
+        ) from e
     return (destination_field_lon, destination_field_lat)
 
 
@@ -55,7 +69,7 @@ class Coupler:
     exchanges: List[Exchange] = field(default_factory=list)
     _regridders: Dict[
         Tuple[str, str],
-        Union[BilinearRectilinear, XESMFBilinearRectilinear, XESMFConservative_normed],
+        Regridder,
     ] = field(default_factory=dict)
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
@@ -109,7 +123,8 @@ class Coupler:
                 if isinstance(field_name, tuple):
                     flattened = list(
                         chain.from_iterable(
-                            (item,) if isinstance(item, str) else item for item in field_name
+                            (item,) if isinstance(item, str) else item
+                            for item in field_name
                         )
                     )
                     if not all(fkey in source_fields for fkey in flattened):
@@ -117,9 +132,10 @@ class Coupler:
                             f"Not all fields in vector {field_name} are present in source fields"
                         )
 
-                    destination_fields[field_name[0]], destination_fields[field_name[1]] = (
-                        _vector_field_interpolate(field_name, source_fields, regridder)
-                    )
+                    (
+                        destination_fields[field_name[0]],
+                        destination_fields[field_name[1]],
+                    ) = _vector_field_interpolate(field_name, source_fields, regridder)
                 else:
                     destination_fields[field_name] = _scalar_field_interpolate(
                         field_name, source_fields, regridder
@@ -128,7 +144,7 @@ class Coupler:
             if destination_fields:
                 destination.import_fields(destination_fields)
                 logger.debug(
-                    f"Exchanged {list(destination_fields)} from {ex.source} to {ex.destination}"
+                    f"{when.upper()} step: Exchanged {list(destination_fields)} from {ex.source} to {ex.destination}"
                 )
 
     def run(self) -> None:
