@@ -41,6 +41,7 @@ def _great_circle_distance_rad(
     sdlat2 = np.sin(dlat * 0.5)
     sdlon2 = np.sin(dlon * 0.5)
     a = sdlat2 * sdlat2 + np.cos(lat1) * np.cos(lat2) * sdlon2 * sdlon2
+
     # Clamp for safety
     a = np.clip(a, 0.0, 1.0)
     return 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
@@ -59,12 +60,12 @@ class Bilinear:
       - nearest / IDW extrapolation for masked-out areas
 
     Coordinates:
-      - lon_src: shape (NX,), degrees, strictly monotonic ascending (wrap allowed across dateline)
-      - lat_src: shape (NY,), degrees, strictly monotonic (ascending or descending)
+      - lon_src: shape (nlon,), degrees, strictly monotonic ascending (wrap allowed across dateline)
+      - lat_src: shape (nlat,), degrees, strictly monotonic (ascending or descending)
       - lon_tgt, lat_tgt: target coordinates, any shape (broadcastable to the same)
 
     Masks:
-      - src_mask: boolean array (NY, NX) where True means valid; if None, all valid
+      - src_mask: boolean array (nlat, nlon) where True means valid; if None, all valid
       - tgt_mask: boolean array like lon_tgt/lat_tgt shape; True means compute/keep output, False -> fill_value
 
     Vector interpolation:
@@ -104,8 +105,8 @@ class Bilinear:
         assert (
             lon_src_deg.ndim == 1 and lat_src_deg.ndim == 1
         ), "lon_src, lat_src must be 1-D"
-        self.NX = lon_src_deg.size
-        self.NY = lat_src_deg.size
+        self.nlon = lon_src_deg.size
+        self.nlat = lat_src_deg.size
 
         # Ensure monotonicity assumptions
         if not (np.all(np.diff(lon_src_deg) > 0) or np.all(np.diff(lon_src_deg) < 0)):
@@ -161,7 +162,7 @@ class Bilinear:
         )
 
         # Precompute source EN bases (for vector projection from source)
-        # Shapes: (NY, NX, 3)
+        # Shapes: (nlat, nlon, 3)
         lon_src_2d, lat_src_2d = np.meshgrid(self.lon_src_rad, self.lat_src_rad)
         self._e_east_src, self._e_north_src = _unit_east_north(lon_src_2d, lat_src_2d)
 
@@ -175,7 +176,7 @@ class Bilinear:
         """
         For each target point, compute (i0,i1,j0,j1) and (fx,fy) and corner weights.
         """
-        NX, NY = self.NX, self.NY
+        nlon, nlat = self.nlon, self.nlat
         lon_src = self.lon_src_deg
         lat_src = self.lat_src_deg
 
@@ -191,10 +192,10 @@ class Bilinear:
         i0 = i1 - 1
         # clamp for non-periodic
         if self.periodic:
-            i0 = np.mod(i0, NX)
-            i1 = np.mod(i1, NX)
+            i0 = np.mod(i0, nlon)
+            i1 = np.mod(i1, nlon)
         else:
-            i0 = np.clip(i0, 0, NX - 2)
+            i0 = np.clip(i0, 0, nlon - 2)
             i1 = i0 + 1
 
         # Latitudinal indices (support ascending or descending)
@@ -207,11 +208,11 @@ class Bilinear:
             j1_inv = np.searchsorted(lat_inv, self.lat_tgt_deg, side="right")
             j0_inv = j1_inv - 1
             # indices in inverted array -> original
-            j0 = (NY - 1) - np.clip(j0_inv, 0, NY - 2) - 1
+            j0 = (nlat - 1) - np.clip(j0_inv, 0, nlat - 2) - 1
             j1 = j0 + 1
 
         # Clamp to valid interior rows
-        j0 = np.clip(j0, 0, NY - 2)
+        j0 = np.clip(j0, 0, nlat - 2)
         j1 = j0 + 1
 
         # Fractions fx, fy (0..1), careful with wrap row in longitude
@@ -273,8 +274,8 @@ class Bilinear:
         Returns (out, valid_weight_sum).
         """
         src = np.asarray(src, dtype=float)
-        if src.shape != (self.NY, self.NX):
-            raise ValueError(f"src field must have shape (NY,NX)=({self.NY},{self.NX})")
+        if src.shape != (self.nlat, self.nlon):
+            raise ValueError(f"src field must have shape (nlat,nlon)=({self.nlat},{self.nlon})")
         valid = self._ensure_src_mask(src, src_mask)
 
         # Gather corners
@@ -391,9 +392,9 @@ class Bilinear:
 
         Parameters
         ----------
-        src : (NY, NX) array-like
+        src : (nlat, nlon) array-like
             Source scalar field.
-        src_mask : (NY, NX) boolean, optional
+        src_mask : (nlat, nlon) boolean, optional
             True where source is valid. If None, validity = isfinite(src).
 
         Returns
@@ -423,9 +424,9 @@ class Bilinear:
 
         Parameters
         ----------
-        u_src, v_src : (NY, NX) arrays
+        u_src, v_src : (nlat, nlon) arrays
             Eastward and northward components on source grid.
-        src_mask : (NY, NX) boolean, optional
+        src_mask : (nlat, nlon) boolean, optional
             True where vector is valid. If None, validity = isfinite(u) & isfinite(v).
 
         Returns
@@ -434,9 +435,9 @@ class Bilinear:
         """
         u_src = np.asarray(u_src, dtype=float)
         v_src = np.asarray(v_src, dtype=float)
-        if u_src.shape != (self.NY, self.NX) or v_src.shape != (self.NY, self.NX):
+        if u_src.shape != (self.nlat, self.nlon) or v_src.shape != (self.nlat, self.nlon):
             raise ValueError(
-                f"(u_src,v_src) must both have shape (NY,NX)=({self.NY},{self.NX})"
+                f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon})"
             )
 
         if src_mask is None:
@@ -451,7 +452,7 @@ class Bilinear:
         # Build 3-D vector field at sources: V = u*e_east + v*e_north
         V3 = (u_src[..., None] * self._e_east_src) + (
             v_src[..., None] * self._e_north_src
-        )  # (NY,NX,3)
+        )  # (nlat,nlon,3)
 
         # Gather corners
         V00 = V3[self.j0, self.i0, :]

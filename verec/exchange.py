@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Callable, List, Tuple, Union
+from typing import Callable, List, Tuple, Union
 
 from verec.regridders.base import Regridder
 
@@ -11,18 +11,18 @@ class Exchange:
     destination: str  # component name
     field_names: List[
         Union[str, Tuple[str, str]]
-    ]  # list of scalar field names or (u-vector-component, v-vector-component)
-    regridder_factory: Callable[
-        ..., Regridder
-    ]  # (src_grid, src_mask, dst_grid, dst_mask) -> Regridder
+    ]  # list of scalar field names and (u-vector-component, v-vector-component)
+    regridder_factory: Callable[..., Regridder]
     when: str = "pre"  # "pre" or "post" component stepping
 
     def build(
         self,
-        src_grid,
-        src_mask,
-        dst_grid,
-        dst_mask,
+        source_grid,
+        source_mask,
+        destination_grid,
+        destination_mask,
     ) -> Regridder:
-        regridder = self.regridder_factory(src_grid, src_mask, dst_grid, dst_mask)
+        regridder = self.regridder_factory(
+            source_grid, source_mask, destination_grid, destination_mask
+        )
         return regridder.prepare()

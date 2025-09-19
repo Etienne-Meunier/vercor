@@ -1,15 +1,9 @@
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Dict, List, Tuple, Union
-from collections.abc import Callable
 import logging
 
 from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import (
-    BilinearRectilinear,
-    XESMFBilinearRectilinear,
-    XESMFConservative_normed,
-)
 
 from verec.fields import Field
 from verec.clock import Clock
@@ -44,7 +38,6 @@ def _vector_field_interpolate(
         src_field_name, alt_field_name = field_name
     else:
         raise ValueError("Vector field name must be a tuple of two strings")
-    # Validate that regridder is callable and supports two arguments
     if not callable(regridder):
         raise TypeError("Regridder must be callable for vector field interpolation")
     try:
@@ -78,48 +71,50 @@ class Coupler:
         self.components[component.name] = component
         logger.info(f"Registered component {component.name}")
 
-    def add_exchange(self, ex: Exchange) -> None:
-        self.exchanges.append(ex)
+    def add_exchange(self, exchange: Exchange) -> None:
+        self.exchanges.append(exchange)
         logger.info(
-            f"Added exchange {ex.name}: {ex.source} -> {ex.destination} {ex.field_names} [{ex.when}]"
+            f"Added exchange {exchange.name}: {exchange.source} -> {exchange.destination} {exchange.field_names} [{exchange.when}]"
         )
 
     def initialize(self) -> None:
         # Build regridders per (src, dst)
-        for ex in self.exchanges:
-            key = (ex.source, ex.destination)
+        for exchange in self.exchanges:
+            key = (exchange.source, exchange.destination)
             if key not in self._regridders:
-                src_grid = self.components[ex.source].grid
+                src_grid = self.components[exchange.source].grid
                 src_mask = (
-                    self.components[ex.source].grid.mask
-                    if self.components[ex.source].grid.mask
+                    self.components[exchange.source].grid.mask
+                    if self.components[exchange.source].grid.mask
                     else None
                 )
-                dst_grid = self.components[ex.destination].grid
+                dst_grid = self.components[exchange.destination].grid
                 dst_mask = (
-                    self.components[ex.destination].grid.mask
-                    if self.components[ex.destination].grid.mask
+                    self.components[exchange.destination].grid.mask
+                    if self.components[exchange.destination].grid.mask
                     else None
                 )
-                self._regridders[key] = ex.build(src_grid, src_mask, dst_grid, dst_mask)
+                self._regridders[key] = exchange.build(
+                    src_grid, src_mask, dst_grid, dst_mask
+                )
 
         # Initialize components
-        for name, comp in self.components.items():
-            comp.initialize(self)
+        for name, component in self.components.items():
+            component.initialize(self)
             logger.info(f"Initialized {name}")
 
     def _do_exchanges(self, when: str) -> None:
-        for ex in self.exchanges:
-            if ex.when != when:
+        for exchange in self.exchanges:
+            if exchange.when != when:
                 continue
 
-            source = self.components[ex.source]
-            destination = self.components[ex.destination]
-            regridder = self._regridders[(ex.source, ex.destination)]
+            source = self.components[exchange.source]
+            destination = self.components[exchange.destination]
+            regridder = self._regridders[(exchange.source, exchange.destination)]
             source_fields = source.export_fields()
             destination_fields = {}
 
-            for field_name in ex.field_names:
+            for field_name in exchange.field_names:
                 if isinstance(field_name, tuple):
                     flattened = list(
                         chain.from_iterable(
@@ -144,17 +139,20 @@ class Coupler:
             if destination_fields:
                 destination.import_fields(destination_fields)
                 logger.debug(
-                    f"{when.upper()} step: Exchanged {list(destination_fields)} from {ex.source} to {ex.destination}"
+                    f"{when.upper()} step: Exchanged {list(destination_fields)} from {exchange.source} to {exchange.destination}"
                 )
 
     def run(self) -> None:
         self.initialize()
         for n, time, dt in self.clock.iter():
             logger.info(f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} ")
+
             # Pre-step exchanges
             self._do_exchanges("pre")
+
             # Step components in declared order
             for cname in self.runseq:
                 self.components[cname].step(dt, time, self)
+
             # Post-step exchanges
             self._do_exchanges("post")
