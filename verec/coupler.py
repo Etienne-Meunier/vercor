@@ -3,8 +3,6 @@ from itertools import chain
 from typing import Dict, List, Tuple, Union, Callable
 import logging
 
-import numpy as np
-from scipy.fftpack import dct
 from verec.components import Atmosphere, Ocean, SeaIce, Land
 from verec.regridders import (
     BilinearRectilinear,
@@ -23,25 +21,25 @@ logging.basicConfig(level=logging.INFO)
 
 
 def _scalar_field_interpolate(
-    fname: str,
+    field_name: str,
     source_fields: Dict[str, Field],
     regridder: Callable,
 ) -> Field:
-    destination_field = regridder(source_fields[fname])
+    destination_field = regridder(source_fields[field_name])
     return destination_field
 
 
 def _vector_field_interpolate(
-    fname: Tuple[str, str],
+    field_name: Tuple[str, str],
     source_fields: Dict[str, Field],
     regridder: Callable,
 ) -> Tuple[Field, Field]:
-    if len(fname) == 2:
-        src_fname, alt_fname = fname
+    if len(field_name) == 2:
+        src_field_name, alt_field_name = field_name
     else:
         raise ValueError("Vector field name must be a tuple of two strings")
     destination_field_lon, destination_field_lat = regridder(
-        source_fields[src_fname], source_fields[alt_fname]
+        source_fields[src_field_name], source_fields[alt_field_name]
     )
     return (destination_field_lon, destination_field_lat)
 
@@ -107,24 +105,24 @@ class Coupler:
             source_fields = source.export_fields()
             destination_fields = {}
 
-            for fname in ex.field_names:
-                if isinstance(fname, tuple):
+            for field_name in ex.field_names:
+                if isinstance(field_name, tuple):
                     flattened = list(
                         chain.from_iterable(
-                            (item,) if isinstance(item, str) else item for item in fname
+                            (item,) if isinstance(item, str) else item for item in field_name
                         )
                     )
                     if not all(fkey in source_fields for fkey in flattened):
                         raise ValueError(
-                            f"Not all fields in vector {fname} are present in source fields"
+                            f"Not all fields in vector {field_name} are present in source fields"
                         )
 
-                    destination_fields[fname[0]], destination_fields[fname[1]] = (
-                        _vector_field_interpolate(fname, source_fields, regridder)
+                    destination_fields[field_name[0]], destination_fields[field_name[1]] = (
+                        _vector_field_interpolate(field_name, source_fields, regridder)
                     )
                 else:
-                    destination_fields[fname] = _scalar_field_interpolate(
-                        fname, source_fields, regridder
+                    destination_fields[field_name] = _scalar_field_interpolate(
+                        field_name, source_fields, regridder
                     )
 
             if destination_fields:

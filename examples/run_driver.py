@@ -19,14 +19,17 @@ LND = Land("LND", lnd_grid)
 
 # Clock and sequence
 clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=48)
-runseq = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
+run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
 
 # Choose models/components for concurrent execution when MPI is ON
 
 # Coupler
-cpl = Coupler(clock=clock, runseq=runseq)
+cpl = Coupler(clock=clock, runseq=run_sequence)
 for comp in [ATM, OCN, ICE, LND]:
     cpl.register(comp)
+
+# Bilinear interpolation
+bilinear = lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm)
 
 # Exchanges
 # scalar fields (vector field)) 
@@ -36,7 +39,7 @@ cpl.add_exchange(Exchange(
     source="ATM",
     destination="OCN",
     field_names=[("u10m", "v10m"), "SHF", "LHF"],
-    regridder_factory=lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm),
+    regridder_factory=bilinear,
     when="pre",
 ))
 
@@ -45,7 +48,7 @@ cpl.add_exchange(Exchange(
     source="OCN",
     destination="ATM",
     field_names=["SST"],
-    regridder_factory=lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm),
+    regridder_factory=bilinear,
     when="pre",
 ))
 
@@ -54,7 +57,7 @@ cpl.add_exchange(Exchange(
     source="OCN",
     destination="ICE",
     field_names=["SST"],
-    regridder_factory=lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm),
+    regridder_factory=bilinear,
     when="pre",
 ))
 
@@ -63,7 +66,7 @@ cpl.add_exchange(Exchange(
     source="ATM",
     destination="LND",
     field_names=["LHF"],
-    regridder_factory=lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm),
+    regridder_factory=bilinear,
     when="post",
 ))
 
