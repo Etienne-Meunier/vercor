@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Union
-import logging
 from itertools import chain
+from typing import Dict, List, Tuple, Union, Callable
+import logging
 
+import numpy as np
+from scipy.fftpack import dct
 from verec.components import Atmosphere, Ocean, SeaIce, Land
 from verec.regridders import (
     BilinearRectilinear,
@@ -10,6 +12,7 @@ from verec.regridders import (
     XESMFConservative_normed,
 )
 
+from verec.fields import Field
 from verec.clock import Clock
 from verec.exchange import Exchange
 from verec.run_sequence import RunSequence
@@ -17,6 +20,30 @@ from verec.run_sequence import RunSequence
 
 logger = logging.getLogger("VerEC.coupler")
 logging.basicConfig(level=logging.INFO)
+
+
+def _scalar_field_interpolate(
+    fname: str,
+    source_fields: Dict[str, Field],
+    regridder: Callable,
+) -> Field:
+    destination_field = regridder(source_fields[fname])
+    return destination_field
+
+
+def _vector_field_interpolate(
+    fname: Tuple[str, str],
+    source_fields: Dict[str, Field],
+    regridder: Callable,
+) -> Tuple[Field, Field]:
+    if len(fname) == 2:
+        src_fname, alt_fname = fname
+    else:
+        raise ValueError("Vector field name must be a tuple of two strings")
+    destination_field_lon, destination_field_lat = regridder(
+        source_fields[src_fname], source_fields[alt_fname]
+    )
+    return (destination_field_lon, destination_field_lat)
 
 
 @dataclass
@@ -81,28 +108,24 @@ class Coupler:
             destination_fields = {}
 
             for fname in ex.field_names:
-                # Handle case where fname is a tuple (e.g., (src_name, dst_name))
-                src_fname, alt_fname = None, None
                 if isinstance(fname, tuple):
-                    src_fname, alt_fname = fname
-                else:
-                    src_fname = fname
-                    alt_fname = None
+                    flattened = list(
+                        chain.from_iterable(
+                            (item,) if isinstance(item, str) else item for item in fname
+                        )
+                    )
+                    if not all(fkey in source_fields for fkey in flattened):
+                        raise ValueError(
+                            f"Not all fields in vector {fname} are present in source fields"
+                        )
 
-                # Check if either string in tuple is in source_fields
-                if src_fname not in source_fields and (
-                    alt_fname is None or alt_fname not in source_fields
-                ):
-                    continue
-
-                if isinstance(fname, tuple) and alt_fname is not None:
-                    # Regrid vector field
-                    destination_fields[src_fname], destination_fields[alt_fname] = (
-                        regridder(source_fields[src_fname], source_fields[alt_fname])
+                    destination_fields[fname[0]], destination_fields[fname[1]] = (
+                        _vector_field_interpolate(fname, source_fields, regridder)
                     )
                 else:
-                    # Regrid scalar field
-                    destination_fields[src_fname] = regridder(source_fields[src_fname])
+                    destination_fields[fname] = _scalar_field_interpolate(
+                        fname, source_fields, regridder
+                    )
 
             if destination_fields:
                 destination.import_fields(destination_fields)
