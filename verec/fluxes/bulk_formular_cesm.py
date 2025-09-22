@@ -1,0 +1,517 @@
+from matplotlib.pylab import real, size
+import numpy as np
+from verec.fluxes.utilities import qsat, psimhu, psixhu, cdn
+
+
+def shr_flux_atmOcn(
+    settings,
+    state,
+    mask: np.ndarray,
+    zbot: np.ndarray,
+    ubot: np.ndarray,
+    vbot: np.ndarray,
+    thbot: np.ndarray,
+    qbot: np.ndarray,
+    rbot: np.ndarray,
+    tbot: np.ndarray,
+    us: np.ndarray,
+    vs: np.ndarray,
+    ts: np.ndarray,
+    use_coldair_outbreak_mod: bool = False,
+    missval: float = 0.0,
+):
+    """
+    Atm-Ocean flux calculation
+
+    - all fluxes are positive downward
+    - net heat flux = net sw + lw up + lw down + sen + lat
+    - here, tstar = <WT>/U*, and qstar = <WQ>/U*.
+    - wind speeds should all be above a minimum speed (eg. 1.0 m/s)
+
+    Assumptions:
+    ------------
+        Large:
+            - Neutral 10m drag coeff: cdn = .0027/U10 + .000142 + .0000764 U10
+            - Neutral 10m stanton number: ctn = .0327 sqrt(cdn), unstable
+                                            ctn = .0180 sqrt(cdn), stable
+            - Neutral 10m dalton number:  cen = .0346 sqrt(cdn)
+            - The saturation humidity of air at T(K): qsat(T)  (kg/m^3)
+
+    Arguments:
+    ---------
+        mask (:obj:`ndarray`): ocn domain mask       0 <=> out of domain
+        zbot (:obj:`ndarray`): atm level height      (m)
+        ubot (:obj:`ndarray`): atm u wind            (m/s)
+        vbot (:obj:`ndarray`): atm v wind            (m/s)
+        thbot(:obj:`ndarray`): atm potential T       (K)
+        qbot (:obj:`ndarray`): atm specific humidity (kg/kg)
+        rbot (:obj:`ndarray`): atm air density       (kg/m^3)
+        tbot (:obj:`ndarray`): atm T                 (K)
+        us   (:obj:`ndarray`): ocn u-velocity        (m/s)
+        vs   (:obj:`ndarray`): ocn v-velocity        (m/s)
+        ts   (:obj:`ndarray`): ocn temperature       (K)
+
+        seq_flux_atmocn_minwind (float):  minimum wind speed for atmocn      (m/s)
+        missval (float): masked value (optional)
+
+    Returns:
+    -------
+        sen  (:obj:`ndarray`): heat flux: sensible    (W/m^2)
+        lat  (:obj:`ndarray`): heat flux: latent      (W/m^2)
+        lwup (:obj:`ndarray`): heat flux: lw upward   (W/m^2)
+        evap (:obj:`ndarray`): water flux: evap  ((kg/s)/m^2)
+        taux (:obj:`ndarray`): surface stress, zonal      (N)
+        tauy (:obj:`ndarray`): surface stress, maridional (N)
+        tref (:obj:`ndarray`): diag:  2m ref height T     (K)
+        qref (:obj:`ndarray`): diag:  2m ref humidity (kg/kg)
+        duu10n(:obj:`ndarray`): diag: 10m wind speed squared (m/s)^2
+
+        ustar_sv(:obj:`ndarray`): diag: ustar (optional)
+        re_sv   (:obj:`ndarray`): diag: sqrt of exchange coefficient (water) (optional)
+        ssq_sv  (:obj:`ndarray`): diag: sea surface humidity  (kg/kg) (optional)
+
+    Revision history:
+        2002-Jun-10 - B. Kauffman - code migrated from cpl5 to cpl6
+        2003-Apr-02 - B. Kauffman - taux & tauy now utilize ocn velocity
+        2003-Apr-02 - B. Kauffman - tref,qref,duu10n mods as per Bill Large
+        2006-Nov-07 - B. Kauffman - code migrated from cpl6 to share
+
+    Local variables:
+    ----------------
+        vmag    surface wind magnitude   (m/s)
+        ssq     sea surface humidity     (kg/kg)
+        delt    potential T difference   (K)
+        delq    humidity difference      (kg/kg)
+        stable  stability factor
+        rdn     sqrt of neutral exchange coeff (momentum)
+        rhn     sqrt of neutral exchange coeff (heat)
+        ren     sqrt of neutral exchange coeff (water)
+        rd      sqrt of exchange coefficient (momentum)
+        rh      sqrt of exchange coefficient (heat)
+        re      sqrt of exchange coefficient (water)
+        ustar   ustar
+        real(r8)     :: ustar_prev
+        qstar   qstar
+        tstar   tstar
+        hol     H (at zbot) over L
+        xsq     ?
+        xqq     ?
+
+        psimh   stability function at zbot (momentum)
+        psixh   stability function at zbot (heat and water)
+        psix2   stability function at ztref reference height
+        alz     ln(zbot/zref)
+        al2     ln(zref/ztref)
+        u10n    10m neutral wind
+        tau     stress at zbot
+        cp      specific heat of moist air
+        fac     vertical interpolation factor
+        spval   local missing value
+
+        --- local functions --------------------------------
+        qsat    function: the saturation humididty of air (kg/m^3)
+        ++ Large only (formula v*=[c4/U10+c5+c6*U10]*U10 in Large et al. 1994)
+        cdn     function: neutral drag coeff at 10m
+        ++ Large only (stability functions)
+        psimhu  function: unstable part of psimh
+        psixhu  function: unstable part of psimx
+        Umps    dummy arg ~ wind velocity (m/s)
+        Tk      dummy arg ~ temperature (K)
+        xd      dummy arg ~ ?
+
+        --- for cold air outbreak calc --------------------------------
+        tdiff(nMax)                tbot - ts
+        vscl
+
+    """
+
+    # reference height           (m)
+    zref = 10.0
+    # reference height for air T (m)
+    ztref = 2.0
+    # maximum wind scaling for flux
+    maxscl = 2.0
+    # start t-ts for scaling
+    td0 = -10.0
+    alpha = 1.4
+
+    # These control convergence of the iterative flux calculation
+    # (For Large and Pond scheme only; not UA or COARE).
+    flux_con_tol = 0.0
+    flux_con_max_iter = 2
+
+    # if (debug > 0 .and. s_loglev > 0) write(s_logunit,F00) "enter"
+
+    taux = np.full_like(mask, missval)
+    tauy = np.full_like(mask, missval)
+    sen = np.full_like(mask, missval)
+    lat = np.full_like(mask, missval)
+    lwup = np.full_like(mask, missval)
+    evap = np.full_like(mask, missval)
+    tref = np.full_like(mask, missval)
+    qref = np.full_like(mask, missval)
+    u10n = np.full_like(mask, missval)
+    duu10n = np.full_like(mask, missval)
+    rh = np.full_like(mask, missval)
+    psixh = np.full_like(mask, missval)
+    hol = np.full_like(mask, missval)
+    ustar_sv = np.full_like(mask, missval)
+    re_sv = np.full_like(mask, missval)
+    ssq_sv = np.full_like(mask, missval)
+    re = np.full_like(mask, missval)
+
+    # --- for cold air outbreak calc --------------------------------
+    tdiff = tbot[...] - ts[...]
+
+    al2 = np.log(zref / ztref)
+
+    # --- compute some needed quantities ---
+    vmag = np.maximum(
+        settings.umin_ocean,
+        np.sqrt((ubot[...] - us[...]) ** 2 + (vbot[...] - vs[...]) ** 2),
+    )
+    if use_coldair_outbreak_mod:
+        # Cold Air Outbreak Modification:
+        # Increase windspeed for negative tbot-ts
+        # based on Mahrt & Sun 1995,MWR
+        coldair_outbreak_mask = tdiff < td0
+        vscl = np.minimum(
+            1.0 + alpha * (np.abs(tdiff[...] - td0) ** 0.5 / np.abs(vmag[...])),
+            maxscl,
+        )
+        vmag = np.where(coldair_outbreak_mask[...], vmag[...] * vscl[...], vmag[...])
+
+    ssq = 0.98 * qsat(ts[...]) / rbot[...]  # sea surf hum (kg/kg)
+    delt = thbot[...] - ts[...]  # pot temp diff (K)
+    delq = qbot[...] - ssq  # spec hum dif (kg/kg)
+    alz = np.log(zbot[...] / zref)
+    cp = settings.cpdair * (1.0 + settings.cpvir * ssq)
+
+    # ------------------------------------------------------------
+    # first estimate of Z/L and ustar, tstar and qstar
+    # ------------------------------------------------------------
+    # --- neutral coefficients, z/L = 0.0 ---
+    stable = 0.5 + 0.5 * np.sign(delt[...])
+    rdn = np.sqrt(cdn(vmag[...]))
+    rhn = (1.0 - stable[...]) * 0.0327 + stable[...] * 0.018
+    # (1.0-stable) * chxcdu + stable * chxcds
+    ren = np.ones_like(rdn) * 0.0346  # cexcd
+
+    # --- ustar, tstar, qstar ---
+    ustar = rdn[...] * vmag[...]
+    tstar = rhn[...] * delt[...]
+    qstar = ren * delq[...]
+    ustar_prev = ustar[...] * 2.0
+    iter = 0
+    while (
+        np.any(np.abs((ustar[...] - ustar_prev[...]) / ustar[...]) > flux_con_tol)
+        and iter < flux_con_max_iter
+    ):
+        iter += 1
+        ustar_prev = ustar[...]
+        # --- compute stability & evaluate all stability functions ---
+        hol = (
+            settings.karman
+            * settings.gravity
+            * zbot[...]
+            * (tstar[...] / thbot[...] + qstar / (1.0 / settings.zvir + qbot[...]))
+            / ustar[...] ** 2
+        )
+        hol = np.minimum(np.abs(hol[...]), 10.0) * np.sign(hol[...])
+        stable = 0.5 + 0.5 * np.sign(hol[...])
+        xsq = np.maximum(np.sqrt(np.abs(1.0 - 16.0 * hol[...])), 1.0)
+        xqq = np.sqrt(xsq[...])
+        psimh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psimhu(xqq)
+        psixh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq)
+
+        # --- shift wind speed using old coefficient ---
+        rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz - psimh[...]))
+        u10n = vmag[...] * rd[...] / rdn[...]
+
+        # --- update transfer coeffs at 10m and neutral stability ---
+        rdn = np.sqrt(cdn(u10n[...]))
+        ren = 0.0346  # cexcd
+        rhn = (1.0 - stable[...]) * 0.0327 + stable[...] * 0.018
+        # (1.0-stable) * chxcdu + stable * chxcds
+
+        # --- shift all coeffs to measurement height and stability ---
+        rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz[...] - psimh[...]))
+        rh = rhn[...] / (1.0 + rhn[...] / settings.karman * (alz[...] - psixh[...]))
+        re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
+
+        # --- update ustar, tstar, qstar using updated, shifted coeffs --
+        ustar = rd * vmag[...]
+        tstar = rh * delt[...]
+        qstar = re[...] * delq[...]
+
+    if iter < 1:
+        print(ustar, ustar_prev, flux_con_tol, flux_con_max_iter)
+        raise RuntimeError("No iterations performed ")
+
+    # ------------------------------------------------------------
+    # compute the fluxes
+    # ------------------------------------------------------------
+
+    tau = rbot[...] * ustar[...] * ustar[...] * mask[...]
+
+    # --- momentum flux ---
+    # x surface stress (N)
+    taux[...] = tau[...] * (ubot[...] - us[...]) / vmag[...] * mask[...]
+    # y surface stress (N)
+    tauy[...] = tau[...] * (vbot[...] - vs[...]) / vmag[...] * mask[...]
+
+    # --- heat flux ---
+    # sensible heat flux  (W/m^2)
+    sen[...] = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
+    # latent heat flux  (W/m^2)
+    lat[...] = settings.latvap * tau[...] * qstar[...] / ustar[...] * mask[...]
+    # long-wave upward heat flux  (W/m^2)
+    lwup[...] = -settings.stefBoltz * ts[...] ** 4 * mask[...]
+
+    # --- water flux ---
+    # evaporative water flux ((kg/s)/m^2)
+    evap[...] = lat[...] / settings.latvap * mask[...]
+
+    # ------------------------------------------------------------
+    # compute diagnositcs: 2m ref T & Q, 10m wind speed squared
+    # ------------------------------------------------------------
+    hol = hol[...] * ztref / zbot[...] * mask[...]
+    xsq = np.maximum(1.0, np.sqrt(np.abs(1.0 - 16.0 * hol[...]))) * mask[...]
+    xqq = np.sqrt(xsq[...]) * mask
+    psix2 = (
+        -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq) * mask[...]
+    )
+    fac = (
+        (rh[...] / settings.karman)
+        * (alz[...] + al2 - psixh[...] + psix2[...])
+        * mask[...]
+    )
+    # 2m reference height temperature (K)
+    tref[...] = thbot[...] - delt[...] * fac[...] * mask[...]
+    tref[...] = tref[...] - 0.01 * ztref * mask[...]  # pot temp to temp correction
+    fac[...] = (
+        (re / settings.karman) * (alz[...] + al2 - psixh[...] + psix2[...]) * mask[...]
+    )
+    # 2m reference height humidity (kg/kg)
+    qref[...] = qbot[...] - delq[...] * fac[...] * mask[...]
+    # 10m wind speed squared (m/s)^2
+    duu10n[...] = u10n[...] * u10n[...] * mask[...]  # 10m wind speed squared
+
+    # ------------------------------------------------------------
+    # optional diagnostics, needed for water tracer fluxes (dcn)
+    # ------------------------------------------------------------
+    ustar_sv[...] = ustar[...] * mask[...]
+    re_sv[...] = re * mask[...]
+    ssq_sv[...] = ssq[...] * mask[...]
+
+    return  (sen, lat, lwup, evap, taux, tauy, tref, qref, duu10n, ustar, tstar, qstar)
+
+
+def shr_flux_atmIce(
+    settings,
+    state,
+    mask: np.ndarray,
+    zbot: np.ndarray,
+    ubot: np.ndarray,
+    vbot: np.ndarray,
+    thbot: np.ndarray,
+    qbot: np.ndarray,
+    rbot: np.ndarray,
+    tbot: np.ndarray,
+    ts: np.ndarray,
+    missval: float = 0.0,
+):
+    """
+    Atm-SeaIce flux calculation
+
+    Arguments:
+    ----------
+        mask (:obj:`ndarray`): 0 <=> cell NOT in model domain
+        zbot (:obj:`ndarray`): atm level height  (m)
+        ubot (:obj:`ndarray`): atm u wind     (m/s)
+        vbot (:obj:`ndarray`): atm v wind     (m/s)
+        thbot(:obj:`ndarray`): atm potential T   (K)
+        qbot (:obj:`ndarray`): atm specific humidity (kg/kg)
+        rbot (:obj:`ndarray`): atm air density   (kg/m^3)
+        tbot (:obj:`ndarray`): atm T       (K)
+        ts   (:obj:`ndarray`): surface temperature
+
+    Returns:
+    --------
+        sen  (:obj:`ndarray`): sensible      heat flux  (W/m^2)
+        lat  (:obj:`ndarray`): latent        heat flux  (W/m^2)
+        lwup (:obj:`ndarray`): long-wave upward heat flux  (W/m^2)
+        evap (:obj:`ndarray`): evaporative water flux ((kg/s)/m^2)
+        taux (:obj:`ndarray`): x surface stress (N)
+        tauy (:obj:`ndarray`): y surface stress (N)
+        tref (:obj:`ndarray`): 2m reference height temperature
+        qref (:obj:`ndarray`): 2m reference height humidity
+
+    Local variables:
+    ----------------
+        vmag    surface wind magnitude   (m/s)
+        thvbot  virtual temperature      (K)
+        ssq     sea surface humidity     (kg/kg)
+        delt    potential T difference   (K)
+        delq    humidity difference      (kg/kg)
+        stable  stability factor
+        rdn     sqrt of neutral exchange coefficient (momentum)
+        rhn     sqrt of neutral exchange coefficient (heat)
+        ren     sqrt of neutral exchange coefficient (water)
+        rd      sqrt of exchange coefficient (momentum)
+        rh      sqrt of exchange coefficient (heat)
+        re      sqrt of exchange coefficient (water)
+        ustar   ustar
+        qstar   qstar
+        tstar   tstar
+        hol     H (at zbot) over L
+        xsq     temporary variable
+        xqq     temporary variable
+        psimh   stability function at zbot (momentum)
+        psixh   stability function at zbot (heat and water)
+        alz     ln(zbot/z10)
+        ltheat  latent heat for surface
+        tau     stress at zbot
+        cp      specific heat of moist air
+
+        bn      exchange coef funct for interpolation
+        bh      exchange coef funct for interpolation
+        fac     interpolation factor
+        ln0     log factor for interpolation
+        ln3     log factor for interpolation
+    """
+
+    umin = 1.0  # minimum wind speed (m/s)
+    zref = 10.0  # ref height           ~ m
+    ztref = 2.0  # ref height for air T ~ m
+    # spval  = shr_const_spval # special value
+    zzsice = 0.0005  # ice surface roughness
+
+    taux = np.full_like(mask, missval)
+    tauy = np.full_like(mask, missval)
+    sen = np.full_like(mask, missval)
+    lat = np.full_like(mask, missval)
+    lwup = np.full_like(mask, missval)
+    evap = np.full_like(mask, missval)
+    tref = np.full_like(mask, missval)
+    qref = np.full_like(mask, missval)
+
+    # --- define some needed variables ---
+    vmag = np.maximum(settings.umin_ice, np.sqrt(ubot[...] ** 2 + vbot[...] ** 2))
+    thvbot = thbot[...] * (1.0 + settings.zvir * qbot[...])  # virtual pot temp (K)
+    ssq = qsat(ts[...]) / rbot[...]  # sea surf hum (kg/kg)
+    delt = thbot[...] - ts[...]  # pot temp diff (K)
+    delq = qbot[...] - ssq[...]  # spec hum dif (kg/kg)
+    alz = np.log(zbot[...] / zref)
+    cp = settings.cpdair * (1.0 + settings.cpvir * ssq[...])
+    ltheat = settings.latvap + settings.latice
+
+    # ----------------------------------------------------------
+    # first estimate of Z/L and ustar, tstar and qstar
+    # ----------------------------------------------------------
+
+    # --- neutral coefficients, z/L = 0.0 ---
+    rdn = settings.karman / np.log(zref / zzsice)
+    rhn = rdn
+    ren = rdn
+
+    # --- ustar,tstar,qstar ----
+    ustar = rdn * vmag[...]
+    tstar = rhn * delt[...]
+    qstar = ren * delq[...]
+
+    # --- compute stability & evaluate all stability functions ---
+    hol = (
+        settings.karman
+        * settings.gravity
+        * zbot[...]
+        * (tstar[...] / thvbot[...] + qstar[...] / (1.0 / settings.zvir + qbot[...]))
+        / ustar**2
+    )
+    hol = np.minimum(abs(hol[...]), 10.0) * np.sign(hol[...])
+    stable = 0.5 + 0.5 * np.sign(hol[...])
+    xsq = np.maximum(np.sqrt(abs(1.0 - 16.0 * hol[...])), 1.0)
+    xqq = np.sqrt(xsq[...])
+    psimh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psimhu(xqq[...])
+    psixh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq[...])
+
+    # --- shift all coeffs to measurement height and stability ---
+    rd = rdn / (1.0 + rdn / settings.karman * (alz[...] - psimh[...]))
+    rh = rhn / (1.0 + rhn / settings.karman * (alz[...] - psixh[...]))
+    re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
+
+    # --- update ustar, tstar, qstar w/ updated, shifted coeffs --
+    ustar = rd * vmag[...]
+    tstar = rh * delt[...]
+    qstar = re * delq[...]
+
+    # ----------------------------------------------------------
+    # iterate to converge on Z/L, ustar, tstar and qstar
+    # ----------------------------------------------------------
+
+    # --- compute stability & evaluate all stability functions ---
+    hol = (
+        settings.karman
+        * settings.gravity
+        * zbot[...]
+        * (tstar[...] / thvbot[...] + qstar[...] / (1.0 / settings.zvir + qbot[...]))
+        / ustar**2
+    )
+    hol = np.minimum(np.abs(hol[...]), 10.0) * np.sign(hol[...])
+    stable = 0.5 + 0.5 * np.sign(hol[...])
+    xsq = np.maximum(np.sqrt(np.abs(1.0 - 16.0 * hol[...])), 1.0)
+    xqq = np.sqrt(xsq[...])
+    psimh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psimhu(xqq[...])
+    psixh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq[...])
+
+    # --- shift all coeffs to measurement height and stability ---
+    rd = rdn / (1.0 + rdn / settings.karman * (alz[...] - psimh[...]))
+    rh = rhn / (1.0 + rhn / settings.karman * (alz[...] - psixh[...]))
+    re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
+
+    # --- update ustar, tstar, qstar w/ updated, shifted coeffs --
+    ustar = rd * vmag[...]
+    tstar = rh * delt[...]
+    qstar = re * delq[...]
+
+    # ----------------------------------------------------------
+    # compute the fluxes
+    # ----------------------------------------------------------
+
+    tau = rbot[...] * ustar[...] * ustar[...]
+
+    # --- momentum flux ---
+    taux[...] = tau * ubot[...] / vmag[...] * mask[...]
+    tauy[...] = tau * vbot[...] / vmag[...] * mask[...]
+
+    # --- heat flux ---
+    sen[...] = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
+    lat[...] = ltheat * tau[...] * qstar[...] / ustar[...] * mask[...]
+    lwup[...] = -settings.stefBoltz * ts[...] ** 4 * mask[...]
+
+    # --- water flux ---
+    evap[...] = lat[...] / ltheat * mask[...]
+
+    # ----------------------------------------------------------
+    # compute diagnostic: 2m reference height temperature
+    # ----------------------------------------------------------
+
+    # Compute function of exchange coefficients. Assume that
+    # cn = rdn*rdn, cm=rd*rd and ch=rh*rd, and therefore
+    # 1/sqrt(cn[...])=1/rdn and sqrt(cm[...])/ch[...]=1/rh
+    bn = settings.karman / rdn
+    bh = settings.karman / rh
+
+    # Interpolation factor for stable and unstable cases
+    ln0 = np.log(1.0 + (ztref / zbot[...]) * (np.exp(bn) - 1.0))
+    ln3 = np.log(1.0 + (ztref / zbot[...]) * (np.exp(bn - bh) - 1.0))
+    fac = (ln0[...] - ztref / zbot[...] * (bn - bh)) / bh * stable[...] + (
+        ln0[...] - ln3[...]
+    ) / bh * (1.0 - stable[...])
+    fac = np.minimum(np.maximum(fac, 0.0), 1.0)
+
+    # Actual interpolation
+    tref[...] = ts[...] + (tbot[...] - ts[...]) * fac[...] * mask[...]
+    qref[...] = qbot[...] - delq[...] * fac[...] * mask[...]
+
+    return (sen, lat, lwup, evap, taux, tauy, tref, qref, ustar, tstar, qstar)

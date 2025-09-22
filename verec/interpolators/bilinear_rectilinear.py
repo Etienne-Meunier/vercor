@@ -275,7 +275,9 @@ class Bilinear:
         """
         src = np.asarray(src, dtype=float)
         if src.shape != (self.nlat, self.nlon):
-            raise ValueError(f"src field must have shape (nlat,nlon)=({self.nlat},{self.nlon})")
+            raise ValueError(
+                f"src field must have shape (nlat,nlon)=({self.nlat},{self.nlon})"
+            )
         valid = self._ensure_src_mask(src, src_mask)
 
         # Gather corners
@@ -435,7 +437,10 @@ class Bilinear:
         """
         u_src = np.asarray(u_src, dtype=float)
         v_src = np.asarray(v_src, dtype=float)
-        if u_src.shape != (self.nlat, self.nlon) or v_src.shape != (self.nlat, self.nlon):
+        if u_src.shape != (self.nlat, self.nlon) or v_src.shape != (
+            self.nlat,
+            self.nlon,
+        ):
             raise ValueError(
                 f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon})"
             )
