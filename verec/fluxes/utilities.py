@@ -62,22 +62,21 @@ def compute_z_level(
         The top level of the atmosphere is excluded
 
     Reference:
-        - https://www.ecmwf.int/sites/default/files/elibrary/2015/
-        9210-part-iii-dynamics-and-numerical-procedures.pdf
-        - https://confluence.ecmwf.int/display/CKB/
-        ERA5%3A+compute+pressure+and+geopotential+on+model+levels%2C+geopotential+height+and+geometric+height
+        - https://www.ecmwf.int/sites/default/files/elibrary/2015/9210-part-iii-dynamics-and-numerical-procedures.pdf
+        - https://confluence.ecmwf.int/display/ECC/compute_geopotential_on_ml.py
 
     Returns:
-        :obj:`ndarray`: Altitude of the atmospheric near surface layer (second IFS level)
+        :obj:`ndarray`: Altitudes of the atmospheric full model levels [m]
     """
 
     # virtual temperature (K)
     tv = t[...] * (1.0 + settings.zvir * q[...])
 
-    # compute geopotential for 2 lowermost (near-surface) model levels
+    # dlog_p[0] = np.log(ph[:, :, 1:] / 0.1)
+    # alpha[0] = np.log(2)
     dlog_p = np.log(ph[:, :, 1:] / ph[:, :, :-1])
     alpha = 1.0 - ((ph[:, :, :-1] / (ph[:, :, 1:] - ph[:, :, :-1])) * dlog_p)
-    tv = tv * settings.rdair
+    tv *= settings.rdair
 
     # zh is the geopotential of 'half-levels'
     # integrate zh to next half level
@@ -90,9 +89,9 @@ def compute_z_level(
     increment_zh = np.insert(zh, 0, 0, axis=2)
     zf = np.flip(tv * alpha, axis=2) + increment_zh[:, :, :-1]
 
-    alt = settings.radius * zf / settings.grav / (settings.radius - zf / settings.grav)
+    alt = settings.earth_radius * zf / settings.grav / (settings.earth_radius - zf / settings.grav)
 
-    return alt[:, :, -1]
+    return alt[:, :, :]
 
 
 def cdn(umps: np.ndarray) -> np.ndarray:

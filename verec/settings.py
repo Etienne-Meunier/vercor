@@ -35,4 +35,5 @@ SETTINGS = {
     "cpdair": Setting(1.00464e3, float, "specific heat of dry air [J/K/kg]"),
     "umin_ocean": Setting(0.5, float, "minimum atm. wind speed over ocean surface [m/s]"),
     "umin_ice": Setting(1., float, "minimum atm. wind speed over ice surface [m/s]"),
+    "earth_radius": Setting(6.371e6, float, "Earth radius [m]"),
 }

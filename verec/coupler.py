@@ -10,6 +10,7 @@ from verec.clock import Clock
 from verec.exchange import Exchange
 from verec.regridders.base import Regridder
 from verec.run_sequence import RunSequence
+from verec.settings import SETTINGS
 
 
 logger = logging.getLogger("VerEC.coupler")

@@ -1,4 +1,3 @@
-from matplotlib.pylab import real, size
 import numpy as np
 from verec.fluxes.utilities import qsat, psimhu, psixhu, cdn
 
@@ -129,9 +128,9 @@ def shr_flux_atmOcn(
     zref = 10.0
     # reference height for air T (m)
     ztref = 2.0
-    # maximum wind scaling for flux
+    # maximum wind scaling for flux (m/s)
     maxscl = 2.0
-    # start t-ts for scaling
+    # start t-ts for scaling (K)
     td0 = -10.0
     alpha = 1.4
 
