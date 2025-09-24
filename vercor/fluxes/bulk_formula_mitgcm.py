@@ -1,7 +1,7 @@
 from typing import Tuple
 import numpy as np
 
-from verec.components import Component
+from vercor.components import Component
 
 
 def bulkf_formula_lanl(

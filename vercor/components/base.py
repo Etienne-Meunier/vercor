@@ -1,8 +1,8 @@
 import abc
 from typing import Dict
 from dataclasses import dataclass, field
-from verec.grid import RectilinearGrid
-from verec.fields import Field
+from vercor.grid import RectilinearGrid
+from vercor.fields import Field
 
 
 @dataclass

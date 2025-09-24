@@ -1,5 +1,5 @@
 import numpy as np
-from verec.fluxes.utilities import qsat, psimhu, psixhu, cdn
+from vercor.fluxes.utilities import qsat, psimhu, psixhu, cdn
 
 
 def shr_flux_atmOcn(

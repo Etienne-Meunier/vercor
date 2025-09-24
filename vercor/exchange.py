@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, List, Tuple, Union
 
-from verec.regridders.base import Regridder
+from vercor.regridders.base import Regridder
 
 
 @dataclass

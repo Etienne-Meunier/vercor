@@ -1,5 +1,5 @@
 [project]
-name = "verec"
+name = "vercor"
 version = "0.1.0"
 authors = [
   { name = "Roman Nuterman" }
@@ -44,7 +44,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["verec"]
+source = ["vercor"]
 
 [tool.mypy]
 warn_return_any = true

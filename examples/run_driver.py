@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from verec import Coupler, Clock, Exchange
-from verec.coupler import RunSequence
-from verec.components import Atmosphere, Ocean, SeaIce, Land
-from verec.regridders import BilinearRectilinear, make_rectilinear_grid
+from vercor import Coupler, Clock, Exchange
+from vercor.coupler import RunSequence
+from vercor.components import Atmosphere, Ocean, SeaIce, Land
+from vercor.regridders import BilinearRectilinear, make_rectilinear_grid
 
 # Build grids
 atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)

@@ -1,5 +1,5 @@
 import numpy as np
-from verec.regridders.bilinear import BilinearRectilinear
+from vercor.regridders.bilinear import BilinearRectilinear
 
 
 def test_bilinear_rectilinear(atm_grid, ocn_grid):

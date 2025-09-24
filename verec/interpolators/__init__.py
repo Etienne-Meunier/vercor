@@ -1,1 +1,0 @@
-from verec.interpolators.bilinear_rectilinear import Bilinear

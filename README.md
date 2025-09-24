@@ -1,2 +1,2 @@
-# VerEC
-Versatile Earth system Coupler (VerEC)
+# VerCOR
+Versatile Earth system COupleR (VerCOR)

@@ -1,5 +1,5 @@
 import pytest
-from verec.regridders import make_rectilinear_grid
+from vercor.regridders import make_rectilinear_grid
 
 
 @pytest.fixture

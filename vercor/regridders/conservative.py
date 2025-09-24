@@ -1,5 +1,5 @@
-from verec.fields import Field
-from verec.regridders.base import Regridder
+from vercor.fields import Field
+from vercor.regridders.base import Regridder
 
 
 class XESMFConservative_normed(Regridder):

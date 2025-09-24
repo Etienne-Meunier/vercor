@@ -3,17 +3,17 @@ from itertools import chain
 from typing import Dict, List, Tuple, Union
 import logging
 
-from verec.components import Atmosphere, Ocean, SeaIce, Land
+from vercor.components import Atmosphere, Ocean, SeaIce, Land
 
-from verec.fields import Field
-from verec.clock import Clock
-from verec.exchange import Exchange
-from verec.regridders.base import Regridder
-from verec.run_sequence import RunSequence
-from verec.settings import SETTINGS
+from vercor.fields import Field
+from vercor.clock import Clock
+from vercor.exchange import Exchange
+from vercor.regridders.base import Regridder
+from vercor.run_sequence import RunSequence
+from vercor.settings import SETTINGS
 
 
-logger = logging.getLogger("VerEC.coupler")
+logger = logging.getLogger("VerCOR.coupler")
 logging.basicConfig(level=logging.INFO)
 
 

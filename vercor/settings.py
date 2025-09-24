@@ -1,7 +1,7 @@
 from collections import namedtuple
 
 """
-Constants and settings for verec.
+Constants and settings for vercor.
 Adapted from Veros: https://github.com/team-ocean/veros/blob/main/veros/settings.py
 """
 #

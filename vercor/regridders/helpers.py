@@ -1,5 +1,5 @@
 import numpy as np
-from verec.grid import RectilinearGrid
+from vercor.grid import RectilinearGrid
 
 
 def make_rectilinear_grid(

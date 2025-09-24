@@ -1,8 +1,8 @@
 from typing import Tuple, Union
 import numpy as np
-from verec.fields import Field
-from verec.regridders.base import Regridder
-from verec.interpolators.bilinear_rectilinear import Bilinear
+from vercor.fields import Field
+from vercor.regridders.base import Regridder
+from vercor.interpolators.bilinear_rectilinear import Bilinear
 
 
 class XESMFBilinearRectilinear(Regridder):
