@@ -1,16 +1,21 @@
+from typing import Any
 import numpy as np
+from numpy.typing import NDArray
 
 
-def qsat(tk: np.ndarray) -> np.ndarray:
+def qsat(tk: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """The saturation humidity of air (kg/m^3)
 
     Argument:
         tk (:obj:`ndarray`): temperature (K)
     """
-    return 640380.0 / np.exp(5107.4 / tk)
+    result: NDArray[np.floating[Any]] = 640380.0 / np.exp(5107.4 / tk)
+    return result
 
 
-def qsat_august_eqn(ps: np.ndarray, tk: np.ndarray) -> np.ndarray:
+def qsat_august_eqn(
+    ps: NDArray[np.floating[Any]], tk: NDArray[np.floating[Any]]
+) -> NDArray[np.floating[Any]]:
     """Saturated specific humidity (kg/kg)
 
     Arguments:
@@ -26,10 +31,17 @@ def qsat_august_eqn(ps: np.ndarray, tk: np.ndarray) -> np.ndarray:
         using a three-year climatology of ECMWF analyses,
         Journal of Marine Systems, 6, p. 363-380.
     """
-    return 0.622 / ps * 10 ** (9.4051 - 2353.0 / tk) * 133.322
+    result: NDArray[np.floating[Any]] = (
+        0.622 / ps * 10 ** (9.4051 - 2353.0 / tk) * 133.322
+    )
+    return result
 
 
-def get_press_levs(sp: np.ndarray, hya: np.ndarray, hyb: np.ndarray) -> np.ndarray:
+def get_press_levs(
+    sp: NDArray[np.floating[Any]],
+    hya: NDArray[np.floating[Any]],
+    hyb: NDArray[np.floating[Any]],
+) -> NDArray[np.floating[Any]]:
     """Compute pressure levels
 
     Arguments:
@@ -41,15 +53,19 @@ def get_press_levs(sp: np.ndarray, hya: np.ndarray, hyb: np.ndarray) -> np.ndarr
         :obj:`ndarray`
     """
 
-    return (
+    result: NDArray[np.floating[Any]] = (
         hya[np.newaxis, np.newaxis, :]
         + hyb[np.newaxis, np.newaxis, :] * sp[:, :, np.newaxis]
     )
+    return result
 
 
 def compute_z_level(
-    settings, t: np.ndarray, q: np.ndarray, ph: np.ndarray
-) -> np.ndarray:
+    settings,
+    t: NDArray[np.floating[Any]],
+    q: NDArray[np.floating[Any]],
+    ph: NDArray[np.floating[Any]],
+) -> NDArray[np.floating[Any]]:
     """Computes the altitudes at ECMWF Integrated Forecasting System
     (ECMWF-IFS) model half- and full-levels (for 137 levels model reanalysis: L137)
 
@@ -89,12 +105,17 @@ def compute_z_level(
     increment_zh = np.insert(zh, 0, 0, axis=2)
     zf = np.flip(tv * alpha, axis=2) + increment_zh[:, :, :-1]
 
-    alt = settings.earth_radius * zf / settings.grav / (settings.earth_radius - zf / settings.grav)
+    alt: NDArray[np.floating[Any]] = (
+        settings.earth_radius
+        * zf
+        / settings.grav
+        / (settings.earth_radius - zf / settings.grav)
+    )
 
     return alt[:, :, :]
 
 
-def cdn(umps: np.ndarray) -> np.ndarray:
+def cdn(umps: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """Neutral drag coeff at 10m
 
     Argument:
@@ -103,20 +124,23 @@ def cdn(umps: np.ndarray) -> np.ndarray:
     return 0.0027 / umps + 0.000142 + 0.0000764 * umps
 
 
-def psimhu(xd: np.ndarray) -> np.ndarray:
+def psimhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """Unstable part of psimh
 
     Argument:
         xd (:obj:`ndarray`): model level height devided by Obukhov length
     """
-    return (
+
+    result: NDArray[np.floating[Any]] = (
         np.log((1.0 + xd * (2.0 + xd)) * (1.0 + xd * xd) / 8.0)
         - 2.0 * np.arctan(xd)
         + 1.571
     )
 
+    return result
 
-def psixhu(xd: np.ndarray) -> np.ndarray:
+
+def psixhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """Unstable part of psimx
 
     Argument:

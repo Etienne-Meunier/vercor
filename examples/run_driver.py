@@ -79,7 +79,6 @@ cpl.add_exchange(Exchange(
     when="post",
 ))
 
-# Run
 cpl.run()
 
 # Inspect a few fields

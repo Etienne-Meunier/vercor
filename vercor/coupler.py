@@ -3,6 +3,7 @@ from itertools import chain
 from typing import Dict, List, Tuple, Union
 import logging
 
+from vercor.settings import VercorSettings
 from vercor.components import Atmosphere, Ocean, SeaIce, Land
 
 from vercor.fields import Field
@@ -10,7 +11,6 @@ from vercor.clock import Clock
 from vercor.exchange import Exchange
 from vercor.regridders.base import Regridder
 from vercor.run_sequence import RunSequence
-from vercor.settings import SETTINGS
 
 
 logger = logging.getLogger("VerCOR.coupler")
@@ -61,6 +61,7 @@ class Coupler:
         default_factory=dict
     )
     exchanges: List[Exchange] = field(default_factory=list)
+    settings: VercorSettings = field(default_factory=VercorSettings)
     _regridders: Dict[
         Tuple[str, str],
         Regridder,
@@ -104,17 +105,23 @@ class Coupler:
             component.initialize(self)
             logger.info(f"Initialized {name}")
 
-    def _do_exchanges(self, component: Union[Atmosphere, Ocean, SeaIce, Land], when: str) -> None:
+    def _do_exchanges(
+        self, component: Union[Atmosphere, Ocean, SeaIce, Land], when: str
+    ) -> None:
         for exchange in self.exchanges:
+            # Exchange before or after component stepping
             if exchange.when != when:
                 continue
+            # Ensure exchange for currently stepping component only
             if exchange.destination != component.name:
                 continue
 
             source = self.components[exchange.source]
             destination = self.components[exchange.destination]
 
-            logger.info(f" Exchange ({exchange.name}): {source.name} ---> {destination.name} ({when})")
+            logger.info(
+                f" Exchange ({exchange.name}): {source.name} ---> {destination.name} ({when})"
+            )
 
             regridder = self._regridders[(exchange.source, exchange.destination)]
             source_fields = source.export_fields()

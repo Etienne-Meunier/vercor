@@ -303,7 +303,7 @@ def shr_flux_atmOcn(
     re_sv[...] = re * mask[...]
     ssq_sv[...] = ssq[...] * mask[...]
 
-    return  (sen, lat, lwup, evap, taux, tauy, tref, qref, duu10n, ustar, tstar, qstar)
+    return (sen, lat, lwup, evap, taux, tauy, tref, qref, duu10n, ustar, tstar, qstar)
 
 
 def shr_flux_atmIce(
