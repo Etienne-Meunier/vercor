@@ -35,7 +35,7 @@ bilinear = lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm)
 # scalar fields (vector field)) 
 #["SHF", "LHF", ("u10m", "v10m")]
 cpl.add_exchange(Exchange(
-    name="ATM_to_OCN",
+    name="ATM2OCN",
     source="ATM",
     destination="OCN",
     field_names=[("u10m", "v10m"), "SHF", "LHF"],
@@ -44,7 +44,7 @@ cpl.add_exchange(Exchange(
 ))
 
 cpl.add_exchange(Exchange(
-    name="OCN_to_ATM",
+    name="OCN2ATM",
     source="OCN",
     destination="ATM",
     field_names=["SST"],
@@ -53,7 +53,7 @@ cpl.add_exchange(Exchange(
 ))
 
 cpl.add_exchange(Exchange(
-    name="OCN_to_ICE",
+    name="OCN2ICE",
     source="OCN",
     destination="ICE",
     field_names=["SST"],
@@ -62,7 +62,16 @@ cpl.add_exchange(Exchange(
 ))
 
 cpl.add_exchange(Exchange(
-    name="ATM_to_LND",
+    name="LND2ATM",
+    source="LND",
+    destination="ATM",
+    field_names=["SOILM"],
+    regridder_factory=bilinear,
+    when="pre",
+))
+
+cpl.add_exchange(Exchange(
+    name="ATM2LND",
     source="ATM",
     destination="LND",
     field_names=["LHF"],
@@ -80,3 +89,4 @@ print("v10m mean:", ATM.state["v10m"].data.mean())
 print("TA2M mean:", ATM.state["TA2M"].data.mean())
 print("ICEFRAC mean:", ICE.state["ICEFRAC"].data.mean())
 print("SOILM mean:", LND.state["SOILM"].data.mean())
+print("SOILM(LND) mean:", ATM.state["SOILM"].data.mean())

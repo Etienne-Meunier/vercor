@@ -104,13 +104,18 @@ class Coupler:
             component.initialize(self)
             logger.info(f"Initialized {name}")
 
-    def _do_exchanges(self, when: str) -> None:
+    def _do_exchanges(self, component: Union[Atmosphere, Ocean, SeaIce, Land], when: str) -> None:
         for exchange in self.exchanges:
             if exchange.when != when:
+                continue
+            if exchange.destination != component.name:
                 continue
 
             source = self.components[exchange.source]
             destination = self.components[exchange.destination]
+
+            logger.info(f" Exchange ({exchange.name}): {source.name} ---> {destination.name} ({when})")
+
             regridder = self._regridders[(exchange.source, exchange.destination)]
             source_fields = source.export_fields()
             destination_fields = {}
@@ -148,12 +153,13 @@ class Coupler:
         for n, time, dt in self.clock.iter():
             logger.info(f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} ")
 
-            # Pre-step exchanges
-            self._do_exchanges("pre")
-
             # Step components in declared order
             for cname in self.runseq:
+                # Pre-step exchanges
+                self._do_exchanges(self.components[cname], "pre")
+
+                logger.info(f" Execute component: {cname}")
                 self.components[cname].step(dt, time, self)
 
-            # Post-step exchanges
-            self._do_exchanges("post")
+                # Post-step exchanges
+                self._do_exchanges(self.components[cname], "post")
