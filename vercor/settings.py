@@ -7,6 +7,7 @@ class VercorSettings:
     output_frequency: int = 1  # Frequency of output in timesteps
     max_steps: int = 1000  # Maximum number of timesteps
     dt: float = 60.0  # Timestep size in seconds
+    missval: float = 0.0  # Missing value for fields
     # ------------------------- Physical constants ----------------------------------
     earth_radius: float = 6.371e6  # Earth radius [m]
     # ------------------------- Bulk formula constants ------------------------------
@@ -29,7 +30,5 @@ class VercorSettings:
     snow_emissivity: float = 0.99  # Long-wave emissivity of snow [-]
     latvap: float = 2.501e6  # Latent heat of vaporization [J/kg]
     latfresh: float = 3.34e5  # Latent heat of fusion [J/kg]
-    gamma_blk: float = 0.1  # Bulk aerodynamic resistance [-]   
+    gamma_blk: float = 0.1  # Bulk aerodynamic resistance [-]
     # --------------------------------------------------------------------------------
-
-

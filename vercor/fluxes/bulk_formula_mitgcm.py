@@ -136,24 +136,27 @@ def bulkf_formula_lanl(
     flha = clha[...] * delq[...] * ocn_mask[...]
     evp = -flha[...] / lath[...] * ocn_mask[...]
 
-    flwupa = np.where(
-        iceornot == 0,
-        np.ones_like(iceornot)
-        * settings.ocean_emissivity
-        * settings.stefBoltz
-        * tsf**4,
+    flwupa = (
         np.where(
-            iceornot == 2,
+            iceornot == 0,
             np.ones_like(iceornot)
-            * settings.snow_emissivity
+            * settings.ocean_emissivity
             * settings.stefBoltz
             * tsf**4,
-            np.ones_like(iceornot)
-            * settings.ice_emissivity
-            * settings.stefBoltz
-            * tsf**4,
-        ),
-    ) * ocn_mask[...]
+            np.where(
+                iceornot == 2,
+                np.ones_like(iceornot)
+                * settings.snow_emissivity
+                * settings.stefBoltz
+                * tsf**4,
+                np.ones_like(iceornot)
+                * settings.ice_emissivity
+                * settings.stefBoltz
+                * tsf**4,
+            ),
+        )
+        * ocn_mask[...]
+    )
 
     dflwupdt = np.where(
         iceornot == 0,
