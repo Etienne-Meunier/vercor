@@ -71,12 +71,12 @@ class Coupler:
         if component.name in self.components:
             raise ValueError(f"Component {component.name} already registered")
         self.components[component.name] = component
-        logger.info(f"Registered component {component.name}")
+        logger.info(f" Registered component {component.name}")
 
     def add_exchange(self, exchange: Exchange) -> None:
         self.exchanges.append(exchange)
         logger.info(
-            f"Added exchange {exchange.name}: {exchange.source} -> {exchange.destination} {exchange.field_names} [{exchange.when}]"
+            f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination} {exchange.field_names} [{exchange.when}]"
         )
 
     def initialize(self) -> None:
@@ -103,7 +103,7 @@ class Coupler:
         # Initialize components
         for name, component in self.components.items():
             component.initialize(self)
-            logger.info(f"Initialized {name}")
+            logger.info(f" Initialized {name}")
 
     def _do_exchanges(
         self, component: Union[Atmosphere, Ocean, SeaIce, Land], when: str

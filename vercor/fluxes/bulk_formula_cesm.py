@@ -1,10 +1,12 @@
 import numpy as np
+from vercor.components.base import Component
+from vercor.settings import VercorSettings
 from vercor.fluxes.utilities import qsat, psimhu, psixhu, cdn
 
 
 def shr_flux_atmOcn(
-    settings,
-    state,
+    settings: VercorSettings,
+    state: Component,
     mask: np.ndarray,
     zbot: np.ndarray,
     ubot: np.ndarray,
@@ -124,23 +126,6 @@ def shr_flux_atmOcn(
 
     """
 
-    # reference height           (m)
-    zref = 10.0
-    # reference height for air T (m)
-    ztref = 2.0
-    # maximum wind scaling for flux (m/s)
-    maxscl = 2.0
-    # start t-ts for scaling (K)
-    td0 = -10.0
-    alpha = 1.4
-
-    # These control convergence of the iterative flux calculation
-    # (For Large and Pond scheme only; not UA or COARE).
-    flux_con_tol = 0.0
-    flux_con_max_iter = 2
-
-    # if (debug > 0 .and. s_loglev > 0) write(s_logunit,F00) "enter"
-
     taux = np.full_like(mask, missval)
     tauy = np.full_like(mask, missval)
     sen = np.full_like(mask, missval)
@@ -158,6 +143,23 @@ def shr_flux_atmOcn(
     re_sv = np.full_like(mask, missval)
     ssq_sv = np.full_like(mask, missval)
     re = np.full_like(mask, missval)
+
+    # reference height           (m)
+    zref = 10.0
+    # reference height for air T (m)
+    ztref = 2.0
+    # maximum wind scaling for flux (m/s)
+    maxscl = 2.0
+    # start t-ts for scaling (K)
+    td0 = -10.0
+    alpha = 1.4
+
+    # These control convergence of the iterative flux calculation
+    # (For Large and Pond scheme only; not UA or COARE).
+    flux_con_tol = 0.0
+    flux_con_max_iter = 2
+
+    # if (debug > 0 .and. s_loglev > 0) write(s_logunit,F00) "enter"
 
     # --- for cold air outbreak calc --------------------------------
     tdiff = tbot[...] - ts[...]
@@ -307,8 +309,8 @@ def shr_flux_atmOcn(
 
 
 def shr_flux_atmIce(
-    settings,
-    state,
+    settings: VercorSettings,
+    state: Component,
     mask: np.ndarray,
     zbot: np.ndarray,
     ubot: np.ndarray,
@@ -380,12 +382,6 @@ def shr_flux_atmIce(
         ln3     log factor for interpolation
     """
 
-    umin = 1.0  # minimum wind speed (m/s)
-    zref = 10.0  # ref height           ~ m
-    ztref = 2.0  # ref height for air T ~ m
-    # spval  = shr_const_spval # special value
-    zzsice = 0.0005  # ice surface roughness
-
     taux = np.full_like(mask, missval)
     tauy = np.full_like(mask, missval)
     sen = np.full_like(mask, missval)
@@ -394,6 +390,11 @@ def shr_flux_atmIce(
     evap = np.full_like(mask, missval)
     tref = np.full_like(mask, missval)
     qref = np.full_like(mask, missval)
+
+    zref = 10.0  # ref height           ~ m
+    ztref = 2.0  # ref height for air T ~ m
+    # spval  = shr_const_spval # special value
+    zzsice = 0.0005  # ice surface roughness
 
     # --- define some needed variables ---
     vmag = np.maximum(settings.umin_ice, np.sqrt(ubot[...] ** 2 + vbot[...] ** 2))
@@ -440,9 +441,9 @@ def shr_flux_atmIce(
     re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
 
     # --- update ustar, tstar, qstar w/ updated, shifted coeffs --
-    ustar = rd * vmag[...]
-    tstar = rh * delt[...]
-    qstar = re * delq[...]
+    ustar = rd[...] * vmag[...]
+    tstar = rh[...] * delt[...]
+    qstar = re[...] * delq[...]
 
     # ----------------------------------------------------------
     # iterate to converge on Z/L, ustar, tstar and qstar
@@ -469,9 +470,9 @@ def shr_flux_atmIce(
     re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
 
     # --- update ustar, tstar, qstar w/ updated, shifted coeffs --
-    ustar = rd * vmag[...]
-    tstar = rh * delt[...]
-    qstar = re * delq[...]
+    ustar = rd[...] * vmag[...]
+    tstar = rh[...] * delt[...]
+    qstar = re[...] * delq[...]
 
     # ----------------------------------------------------------
     # compute the fluxes
@@ -480,8 +481,8 @@ def shr_flux_atmIce(
     tau = rbot[...] * ustar[...] * ustar[...]
 
     # --- momentum flux ---
-    taux[...] = tau * ubot[...] / vmag[...] * mask[...]
-    tauy[...] = tau * vbot[...] / vmag[...] * mask[...]
+    taux[...] = tau[...] * ubot[...] / vmag[...] * mask[...]
+    tauy[...] = tau[...] * vbot[...] / vmag[...] * mask[...]
 
     # --- heat flux ---
     sen[...] = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
@@ -507,7 +508,7 @@ def shr_flux_atmIce(
     fac = (ln0[...] - ztref / zbot[...] * (bn - bh)) / bh * stable[...] + (
         ln0[...] - ln3[...]
     ) / bh * (1.0 - stable[...])
-    fac = np.minimum(np.maximum(fac, 0.0), 1.0)
+    fac[...] = np.minimum(np.maximum(fac[...], 0.0), 1.0)
 
     # Actual interpolation
     tref[...] = ts[...] + (tbot[...] - ts[...]) * fac[...] * mask[...]

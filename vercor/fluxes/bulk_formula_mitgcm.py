@@ -2,10 +2,11 @@ from typing import Tuple
 import numpy as np
 
 from vercor.components import Component
+from vercor.settings import VercorSettings
 
 
 def bulkf_formula_lanl(
-    settings,
+    settings: VercorSettings,
     state: Component,
     uw: np.ndarray,
     vw: np.ndarray,
@@ -89,6 +90,7 @@ def bulkf_formula_lanl(
     rdn = settings.karman / np.log(zref / zice)
     rhn = rdn
     ren = rdn
+
     # calculate turbulent scales
     ustar = rdn * usm[...]
     tstar = rhn * deltap[...]
@@ -130,9 +132,9 @@ def bulkf_formula_lanl(
     csha = settings.rhoAir * settings.cpdair * us[...] * rh[...] * rd[...]
     clha = settings.rhoAir * lath[...] * us[...] * re[...] * rd[...]
 
-    fsha = csha[...] * deltap[...]
-    flha = clha[...] * delq[...]
-    evp = -flha[...] / lath[...]
+    fsha = csha[...] * deltap[...] * ocn_mask[...]
+    flha = clha[...] * delq[...] * ocn_mask[...]
+    evp = -flha[...] / lath[...] * ocn_mask[...]
 
     flwupa = np.where(
         iceornot == 0,
@@ -151,7 +153,7 @@ def bulkf_formula_lanl(
             * settings.stefBoltz
             * tsf**4,
         ),
-    )
+    ) * ocn_mask[...]
 
     dflwupdt = np.where(
         iceornot == 0,
@@ -175,16 +177,16 @@ def bulkf_formula_lanl(
         ),
     )
 
-    devdt = clha[...] * ssq[...] * 2.166847e-3 / (tsf[...] * tsf[...])
+    devdt = clha[...] * ssq[...] * 2.166847e-3 / (tsf[...] * tsf[...]) * ocn_mask[...]
     dflhdt = -lath[...] * devdt[...]
-    dfshdt = -csha[...]
+    dfshdt = -csha[...] * ocn_mask[...]
 
     # total derivative with respect to surface temperature
-    df0dt = -dflwupdt[...] + dfshdt[...] + dflhdt[...]
+    df0dt = (-dflwupdt[...] + dfshdt[...] + dflhdt[...]) * ocn_mask[...]
 
     #  wind stress at center points
     bulkf_cdn = 2.7e-3 / usm[...] + 0.142e-3 + 0.0764e-3 * usm[...]
-    ust = settings.rhoAir * bulkf_cdn * us[...] * uw[...]
-    vst = settings.rhoAir * bulkf_cdn * us[...] * vw[...]
+    ust = settings.rhoAir * bulkf_cdn * us[...] * uw[...] * ocn_mask[...]
+    vst = settings.rhoAir * bulkf_cdn * us[...] * vw[...] * ocn_mask[...]
 
-    return (flwupa, flha, fsha, df0dt, ust, vst, evp, ssq, devdt)
+    return (flwupa, flha, fsha, df0dt, ust, vst, evp, ssq * ocn_mask[...], devdt)

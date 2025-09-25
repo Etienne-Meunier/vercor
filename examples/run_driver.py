@@ -18,7 +18,7 @@ ICE = SeaIce("ICE", ice_grid)
 LND = Land("LND", lnd_grid)
 
 # Clock and sequence
-clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=48)
+clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
 run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
 
 # Choose models/components for concurrent execution when MPI is ON
