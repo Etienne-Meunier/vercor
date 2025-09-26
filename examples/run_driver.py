@@ -77,10 +77,10 @@ cpl.add_exchange(Exchange(
 cpl.run()
 
 # Inspect a few fields
-print("SST mean:", OCN.state["SST"].data.mean())
-print("u10m mean:", ATM.state["u10m"].data.mean())
-print("v10m mean:", ATM.state["v10m"].data.mean())
-print("TA2M mean:", ATM.state["TA2M"].data.mean())
-print("ICEFRAC mean:", ICE.state["ICEFRAC"].data.mean())
-print("SOILM mean:", LND.state["SOILM"].data.mean())
-print("SOILM(LND) mean:", ATM.state["SOILM"].data.mean())
+print("SST mean:", OCN.state["SST"].mean())
+print("u10m mean:", ATM.state["u10m"].mean())
+print("v10m mean:", ATM.state["v10m"].mean())
+print("TA2M mean:", ATM.state["TA2M"].mean())
+print("ICEFRAC mean:", ICE.state["ICEFRAC"].mean())
+print("SOILM mean:", LND.state["SOILM"].mean())
+print("SOILM(LND) mean:", ATM.state["SOILM"].mean())

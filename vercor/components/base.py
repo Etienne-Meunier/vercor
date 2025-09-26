@@ -1,17 +1,15 @@
 import abc
 from typing import Dict
 from dataclasses import dataclass, field
+import numpy as np
 from vercor.grid import RectilinearGrid
-from vercor.fields import Field
 
 
 @dataclass
 class Component(abc.ABC):
     name: str
     grid: RectilinearGrid
-    # inputs: List[str] = field(default_factory=list)
-    # outputs: List[str] = field(default_factory=list)
-    state: Dict[str, Field] = field(default_factory=dict)
+    state: Dict[str, np.ndarray] = field(default_factory=dict)
 
     @abc.abstractmethod
     def initialize(self, coupler):
@@ -21,10 +19,10 @@ class Component(abc.ABC):
     def step(self, dt, time, coupler):
         raise NotImplementedError
 
-    def export_fields(self) -> Dict[str, Field]:
+    def export_fields(self) -> Dict[str, np.ndarray]:
         return {k: v for k, v in self.state.items()}
 
-    def import_fields(self, fields: Dict[str, Field]) -> None:
+    def import_fields(self, fields: Dict[str, np.ndarray]) -> None:
         # simplistic merge/overwrite
         for name, fld in fields.items():
             self.state[name] = fld

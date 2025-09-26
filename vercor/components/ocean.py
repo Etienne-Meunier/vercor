@@ -1,8 +1,6 @@
 import numpy as np
-
 from vercor.grid import RectilinearGrid
 from vercor.components.base import Component
-from vercor.fields import Field
 
 
 class Ocean(Component):
@@ -24,19 +22,17 @@ class Ocean(Component):
 
     def initialize(self, coupler) -> None:
         nlat, nlon = self.grid.shape
-        self.state["SST"] = Field(
-            "SST", 273.15 + 15.0 * np.ones((nlat, nlon)), self.grid, units="K"
-        )
+        self.state["SST"] = 273.15 + 15.0 * np.ones((nlat, nlon))
 
     def step(self, dt, time, coupler) -> None:
-        SST = self.state["SST"].data
+        SST = self.state["SST"]
         SHF = self.state.get("SHF")
         LHF = self.state.get("LHF")
         Qnet = np.zeros_like(SST)
         if SHF is not None:
-            Qnet += SHF.data
+            Qnet += SHF
         if LHF is not None:
-            Qnet += LHF.data
+            Qnet += LHF
         T0 = 273.15 + 15.0
         dTdt = Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (SST - T0)
-        self.state["SST"].data = SST + dTdt * dt.total_seconds()
+        self.state["SST"] = SST + dTdt * dt.total_seconds()

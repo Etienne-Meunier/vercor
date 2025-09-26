@@ -2,7 +2,6 @@ from typing import Dict, Tuple
 import numpy as np
 from vercor.grid import RectilinearGrid
 from vercor.regridders.base import Regridder
-from vercor.fields import Field
 
 
 def make_rectilinear_grid(
@@ -28,9 +27,9 @@ def make_rectilinear_grid(
 
 def _scalar_field_interpolate(
     field_name: str,
-    source_fields: Dict[str, Field],
+    source_fields: Dict[str, np.ndarray],
     regridder: Regridder,
-) -> Field:
+) -> np.ndarray:
     if not callable(regridder):
         raise TypeError("Regridder must be callable for scalar field interpolation")
 
@@ -41,9 +40,9 @@ def _scalar_field_interpolate(
 
 def _vector_field_interpolate(
     field_name: Tuple[str, str],
-    source_fields: Dict[str, Field],
+    source_fields: Dict[str, np.ndarray],
     regridder: Regridder,
-) -> Tuple[Field, Field]:
+) -> Tuple[np.ndarray, np.ndarray]:
     if len(field_name) == 2:
         src_field_name, alt_field_name = field_name
     else:
@@ -56,6 +55,6 @@ def _vector_field_interpolate(
         )
     except Exception as e:
         raise TypeError(
-            "Regridder for vector fields must accept two arguments and return a tuple of two Fields"
+            "Regridder for vector fields must accept two arguments and return a tuple of two arrays"
         ) from e
     return (destination_field_lon, destination_field_lat)

@@ -1,6 +1,5 @@
 from typing import Tuple, Union
 import numpy as np
-from vercor.fields import Field
 from vercor.regridders.base import Regridder
 from vercor.interpolators.bilinear_rectilinear import Bilinear
 
@@ -26,16 +25,8 @@ class XESMFBilinearRectilinear(Regridder):
 
         return self
 
-    def __call__(self, field: Field) -> Field:
-        data = field.data
-        out = self.regridder(data)
-        return Field(
-            name=field.name,
-            data=out,
-            grid=self.dst_grid,
-            units=field.units,
-            attrs=field.attrs,
-        )
+    def __call__(self, field: np.ndarray) -> np.ndarray:
+        return self.regridder(field)
 
 
 class BilinearRectilinear(Regridder):
@@ -55,7 +46,7 @@ class BilinearRectilinear(Regridder):
 
         return self
 
-    def __call__(self, *args, src_mask=None) -> Union[Field, Tuple[Field, Field]]:
+    def __call__(self, *args, src_mask=None) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Call with positional args for fields and optional src_mask as a keyword-only arg.
 
@@ -73,38 +64,12 @@ class BilinearRectilinear(Regridder):
 
         if len(args) == 1:
             scalar_src = args[0]
-            out = self.regridder.apply_scalar(scalar_src.data, src_mask=src_mask)
-            return Field(
-                name=scalar_src.name,
-                data=out,
-                grid=self.dst_grid,
-                units=scalar_src.units,
-                attrs=scalar_src.attrs,
-            )
+            return self.regridder.apply_scalar(scalar_src, src_mask=src_mask)
+
         if len(args) == 2:
             a0, a1 = args
-            # Disallow passing mask as positional second argument
-            if isinstance(a0, Field) and isinstance(a1, np.ndarray):
-                raise TypeError(
-                    "src_mask must be passed as a keyword argument: src_mask=..."
-                )
-            out = self.regridder.apply_vector(a0.data, a1.data, src_mask=src_mask)
-            return (
-                Field(
-                    name=a0.name,
-                    data=out[0],
-                    grid=self.dst_grid,
-                    units=a0.units,
-                    attrs=a0.attrs,
-                ),
-                Field(
-                    name=a1.name,
-                    data=out[1],
-                    grid=self.dst_grid,
-                    units=a1.units,
-                    attrs=a1.attrs,
-                ),
-            )
+            out = self.regridder.apply_vector(a0, a1, src_mask=src_mask)
+            return (out[0], out[1])
 
         raise TypeError(
             "Too many positional arguments; provide either (scalar,) or (u_src, v_src)"

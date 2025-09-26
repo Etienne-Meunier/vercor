@@ -184,7 +184,7 @@ def shr_flux_atmOcn(
 
     ssq = 0.98 * qsat(ts[...]) / rbot[...]  # sea surf hum (kg/kg)
     delt = thbot[...] - ts[...]  # pot temp diff (K)
-    delq = qbot[...] - ssq  # spec hum dif (kg/kg)
+    delq = qbot[...] - ssq[...]  # spec hum dif (kg/kg)
     alz = np.log(zbot[...] / zref)
     cp = settings.cpdair * (1.0 + settings.cpvir * ssq)
 
