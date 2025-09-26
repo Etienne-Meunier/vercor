@@ -70,7 +70,7 @@ class Bilinear:
 
     Vector interpolation:
       - (u,v) are eastward and northward components on the sphere (m/s etc.)
-      - We rotate vectors properly by projecting each corner vector to 3-D (using local EN basis),
+      - Rotate vectors properly by projecting each corner vector to 3-D (using local EN basis),
         bilinear-blending in 3-D, then projecting onto the target EN basis.
 
     Extrapolation:
@@ -85,7 +85,7 @@ class Bilinear:
         field_out: dict[str, np.ndarray],
         periodic_longitude: bool = True,
         nan_renorm: bool = True,
-        extrapolation_mode: str | None = "nearest",  # 'nearest' | 'idw'
+        extrapolation_mode: str | None = "idw",  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,
         fill_value=np.nan,

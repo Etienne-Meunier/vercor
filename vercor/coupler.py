@@ -85,7 +85,7 @@ class Coupler:
             destination = self.components[exchange.destination]
 
             logger.info(
-                f" Exchange ({exchange.name}): {source.name} ---> {destination.name} ({when})"
+                f" Exchange fields ({exchange.name}): {source.name} ---> {destination.name} ({when})"
             )
 
             regridder = self._regridders[(exchange.source, exchange.destination)]
@@ -130,7 +130,7 @@ class Coupler:
                 # Pre-step exchanges
                 self._do_exchanges(self.components[cname], "pre")
 
-                logger.info(f" Execute component: {cname}")
+                logger.info(f" Run component: {cname}")
                 self.components[cname].step(dt, time, self)
 
                 # Post-step exchanges

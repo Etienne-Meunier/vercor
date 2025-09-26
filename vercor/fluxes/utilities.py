@@ -147,3 +147,17 @@ def psixhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
         xd (:obj:`ndarray`): model level height devided by Obukhov length
     """
     return 2.0 * np.log((1.0 + xd * xd) / 2.0)
+
+
+def air_density(
+    settings, pf: NDArray[np.floating[Any]], t: NDArray[np.floating[Any]]
+) -> NDArray[np.floating[Any]]:
+    """Air density (kg/m^3)"""
+    return settings.mwdair / settings.rgas * pf[...] / t[...]
+
+
+def potential_temperature(
+    settings, tbot: NDArray[np.floating[Any]], pf: NDArray[np.floating[Any]]
+) -> NDArray[np.floating[Any]]:
+    """Potential temperature (K)"""
+    return tbot[...] * (settings.p0 / pf[...]) ** settings.cappa

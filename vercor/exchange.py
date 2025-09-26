@@ -1,12 +1,10 @@
 from dataclasses import dataclass
 from typing import Callable, List, Tuple, Union
-
 from vercor.regridders.base import Regridder
 
 
 @dataclass
 class Exchange:
-    name: str
     source: str  # component name
     destination: str  # component name
     field_names: List[
@@ -14,6 +12,9 @@ class Exchange:
     ]  # list of scalar field names and (u-vector-component, v-vector-component)
     regridder_factory: Callable[..., Regridder]
     when: str = "pre"  # "pre" or "post" component stepping
+
+    def __post_init__(self):
+        self.name = f"{self.source}2{self.destination}"
 
     def build(
         self,
