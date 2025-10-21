@@ -1,41 +1,173 @@
 from typing import Any, Tuple
+from numpy.typing import NDArray
 import numpy as np
 
 
-def _wrap_like(lon_deg: np.ndarray, base0_deg: float) -> np.ndarray:
+def _wrap_like(lon_deg: NDArray, base0_deg: float) -> NDArray:
+    r"""Maps longitudes (deg) into the [base0, base0+360) interval.
+
+    When longitude is treated as periodic, wrap every target longitude 
+    :math: `\lambda^{*}_{deg}` into the same half-open interval
+    :math: `[ \lambda^{*}_{0}, \lambda^{*}_{0} + 360 )` 
+    of the (internally ascending) source grid:
+
+    .. math::
+        \tilde{\lambda}^{*}_{deg} = \lambda^{deg}_{0} + \mathrm{mod}(\lambda^{*}_{deg} - \lambda^{deg}_{0}, 360)
+        \text{where } \lambda^{deg}_{0} = \text{base0\_deg}
+
+    This guarantees consistent bracketing even across the dateline.
+
+    Arguments:
+        lon_deg (ndarray): 1-D array of longitudes (degrees)
+        base0_deg (float): base longitude (degrees) for wrapping
+    Returns:
+        (ndarray): array of same shape as lon_deg with wrapped longitudes
     """
-    Map longitudes (deg) into the [base0, base0+360) interval.
-    """
+
     return base0_deg + np.mod(lon_deg - base0_deg, 360.0)
 
 
-def _unit_east_north(
-    lon_rad: np.ndarray, lat_rad: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray]:
+def _unit_east_north(lon_rad: NDArray, lat_rad: NDArray) -> tuple[NDArray, NDArray]:
+    r"""Computes unit vectors (east, north) in 3-D for given lon/lat (radians).
+
+    At any geographic point (λ,φ) on the unit sphere, define:
+    - Radial unit vector (position on the unit sphere):
+        .. math::
+            \mathbf{r(\lambda, \phi)} = \begin{pmatrix}
+                \cos\phi \cos\lambda \\
+                \cos\phi \sin\lambda \\
+                \sin\phi
+            \end{pmatrix}
+
+    - Orthonormal tangent basis:
+        .. math::
+            \mathbf{e}_{\text{east}} = \frac{\partial \mathbf{r}}{\partial \lambda} =
+            \begin{pmatrix}
+                -\sin\lambda \\
+                \cos\lambda \\
+                0
+            \end{pmatrix}, \quad
+            \mathbf{e}_{\text{north}} = \frac{\partial \mathbf{r}}{\partial \phi} =
+            \begin{pmatrix}
+                -\sin\phi \cos\lambda \\
+                -\sin\phi \sin\lambda \\
+                \cos\phi
+            \end{pmatrix} 
+
+    These satisfy:
+        .. math::
+            \mathbf{e}_{\text{east}} \cdot \mathbf{e}_{\text{north}} = 0 \quad \text{and} \quad
+            \|\mathbf{e}_{\text{east}}\| = \|\mathbf{e}_{\text{north}}\| = 1.
+
+    Arguments:
+        lon_rad (ndarray): array of longitudes (radians)
+        lat_rad (ndarray): array of latitudes (radians)
+
+    Returns:
+        (tuple): tuple containing:
+            - e_east (ndarray): array of shape (...,3) with east unit vectors
+            - e_north (ndarray): array of shape (...,3) with north unit vectors
     """
-    Return unit vectors (east, north) in 3-D for given lon/lat (radians).
-    east = d r / d lon normalized; north = d r / d lat normalized.
-    east is independent of latitude on the unit sphere.
-    Shapes follow broadcasting of lon_rad/lat_rad.
-    """
+
     slon, clon = np.sin(lon_rad), np.cos(lon_rad)
     slat, clat = np.sin(lat_rad), np.cos(lat_rad)
 
-    # east: (-sin lon, cos lon, 0)
+    # east: (-sin (lon), cos (lon), 0)
     e_east = np.stack((-slon, clon, np.zeros_like(lon_rad)), axis=-1)
 
-    # north: (-sin lat cos lon, -sin lat sin lon, cos lat)
+    # north: (-sin (lat) * cos (lon), -sin (lat) * sin (lon), cos (lat))
     e_north = np.stack((-slat * clon, -slat * slon, clat), axis=-1)
-    return e_east, e_north
+    return (e_east, e_north)
 
 
-def _great_circle_distance_rad(
-    lon1: np.ndarray, lat1: np.ndarray, lon2: np.ndarray, lat2: np.ndarray
-) -> Any:
+def _geo_to_cart(lon_rad: NDArray, lat_rad: NDArray) -> NDArray:
+    r"""
+    Convert geographic coordinates (longitude, latitude) in radians to 3-D
+    Cartesian unit vectors on the unit sphere.
+
+    Mathematics:
+        For longitude λ and latitude φ (radians) the corresponding point on the
+        unit sphere is
+
+            x = cos(φ) * cos(λ)
+            y = cos(φ) * sin(λ)
+            z = sin(φ)
+
+        These follow from the spherical-to-Cartesian coordinate transform with the
+        convention that latitude is the angle north of the equator and longitude
+        is the angle east of the prime meridian.
+
+    Arguments:
+        lon_rad (ndarray): 
+            Longitudes in radians. Can be scalar or an array;
+            must be broadcastable with lat_rad.
+        lat_rad (ndarray): 
+            Latitudes in radians. Can be scalar or an array; 
+            must be broadcastable with lon_rad.
+
+    Returns:
+        (ndarray): array of shape (..., 3) (broadcasted shape of the inputs plus a trailing
+        length-3 axis) containing the Cartesian unit vectors [x, y, z] for each
+        input coordinate pair.
+
+    Notes
+    -----
+    - The returned vectors are unit length up to floating-point precision.
+    - Inputs may be of any shape that follows NumPy broadcasting rules; the
+      last axis of the output corresponds to (x, y, z).
     """
-    Great-circle distance (radians) between points (supports broadcasting).
-    Haversine, numerically stable.
+
+    slon, clon = np.sin(lon_rad), np.cos(lon_rad)
+    slat, clat = np.sin(lat_rad), np.cos(lat_rad)
+    x = clat * clon
+    y = clat * slon
+    z = slat
+    return np.stack((x, y, z), axis=-1)
+
+
+def _great_circle_distance_rad(lon1: NDArray, lat1: NDArray, lon2: NDArray, lat2: NDArray) -> NDArray:
+    r"""Haversine great-circle distance (radians) between points on the unit sphere.
+
+    Mathematics:
+        The haversine formula gives the central angle (great-circle distance in
+        radians) between two points with geographic coordinates
+        (longitude, latitude) = (λ, φ):
+
+        .. math::
+            \Delta\lambda &= \lambda_2 - \lambda_1,\\
+            \Delta\varphi &= \varphi_2 - \varphi_1,\\[6pt]
+            a &= \sin^2\!\left(\frac{\Delta\varphi}{2}\right)
+                + \cos\varphi_1\,\cos\varphi_2\,
+                \sin^2\!\left(\frac{\Delta\lambda}{2}\right),\\[6pt]
+            c &= 2\,\operatorname{atan2}\!\left(\sqrt{a},\sqrt{1-a}\right).
+        
+        The returned value is the central angle :math:`c` in radians. For an
+        earth-radius-scaled distance multiply :math:`c` by the desired radius.
+
+    Arguments:
+        lon1 (ndarray): 
+            Longitudes of the first point(s) in radians. May be scalar or array.
+        lat1 (ndarray): 
+            Latitudes of the first point(s) in radians. Must be broadcastable
+            with ``lon1``.
+        lon2 (ndarray): 
+            Longitudes of the second point(s) in radians. May be scalar or array.
+            Must be broadcastable with ``lat2`` and the other inputs.
+        lat2 (ndarray): 
+            Latitudes of the second point(s) in radians. Must be broadcastable
+            with ``lon2`` and the other inputs.
+
+    Returns:
+        (ndarray): Array of great-circle distances (central angles) in radians. 
+            The shape is the result of NumPy broadcasting of the inputs.
+
+    Notes:
+        - The implementation uses the haversine formulation for numerical
+        robustness for small distances.
+        - Intermediate value ``a`` is clamped to ``[0, 1]`` to avoid NaNs from
+        floating point round-off when computing ``atan2``.
     """
+
     dlon = lon2 - lon1
     dlat = lat2 - lat1
     sdlat2 = np.sin(dlat * 0.5)
@@ -51,32 +183,32 @@ class Bilinear:
     """
     Bilinear interpolator for rectilinear lat/lon grids with:
 
-      - periodic longitude handling
-      - ascending or descending latitude
-      - non-uniform spacing
-      - optional NaN-aware renormalization
-      - support for scalar and vector (u,v) fields
-      - source/target masks
-      - nearest / IDW extrapolation for masked-out areas
+    - periodic longitude handling
+    - ascending or descending latitude
+    - non-uniform spacing
+    - optional NaN-aware renormalization
+    - support for scalar and vector (u,v) fields
+    - source/target masks
+    - nearest / IDW extrapolation for masked-out areas
 
     Coordinates:
-      - lon_src: shape (nlon,), degrees, strictly monotonic ascending (wrap allowed across dateline)
-      - lat_src: shape (nlat,), degrees, strictly monotonic (ascending or descending)
-      - lon_tgt, lat_tgt: target coordinates, any shape (broadcastable to the same)
+        - lon_src: shape (NX,), degrees, strictly monotonic ascending (wrap allowed across dateline)
+        - lat_src: shape (NY,), degrees, strictly monotonic (ascending or descending)
+        - lon_tgt, lat_tgt: target coordinates, any shape (broadcastable to the same)
 
     Masks:
-      - src_mask: boolean array (nlat, nlon) where True means valid; if None, all valid
-      - tgt_mask: boolean array like lon_tgt/lat_tgt shape; True means compute/keep output, False -> fill_value
+        - src_mask: boolean array (NY, NX) where True means valid; if None, all valid
+        - tgt_mask: boolean array like lon_tgt/lat_tgt shape; True means compute/keep output, False -> fill_value
 
     Vector interpolation:
-      - (u,v) are eastward and northward components on the sphere (m/s etc.)
-      - Rotate vectors properly by projecting each corner vector to 3-D (using local EN basis),
-        bilinear-blending in 3-D, then projecting onto the target EN basis.
+        - (u,v) are eastward and northward components on the sphere (m/s etc.)
+        - We rotate vectors properly by projecting each corner vector to 3-D (using local EN basis),
+          bilinear-blending in 3-D, then projecting onto the target EN basis.
 
     Extrapolation:
-      - If all four bilinear corners are invalid, we extrapolate from sources:
-         - mode='nearest': nearest valid source point
-         - mode='idw': inverse-distance weighted blend of k nearest valid sources
+        - If all four bilinear corners are invalid, we extrapolate from sources:
+            - mode='nearest': nearest valid source point
+            - mode='idw': inverse-distance weighted blend of k nearest valid sources
     """
 
     def __init__(
@@ -172,10 +304,90 @@ class Bilinear:
 
     # --------------------------- Precomputation --------------------------- #
 
-    def _precompute_cells_and_weights(self):
+    def _precompute_cells_and_weights(self) -> None:
+        r"""For each target point, compute (i0,i1,j0,j1) and (fx,fy) and corner weights.
+
+        Mathematics:
+            For each target :math: `(\tilde{\lambda}^{*}, \phi^{*})` we find bracketing indices
+            .. math::
+                (i_0, i_1) \in \{0, \ldots, N_x - 1\}^2, \quad
+                (j_0, j_1) \in \{0, \ldots, N_y - 1\}^2,
+
+            such that :math: `(i_0, i_1)` are consecutive longitudes around :math: `(\tilde{\lambda}^*)`,
+            and :math: `(j_0, j_1)` are consecutive latitudes around :math: `(\varphi^*)`.
+
+            If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo :math: `(N_x)`.
+
+            Let
+            .. math::
+                \lambda_0 = \lambda_{i_0}, \quad
+                \lambda_1 = \lambda_{i_1}, \quad
+                \varphi_0 = \varphi_{j_0}, \quad
+                \varphi_1 = \varphi_{j_1}.
+
+            **Forward (wrapped) longitudinal difference**
+
+            Across the dateline, we must measure the **forward** difference from :math: `(i_0)` to :math: `(i_1)`.
+            Because longitude wraps, we define the **forward** cell width
+
+            .. math::
+                \Delta \lambda_{\text{cell}} =
+                \begin{cases}
+                    (\lambda_1 + 2\pi) - \lambda_0, & \text{if } i_1 \le i_0 \text{ (wrapped cell)}, \\
+                    \lambda_1 - \lambda_0, & \text{otherwise.}
+                \end{cases}
+
+            and the **forward displacement**
+
+            .. math::
+                \Delta \tilde{\lambda}^* = \tilde{\lambda}^* - \lambda_0, \quad
+                \Delta \tilde{\lambda}^* \leftarrow
+                \begin{cases}
+                    \Delta \tilde{\lambda}^* + 2\pi, & \text{if } \Delta \tilde{\lambda}^* < 0, \\
+                    \Delta \tilde{\lambda}^*, & \text{otherwise.}
+                \end{cases}
+
+            Then the fractional longitudinal coordinate is  
+
+            .. math::
+                f_x = \frac{\Delta \tilde{\lambda}^*}{\Delta \lambda_{\text{cell}}} \in [0, 1],
+
+            (after clipping if needed).
+
+            **Latitudinal fraction**
+
+            Regardless of ascending/descending latitude ordering,
+
+            .. math::
+                \Delta \varphi_{\text{cell}} = \varphi_1 - \varphi_0,
+                \quad
+                f_y = \frac{\varphi^* - \varphi_0}{\Delta \varphi_{\text{cell}}}.
+
+            and then clip :math: `f_y` to :math: `[0, 1]`. If latitudes are descending, 
+            :math: `(\Delta \varphi_{\text{cell}} < 0)`, and the fraction remains consistent after clipping.
+
+            **Bilinear shape functions (weights)**
+
+            On the rectangle :math: `(i_0, i_1) \times (j_0, j_1)`, the four standard bilinear basis functions are
+
+            .. math::
+                w_{00} = (1 - f_x)(1 - f_y), \quad
+                w_{10} = f_x(1 - f_y),
+            .. math::
+                w_{01} = (1 - f_x)f_y, \quad
+                w_{11} = f_x f_y.
+
+            They satisfy :math: `w_{ab} \ge 0` and :math: `\sum w_{ab} = 1`.
+
+            **Corner mapping:**
+
+            .. math::
+                (0,0) \mapsto (j_0, i_0), \quad
+                (1,0) \mapsto (j_0, i_1), \quad
+                (0,1) \mapsto (j_1, i_0), \quad
+                (1,1) \mapsto (j_1, i_1).
         """
-        For each target point, compute (i0,i1,j0,j1) and (fx,fy) and corner weights.
-        """
+
         nlon, nlat = self.nlon, self.nlat
         lon_src = self.lon_src_deg
         lat_src = self.lat_src_deg
@@ -262,17 +474,61 @@ class Bilinear:
     # --------------------------- Utilities --------------------------- #
 
     @staticmethod
-    def _ensure_src_mask(src, src_mask):
+    def _ensure_src_mask(src: NDArray, src_mask: NDArray | None) -> NDArray:
         if src_mask is None:
             return np.isfinite(src)
         else:
             return np.asarray(src_mask, dtype=bool) & np.isfinite(src)
 
-    def _apply_bilinear_scalar(self, src, src_mask=None):
+    def _apply_bilinear_scalar(self, src: NDArray, src_mask: NDArray | None) -> tuple[NDArray, NDArray]:
+        r"""Core bilinear (with optional NaN/mask renormalization).
+
+        Mathematics:
+            **Mask/NaN-aware renormalization**
+
+            Let the corner validity be  
+
+            .. math::
+                \mu_{00} = m^{\text{src}}_{j_0, i_0}, \quad
+                \mu_{10} = m^{\text{src}}_{j_0, i_1}, \quad
+                \mu_{01} = m^{\text{src}}_{j_1, i_0}, \quad
+                \mu_{11} = m^{\text{src}}_{j_1, i_1}
+                \in \{0, 1\}.
+
+            (If values are NaN, take the corresponding :math: `\mu = 0`.)
+
+            We down-weight invalid corners:
+
+            .. math::
+                \tilde{w}_{ab} = w_{ab} \mu_{ab}, \quad
+                W = \sum_{a,b \in \{0,1\}} \tilde{w}_{ab}.
+
+            * If :math: `W > 0` (some valid corners): **renormalize**
+
+            .. math::
+                \hat{w}_{ab} = \frac{\tilde{w}_{ab}}{W}, \quad
+                \sum \hat{w}_{ab} = 1,
+
+            and the scalar interpolation is
+
+            .. math::
+                s^* = \sum_{a,b} \hat{w}_{ab} \, s_{j_b, i_a},
+
+            where :math: `i_{0/1} = i_0/i_1` and :math: `j_{0/1} = j_0/j_1`.
+
+            * If :math: `W = 0`: all four corners invalid ⇒ **extrapolate** (Section 7).
+
+            (If renormalization is **disabled**, then :math: `s^* = \sum w_{ab} s_{j_b, i_a}`
+            only if all four corners are valid; otherwise :math: `s^* = \text{NaN}` and we fall back to extrapolation.)
+
+        Arguments:
+            src (ndarray): source scalar field (NY, NX)
+            src_mask (ndarray or None): optional boolean mask (NY, NX) where True means valid
+
+        Returns:
+            tuple (ndarray, ndarray): Interpolated values and valid weight sum.
         """
-        Core bilinear (with optional NaN/mask renormalization).
-        Returns (out, valid_weight_sum).
-        """
+
         src = np.asarray(src, dtype=float)
         if src.shape != (self.nlat, self.nlon):
             raise ValueError(
@@ -315,11 +571,64 @@ class Bilinear:
             wsum = np.where(any_nan, 0.0, 1.0)
             return out, wsum
 
-    def _extrapolate_scalar(self, src, src_mask, where_nan):
+    def _extrapolate_scalar(self, src: NDArray, src_mask: NDArray | None, where_nan: NDArray) -> NDArray:
+        r"""Extrapolate scalar to positions where_nan (boolean mask in target shape).
+
+        Mathematics:
+            Extrapolation on the sphere (when all 4 corners are invalid)
+
+            Let
+            .. math::
+                \mathcal{S} = \{(\lambda_p, \varphi_p) : m^{\text{src}}_p = 1\}
+
+            be all valid source points (flattened index :math: `p` maps to :math: `(j, i)`).  
+            For a target :math: `(\lambda^*, \varphi^*)`, we compute **great-circle distances** using the haversine formula.
+            
+            ---
+
+            Two supported modes:
+
+            #### Nearest neighbor
+
+            .. math::
+                p^* = \arg \min_{p \in \mathcal{S}} \delta_p, \quad
+                s^* = s_{p^*} \quad \text{or} \quad (u^*, v^*) = (u_{p^*}, v_{p^*}).
+
+            ---
+
+            #### Inverse-distance weighting (IDW)
+
+            Choose the :math: `K` nearest valid sources :math: `\mathcal{N}_K \subset \mathcal{S}`.  
+            With a small :math: `\varepsilon > 0` to avoid division by zero, define:
+
+            .. math::
+                \tilde{w}_p = \frac{1}{\delta_p + \varepsilon}, \quad
+                W = \sum_{p \in \mathcal{N}_K} \tilde{w}_p, \quad
+                \hat{w}_p = \frac{\tilde{w}_p}{W}.
+
+            Then
+
+            .. math::
+                s^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, s_p,
+                \quad
+                u^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, u_p,
+                \quad
+                v^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, v_p.
+            
+            (The code extrapolates $u$ and $v$ separately for this fallback.)
+
+            > **Note:** IDW preserves constants and reduces to nearest neighbor as :math: `K \to 1`  
+            > or when one :math: `\delta_p \ll` others.
+
+        Arguments:
+            src (ndarray): source scalar field (NY, NX)
+            src_mask (ndarray or None): optional boolean mask (NY, NX) where True means valid
+            where_nan (ndarray): boolean mask in target shape where extrapolation is needed
+        
+        Returns:
+            (ndarray): filled array only at where_nan positions.
         """
-        Extrapolate scalar to positions where_nan (boolean mask in target shape).
-        Modes: 'nearest' or 'idw'. Returns filled array only at where_nan positions.
-        """
+
         if self.extrapolation_mode is None:
             return np.full(where_nan.shape, self.fill_value, dtype=float)
 
@@ -388,21 +697,18 @@ class Bilinear:
 
     # --------------------------- Public API --------------------------- #
 
-    def apply_scalar(self, src, src_mask=None):
-        """
-        Interpolate a scalar field defined on the source grid to the target grid.
+    def apply_scalar(self, src: NDArray, src_mask: NDArray | None = None) -> NDArray:
+        """Interpolate a scalar field defined on the source grid to the target grid.
 
-        Parameters
-        ----------
-        src : (nlat, nlon) array-like
-            Source scalar field.
-        src_mask : (nlat, nlon) boolean, optional
-            True where source is valid. If None, validity = isfinite(src).
+        Arguments:
+            src (ndarray(NY, NX)): Source scalar field.
+            src_mask (ndarray(NY, NX), optional): 
+                True where source is valid. If None, validity = isfinite(src).
 
-        Returns
-        -------
-        out : target-shaped float array
+        Returns:
+            (ndarray): target-shaped float array
         """
+
         out, wsum = self._apply_bilinear_scalar(src, src_mask)
         # Extrapolate where bilinear had no valid corners
         need = ~np.isfinite(out)
@@ -414,27 +720,48 @@ class Bilinear:
         out = np.where(self.tgt_mask, out, self.fill_value)
         return out.reshape(self.tshape)
 
-    def apply_vector(self, u_src, v_src, src_mask=None):
-        """
-        Interpolate a vector field (u,v) in east/north components.
+    def apply_vector(self, u_src: NDArray, v_src: NDArray, src_mask: NDArray | None = None) -> tuple[NDArray, NDArray]:
+        r"""Interpolate a vector field (u,v) in east/north components.
 
         Steps:
-          1) Project each source corner (u,v) to 3-D using that corner's local EN basis.
-          2) Bilinear blend those 3-D vectors with NaN/mask renormalization.
-          3) Project blended 3-D vector to the target EN basis to get (u_t, v_t).
-          4) Extrapolate where needed using scalar fallback on |V| and direction from nearest.
+            1) Project each source corner (u,v) to 3-D using that corner's local EN basis.
+            2) Bilinear blend those 3-D vectors with NaN/mask renormalization.
+            3) Project blended 3-D vector to the target EN basis to get (u_t, v_t).
+            4) Extrapolate where needed using scalar fallback on |V| and direction from nearest.
 
-        Parameters
-        ----------
-        u_src, v_src : (nlat, nlon) arrays
-            Eastward and northward components on source grid.
-        src_mask : (nlat, nlon) boolean, optional
-            True where vector is valid. If None, validity = isfinite(u) & isfinite(v).
+        Mathematics:
+            At each source corner :math: `(\lambda_{i_a}, \varphi_{j_b})`, convert :math: `(u, v)` to a 3-D vector:
 
-        Returns
-        -------
-        u_t, v_t : target-shaped arrays
+            .. math::
+                \mathbf{V}_{ab}
+                = u_{j_b, i_a} \, \mathbf{e}_{\text{east}}(\lambda_{i_a}, \varphi_{j_b})
+                + v_{j_b, i_a} \, \mathbf{e}_{\text{north}}(\lambda_{i_a}, \varphi_{j_b}).
+            
+            Then apply the **same mask-aware bilinear blend** to the 3-D vectors:
+
+            .. math::
+                \mathbf{V}^* = \sum_{a,b} \hat{w}_{ab} \, \mathbf{V}_{ab}
+                \quad (\text{if } W > 0; \text{ else extrapolate}).
+
+            Finally, **project** the blended 3-D vector onto the target tangent basis at :math: `(\lambda^*, \varphi^*)`:
+
+            .. math::
+                u^* = \mathbf{V}^* \cdot \mathbf{e}_{\text{east}}(\lambda^*, \varphi^*),
+                \quad
+                v^* = \mathbf{V}^* \cdot \mathbf{e}_{\text{north}}(\lambda^*, \varphi^*).
+
+            This procedure automatically rotates vectors correctly across the dateline and anywhere on the sphere
+            (because the local bases vary with :math: `\lambda, \varphi`), while keeping the interpolation linear.
+
+        Arguments:
+            u_src (ndarray(NY, NX)): Eastward components on source grid.
+            v_src (ndarray(NY, NX)): Northward components on source grid.
+            src_mask (ndarray(NY, NX), optional): True where vector is valid. If None, validity = isfinite(u) & isfinite(v).
+
+        Returns:
+            tuple (ndarray, ndarray): target-shaped arrays
         """
+
         u_src = np.asarray(u_src, dtype=float)
         v_src = np.asarray(v_src, dtype=float)
         if u_src.shape != (self.nlat, self.nlon) or v_src.shape != (
@@ -512,4 +839,4 @@ class Bilinear:
         u_t = np.where(self.tgt_mask, u_t, self.fill_value)
         v_t = np.where(self.tgt_mask, v_t, self.fill_value)
 
-        return u_t.reshape(self.tshape), v_t.reshape(self.tshape)
+        return (u_t.reshape(self.tshape), v_t.reshape(self.tshape))

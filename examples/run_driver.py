@@ -29,7 +29,8 @@ for comp in [ATM, OCN, ICE, LND]:
     cpl.register(comp)
 
 # Bilinear interpolation
-bilinear = lambda sg, sm, dg, dm: BilinearRectilinear(sg, sm, dg, dm)
+bilinear = lambda source_grid, source_mask, destination_grid, destination_mask:\
+    BilinearRectilinear(source_grid, source_mask, destination_grid, destination_mask)
 
 # Exchanges
 # scalar fields (vector field)) 
