@@ -24,7 +24,7 @@ A vector field is $`(u_{j,i}, v_{j,i})`$ in local east/north components.
 
 #### Target points
 
-A (possibly non-rectangular) target set $`{(\lambda^*, \varphi^*)}`$ with broadcast shape $`\mathcal{T}`$.
+A (possibly non-rectangular) target set $`{(\lambda^{*}, \varphi^{*})}`$ with broadcast shape $`\mathcal{T}`$.
 All formulas below apply pointwise over $`\mathcal{T}`$.
 
 ---
@@ -34,7 +34,7 @@ All formulas below apply pointwise over $`\mathcal{T}`$.
 Source mask $`m^{\text{src}}_{j,i} \in \{0,1\}`$ (True/False in code) indicates validity of $`s_{j,i}`$
 (and of vector components similarly).
 
-Target mask $`m^{\text{tgt}}(\lambda^*, \varphi^*) \in \{0,1\}`$ indicates whether to keep the output or place  
+Target mask $`m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) \in \{0,1\}`$ indicates whether to keep the output or place  
 `fill_value`.
 
 ### 2) Periodic longitude wrapping
@@ -51,6 +51,7 @@ $$
 $$
 
 and convert to radians when needed,
+
 $$
     \tilde{\lambda}^{*} = \tilde{\lambda}^{*}_{deg} \cdot \pi / 180
 $$
@@ -59,22 +60,22 @@ This guarantees consistent bracketing even across the dateline.
 
 ### 3) Cell search and local bilinear coordinates
 
-For each target $$(\tilde{\lambda}^{*}, \phi^{*})$$ we find bracketing indices
-    $$
-        (i_0, i_1) \in \{0, \ldots, N_x - 1\}^2, \quad
-        (j_0, j_1) \in \{0, \ldots, N_y - 1\}^2,
-    $$
+For each target $`(\tilde{\lambda}^{*}, \phi^{*})`$ we find bracketing indices
+$$
+    (i_0, i_1) \in \{0, \ldots, N_x - 1\}^{2}, \quad
+    (j_0, j_1) \in \{0, \ldots, N_y - 1\}^{2},
+$$
 
-such that $(i_0, i_1)$ are consecutive longitudes around $(\tilde{\lambda}^*)$, and $(j_0, j_1)$ are consecutive latitudes around $(\varphi^*)$.
+such that $`(i_0, i_1)`$ are consecutive longitudes around $`(\tilde{\lambda}^{*})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`(\varphi^{*})`$.
 
-If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo $(N_x)$.
+If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo $`(N_{x})`$.
 
 Let
 $$
-    \lambda_0 = \lambda_{i_0}, \quad
-    \lambda_1 = \lambda_{i_1}, \quad
-    \varphi_0 = \varphi_{j_0}, \quad
-    \varphi_1 = \varphi_{j_1}.
+    \lambda_{0} = \lambda_{i_0}, \quad
+    \lambda_{1} = \lambda_{i_1}, \quad
+    \varphi_{0} = \varphi_{j_0}, \quad
+    \varphi_{1} = \varphi_{j_1}.
 $$
 
 #### 3.1) Forward (wrapped) longitudinal difference
@@ -246,13 +247,13 @@ $$
 Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{*}, \varphi^{*})`$:
 
 $$
-    u^* = \mathbf{V}^* \cdot \mathbf{e}_{\text{east}}(\lambda^*, \varphi^*),
+    u^{*} = \mathbf{V}^{*} \cdot \mathbf{e}_{\text{east}}(\lambda^{*}, \varphi^{*}),
     \quad
-    v^* = \mathbf{V}^* \cdot \mathbf{e}_{\text{north}}(\lambda^*, \varphi^*).
+    v^{*} = \mathbf{V}^{*} \cdot \mathbf{e}_{\text{north}}(\lambda^{*}, \varphi^{*}).
 $$
 
 This procedure automatically rotates vectors correctly across the dateline and anywhere on the sphere  
-(because the local bases vary with $\lambda, \varphi$), while keeping the interpolation linear.
+(because the local bases vary with $`\lambda, \varphi`$), while keeping the interpolation linear.
 
 
 ### 7) Extrapolation on the sphere (when all 4 corners are invalid)
