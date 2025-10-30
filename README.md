@@ -24,17 +24,17 @@ A vector field is $`(u_{j,i}, v_{j,i})`$ in local east/north components.
 
 #### Target points
 
-A (possibly non-rectangular) target set $`\{(\lambda^*, \varphi^*)}`$ with broadcast shape $`\mathcal{T}`$.
+A (possibly non-rectangular) target set $`{(\lambda^*, \varphi^*)}`$ with broadcast shape $`\mathcal{T}`$.
 All formulas below apply pointwise over $`\mathcal{T}`$.
 
 ---
 
 #### Masks
 
-Source mask $m^{\text{src}}_{j,i} \in \{0,1\}$ (True/False in code) indicates validity of $s_{j,i}$  
-(and of vector components similarly).  
+Source mask $`m^{\text{src}}_{j,i} \in \{0,1\}`$ (True/False in code) indicates validity of $`s_{j,i}`$
+(and of vector components similarly).
 
-Target mask $m^{\text{tgt}}(\lambda^*, \varphi^*) \in \{0,1\}$ indicates whether to keep the output or place  
+Target mask $`m^{\text{tgt}}(\lambda^*, \varphi^*) \in \{0,1\}`$ indicates whether to keep the output or place  
 `fill_value`.
 
 ### 2) Periodic longitude wrapping
@@ -44,8 +44,11 @@ When longitude is treated as periodic, wrap every target longitude
     $$ [ \lambda^{*}_{0}, \lambda^{*}_{0} + 360 ) $$
 
 of the (internally ascending) source grid:
-    $$ \tilde{\lambda}^{*}_{deg} = \lambda^{deg}_{0} + \mathrm{mod}(\lambda^{*}_{deg} - \lambda^{deg}_{0}, 360) $$
-    $$ \text{where } \lambda^{deg}_{0} = \text{base0\_deg} $$
+
+$$
+    \tilde{\lambda}^{*}_{deg} = \lambda^{deg}_{0} + \mathrm{mod}(\lambda^{*}_{deg} - \lambda^{deg}_{0}, 360)
+    \text{where } \lambda^{deg}_{0} = \text{base0\_deg} 
+$$
 
 and convert to radians when needed,
 $$
@@ -240,7 +243,7 @@ $$
     \quad (\text{if } W > 0; \text{ else extrapolate}).
 $$
 
-Finally, **project** the blended 3-D vector onto the target tangent basis at $(\lambda^*, \varphi^*)$:
+Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{*}, \varphi^{*})`$:
 
 $$
     u^* = \mathbf{V}^* \cdot \mathbf{e}_{\text{east}}(\lambda^*, \varphi^*),
