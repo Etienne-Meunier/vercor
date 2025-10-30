@@ -7,8 +7,8 @@ Versatile Earth system COupleR (VerCOR)
 
 #### Source (rectilinear) grid
 
-Longitudes $\{\lambda_i\}_{i=0}^{N_x-1}$ (strictly monotone in the code’s internal representation, ascending after an optional flip).  
-Latitudes $\{\varphi_j\}_{j=0}^{N_y-1}$ (strictly monotone; may be ascending or descending).
+Longitudes $`\{\lambda_i\}_{i=0}^{N_x-1}`$ (strictly monotone in the code’s internal representation, ascending after an optional flip).  
+Latitudes $`\{\varphi_j\}_{j=0}^{N_y-1}`$ (strictly monotone; may be ascending or descending).
 
 **Index ranges:**
 
@@ -17,19 +17,15 @@ $$
     j \in \{0, \ldots, N_y - 1\}.
 $$
 
-A scalar field on the source grid is $s_{j,i}$.  
-A vector field is $(u_{j,i}, v_{j,i})$ in local east/north components.
+A scalar field on the source grid is $`s_{j,i}`$.
+A vector field is $`(u_{j,i}, v_{j,i})`$ in local east/north components.
 
 ---
 
 #### Target points
 
-A (possibly non-rectangular) target set 
-$$
-\{(\lambda^*, \varphi^*)\}
-$$
-with broadcast shape $\mathcal{T}$.  
-All formulas below apply pointwise over $\mathcal{T}$.
+A (possibly non-rectangular) target set $`\{(\lambda^*, \varphi^*)}`$ with broadcast shape $`\mathcal{T}`$.
+All formulas below apply pointwise over $`\mathcal{T}`$.
 
 ---
 
