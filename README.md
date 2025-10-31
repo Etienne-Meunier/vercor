@@ -283,31 +283,31 @@ Two supported modes:
 #### 7.1 Nearest neighbor
 
 $$
-    p^* = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
-    s^* = s_{p^{*}} \quad \text{or} \quad (u^{*}, v^{*}) = (u_{p^{*}}, v_{p^{*}}).
+    p^{*} = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
+    s^{*} = s_{p^{*}} \quad \text{or} \quad (u^{*}, v^{*}) = (u_{p^{*}}, v_{p^{*}}).
 $$
 
 ---
 
 #### 7.2 Inverse-distance weighting (IDW)
 
-Choose the $K$ nearest valid sources $`\mathcal{N}_K \subset \mathcal{S}`$.  
+Choose the $K$ nearest valid sources $`\mathcal{N}_{K} \subset \mathcal{S}`$.  
 With a small $`\varepsilon > 0`$ to avoid division by zero, define:
 
 $$
-    \tilde{w}_p = \frac{1}{\delta_p + \varepsilon}, \quad
-    W = \sum_{p \in \mathcal{N}_K} \tilde{w}_p, \quad
-    \hat{w}_p = \frac{\tilde{w}_p}{W}.
+    \tilde{w}_{p} = \frac{1}{\delta_{p} + \varepsilon}, \quad
+    W = \sum_{p \in \mathcal{N}_{K}} \tilde{w}_{p}, \quad
+    \hat{w}_{p} = \frac{\tilde{w}_{p}}{W}.
 $$
 
 Then
 
 $$
-    s^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, s_p,
+    s^{*} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, s_{p},
     \quad
-    u^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, u_p,
+    u^{*} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, u_{p},
     \quad
-    v^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, v_p.
+    v^{*} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, v_{p}.
 $$
 
 (The code extrapolates $u$ and $v$ separately for this fallback.)
@@ -324,7 +324,7 @@ After interpolation/extrapolation, the final output applies the target mask:
 $$
     s^{\text{out}}(\lambda^{*}, \varphi^{*}) =
     \begin{cases}
-        s^*(\lambda^{*}, \varphi^{*}), & m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) = 1, \\
+        s^{*}(\lambda^{*}, \varphi^{*}), & m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) = 1, \\
         \text{fill\_value}, & \text{otherwise,}
     \end{cases}
 $$
