@@ -7,7 +7,7 @@ Versatile Earth system COupleR (VerCOR)
 
 #### Source (rectilinear) grid
 
-Longitudes $`\{\lambda_i\}_{i=0}^{N_x-1}`$ (strictly monotone in the code’s internal representation, ascending after an optional flip).  
+Longitudes $`\{\lambda_i\}_{i=0}^{N_x-1}`$ (strictly monotone in the code’s internal representation, ascending after an optional flip).
 Latitudes $`\{\varphi_j\}_{j=0}^{N_y-1}`$ (strictly monotone; may be ascending or descending).
 
 **Index ranges:**
@@ -34,26 +34,27 @@ All formulas below apply pointwise over $`\mathcal{T}`$.
 Source mask $`m^{\text{src}}_{j,i} \in \{0,1\}`$ (True/False in code) indicates validity of $`s_{j,i}`$
 (and of vector components similarly).
 
-Target mask $`m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) \in \{0,1\}`$ indicates whether to keep the output or place  
-`fill_value`.
+Target mask $`m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
 
 ### 2) Periodic longitude wrapping
 
 When longitude is treated as periodic, wrap every target longitude 
-    $$ \lambda^{*}_{deg} $$ into the same half-open interval
-    $$ [ \lambda^{*}_{0}, \lambda^{*}_{0} + 360 ) $$
+
+$$
+    \lambda^{*}_{deg} \in [ \lambda^{*}_{0}, \lambda^{*}_{0} + 360 ) 
+$$
 
 of the (internally ascending) source grid:
 
 $$
-    \tilde{\lambda}^{*}_{deg} = \lambda^{deg}_{0} + \mathrm{mod}(\lambda^{*}_{deg} - \lambda^{deg}_{0}, 360)
-    \text{where } \lambda^{deg}_{0} = \text{base0\_deg} 
+    \tilde{\lambda}^{*}_{deg} = \lambda^{0}_{deg} + \mathrm{mod}(\lambda^{*}_{deg} - \lambda^{0}_{deg}, 360), \quad
+    \text{where} \quad \lambda^{0}_{deg} = \text{base0}_{deg}
 $$
 
 and convert to radians when needed,
 
 $$
-    \tilde{\lambda}^{*} = \tilde{\lambda}^{*}_{deg} \cdot \pi / 180
+    \tilde{\lambda}^{*} = \tilde{\lambda}^{*}_{deg} \cdot \pi / 180.
 $$
 
 This guarantees consistent bracketing even across the dateline.
@@ -80,7 +81,7 @@ $$
 
 #### 3.1) Forward (wrapped) longitudinal difference
 
-Across the dateline, we must measure the **forward** difference from $i_0$ to $i_1$. Because longitude wraps, we define the **forward** cell width
+Across the dateline, we must measure the **forward** difference from $`i_0`$ to $`i_1`$. Because longitude wraps, we define the **forward** cell width
 
 $$
     \Delta \lambda_{\text{cell}} =
@@ -104,7 +105,7 @@ $$
 Then the fractional longitudinal coordinate is  
 
 $$
-f_x = \frac{\Delta \tilde{\lambda}^*}{\Delta \lambda_{\text{cell}}} \in [0, 1],
+    f_x = \frac{\Delta \tilde{\lambda}^*}{\Delta \lambda_{\text{cell}}} \in [0, 1],
 $$
 
 (after clipping if needed).
@@ -119,11 +120,11 @@ $$
     f_y = \frac{\varphi^* - \varphi_0}{\Delta \varphi_{\text{cell}}}.
 $$
 
-and then clip $f_y$ to $[0, 1]$. If latitudes are descending, $(\Delta \varphi_{\text{cell}} < 0)$, and the fraction remains consistent after clipping.
+and then clip $`f_y`$ to $`[0, 1]`$. If latitudes are descending, $`(\Delta \varphi_{\text{cell}} < 0)`$, and the fraction remains consistent after clipping.
 
 ### 4) Bilinear shape functions (weights)
 
-On the rectangle $(i_0, i_1) \times (j_0, j_1)$, the four standard bilinear basis functions are  
+On the rectangle $`(i_0, i_1) \times (j_0, j_1)`$, the four standard bilinear basis functions are  
 
 $$
     w_{00} = (1 - f_x)(1 - f_y), \quad
@@ -134,7 +135,7 @@ $$
     w_{11} = f_x f_y.
 $$
 
-They satisfy $w_{ab} \ge 0$ and $\sum w_{ab} = 1.$
+They satisfy $`w_{ab} \ge 0$ and $\sum w_{ab} = 1.`$
 
 **Corner mapping:**
 
@@ -159,7 +160,7 @@ $$
     \in \{0, 1\}.
 $$
 
-(If values are NaN, take the corresponding $\mu = 0$.)
+(If values are NaN, take the corresponding $`\mu = 0`$.)
 
 We down-weight invalid corners:
 
@@ -168,7 +169,7 @@ $$
     W = \sum_{a,b \in \{0,1\}} \tilde{w}_{ab}.
 $$
 
-* If $W > 0$ (some valid corners): **renormalize**
+* If $`W > 0`$ (some valid corners): **renormalize**
 
 $$
     \hat{w}_{ab} = \frac{\tilde{w}_{ab}}{W}, \quad
@@ -181,16 +182,16 @@ $$
     s^* = \sum_{a,b} \hat{w}_{ab} \, s_{j_b, i_a},
 $$
 
-where $i_{0/1} = i_0/i_1$ and $j_{0/1} = j_0/j_1.$
+where $`i_{0/1} = i_0/i_1`$ and $`j_{0/1} = j_0/j_1.`$
 
-* If $W = 0$: all four corners invalid ⇒ **extrapolate** (Section 7).
+* If $`W = 0`$: all four corners invalid ⇒ **extrapolate** (Section 7).
 
-(If renormalization is **disabled**, then $s^* = \sum w_{ab} s_{j_b, i_a}$ only if all four corners are valid; otherwise $s^* = \text{NaN}$ and we fall back to extrapolation.)
+(If renormalization is **disabled**, then $`s^* = \sum w_{ab} s_{j_b, i_a}`$ only if all four corners are valid; otherwise $`s^* = \text{NaN}`$ and we fall back to extrapolation.)
 
 ### 6) Vector fields: correct spherical rotation via 3-D projection
 
-Let $(u, v)$ be **eastward** and **northward** components (tangent to the sphere).  
-At any geographic point $(\lambda, \varphi)$ on the unit sphere, define:
+Let $`(u, v)`$ be **eastward** and **northward** components (tangent to the sphere).  
+At any geographic point $`(\lambda, \varphi)`$ on the unit sphere, define:
 
 ---
 
@@ -223,13 +224,13 @@ $$
     \end{pmatrix}.
 $$
 
-These satisfy  
+These satisfy
 $\mathbf{e}_{\text{east}} \cdot \mathbf{e}_{\text{north}} = 0$ and  
 $\|\mathbf{e}_{\text{east}}\| = \|\mathbf{e}_{\text{north}}\| = 1.$
 
 ---
 
-At each source corner $(\lambda_{i_a}, \varphi_{j_b})$, convert $(u, v)$ to a 3-D vector:
+At each source corner $`(\lambda_{i_a}, \varphi_{j_b})`$, convert $`(u, v)`$ to a 3-D vector:
 
 $$
     \mathbf{V}_{ab}
@@ -262,8 +263,8 @@ Let
 $$
     \mathcal{S} = \{(\lambda_p, \varphi_p) : m^{\text{src}}_p = 1\}
 $$  
-be all valid source points (flattened index $p$ maps to $(j, i)$).  
-For a target $(\lambda^*, \varphi^*)$, we compute **great-circle distances** using the haversine formula:
+be all valid source points (flattened index $p$ maps to $`(j, i)`$).  
+For a target $`(\lambda^*, \varphi^*)`$, we compute **great-circle distances** using the haversine formula:
 
 $$
     \delta_p = d_{\text{gc}}\big((\lambda^*, \varphi^*), (\lambda_p, \varphi_p)\big)
@@ -290,8 +291,8 @@ $$
 
 #### 7.2 Inverse-distance weighting (IDW)
 
-Choose the $K$ nearest valid sources $\mathcal{N}_K \subset \mathcal{S}$.  
-With a small $\varepsilon > 0$ to avoid division by zero, define:
+Choose the $K$ nearest valid sources $`\mathcal{N}_K \subset \mathcal{S}`$.  
+With a small $`\varepsilon > 0`$ to avoid division by zero, define:
 
 $$
     \tilde{w}_p = \frac{1}{\delta_p + \varepsilon}, \quad
@@ -311,8 +312,8 @@ $$
 
 (The code extrapolates $u$ and $v$ separately for this fallback.)
 
-> **Note:** IDW preserves constants and reduces to nearest neighbor as $K \to 1$  
-> or when one $\delta_p \ll$ others.
+> **Note:** IDW preserves constants and reduces to nearest neighbor as $`K \to 1`$  
+> or when one $`\delta_p \ll`$ others.
 
 ---
 
@@ -328,7 +329,7 @@ $$
     \end{cases}
 $$
 
-and similarly for $(u, v)$.
+and similarly for $`(u, v)`$.
 
 ### 9) Computational complexity (per target field)
 
@@ -341,7 +342,7 @@ and similarly for $(u, v)$.
   $$
     \mathcal{O}(N_x N_y)
   $$
-  to form $\mathbf{e}_{\text{east}}, \mathbf{e}_{\text{north}}$.
+  to form $`\mathbf{e}_{\text{east}}, \mathbf{e}_{\text{north}}`$.
 
 - **Apply scalar field:**  
   $$
@@ -367,19 +368,19 @@ and similarly for $(u, v)$.
 
 - **Partition of unity.**  
   If at least one valid corner exists and renormalization is used,  
-  $\sum \hat{w}_{ab} = 1.$
+  $`\sum \hat{w}_{ab} = 1.`$
 
 - **Constants are preserved.**  
-  If $s_{j,i} \equiv c$, then $s^* = c.$
+  If $`s_{j,i} \equiv c`$, then $`s^* = c.`$
 
 - **Linearity.**  
-  The map $s \mapsto s^*$ is linear; vector interpolation is linear in $(u, v)$.
+  The map $`s \mapsto s^{*}`$ is linear; vector interpolation is linear in $`(u, v)`$.
 
 - **Periodic consistency.**  
-  The wrapped forward differences ensure cells that straddle $\lambda = 180^\circ$ behave exactly like any other cell.
+  The wrapped forward differences ensure cells that straddle $`\lambda = 180^\circ`$ behave exactly like any other cell.
 
 - **Non-uniform spacing.**  
-  Only the local bracketing grid lines enter $f_x, f_y$; spacing may vary arbitrarily.
+  Only the local bracketing grid lines enter $`f_{x}, f_{y}`$; spacing may vary arbitrarily.
 
 - **Vector correctness.**  
   Converting to 3-D and back projects between **local tangent planes** and correctly rotates directions with longitude/latitude — crucial near the dateline or at high latitudes.
