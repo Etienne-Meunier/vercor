@@ -62,32 +62,34 @@ This guarantees consistent bracketing even across the dateline.
 ### 3) Cell search and local bilinear coordinates
 
 For each target $`(\tilde{\lambda}^{*}, \phi^{*})`$ we find bracketing indices
+
 $$
-    (i_0, i_1) \in \{0, \ldots, N_x - 1\}^{2}, \quad
-    (j_0, j_1) \in \{0, \ldots, N_y - 1\}^{2},
+    (i_{0}, i_{1}) \in \{0, \ldots, N_{x} - 1\}^{2}, \quad
+    (j_{0}, j_{1}) \in \{0, \ldots, N_{y} - 1\}^{2},
 $$
 
-such that $`(i_0, i_1)`$ are consecutive longitudes around $`(\tilde{\lambda}^{*})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`(\varphi^{*})`$.
+such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{*})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`(\varphi^{*})`$.
 
 If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo $`(N_{x})`$.
 
 Let
+
 $$
-    \lambda_{0} = \lambda_{i_0}, \quad
-    \lambda_{1} = \lambda_{i_1}, \quad
-    \varphi_{0} = \varphi_{j_0}, \quad
-    \varphi_{1} = \varphi_{j_1}.
+    \lambda_{0} = \lambda_{i_{0}}, \quad
+    \lambda_{1} = \lambda_{i_{1}}, \quad
+    \varphi_{0} = \varphi_{j_{0}}, \quad
+    \varphi_{1} = \varphi_{j_{1}}.
 $$
 
 #### 3.1) Forward (wrapped) longitudinal difference
 
-Across the dateline, we must measure the **forward** difference from $`i_0`$ to $`i_1`$. Because longitude wraps, we define the **forward** cell width
+Across the dateline, we must measure the **forward** difference from $`i_{0}`$ to $`i_{1}`$. Because longitude wraps, we define the **forward** cell width
 
 $$
     \Delta \lambda_{\text{cell}} =
     \begin{cases}
-        (\lambda_1 + 2\pi) - \lambda_0, & \text{if } i_1 \le i_0 \text{ (wrapped cell)}, \\
-        \lambda_1 - \lambda_0, & \text{otherwise.}
+        (\lambda_{1} + 2\pi) - \lambda_{0}, & \text{if } i_{1} \le i_{0} \text{ (wrapped cell)}, \\
+        \lambda_{1} - \lambda_{0}, & \text{otherwise.}
     \end{cases}
 $$
 
