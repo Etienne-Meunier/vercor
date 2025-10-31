@@ -47,7 +47,7 @@ $$
 of the (internally ascending) source grid:
 
 $$
-    \tilde{\lambda}^{*}_{deg} = \lambda^{0}_{deg} + \mathrm{mod}(\lambda^{*}_{deg} - \lambda^{0}_{deg}, 360), \quad
+    \tilde{\lambda}^{*}_{deg} = \lambda^{0}_{deg} + \mathrm{mod} (\lambda^{*}_{deg} - \lambda^{0}_{deg}, 360), \quad
     \text{where} \quad \lambda^{0}_{deg} = \text{base0}_{deg}
 $$
 
@@ -226,9 +226,7 @@ $$
     \end{pmatrix}.
 $$
 
-These satisfy
-$\mathbf{e}_{\text{east}} \cdot \mathbf{e}_{\text{north}} = 0$ and  
-$\|\mathbf{e}_{\text{east}}\| = \|\mathbf{e}_{\text{north}}\| = 1.$
+These satisfy $`\mathbf{e}_{\text{east}} \cdot \mathbf{e}_{\text{north}} = 0`$ and $`\|\mathbf{e}_{\text{east}}\| = \|\mathbf{e}_{\text{north}}\| = 1.`$
 
 ---
 
@@ -261,10 +259,12 @@ This procedure automatically rotates vectors correctly across the dateline and a
 
 ### 7) Extrapolation on the sphere (when all 4 corners are invalid)
 
-Let  
+Let
+
 $$
     \mathcal{S} = \{(\lambda_{p}, \varphi_{p}) : m^{\text{src}}_{p} = 1\}
 $$  
+
 be all valid source points (flattened index $p$ maps to $`(j, i)`$).  
 For a target $`(\lambda^{*}, \varphi^{*})`$, we compute **great-circle distances** using the haversine formula:
 
@@ -274,8 +274,8 @@ $$
 $$
 
 $$
-    a_{p} = \sin^2 \frac{\varphi_{p} - \varphi^{*}}{2}
-    + \cos\varphi^{*} \cos\varphi_{p} \sin^2 \frac{\lambda_{p} - \lambda^{*}}{2}.
+    a_{p} = \sin^{2} \frac{\varphi_{p} - \varphi^{*}}{2}
+    + \cos\varphi^{*} \cos\varphi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{*}}{2}.
 $$
 
 ---
