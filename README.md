@@ -41,20 +41,28 @@ Target mask $`m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) \in \{0,1\}`$ indicates w
 When longitude is treated as periodic, wrap every target longitude 
 
 $$
-    \lambda^{\text{*}}_{\mathrm{deg}} \in [ \lambda^{\text{*}}_{0}, \lambda^{\text{*}}_{0} + 360)
+    \lambda^{*}_{\mathrm{deg}}
+$$
+
+$$
+    \in
+$$
+
+$$
+    [ \lambda^{*}_{0}, \lambda^{*}_{0} + 360)
 $$
 
 of the (internally ascending) source grid:
 
 $$
-    \tilde{\lambda}^{\text{*}}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} (\lambda^{\text{*}}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, 360), \quad
+    \tilde{\lambda}^{*}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} (\lambda^{*}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, 360), \quad
     \text{where} \quad \lambda^{0}_{\mathrm{deg}} = \text{base0}_{\mathrm{deg}}
 $$
 
 and convert to radians when needed,
 
 $$
-    \tilde{\lambda}^{\text{*}} = \tilde{\lambda}^{\text{*}}_{\mathrm{deg}} \cdot \pi / 180.
+    \tilde{\lambda}^{*} = \tilde{\lambda}^{*}_{\mathrm{deg}} \cdot \pi / 180.
 $$
 
 This guarantees consistent bracketing even across the dateline.
