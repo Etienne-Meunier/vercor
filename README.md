@@ -41,21 +41,13 @@ Target mask $`m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) \in \{0,1\}`$ indicates w
 When longitude is treated as periodic, wrap every target longitude 
 
 $$
-    \lambda^{*}_{\mathrm{deg}}
-$$
-
-$$
-    \in
-$$
-
-$$
-    [\lambda^{*}_{0}, \lambda^{*}_{0} + \text{360})
+    \lambda^{*}_{\mathrm{deg}} \in \text{[} \lambda^{*}_{0}, \lambda^{*}_{0} + \text{360} \text{)}
 $$
 
 of the (internally ascending) source grid:
 
 $$
-    \tilde{\lambda}^{*}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} (\lambda^{*}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, \text{360}), \quad
+    \tilde{\lambda}^{*}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} \left(\lambda^{*}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, \text{360}\right), \quad
     \text{where} \quad \lambda^{0}_{\mathrm{deg}} = \text{base0}_{\mathrm{deg}}
 $$
 
