@@ -24,7 +24,7 @@ A vector field is $`(u_{j,i}, v_{j,i})`$ in local east/north components.
 
 #### Target points
 
-A (possibly non-rectangular) target set $`{(\lambda^{*}, \varphi^{*})}`$ with broadcast shape $`\mathcal{T}`$.
+A (possibly non-rectangular) target set $`{(\lambda^{\ast}, \varphi^{\ast})}`$ with broadcast shape $`\mathcal{T}`$.
 All formulas below apply pointwise over $`\mathcal{T}`$.
 
 ---
@@ -34,7 +34,7 @@ All formulas below apply pointwise over $`\mathcal{T}`$.
 Source mask $`m^{\text{src}}_{j,i} \in \{0,1\}`$ (True/False in code) indicates validity of $`s_{j,i}`$
 (and of vector components similarly).
 
-Target mask $`m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
+Target mask $`m^{\text{tgt}}(\lambda^{\ast}, \varphi^{\ast}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
 
 ### 2) Periodic longitude wrapping
 
@@ -54,21 +54,21 @@ $$
 and convert to radians when needed,
 
 $$
-    \tilde{\lambda}^{*} = \tilde{\lambda}^{*}_{\mathrm{deg}} \cdot \pi / 180.
+    \tilde{\lambda}^{\ast} = \tilde{\lambda}^{\ast}_{\mathrm{deg}} \cdot \pi / 180.
 $$
 
 This guarantees consistent bracketing even across the dateline.
 
 ### 3) Cell search and local bilinear coordinates
 
-For each target $`(\tilde{\lambda}^{*}, \phi^{*})`$ we find bracketing indices
+For each target $`(\tilde{\lambda}^{\ast}, \phi^{\ast})`$ we find bracketing indices
 
 $$
     (i_{0}, i_{1}) \in \{0, \ldots, N_{x} - 1\}^{2}, \quad
     (j_{0}, j_{1}) \in \{0, \ldots, N_{y} - 1\}^{2},
 $$
 
-such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{*})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`(\varphi^{*})`$.
+such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{\ast})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`(\varphi^{\ast})`$.
 
 If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo $`(N_{x})`$.
 
@@ -107,7 +107,7 @@ $$
 Then the fractional longitudinal coordinate is  
 
 $$
-    f_x = \frac{\Delta \tilde{\lambda}^*}{\Delta \lambda_{\text{cell}}} \in [0, 1],
+    f_x = \frac{\Delta \tilde{\lambda}^{\ast}}{\Delta \lambda_{\text{cell}}} \in [0, 1],
 $$
 
 (after clipping if needed).
@@ -119,7 +119,7 @@ Regardless of ascending/descending latitude ordering,
 $$
     \Delta \varphi_{\text{cell}} = \varphi_1 - \varphi_0,
     \quad
-    f_y = \frac{\varphi^* - \varphi_0}{\Delta \varphi_{\text{cell}}}.
+    f_y = \frac{\varphi^{\ast} - \varphi_{0}}{\Delta \varphi_{\text{cell}}}.
 $$
 
 and then clip $`f_y`$ to $`[0, 1]`$. If latitudes are descending, $`(\Delta \varphi_{\text{cell}} < 0)`$, and the fraction remains consistent after clipping.
@@ -181,7 +181,7 @@ $$
 and the scalar interpolation is  
 
 $$
-    s^* = \sum_{a,b} \hat{w}_{ab} \, s_{j_b, i_a},
+    s^{\ast} = \sum_{a,b} \hat{w}_{ab} \, s_{j_b, i_a},
 $$
 
 where $`i_{0/1} = i_0/i_1`$ and $`j_{0/1} = j_0/j_1.`$
@@ -241,16 +241,16 @@ $$
 Then apply the **same mask-aware bilinear blend** to the 3-D vectors:
 
 $$
-    \mathbf{V}^* = \sum_{a,b} \hat{w}_{ab} \, \mathbf{V}_{ab}
+    \mathbf{V}^{\ast} = \sum_{a,b} \hat{w}_{ab} \, \mathbf{V}_{ab}
     \quad (\text{if } W > 0; \text{ else extrapolate}).
 $$
 
-Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{*}, \varphi^{*})`$:
+Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{\ast}, \varphi^{\ast})`$:
 
 $$
-    u^{*} = \mathbf{V}^{*} \cdot \mathbf{e}_{\text{east}}(\lambda^{*}, \varphi^{*}),
+    u^{\ast} = \mathbf{V}^{\ast} \cdot \mathbf{e}_{\text{east}}(\lambda^{\ast}, \varphi^{\ast}),
     \quad
-    v^{*} = \mathbf{V}^{*} \cdot \mathbf{e}_{\text{north}}(\lambda^{*}, \varphi^{*}).
+    v^{\ast} = \mathbf{V}^{\ast} \cdot \mathbf{e}_{\text{north}}(\lambda^{\ast}, \varphi^{\ast}).
 $$
 
 This procedure automatically rotates vectors correctly across the dateline and anywhere on the sphere  
@@ -266,16 +266,16 @@ $$
 $$  
 
 be all valid source points (flattened index $p$ maps to $`(j, i)`$).  
-For a target $`(\lambda^{*}, \varphi^{*})`$, we compute **great-circle distances** using the haversine formula:
+For a target $`(\lambda^{\ast}, \varphi^{\ast})`$, we compute **great-circle distances** using the haversine formula:
 
 $$
-    \delta_{p} = d_{\text{gc}}\big((\lambda^{*}, \varphi^{*}), (\lambda_{p}, \varphi_{p})\big)
+    \delta_{p} = d_{\text{gc}}\big((\lambda^{\ast}, \varphi^{\ast}), (\lambda_{p}, \varphi_{p})\big)
     = 2 \arctan 2\!\left(\sqrt{a_{p}}, \sqrt{1 - a_{p}}\right),
 $$
 
 $$
-    a_{p} = \sin^{2} \frac{\varphi_{p} - \varphi^{*}}{2}
-    + \cos\varphi^{*} \cos\varphi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{*}}{2}.
+    a_{p} = \sin^{2} \frac{\varphi_{p} - \varphi^{\ast}}{2}
+    + \cos\varphi^{\ast} \cos\varphi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{\ast}}{2}.
 $$
 
 ---
@@ -285,8 +285,8 @@ Two supported modes:
 #### 7.1 Nearest neighbor
 
 $$
-    p^{*} = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
-    s^{*} = s_{p^{*}} \quad \text{or} \quad (u^{*}, v^{*}) = (u_{p^{*}}, v_{p^{*}}).
+    p^{\ast} = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
+    s^{\ast} = s_{p^{\ast}} \quad \text{or} \quad (u^{\ast}, v^{\ast}) = (u_{p^{\ast}}, v_{p^{\ast}}).
 $$
 
 ---
@@ -305,11 +305,11 @@ $$
 Then
 
 $$
-    s^{*} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, s_{p},
+    s^{\ast} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, s_{p},
     \quad
-    u^{*} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, u_{p},
+    u^{\ast} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, u_{p},
     \quad
-    v^{*} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, v_{p}.
+    v^{\ast} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, v_{p}.
 $$
 
 (The code extrapolates $u$ and $v$ separately for this fallback.)
@@ -324,9 +324,9 @@ $$
 After interpolation/extrapolation, the final output applies the target mask:
 
 $$
-    s^{\text{out}}(\lambda^{*}, \varphi^{*}) =
+    s^{\text{out}}(\lambda^{\ast}, \varphi^{\ast}) =
     \begin{cases}
-        s^{*}(\lambda^{*}, \varphi^{*}), & m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) = 1, \\
+        s^{\ast}(\lambda^{\ast}, \varphi^{\ast}), & m^{\text{tgt}}(\lambda^{\ast}, \varphi^{\ast}) = 1, \\
         \mathrm{fill\_value}, & \text{otherwise,}
     \end{cases}
 $$
@@ -384,7 +384,7 @@ $$
   If $`s_{j,i} \equiv c`$, then $`s^* = c.`$
 
 - **Linearity.**  
-  The map $`s \mapsto s^{*}`$ is linear; vector interpolation is linear in $`(u, v)`$.
+  The map $`s \mapsto s^{\ast}`$ is linear; vector interpolation is linear in $`(u, v)`$.
 
 - **Periodic consistency.**  
   The wrapped forward differences ensure cells that straddle $`\lambda = 180^\circ`$ behave exactly like any other cell.
