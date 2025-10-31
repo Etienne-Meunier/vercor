@@ -49,13 +49,13 @@ $$
 $$
 
 $$
-    [ \lambda^{*}_{0}, \lambda^{*}_{0} + 360)
+    [\lambda^{*}_{0}, \lambda^{*}_{0} + \text{360})
 $$
 
 of the (internally ascending) source grid:
 
 $$
-    \tilde{\lambda}^{*}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} (\lambda^{*}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, 360), \quad
+    \tilde{\lambda}^{*}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} (\lambda^{*}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, \text{360}), \quad
     \text{where} \quad \lambda^{0}_{\mathrm{deg}} = \text{base0}_{\mathrm{deg}}
 $$
 
