@@ -261,19 +261,19 @@ This procedure automatically rotates vectors correctly across the dateline and a
 
 Let  
 $$
-    \mathcal{S} = \{(\lambda_p, \varphi_p) : m^{\text{src}}_p = 1\}
+    \mathcal{S} = \{(\lambda_{p}, \varphi_{p}) : m^{\text{src}}_{p} = 1\}
 $$  
 be all valid source points (flattened index $p$ maps to $`(j, i)`$).  
-For a target $`(\lambda^*, \varphi^*)`$, we compute **great-circle distances** using the haversine formula:
+For a target $`(\lambda^{*}, \varphi^{*})`$, we compute **great-circle distances** using the haversine formula:
 
 $$
-    \delta_p = d_{\text{gc}}\big((\lambda^*, \varphi^*), (\lambda_p, \varphi_p)\big)
-    = 2 \arctan 2\!\left(\sqrt{a_p}, \sqrt{1 - a_p}\right),
+    \delta_{p} = d_{\text{gc}}\big((\lambda^{*}, \varphi^{*}), (\lambda_{p}, \varphi_{p})\big)
+    = 2 \arctan 2\!\left(\sqrt{a_{p}}, \sqrt{1 - a_{p}}\right),
 $$
 
 $$
-    a_p = \sin^2 \frac{\varphi_p - \varphi^*}{2}
-    + \cos\varphi^* \cos\varphi_p \sin^2 \frac{\lambda_p - \lambda^*}{2}.
+    a_{p} = \sin^2 \frac{\varphi_{p} - \varphi^{*}}{2}
+    + \cos\varphi^{*} \cos\varphi_{p} \sin^2 \frac{\lambda_{p} - \lambda^{*}}{2}.
 $$
 
 ---
@@ -283,8 +283,8 @@ Two supported modes:
 #### 7.1 Nearest neighbor
 
 $$
-    p^* = \arg \min_{p \in \mathcal{S}} \delta_p, \quad
-    s^* = s_{p^*} \quad \text{or} \quad (u^*, v^*) = (u_{p^*}, v_{p^*}).
+    p^* = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
+    s^* = s_{p^{*}} \quad \text{or} \quad (u^{*}, v^{*}) = (u_{p^{*}}, v_{p^{*}}).
 $$
 
 ---
@@ -322,9 +322,9 @@ $$
 After interpolation/extrapolation, the final output applies the target mask:
 
 $$
-    s^{\text{out}}(\lambda^*, \varphi^*) =
+    s^{\text{out}}(\lambda^{*}, \varphi^{*}) =
     \begin{cases}
-        s^*(\lambda^*, \varphi^*), & m^{\text{tgt}}(\lambda^*, \varphi^*) = 1, \\
+        s^*(\lambda^{*}, \varphi^{*}), & m^{\text{tgt}}(\lambda^{*}, \varphi^{*}) = 1, \\
         \text{fill\_value}, & \text{otherwise,}
     \end{cases}
 $$
@@ -335,30 +335,38 @@ and similarly for $`(u, v)`$.
 
 - **Precompute (once):**  
   Cell search by binary search  
-  $$
+  
+$$
     \mathcal{O}(|\mathcal{T}| \log N_x + |\mathcal{T}| \log N_y);
-  $$
+$$
+  
   vector bases:  
-  $$
+  
+$$
     \mathcal{O}(N_x N_y)
-  $$
+$$
+  
   to form $`\mathbf{e}_{\text{east}}, \mathbf{e}_{\text{north}}`$.
 
 - **Apply scalar field:**  
-  $$
+  
+$$
     \mathcal{O}(|\mathcal{T}|)
-  $$
+$$
 
 - **Apply vector field:**  
-  $$
+  
+$$
     \mathcal{O}(|\mathcal{T}|) \text{ arithmetic using cached bases.}
-  $$
+$$
 
 - **Extrapolation (only where needed):**  
-  Nearest: naive  
-  $$
+  Nearest: naive
+
+$$
     \mathcal{O}(|\mathcal{T}|_{\text{need}} \cdot N_x N_y)
-  $$
+$$
+  
   with small practical chunks;  
   IDW adds a partial sort for $K$.
 
