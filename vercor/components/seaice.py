@@ -25,4 +25,3 @@ class SeaIce(Component):
         x = (Tfreeze - SST) / 2.0
         ice = 1.0 / (1.0 + np.exp(-x))
         self.state["ICEFRAC"] = ice
-

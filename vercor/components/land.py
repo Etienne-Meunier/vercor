@@ -3,7 +3,6 @@ from vercor.grid import RectilinearGrid
 from vercor.components.base import Component
 
 
-
 class Land(Component):
     """Toy bucket land model: soil moisture evolves from P-E (here: uses LHF sign as proxy).
     Outputs: SOILM [0..1]

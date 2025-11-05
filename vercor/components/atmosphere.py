@@ -3,7 +3,12 @@ import numpy as np
 from vercor.components.base import Component
 from vercor.components.forcing import ERA5Forcing
 from vercor.grid import RectilinearGrid
-from vercor.fluxes.utilities import get_press_levs, compute_z_level, potential_temperature, air_density
+from vercor.fluxes.utilities import (
+    get_press_levs,
+    compute_z_level,
+    potential_temperature,
+    air_density,
+)
 
 
 class Atmosphere(Component):
@@ -72,7 +77,9 @@ class DataAtmosphere(Component):
             ph = get_press_levs(ds.spres[..., m], ds.hyai, ds.hybi)
             pf = get_press_levs(ds.spres[..., m], ds.hyam, ds.hybm)
 
-            zbot = compute_z_level(settings, ds.temperature[..., m], ds.specific_humidity[..., m], ph[:, :]) # L136
+            zbot = compute_z_level(
+                settings, ds.temperature[..., m], ds.specific_humidity[..., m], ph[:, :]
+            )  # L136
             rbot = air_density(settings, ds.tbot[:, :, m], pf[:, :, 0])
             thbot = potential_temperature(settings, ds.tbot[:, :, m], pf[:, :, 0])
 

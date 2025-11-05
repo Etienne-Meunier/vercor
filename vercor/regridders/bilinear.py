@@ -46,7 +46,9 @@ class BilinearRectilinear(Regridder):
 
         return self
 
-    def __call__(self, *args, src_mask=None) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    def __call__(
+        self, *args, src_mask=None
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         """
         Call with positional args for fields and optional src_mask as a keyword-only arg.
 

@@ -33,9 +33,7 @@ def _scalar_field_interpolate(
     if not callable(regridder):
         raise TypeError("Regridder must be callable for scalar field interpolation")
 
-    destination_field = regridder(source_fields[field_name])
-
-    return destination_field
+    return regridder(source_fields[field_name])
 
 
 def _vector_field_interpolate(
@@ -43,18 +41,15 @@ def _vector_field_interpolate(
     source_fields: Dict[str, np.ndarray],
     regridder: Regridder,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    if len(field_name) == 2:
-        src_field_name, alt_field_name = field_name
-    else:
-        raise ValueError("Vector field name must be a tuple of two strings")
     if not callable(regridder):
         raise TypeError("Regridder must be callable for vector field interpolation")
+    if len(field_name) == 2:
+        field_name1, field_name2 = field_name
+    else:
+        raise ValueError("Vector field name must be a tuple of two strings")
     try:
-        destination_field_lon, destination_field_lat = regridder(
-            source_fields[src_field_name], source_fields[alt_field_name]
-        )
+        return regridder(source_fields[field_name1], source_fields[field_name2])
     except Exception as e:
         raise TypeError(
             "Regridder for vector fields must accept two arguments and return a tuple of two arrays"
         ) from e
-    return (destination_field_lon, destination_field_lat)

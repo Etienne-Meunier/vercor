@@ -1,11 +1,9 @@
 from dataclasses import dataclass, field
-from itertools import chain
 from typing import Dict, List, Tuple, Union
 import logging
 
 from vercor.settings import VercorSettings
 from vercor.components import Atmosphere, Ocean, SeaIce, Land
-
 from vercor.clock import Clock
 from vercor.exchange import Exchange
 from vercor.regridders.base import Regridder
@@ -21,7 +19,7 @@ logging.basicConfig(level=logging.INFO)
 class Coupler:
     # Add communicator for MPI
     clock: Clock
-    runseq: RunSequence
+    runseq: RunSequence = field(init=False)
     components: Dict[str, Union[Atmosphere, Ocean, SeaIce, Land]] = field(
         default_factory=dict
     )
@@ -43,6 +41,13 @@ class Coupler:
         logger.info(
             f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination} {exchange.field_names} [{exchange.when}]"
         )
+
+    def set_components_run_sequence(self, runseq: RunSequence) -> None:
+        for cname in runseq:
+            if cname not in self.components.keys():
+                raise ValueError(f"Component {cname} not registered in coupler")
+        self.runseq = runseq
+        logger.info(f" Set run sequence: {self.runseq.order}")
 
     def initialize(self) -> None:
         # Build regridders per (src, dst)
@@ -81,41 +86,39 @@ class Coupler:
             if exchange.destination != component.name:
                 continue
 
-            source = self.components[exchange.source]
-            destination = self.components[exchange.destination]
+            source_component = self.components[exchange.source]
+            destination_component = self.components[exchange.destination]
 
             logger.info(
-                f" Exchange fields ({exchange.name}): {source.name} ---> {destination.name} ({when})"
+                f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name} ({when})"
             )
 
             regridder = self._regridders[(exchange.source, exchange.destination)]
-            source_fields = source.export_fields()
+            source_fields = source_component.export_fields()
             destination_fields = {}
 
             for field_name in exchange.field_names:
                 if isinstance(field_name, tuple):
-                    flattened = list(
-                        chain.from_iterable(
-                            (item,) if isinstance(item, str) else item
-                            for item in field_name
-                        )
-                    )
-                    if not all(fkey in source_fields for fkey in flattened):
+                    field_name_set = set(field_name)
+                    if not field_name_set.issubset(set(source_fields.keys())):
                         raise ValueError(
                             f"Not all fields in vector {field_name} are present in source fields"
                         )
-
                     (
                         destination_fields[field_name[0]],
                         destination_fields[field_name[1]],
                     ) = _vector_field_interpolate(field_name, source_fields, regridder)
                 else:
+                    if field_name not in source_fields:
+                        raise ValueError(
+                            f"Field {field_name} not present in source fields"
+                        )
                     destination_fields[field_name] = _scalar_field_interpolate(
                         field_name, source_fields, regridder
                     )
 
             if destination_fields:
-                destination.import_fields(destination_fields)
+                destination_component.import_fields(destination_fields)
                 logger.debug(
                     f"{when.upper()} step: Exchanged {list(destination_fields)} from {exchange.source} to {exchange.destination}"
                 )

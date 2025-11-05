@@ -24,9 +24,11 @@ run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
 # Choose models/components for concurrent execution when MPI is ON
 
 # Coupler
-cpl = Coupler(clock=clock, runseq=run_sequence)
+cpl = Coupler(clock=clock)
 for comp in [ATM, OCN, ICE, LND]:
     cpl.register(comp)
+
+cpl.set_components_run_sequence(run_sequence)
 
 # Bilinear interpolation
 bilinear = lambda source_grid, source_mask, destination_grid, destination_mask:\

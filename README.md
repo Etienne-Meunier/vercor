@@ -7,8 +7,8 @@ Versatile Earth system COupleR (VerCOR)
 
 #### Source (rectilinear) grid
 
-Longitudes $`\{\lambda_i\}_{i=0}^{N_x-1}`$ (strictly monotone in the code’s internal representation, ascending after an optional flip).
-Latitudes $`\{\varphi_j\}_{j=0}^{N_y-1}`$ (strictly monotone; may be ascending or descending).
+Longitudes $`\{\lambda_i\}_{i=0}^{N_x-1}`$ (strictly monotone in the code’s internal representation).
+Latitudes $`\{\phi_j\}_{j=0}^{N_y-1}`$ (strictly monotone; may be ascending or descending).
 
 **Index ranges:**
 
@@ -24,7 +24,7 @@ A vector field is $`(u_{j,i}, v_{j,i})`$ in local east/north components.
 
 #### Target points
 
-A (possibly non-rectangular) target set $`{(\lambda^{\ast}, \varphi^{\ast})}`$ with broadcast shape $`\mathcal{T}`$.
+A target set $`{(\lambda^{t}, \phi^{t})}`$ with broadcast shape $`\mathcal{T}`$.
 All formulas below apply pointwise over $`\mathcal{T}`$.
 
 ---
@@ -34,41 +34,41 @@ All formulas below apply pointwise over $`\mathcal{T}`$.
 Source mask $`m^{\text{src}}_{j,i} \in \{0,1\}`$ (True/False in code) indicates validity of $`s_{j,i}`$
 (and of vector components similarly).
 
-Target mask $`m^{\text{tgt}}(\lambda^{\ast}, \varphi^{\ast}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
+Target mask $`m^{\text{tgt}}(\lambda^{t}, \phi^{t}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
 
 ### 2) Periodic longitude wrapping
 
 When longitude is treated as periodic, wrap every target longitude 
 
 $$
-    \lambda^{\ast}_{\mathrm{deg}} \in \left[\lambda^{\ast}_{0}, \lambda^{\ast}_{0} + \text{360}\right)
+    \lambda^{t}_{\mathrm{deg}} \in \left[\lambda^{t}_{0}, \lambda^{t}_{0} + \text{360}\right)
 $$
 
 of the (internally ascending) source grid:
 
 $$
-    \tilde{\lambda}^{\ast}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} \left(\lambda^{\ast}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, \text{360}\right), \quad
+    \tilde{\lambda}^{t}_{\mathrm{deg}} = \lambda^{0}_{\mathrm{deg}} + \mathrm{mod} \left(\lambda^{t}_{\mathrm{deg}} - \lambda^{0}_{\mathrm{deg}}, \text{360}\right), \quad
     \text{where} \quad \lambda^{0}_{\mathrm{deg}} = \text{base0}_{\mathrm{deg}}
 $$
 
 and convert to radians when needed,
 
 $$
-    \tilde{\lambda}^{\ast} = \tilde{\lambda}^{\ast}_{\mathrm{deg}} \cdot \pi / 180.
+    \tilde{\lambda}^{t} = \tilde{\lambda}^{t}_{\mathrm{deg}} \cdot \pi / 180.
 $$
 
 This guarantees consistent bracketing even across the dateline.
 
 ### 3) Cell search and local bilinear coordinates
 
-For each target $`(\tilde{\lambda}^{\ast}, \phi^{\ast})`$ we find bracketing indices
+For each target $`(\tilde{\lambda}^{t}, \phi^{t})`$ we find bracketing indices
 
 $$
     (i_{0}, i_{1}) \in \{0, \ldots, N_{x} - 1\}^{2}, \quad
     (j_{0}, j_{1}) \in \{0, \ldots, N_{y} - 1\}^{2},
 $$
 
-such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{\ast})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`(\varphi^{\ast})`$.
+such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{t})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`({\phi}^{t})`$.
 
 If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo $`(N_{x})`$.
 
@@ -77,8 +77,8 @@ Let
 $$
     \lambda_{0} = \lambda_{i_{0}}, \quad
     \lambda_{1} = \lambda_{i_{1}}, \quad
-    \varphi_{0} = \varphi_{j_{0}}, \quad
-    \varphi_{1} = \varphi_{j_{1}}.
+    \phi_{0} = \phi_{j_{0}}, \quad
+    \phi_{1} = \phi_{j_{1}}.
 $$
 
 #### 3.1) Forward (wrapped) longitudinal difference
@@ -96,18 +96,18 @@ $$
 and the **forward displacement**
 
 $$
-    \Delta \tilde{\lambda}^* = \tilde{\lambda}^* - \lambda_0, \quad
-    \Delta \tilde{\lambda}^* \leftarrow
+    \Delta \tilde{\lambda}^{t} = \tilde{\lambda}^{t} - \lambda_0, \quad
+    \Delta \tilde{\lambda}^{t} \leftarrow
     \begin{cases}
-        \Delta \tilde{\lambda}^* + 2\pi, & \text{if } \Delta \tilde{\lambda}^* < 0, \\
-        \Delta \tilde{\lambda}^*, & \text{otherwise.}
+        \Delta \tilde{\lambda}^{t} + 2\pi, & \text{if } \Delta \tilde{\lambda}^{t} < 0, \\
+        \Delta \tilde{\lambda}^{t}, & \text{otherwise.}
     \end{cases}
 $$
 
 Then the fractional longitudinal coordinate is  
 
 $$
-    f_x = \frac{\Delta \tilde{\lambda}^{\ast}}{\Delta \lambda_{\text{cell}}} \in [0, 1],
+    f_x = \frac{\Delta \tilde{\lambda}^{t}}{\Delta \lambda_{\text{cell}}} \in [0, 1],
 $$
 
 (after clipping if needed).
@@ -117,12 +117,12 @@ $$
 Regardless of ascending/descending latitude ordering,
 
 $$
-    \Delta \varphi_{\text{cell}} = \varphi_1 - \varphi_0,
+    \Delta \phi_{\text{cell}} = \phi_1 - \phi_0,
     \quad
-    f_y = \frac{\varphi^{\ast} - \varphi_{0}}{\Delta \varphi_{\text{cell}}}.
+    f_y = \frac{\phi^{t} - \phi_{0}}{\Delta \phi_{\text{cell}}}.
 $$
 
-and then clip $`f_y`$ to $`[0, 1]`$. If latitudes are descending, $`(\Delta \varphi_{\text{cell}} < 0)`$, and the fraction remains consistent after clipping.
+and then clip $`f_y`$ to $`[0, 1]`$. If latitudes are descending, $`(\Delta \phi_{\text{cell}} < 0)`$, and the fraction remains consistent after clipping.
 
 ### 4) Bilinear shape functions (weights)
 
@@ -137,7 +137,7 @@ $$
     w_{11} = f_x f_y.
 $$
 
-They satisfy $`w_{ab} \ge 0$ and $\sum w_{ab} = 1.`$
+They satisfy $`w_{ab} \ge 0`$ and $`\sum w_{ab} = 1.`$
 
 **Corner mapping:**
 
@@ -181,19 +181,19 @@ $$
 and the scalar interpolation is  
 
 $$
-    s^{\ast} = \sum_{a,b} \hat{w}_{ab} \, s_{j_b, i_a},
+    s^{t} = \sum_{a,b} \hat{w}_{ab} \, s_{j_b, i_a},
 $$
 
-where $`i_{0/1} = i_0/i_1`$ and $`j_{0/1} = j_0/j_1.`$
+where $`a, b \in \{0, 1\}`$.
 
 * If $`W = 0`$: all four corners invalid ⇒ **extrapolate** (Section 7).
 
-(If renormalization is **disabled**, then $`s^* = \sum w_{ab} s_{j_b, i_a}`$ only if all four corners are valid; otherwise $`s^* = \text{NaN}`$ and we fall back to extrapolation.)
+(If renormalization is **disabled**, then $`s^t = \sum w_{ab} s_{j_b, i_a}`$ only if all four corners are valid; otherwise $`s^t = \text{NaN}`$ and we fall back to extrapolation.)
 
 ### 6) Vector fields: correct spherical rotation via 3-D projection
 
 Let $`(u, v)`$ be **eastward** and **northward** components (tangent to the sphere).  
-At any geographic point $`(\lambda, \varphi)`$ on the unit sphere, define:
+At any geographic point $`(\lambda, \phi)`$ on the unit sphere, define:
 
 ---
 
@@ -230,31 +230,31 @@ These satisfy $`\mathbf{e}_{\text{east}} \cdot \mathbf{e}_{\text{north}} = 0`$ a
 
 ---
 
-At each source corner $`(\lambda_{i_a}, \varphi_{j_b})`$, convert $`(u, v)`$ to a 3-D vector:
+At each source corner $`(\lambda_{i_a}, \phi_{j_b})`$, convert $`(u, v)`$ to a 3-D vector:
 
 $$
     \mathbf{V}_{ab}
-    = u_{j_b, i_a} \, \mathbf{e}_{\text{east}}(\lambda_{i_a}, \varphi_{j_b})
-    + v_{j_b, i_a} \, \mathbf{e}_{\text{north}}(\lambda_{i_a}, \varphi_{j_b}).
+    = u_{j_b, i_a} \, \mathbf{e}_{\text{east}}(\lambda_{i_a}, \phi_{j_b})
+    + v_{j_b, i_a} \, \mathbf{e}_{\text{north}}(\lambda_{i_a}, \phi_{j_b}).
 $$
 
 Then apply the **same mask-aware bilinear blend** to the 3-D vectors:
 
 $$
-    \mathbf{V}^{\ast} = \sum_{a,b} \hat{w}_{ab} \, \mathbf{V}_{ab}
+    \mathbf{V}^{t} = \sum_{a,b} \hat{w}_{ab} \, \mathbf{V}_{ab}
     \quad (\text{if } W > 0; \text{ else extrapolate}).
 $$
 
-Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{\ast}, \varphi^{\ast})`$:
+Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{t}, \phi^{t})`$:
 
 $$
-    u^{\ast} = \mathbf{V}^{\ast} \cdot \mathbf{e}_{\text{east}}(\lambda^{\ast}, \varphi^{\ast}),
+    u^{t} = \mathbf{V}^{t} \cdot \mathbf{e}_{\text{east}}(\lambda^{t}, \phi^{t}),
     \quad
-    v^{\ast} = \mathbf{V}^{\ast} \cdot \mathbf{e}_{\text{north}}(\lambda^{\ast}, \varphi^{\ast}).
+    v^{t} = \mathbf{V}^{t} \cdot \mathbf{e}_{\text{north}}(\lambda^{t}, \phi^{t}).
 $$
 
 This procedure automatically rotates vectors correctly across the dateline and anywhere on the sphere  
-(because the local bases vary with $`\lambda, \varphi`$), while keeping the interpolation linear.
+(because the local bases vary with $`\lambda, \phi`$), while keeping the interpolation linear.
 
 
 ### 7) Extrapolation on the sphere (when all 4 corners are invalid)
@@ -262,20 +262,20 @@ This procedure automatically rotates vectors correctly across the dateline and a
 Let
 
 $$
-    \mathcal{S} = \{(\lambda_{p}, \varphi_{p}) : m^{\text{src}}_{p} = 1\}
+    \mathcal{S} = \{(\lambda_{p}, \phi_{p}) : m^{\text{src}}_{p} = 1\}
 $$  
 
 be all valid source points (flattened index $p$ maps to $`(j, i)`$).  
-For a target $`(\lambda^{\ast}, \varphi^{\ast})`$, we compute **great-circle distances** using the haversine formula:
+For a target $`(\lambda^{t}, \phi^{t})`$, we compute **great-circle distances** using the haversine formula:
 
 $$
-    \delta_{p} = d_{\text{gc}}\big((\lambda^{\ast}, \varphi^{\ast}), (\lambda_{p}, \varphi_{p})\big)
+    \delta_{p} = d_{\text{gc}}\big((\lambda^{t}, \phi^{t}), (\lambda_{p}, \phi_{p})\big)
     = 2 \arctan 2\!\left(\sqrt{a_{p}}, \sqrt{1 - a_{p}}\right),
 $$
 
 $$
-    a_{p} = \sin^{2} \frac{\varphi_{p} - \varphi^{\ast}}{2}
-    + \cos\varphi^{\ast} \cos\varphi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{\ast}}{2}.
+    a_{p} = \sin^{2} \frac{\phi_{p} - \phi^{t}}{2}
+    + \cos\phi^{t} \cos\phi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{t}}{2}.
 $$
 
 ---
@@ -285,8 +285,8 @@ Two supported modes:
 #### 7.1 Nearest neighbor
 
 $$
-    p^{\ast} = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
-    s^{\ast} = s_{p^{\ast}} \quad \text{or} \quad (u^{\ast}, v^{\ast}) = (u_{p^{\ast}}, v_{p^{\ast}}).
+    p^{t} = \arg \min_{p \in \mathcal{S}} \delta_{p}, \quad
+    s^{t} = s_{p^{t}} \quad \text{or} \quad (u^{t}, v^{t}) = (u_{p^{t}}, v_{p^{t}}).
 $$
 
 ---
@@ -305,11 +305,11 @@ $$
 Then
 
 $$
-    s^{\ast} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, s_{p},
+    s^{t} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, s_{p},
     \quad
-    u^{\ast} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, u_{p},
+    u^{t} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, u_{p},
     \quad
-    v^{\ast} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, v_{p}.
+    v^{t} = \sum_{p \in \mathcal{N}_{K}} \hat{w}_{p} \, v_{p}.
 $$
 
 (The code extrapolates $u$ and $v$ separately for this fallback.)
@@ -324,9 +324,9 @@ $$
 After interpolation/extrapolation, the final output applies the target mask:
 
 $$
-    s^{\text{out}}(\lambda^{\ast}, \varphi^{\ast}) =
+    s^{\text{out}}(\lambda^{t}, \phi^{t}) =
     \begin{cases}
-        s^{\ast}(\lambda^{\ast}, \varphi^{\ast}), & m^{\text{tgt}}(\lambda^{\ast}, \varphi^{\ast}) = 1, \\
+        s^{t}(\lambda^{t}, \phi^{t}), & m^{\text{tgt}}(\lambda^{t}, \phi^{t}) = 1, \\
         \mathrm{fill\_value}, & \text{otherwise,}
     \end{cases}
 $$
@@ -384,7 +384,7 @@ $$
   If $`s_{j,i} \equiv c`$, then $`s^* = c.`$
 
 - **Linearity.**  
-  The map $`s \mapsto s^{\ast}`$ is linear; vector interpolation is linear in $`(u, v)`$.
+  The map $`s \mapsto s^{t}`$ is linear; vector interpolation is linear in $`(u, v)`$.
 
 - **Periodic consistency.**  
   The wrapped forward differences ensure cells that straddle $`\lambda = 180^\circ`$ behave exactly like any other cell.

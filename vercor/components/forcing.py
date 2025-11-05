@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass, field
 from typing import Any
 from numpy.typing import NDArray
@@ -26,7 +25,8 @@ class ERA5Forcing(ForcingData):
     model_level_file (str): path to netCDF file with data at model levels
     surface_file (str): path to netCDF file with data at surface level
     """
-    model_level_file: str  = field(init=False)
+
+    model_level_file: str = field(init=False)
     surface_file: str = field(init=False)
 
     hyai: NDArray[np.floating[Any]] = field(init=False)
@@ -45,7 +45,9 @@ class ERA5Forcing(ForcingData):
 
     def __post_init__(self):
         if not hasattr(self, "model_level_file") or not hasattr(self, "surface_file"):
-            raise ValueError("Both 'model_level_file' and 'surface_file' must be provided.")
+            raise ValueError(
+                "Both 'model_level_file' and 'surface_file' must be provided."
+            )
         self.DATA_FILES = {
             "ml": self.model_level_file,
             "sfc": self.surface_file,
@@ -73,13 +75,21 @@ class ERA5Forcing(ForcingData):
 
         lnsp = self._read_forcing("lnsp", forcing="ml", flip_y=True)[..., 0, :]
         self.spres = np.exp(lnsp)
-        self.specific_humidity = self._read_forcing("q", forcing="ml", flip_y=True)[..., 1:, :]  # L136-L137
-        self.temperature = self._read_forcing("t", forcing="ml", flip_y=True)[..., 1:, :]  # L136-L137
+        self.specific_humidity = self._read_forcing("q", forcing="ml", flip_y=True)[
+            ..., 1:, :
+        ]  # L136-L137
+        self.temperature = self._read_forcing("t", forcing="ml", flip_y=True)[
+            ..., 1:, :
+        ]  # L136-L137
 
-        self.ubot = self._read_forcing("u", forcing="ml", flip_y=True)[:, :, 1, :]  # L136
-        self.vbot = self._read_forcing("v", forcing="ml", flip_y=True)[:, :, 1, :]  # L136
+        self.ubot = self._read_forcing("u", forcing="ml", flip_y=True)[
+            :, :, 1, :
+        ]  # L136
+        self.vbot = self._read_forcing("v", forcing="ml", flip_y=True)[
+            :, :, 1, :
+        ]  # L136
 
-        #tcc = self._read_forcing("tcc", forcing="sfc", flip_y=True)
+        # tcc = self._read_forcing("tcc", forcing="sfc", flip_y=True)
         self.swr_net = self._read_forcing("msnswrf", forcing="sfc", flip_y=True)
         self.lwr_dw = self._read_forcing("msdwlwrf", forcing="sfc", flip_y=True)
 

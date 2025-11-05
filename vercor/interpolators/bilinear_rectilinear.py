@@ -6,9 +6,9 @@ import numpy as np
 def _wrap_like(lon_deg: NDArray, base0_deg: float) -> NDArray:
     r"""Maps longitudes (deg) into the [base0, base0+360) interval.
 
-    When longitude is treated as periodic, wrap every target longitude 
+    When longitude is treated as periodic, wrap every target longitude
     :math: `\lambda^{*}_{deg}` into the same half-open interval
-    :math: `[ \lambda^{*}_{0}, \lambda^{*}_{0} + 360 )` 
+    :math: `[ \lambda^{*}_{0}, \lambda^{*}_{0} + 360 )`
     of the (internally ascending) source grid:
 
     .. math::
@@ -98,11 +98,11 @@ def _geo_to_cart(lon_rad: NDArray, lat_rad: NDArray) -> NDArray:
         is the angle east of the prime meridian.
 
     Arguments:
-        lon_rad (ndarray): 
+        lon_rad (ndarray):
             Longitudes in radians. Can be scalar or an array;
             must be broadcastable with lat_rad.
-        lat_rad (ndarray): 
-            Latitudes in radians. Can be scalar or an array; 
+        lat_rad (ndarray):
+            Latitudes in radians. Can be scalar or an array;
             must be broadcastable with lon_rad.
 
     Returns:
@@ -125,7 +125,9 @@ def _geo_to_cart(lon_rad: NDArray, lat_rad: NDArray) -> NDArray:
     return np.stack((x, y, z), axis=-1)
 
 
-def _great_circle_distance_rad(lon1: NDArray, lat1: NDArray, lon2: NDArray, lat2: NDArray) -> NDArray:
+def _great_circle_distance_rad(
+    lon1: NDArray, lat1: NDArray, lon2: NDArray, lat2: NDArray
+) -> NDArray:
     r"""Haversine great-circle distance (radians) between points on the unit sphere.
 
     Mathematics:
@@ -480,13 +482,15 @@ class Bilinear:
         else:
             return np.asarray(src_mask, dtype=bool) & np.isfinite(src)
 
-    def _apply_bilinear_scalar(self, src: NDArray, src_mask: NDArray | None) -> tuple[NDArray, NDArray]:
+    def _apply_bilinear_scalar(
+        self, src: NDArray, src_mask: NDArray | None
+    ) -> tuple[NDArray, NDArray]:
         r"""Core bilinear (with optional NaN/mask renormalization).
 
         Mathematics:
             **Mask/NaN-aware renormalization**
 
-            Let the corner validity be  
+            Let the corner validity be
 
             .. math::
                 \mu_{00} = m^{\text{src}}_{j_0, i_0}, \quad
@@ -571,7 +575,9 @@ class Bilinear:
             wsum = np.where(any_nan, 0.0, 1.0)
             return out, wsum
 
-    def _extrapolate_scalar(self, src: NDArray, src_mask: NDArray | None, where_nan: NDArray) -> NDArray:
+    def _extrapolate_scalar(
+        self, src: NDArray, src_mask: NDArray | None, where_nan: NDArray
+    ) -> NDArray:
         r"""Extrapolate scalar to positions where_nan (boolean mask in target shape).
 
         Mathematics:
@@ -581,9 +587,9 @@ class Bilinear:
             .. math::
                 \mathcal{S} = \{(\lambda_p, \varphi_p) : m^{\text{src}}_p = 1\}
 
-            be all valid source points (flattened index :math: `p` maps to :math: `(j, i)`).  
+            be all valid source points (flattened index :math: `p` maps to :math: `(j, i)`).
             For a target :math: `(\lambda^*, \varphi^*)`, we compute **great-circle distances** using the haversine formula.
-            
+
             ---
 
             Two supported modes:
@@ -598,7 +604,7 @@ class Bilinear:
 
             #### Inverse-distance weighting (IDW)
 
-            Choose the :math: `K` nearest valid sources :math: `\mathcal{N}_K \subset \mathcal{S}`.  
+            Choose the :math: `K` nearest valid sources :math: `\mathcal{N}_K \subset \mathcal{S}`.
             With a small :math: `\varepsilon > 0` to avoid division by zero, define:
 
             .. math::
@@ -614,17 +620,17 @@ class Bilinear:
                 u^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, u_p,
                 \quad
                 v^* = \sum_{p \in \mathcal{N}_K} \hat{w}_p \, v_p.
-            
+
             (The code extrapolates $u$ and $v$ separately for this fallback.)
 
-            > **Note:** IDW preserves constants and reduces to nearest neighbor as :math: `K \to 1`  
+            > **Note:** IDW preserves constants and reduces to nearest neighbor as :math: `K \to 1`
             > or when one :math: `\delta_p \ll` others.
 
         Arguments:
             src (ndarray): source scalar field (NY, NX)
             src_mask (ndarray or None): optional boolean mask (NY, NX) where True means valid
             where_nan (ndarray): boolean mask in target shape where extrapolation is needed
-        
+
         Returns:
             (ndarray): filled array only at where_nan positions.
         """
@@ -702,7 +708,7 @@ class Bilinear:
 
         Arguments:
             src (ndarray(NY, NX)): Source scalar field.
-            src_mask (ndarray(NY, NX), optional): 
+            src_mask (ndarray(NY, NX), optional):
                 True where source is valid. If None, validity = isfinite(src).
 
         Returns:
@@ -720,7 +726,9 @@ class Bilinear:
         out = np.where(self.tgt_mask, out, self.fill_value)
         return out.reshape(self.tshape)
 
-    def apply_vector(self, u_src: NDArray, v_src: NDArray, src_mask: NDArray | None = None) -> tuple[NDArray, NDArray]:
+    def apply_vector(
+        self, u_src: NDArray, v_src: NDArray, src_mask: NDArray | None = None
+    ) -> tuple[NDArray, NDArray]:
         r"""Interpolate a vector field (u,v) in east/north components.
 
         Steps:
@@ -736,7 +744,7 @@ class Bilinear:
                 \mathbf{V}_{ab}
                 = u_{j_b, i_a} \, \mathbf{e}_{\text{east}}(\lambda_{i_a}, \varphi_{j_b})
                 + v_{j_b, i_a} \, \mathbf{e}_{\text{north}}(\lambda_{i_a}, \varphi_{j_b}).
-            
+
             Then apply the **same mask-aware bilinear blend** to the 3-D vectors:
 
             .. math::
