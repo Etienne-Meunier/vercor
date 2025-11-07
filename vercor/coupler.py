@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 
 @dataclass
 class Coupler:
-    # Add communicator for MPI
+    # Add communicator for MPI???
     clock: Clock
     runseq: RunSequence = field(init=False)
     components: Dict[str, Union[Atmosphere, Ocean, SeaIce, Land]] = field(
@@ -38,8 +38,13 @@ class Coupler:
 
     def add_exchange(self, exchange: Exchange) -> None:
         self.exchanges.append(exchange)
+        formatted_field_names = ", ".join(
+            ", ".join(item) if isinstance(item, tuple) else item
+            for item in exchange.field_names
+        )
         logger.info(
-            f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination} {exchange.field_names} [{exchange.when}]"
+            f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination}:"
+            f" Fields --- {formatted_field_names} --- Call order: {exchange.when}"
         )
 
     def set_components_run_sequence(self, runseq: RunSequence) -> None:
@@ -47,27 +52,27 @@ class Coupler:
             if cname not in self.components.keys():
                 raise ValueError(f"Component {cname} not registered in coupler")
         self.runseq = runseq
-        logger.info(f" Set run sequence: {self.runseq.order}")
+        logger.info(f" Set coupler components run sequence: {', '.join(self.runseq)}")
 
     def initialize(self) -> None:
-        # Build regridders per (src, dst)
+        # Build regridders per (source, destination) pair
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination)
             if key not in self._regridders:
-                src_grid = self.components[exchange.source].grid
-                src_mask = (
+                source_grid = self.components[exchange.source].grid
+                source_mask = (
                     self.components[exchange.source].grid.mask
                     if self.components[exchange.source].grid.mask
                     else None
                 )
-                dst_grid = self.components[exchange.destination].grid
-                dst_mask = (
+                destination_grid = self.components[exchange.destination].grid
+                destination_mask = (
                     self.components[exchange.destination].grid.mask
                     if self.components[exchange.destination].grid.mask
                     else None
                 )
                 self._regridders[key] = exchange.build(
-                    src_grid, src_mask, dst_grid, dst_mask
+                    source_grid, source_mask, destination_grid, destination_mask
                 )
 
         # Initialize components
@@ -82,6 +87,7 @@ class Coupler:
             # Exchange before or after component stepping
             if exchange.when != when:
                 continue
+
             # Ensure exchange for currently stepping component only
             if exchange.destination != component.name:
                 continue

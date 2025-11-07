@@ -3,12 +3,81 @@ Versatile Earth system COupleR (VerCOR)
 
 ## Bilinear interpolation on a unit sphere
 
+### 0) Spherical Coordinates vs. Geographical Spherical Coordinates
+
+#### There are two very common angle conventions:
+
+Physics / Math “Spherical Coordinates”
+
+- $` r \ge 0 `$: **radius**  
+- $` \theta \in [0, \pi] `$: **polar angle (colatitude)**, measured **down from +z**  
+- $` \phi \in [0, 2\pi) `$: **azimuth**, in the x–y plane from **+x toward +y**
+
+With $` r = 1 `$, the **radial unit vector** is:
+
+$$
+    \mathbf{e_{r}}(\theta, \phi) =
+    \begin{pmatrix}
+        \sin \theta \cos \phi \\
+        \sin \theta \sin \phi \\
+        \cos \theta
+    \end{pmatrix}
+$$
+
+---
+Geographic (Longitude/Latitude) Convention Used in the Source Code
+
+- $` \lambda `$: **longitude** (east-positive), equivalent to azimuth $` \phi `$ in spherical coordinates  
+- $` \varphi `$: **latitude** (north-positive), measured from the **equator** (not from +z)
+
+Relation to the spherical polar angle:
+
+$$
+\theta = \frac{\pi}{2} - \varphi
+\quad \text{(colatitude)}
+$$
+
+Now substitute $` \phi \equiv \lambda `$ and $` \theta = \frac{\pi}{2} - \varphi `$:
+
+$$
+\sin \theta = \sin \left( \frac{\pi}{2} - \varphi \right) = \cos \varphi
+$$
+$$
+\cos \theta = \cos \left( \frac{\pi}{2} - \varphi \right) = \sin \varphi
+$$
+
+Then:
+
+$$
+\mathbf{e_r} =
+    \begin{pmatrix}
+        \sin \theta \cos \phi \\
+        \sin \theta \sin \phi \\
+        \cos \theta
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        \cos \varphi \cos \lambda \\
+        \cos \varphi \sin \lambda \\
+        \sin \varphi
+    \end{pmatrix}
+$$
+
+This is **exactly** the vector used in the source code:
+
+$$
+    \mathbf{r}(\lambda, \varphi) =
+        (\cos \varphi \cos \lambda, \,
+        \cos \varphi \sin \lambda, \,
+        \sin \varphi)
+$$
+
 ### 1) Grids, indexing, and notation
 
 #### Source (rectilinear) grid
 
 Longitudes $`\{\lambda_i\}_{i=0}^{N_x-1}`$ (strictly monotone in the code’s internal representation).
-Latitudes $`\{\phi_j\}_{j=0}^{N_y-1}`$ (strictly monotone; may be ascending or descending).
+Latitudes $`\{\varphi_j\}_{j=0}^{N_y-1}`$ (strictly monotone; may be ascending or descending).
 
 **Index ranges:**
 
@@ -24,7 +93,7 @@ A vector field is $`(u_{j,i}, v_{j,i})`$ in local east/north components.
 
 #### Target points
 
-A target set $`{(\lambda^{t}, \phi^{t})}`$ with broadcast shape $`\mathcal{T}`$.
+A target set $`{(\lambda^{t}, \varphi^{t})}`$ with broadcast shape $`\mathcal{T}`$.
 All formulas below apply pointwise over $`\mathcal{T}`$.
 
 ---
@@ -34,7 +103,7 @@ All formulas below apply pointwise over $`\mathcal{T}`$.
 Source mask $`m^{\text{src}}_{j,i} \in \{0,1\}`$ (True/False in code) indicates validity of $`s_{j,i}`$
 (and of vector components similarly).
 
-Target mask $`m^{\text{tgt}}(\lambda^{t}, \phi^{t}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
+Target mask $`m^{\text{tgt}}(\lambda^{t}, \varphi^{t}) \in \{0,1\}`$ indicates whether to keep the output or place `fill_value`.
 
 ### 2) Periodic longitude wrapping
 
@@ -61,14 +130,14 @@ This guarantees consistent bracketing even across the dateline.
 
 ### 3) Cell search and local bilinear coordinates
 
-For each target $`(\tilde{\lambda}^{t}, \phi^{t})`$ we find bracketing indices
+For each target $`(\tilde{\lambda}^{t}, \varphi^{t})`$ we find bracketing indices
 
 $$
     (i_{0}, i_{1}) \in \{0, \ldots, N_{x} - 1\}^{2}, \quad
     (j_{0}, j_{1}) \in \{0, \ldots, N_{y} - 1\}^{2},
 $$
 
-such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{t})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`({\phi}^{t})`$.
+such that $`(i_{0}, i_{1})`$ are consecutive longitudes around $`(\tilde{\lambda}^{t})`$, and $`(j_{0}, j_{1})`$ are consecutive latitudes around $`({\varphi}^{t})`$.
 
 If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo $`(N_{x})`$.
 
@@ -77,8 +146,8 @@ Let
 $$
     \lambda_{0} = \lambda_{i_{0}}, \quad
     \lambda_{1} = \lambda_{i_{1}}, \quad
-    \phi_{0} = \phi_{j_{0}}, \quad
-    \phi_{1} = \phi_{j_{1}}.
+    \varphi_{0} = \varphi_{j_{0}}, \quad
+    \varphi_{1} = \varphi_{j_{1}}.
 $$
 
 #### 3.1) Forward (wrapped) longitudinal difference
@@ -117,12 +186,12 @@ $$
 Regardless of ascending/descending latitude ordering,
 
 $$
-    \Delta \phi_{\text{cell}} = \phi_1 - \phi_0,
+    \Delta \varphi_{\text{cell}} = \varphi_{1} - \varphi_{0},
     \quad
-    f_y = \frac{\phi^{t} - \phi_{0}}{\Delta \phi_{\text{cell}}}.
+    f_y = \frac{\varphi^{t} - \varphi_{0}}{\Delta \varphi_{\text{cell}}}.
 $$
 
-and then clip $`f_y`$ to $`[0, 1]`$. If latitudes are descending, $`(\Delta \phi_{\text{cell}} < 0)`$, and the fraction remains consistent after clipping.
+and then clip $`f_y`$ to $`[0, 1]`$. If latitudes are descending, $`(\Delta \varphi_{\text{cell}} < 0)`$, and the fraction remains consistent after clipping.
 
 ### 4) Bilinear shape functions (weights)
 
@@ -162,7 +231,7 @@ $$
     \in \{0, 1\}.
 $$
 
-(If values are NaN, take the corresponding $`\mu = 0`$.)
+If values are NaN, take the corresponding $`\mu_{ab} = 0`$.
 
 We down-weight invalid corners:
 
@@ -171,7 +240,7 @@ $$
     W = \sum_{a,b \in \{0,1\}} \tilde{w}_{ab}.
 $$
 
-* If $`W > 0`$ (some valid corners): **renormalize**
+If $`W > 0`$ (some valid corners): **renormalize**:
 
 $$
     \hat{w}_{ab} = \frac{\tilde{w}_{ab}}{W}, \quad
@@ -186,24 +255,24 @@ $$
 
 where $`a, b \in \{0, 1\}`$.
 
-* If $`W = 0`$: all four corners invalid ⇒ **extrapolate** (Section 7).
-
-(If renormalization is **disabled**, then $`s^t = \sum w_{ab} s_{j_b, i_a}`$ only if all four corners are valid; otherwise $`s^t = \text{NaN}`$ and we fall back to extrapolation.)
+If $`W = 0`$: all four corners invalid ⇒ **extrapolate** (Section 7).
+In case renormalization is **disabled**, then $`s^t = \sum w_{ab} s_{j_b, i_a}`$ only if all four corners are valid; otherwise $`s^t = \text{NaN}`$ and we fall back to extrapolation.
 
 ### 6) Vector fields: correct spherical rotation via 3-D projection
 
-Let $`(u, v)`$ be **eastward** and **northward** components (tangent to the sphere).  
-At any geographic point $`(\lambda, \phi)`$ on the unit sphere, define:
+The east–north basis changes with location, so corner vectors are reported in different coordinate frames. If you bilinearly mix their $`(u,v)`$ numbers directly, you’re linearly combining quantities expressed in different bases. Converting each vector to a single global frame (3-D Cartesian), blending there, and projecting back to the target’s local east–north frame makes the operation frame-consistent, wrap-agnostic, and stable near poles/dateline.
+
+Let $`(u, v)`$ be **eastward** and **northward** components (tangent to the sphere). At any geographic point $`(\lambda, \varphi)`$ on the unit sphere, define:
 
 ---
 
 #### • Radial unit vector (position on the unit sphere)
 
 $$
-    \mathbf{r(\lambda, \phi)} = \begin{pmatrix}
-        \cos\phi \cos\lambda \\
-        \cos\phi \sin\lambda \\
-        \sin\phi
+    \mathbf{r(\lambda, \varphi)} = \begin{pmatrix}
+        \cos\varphi \cos\lambda \\
+        \cos\varphi \sin\lambda \\
+        \sin\varphi
     \end{pmatrix}.
 $$
 
@@ -218,11 +287,11 @@ $$
         \cos\lambda \\
         0
     \end{pmatrix}, \quad
-    \mathbf{e}_{\text{north}} = \frac{\partial \mathbf{r}}{\partial \phi} =
+    \mathbf{e}_{\text{north}} = \frac{\partial \mathbf{r}}{\partial \varphi} =
     \begin{pmatrix}
-        -\sin\phi \cos\lambda \\
-        -\sin\phi \sin\lambda \\
-        \cos\phi
+        -\sin\varphi \cos\lambda \\
+        -\sin\varphi \sin\lambda \\
+        \cos\varphi
     \end{pmatrix}.
 $$
 
@@ -230,12 +299,12 @@ These satisfy $`\mathbf{e}_{\text{east}} \cdot \mathbf{e}_{\text{north}} = 0`$ a
 
 ---
 
-At each source corner $`(\lambda_{i_a}, \phi_{j_b})`$, convert $`(u, v)`$ to a 3-D vector:
+At each source corner $`(\lambda_{i_a}, \varphi_{j_b})`$, convert $`(u, v)`$ to a 3-D vector:
 
 $$
     \mathbf{V}_{ab}
-    = u_{j_b, i_a} \, \mathbf{e}_{\text{east}}(\lambda_{i_a}, \phi_{j_b})
-    + v_{j_b, i_a} \, \mathbf{e}_{\text{north}}(\lambda_{i_a}, \phi_{j_b}).
+    = u_{j_b, i_a} \, \mathbf{e}_{\text{east}}(\lambda_{i_a}, \varphi_{j_b})
+    + v_{j_b, i_a} \, \mathbf{e}_{\text{north}}(\lambda_{i_a}, \varphi_{j_b}).
 $$
 
 Then apply the **same mask-aware bilinear blend** to the 3-D vectors:
@@ -245,16 +314,16 @@ $$
     \quad (\text{if } W > 0; \text{ else extrapolate}).
 $$
 
-Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{t}, \phi^{t})`$:
+Finally, **project** the blended 3-D vector onto the target tangent basis at $`(\lambda^{t}, \varphi^{t})`$:
 
 $$
-    u^{t} = \mathbf{V}^{t} \cdot \mathbf{e}_{\text{east}}(\lambda^{t}, \phi^{t}),
+    u^{t} = \mathbf{V}^{t} \cdot \mathbf{e}_{\text{east}}(\lambda^{t}, \varphi^{t}),
     \quad
-    v^{t} = \mathbf{V}^{t} \cdot \mathbf{e}_{\text{north}}(\lambda^{t}, \phi^{t}).
+    v^{t} = \mathbf{V}^{t} \cdot \mathbf{e}_{\text{north}}(\lambda^{t}, \varphi^{t}).
 $$
 
 This procedure automatically rotates vectors correctly across the dateline and anywhere on the sphere  
-(because the local bases vary with $`\lambda, \phi`$), while keeping the interpolation linear.
+(because the local bases vary with $`\lambda, \varphi`$), while keeping the interpolation linear.
 
 
 ### 7) Extrapolation on the sphere (when all 4 corners are invalid)
@@ -262,20 +331,20 @@ This procedure automatically rotates vectors correctly across the dateline and a
 Let
 
 $$
-    \mathcal{S} = \{(\lambda_{p}, \phi_{p}) : m^{\text{src}}_{p} = 1\}
+    \mathcal{S} = \{(\lambda_{p}, \varphi_{p}) : m^{\text{src}}_{p} = 1\}
 $$  
 
 be all valid source points (flattened index $p$ maps to $`(j, i)`$).  
-For a target $`(\lambda^{t}, \phi^{t})`$, we compute **great-circle distances** using the haversine formula:
+For a target $`(\lambda^{t}, \varphi^{t})`$, we compute **great-circle distances** using the haversine formula:
 
 $$
-    \delta_{p} = d_{\text{gc}}\big((\lambda^{t}, \phi^{t}), (\lambda_{p}, \phi_{p})\big)
+    \delta_{p} = d_{\text{gc}}\big((\lambda^{t}, \varphi^{t}), (\lambda_{p}, \varphi_{p})\big)
     = 2 \arctan 2\!\left(\sqrt{a_{p}}, \sqrt{1 - a_{p}}\right),
 $$
 
 $$
-    a_{p} = \sin^{2} \frac{\phi_{p} - \phi^{t}}{2}
-    + \cos\phi^{t} \cos\phi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{t}}{2}.
+    a_{p} = \sin^{2} \frac{\varphi_{p} - \varphi^{t}}{2}
+    + \cos\varphi^{t} \cos\varphi_{p} \sin^{2} \frac{\lambda_{p} - \lambda^{t}}{2}.
 $$
 
 ---
@@ -324,9 +393,9 @@ $$
 After interpolation/extrapolation, the final output applies the target mask:
 
 $$
-    s^{\text{out}}(\lambda^{t}, \phi^{t}) =
+    s^{\text{out}}(\lambda^{t}, \varphi^{t}) =
     \begin{cases}
-        s^{t}(\lambda^{t}, \phi^{t}), & m^{\text{tgt}}(\lambda^{t}, \phi^{t}) = 1, \\
+        s^{t}(\lambda^{t}, \varphi^{t}), & m^{\text{tgt}}(\lambda^{t}, \varphi^{t}) = 1, \\
         \mathrm{fill\_value}, & \text{otherwise,}
     \end{cases}
 $$

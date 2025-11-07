@@ -5,13 +5,23 @@ from vercor.regridders.base import Regridder
 
 @dataclass
 class Exchange:
-    source: str  # component name
-    destination: str  # component name
+    source: str
+    destination: str
     field_names: List[
         Union[str, Tuple[str, str]]
-    ]  # list of scalar field names and (u-vector-component, v-vector-component)
+    ]
     regridder_factory: Callable[..., Regridder]
-    when: str = "pre"  # "pre" or "post" component stepping
+    when: str = "pre"
+    """
+    Exchange definition between two components
+
+        source, destination: component names
+        field_names: list of scalar field names and
+                     tuples of vectors (u-component, v-component)
+        regridder_factory: list of callables that return Regridder instances
+        when: specifies when to perform the exchange, i.e, 
+              before (pre) or after (post) component stepping
+    """
 
     def __post_init__(self):
         self.name = f"{self.source}2{self.destination}"
