@@ -177,7 +177,8 @@ def _great_circle_distance_rad(
 
     # Clamp for safety
     a = np.clip(a, 0.0, 1.0)
-    return 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
+    result: NDArray = 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
+    return result
 
 
 class Bilinear:
@@ -476,10 +477,12 @@ class Bilinear:
 
     @staticmethod
     def _ensure_src_mask(src: NDArray, src_mask: NDArray | None) -> NDArray:
+        result: NDArray = np.empty(src.shape, dtype=bool)
         if src_mask is None:
-            return np.isfinite(src)
+            result[...] = np.isfinite(src)
         else:
-            return np.asarray(src_mask, dtype=bool) & np.isfinite(src)
+            result[...] = np.asarray(src_mask, dtype=bool) & np.isfinite(src)
+        return result
 
     def _apply_bilinear_scalar(
         self, src: NDArray, src_mask: NDArray | None

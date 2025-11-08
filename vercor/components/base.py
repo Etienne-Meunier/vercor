@@ -23,6 +23,7 @@ class Component(abc.ABC):
         return {k: v for k, v in self.state.items()}
 
     def import_fields(self, fields: Dict[str, NDArray]) -> None:
+        # TODO: implement more sophisticated merging with dimensions checks for every array
         # simplistic merge/overwrite
         for name, fld in fields.items():
             self.state[name] = fld

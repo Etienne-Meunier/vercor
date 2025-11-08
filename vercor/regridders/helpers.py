@@ -20,9 +20,7 @@ def make_rectilinear_grid(
     longitude = np.linspace(longitude_start, longitude_end, nlon, dtype=float)
     latitude = np.linspace(latitude_start, latitude_end, nlat, dtype=float)
 
-    return RectilinearGrid(
-        name=name, longitude=longitude, latitude=latitude, mask=mask
-    )
+    return RectilinearGrid(name=name, longitude=longitude, latitude=latitude, mask=mask)
 
 
 def _scalar_field_interpolate(
@@ -33,7 +31,8 @@ def _scalar_field_interpolate(
     if not callable(regridder):
         raise TypeError("Regridder must be callable for scalar field interpolation")
 
-    return regridder(source_fields[field_name])
+    result: NDArray = regridder(source_fields[field_name])
+    return result
 
 
 def _vector_field_interpolate(
@@ -50,7 +49,8 @@ def _vector_field_interpolate(
         raise ValueError("Vector field name must be a tuple of two strings")
 
     try:
-        return regridder(source_fields[field_name1], source_fields[field_name2])
+        result: Tuple[NDArray, NDArray] = regridder(source_fields[field_name1], source_fields[field_name2])
+        return result
     except Exception as e:
         raise TypeError(
             "Regridder for vector fields must accept two arguments and return a tuple of two arrays"

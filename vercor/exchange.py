@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, List, Tuple, Union
+from numpy.typing import NDArray
+from vercor.grid import Grid
 from vercor.regridders.base import Regridder
 
 
@@ -21,17 +23,13 @@ class Exchange:
               before (pre) or after (post) component stepping
     """
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.name = f"{self.source}2{self.destination}"
 
     def build(
         self,
-        source_grid,
-        source_mask,
-        destination_grid,
-        destination_mask,
+        source_grid: Grid,
+        destination_grid: Grid,
     ) -> Regridder:
-        regridder = self.regridder_factory(
-            source_grid, source_mask, destination_grid, destination_mask
-        )
+        regridder = self.regridder_factory(source_grid, destination_grid)
         return regridder.prepare()

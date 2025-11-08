@@ -31,8 +31,8 @@ for comp in [ATM, OCN, ICE, LND]:
 cpl.set_components_run_sequence(run_sequence)
 
 # Bilinear interpolation
-bilinear = lambda source_grid, source_mask, destination_grid, destination_mask:\
-    BilinearRectilinear(source_grid, source_mask, destination_grid, destination_mask)
+bilinear = lambda source_grid, destination_grid:\
+    BilinearRectilinear(source_grid, destination_grid)
 
 # Exchanges
 # scalar fields (vector field)) 

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Union
+from numpy.typing import NDArray
 import logging
 
 from vercor.settings import VercorSettings
@@ -9,7 +10,7 @@ from vercor.exchange import Exchange
 from vercor.regridders.base import Regridder
 from vercor.regridders import _scalar_field_interpolate, _vector_field_interpolate
 from vercor.run_sequence import RunSequence
-
+from vercor.grid import Grid
 
 logger = logging.getLogger("VerCOR.coupler")
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +34,7 @@ class Coupler:
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
         if component.name in self.components:
             raise ValueError(f"Component {component.name} already registered")
+
         self.components[component.name] = component
         logger.info(f" Registered component {component.name}")
 
@@ -59,20 +61,9 @@ class Coupler:
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination)
             if key not in self._regridders:
-                source_grid = self.components[exchange.source].grid
-                source_mask = (
-                    self.components[exchange.source].grid.mask
-                    if self.components[exchange.source].grid.mask
-                    else None
-                )
-                destination_grid = self.components[exchange.destination].grid
-                destination_mask = (
-                    self.components[exchange.destination].grid.mask
-                    if self.components[exchange.destination].grid.mask
-                    else None
-                )
                 self._regridders[key] = exchange.build(
-                    source_grid, source_mask, destination_grid, destination_mask
+                    self.components[exchange.source].grid,
+                    self.components[exchange.destination].grid,
                 )
 
         # Initialize components

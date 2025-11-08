@@ -17,7 +17,13 @@ class Grid(abc.ABC):
 
 
 class RectilinearGrid(Grid):
-    def __init__(self, name: str, longitude: NDArray, latitude: NDArray, mask: Optional[NDArray] = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        longitude: NDArray,
+        latitude: NDArray,
+        mask: Optional[NDArray] = None,
+    ) -> None:
         super().__init__(name=name, mask=mask)
         self.longitude = longitude
         self.latitude = latitude

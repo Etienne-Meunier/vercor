@@ -43,7 +43,7 @@ class ERA5Forcing(ForcingData):
     swr_net: NDArray[np.floating[Any]] = field(init=False)
     lwr_dw: NDArray[np.floating[Any]] = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not hasattr(self, "model_level_file") or not hasattr(self, "surface_file"):
             raise ValueError(
                 "Both 'model_level_file' and 'surface_file' must be provided."
