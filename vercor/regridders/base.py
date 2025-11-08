@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import Bilinear
@@ -13,7 +13,7 @@ class Regridder(abc.ABC):
     regridder: Optional[Bilinear] = None
 
     @abc.abstractmethod
-    def prepare(self) -> "Regridder":
+    def prepare(self) -> Any:
         raise NotImplementedError
 
     def _define_source_destination_grids_and_masks(self) -> None:

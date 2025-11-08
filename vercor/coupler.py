@@ -1,16 +1,14 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Union
-from numpy.typing import NDArray
 import logging
 
+from vercor.regridders.bilinear import BilinearRectilinear
 from vercor.settings import VercorSettings
 from vercor.components import Atmosphere, Ocean, SeaIce, Land
 from vercor.clock import Clock
 from vercor.exchange import Exchange
-from vercor.regridders.base import Regridder
-from vercor.regridders import _scalar_field_interpolate, _vector_field_interpolate
 from vercor.run_sequence import RunSequence
-from vercor.grid import Grid
+
 
 logger = logging.getLogger("VerCOR.coupler")
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +26,7 @@ class Coupler:
     settings: VercorSettings = field(default_factory=VercorSettings)
     _regridders: Dict[
         Tuple[str, str],
-        Regridder,
+        BilinearRectilinear,
     ] = field(default_factory=dict)
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
@@ -104,15 +102,13 @@ class Coupler:
                     (
                         destination_fields[field_name[0]],
                         destination_fields[field_name[1]],
-                    ) = _vector_field_interpolate(field_name, source_fields, regridder)
+                    ) = regridder(source_fields[field_name[0]], source_fields[field_name[1]])
                 else:
                     if field_name not in source_fields:
                         raise ValueError(
                             f"Field {field_name} not present in source fields"
                         )
-                    destination_fields[field_name] = _scalar_field_interpolate(
-                        field_name, source_fields, regridder
-                    )
+                    destination_fields[field_name] = regridder(source_fields[field_name])
 
             if destination_fields:
                 destination_component.import_fields(destination_fields)
