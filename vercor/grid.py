@@ -2,13 +2,13 @@ import abc
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
+from numpy.typing import NDArray
 
 
 @dataclass
 class Grid(abc.ABC):
     name: str
-    mask: Optional[np.ndarray] = None  # 1 for active, 0 for inactive
-    area: Optional[np.ndarray] = None  # cell areas if known
+    mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
 
     @property
     @abc.abstractmethod
@@ -16,30 +16,22 @@ class Grid(abc.ABC):
         raise NotImplementedError
 
 
-@dataclass
 class RectilinearGrid(Grid):
-    longitude: Optional[np.ndarray] = None  # 1D centers
-    latitude: Optional[np.ndarray] = None  # 1D centers
+    def __init__(self, name: str, longitude: NDArray, latitude: NDArray, mask: Optional[NDArray] = None) -> None:
+        super().__init__(name=name, mask=mask)
+        self.longitude = longitude
+        self.latitude = latitude
 
-    def __post_init__(self) -> None:
-        if self.longitude is None or self.latitude is None:
-            raise ValueError(
-                "longitude and latitude must not be None for RectilinearGrid."
-            )
         if self.longitude.ndim != 1 or self.latitude.ndim != 1:
             raise ValueError(
-                "RectilinearGrid expects 1D longitude and latitude coordinate arrays (centers)."
+                "RectilinearGrid expects both longitude and latitude coordinates to be 1D arrays."
             )
         if not (
             np.all(np.diff(self.longitude) > 0) and np.all(np.diff(self.latitude) > 0)
         ):
             # Monotonic increasing required for built-in regridders.
-            raise ValueError("longitude and latitude must be strictly increasing.")
+            raise ValueError("longitude and latitude must be strictly monotonic.")
 
     @property
     def shape(self) -> tuple[int, int]:
-        if self.longitude is None or self.latitude is None:
-            raise ValueError(
-                "longitude and latitude must not be None to determine shape."
-            )
         return (self.latitude.size, self.longitude.size)  # (ny, nx), row-major

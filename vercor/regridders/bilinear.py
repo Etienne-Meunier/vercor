@@ -1,5 +1,6 @@
 from typing import Tuple, Union
 import numpy as np
+from numpy.typing import NDArray
 from vercor.regridders.base import Regridder
 from vercor.interpolators.bilinear_rectilinear import Bilinear
 
@@ -25,7 +26,7 @@ class XESMFBilinearRectilinear(Regridder):
 
         return self
 
-    def __call__(self, field: np.ndarray) -> np.ndarray:
+    def __call__(self, field: NDArray) -> NDArray:
         return self.regridder(field)
 
 
@@ -46,9 +47,7 @@ class BilinearRectilinear(Regridder):
 
         return self
 
-    def __call__(
-        self, *args, src_mask=None
-    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+    def __call__(self, *args, src_mask=None) -> Union[NDArray, Tuple[NDArray, NDArray]]:
         """
         Call with positional args for fields and optional src_mask as a keyword-only arg.
 

@@ -1,4 +1,4 @@
-import numpy as np
+from numpy.typing import NDArray
 from vercor.regridders.base import Regridder
 
 
@@ -20,5 +20,5 @@ class XESMFConservative_normed(Regridder):
 
         return self
 
-    def __call__(self, field: np.ndarray) -> np.ndarray:
+    def __call__(self, field: NDArray) -> NDArray:
         return self.regridder(field)

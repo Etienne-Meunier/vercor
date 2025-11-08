@@ -7,9 +7,7 @@ from vercor.regridders.base import Regridder
 class Exchange:
     source: str
     destination: str
-    field_names: List[
-        Union[str, Tuple[str, str]]
-    ]
+    field_names: List[Union[str, Tuple[str, str]]]
     regridder_factory: Callable[..., Regridder]
     when: str = "pre"
     """

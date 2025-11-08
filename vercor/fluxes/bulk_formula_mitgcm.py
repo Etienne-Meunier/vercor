@@ -1,6 +1,6 @@
 from typing import Tuple
 import numpy as np
-
+from numpy.typing import NDArray
 from vercor.components import Component
 from vercor.settings import VercorSettings
 
@@ -8,23 +8,23 @@ from vercor.settings import VercorSettings
 def bulkf_formula_lanl(
     settings: VercorSettings,
     state: Component,
-    uw: np.ndarray,
-    vw: np.ndarray,
-    ta: np.ndarray,
-    qa: np.ndarray,
-    tsf: np.ndarray,
-    ocn_mask: np.ndarray,
-    iceornot: np.ndarray,
+    uw: NDArray,
+    vw: NDArray,
+    ta: NDArray,
+    qa: NDArray,
+    tsf: NDArray,
+    ocn_mask: NDArray,
+    iceornot: NDArray,
 ) -> Tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
+    NDArray,
+    NDArray,
+    NDArray,
+    NDArray,
+    NDArray,
+    NDArray,
+    NDArray,
+    NDArray,
+    NDArray,
 ]:
     """Calculate bulk formula fluxes over open ocean
 

@@ -1,5 +1,6 @@
 from typing import Dict, Tuple
 import numpy as np
+from numpy.typing import NDArray
 from vercor.grid import RectilinearGrid
 from vercor.regridders.base import Regridder
 
@@ -13,7 +14,6 @@ def make_rectilinear_grid(
     latitude_start: float,
     latitude_end: float,
     mask=None,
-    area=None,
 ) -> RectilinearGrid:
     """Helper to build rectilinear grid"""
 
@@ -21,15 +21,15 @@ def make_rectilinear_grid(
     latitude = np.linspace(latitude_start, latitude_end, nlat, dtype=float)
 
     return RectilinearGrid(
-        name=name, longitude=longitude, latitude=latitude, mask=mask, area=area
+        name=name, longitude=longitude, latitude=latitude, mask=mask
     )
 
 
 def _scalar_field_interpolate(
     field_name: str,
-    source_fields: Dict[str, np.ndarray],
+    source_fields: Dict[str, NDArray],
     regridder: Regridder,
-) -> np.ndarray:
+) -> NDArray:
     if not callable(regridder):
         raise TypeError("Regridder must be callable for scalar field interpolation")
 
@@ -38,15 +38,17 @@ def _scalar_field_interpolate(
 
 def _vector_field_interpolate(
     field_name: Tuple[str, str],
-    source_fields: Dict[str, np.ndarray],
+    source_fields: Dict[str, NDArray],
     regridder: Regridder,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[NDArray, NDArray]:
     if not callable(regridder):
         raise TypeError("Regridder must be callable for vector field interpolation")
+
     if len(field_name) == 2:
         field_name1, field_name2 = field_name
     else:
         raise ValueError("Vector field name must be a tuple of two strings")
+
     try:
         return regridder(source_fields[field_name1], source_fields[field_name2])
     except Exception as e:

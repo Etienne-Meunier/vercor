@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.typing import NDArray
 from vercor.components.base import Component
 from vercor.settings import VercorSettings
 from vercor.fluxes.utilities import qsat, psimhu, psixhu, cdn
@@ -7,17 +8,17 @@ from vercor.fluxes.utilities import qsat, psimhu, psixhu, cdn
 def shr_flux_atmOcn(
     settings: VercorSettings,
     state: Component,
-    mask: np.ndarray,
-    zbot: np.ndarray,
-    ubot: np.ndarray,
-    vbot: np.ndarray,
-    thbot: np.ndarray,
-    qbot: np.ndarray,
-    rbot: np.ndarray,
-    tbot: np.ndarray,
-    us: np.ndarray,
-    vs: np.ndarray,
-    ts: np.ndarray,
+    mask: NDArray,
+    zbot: NDArray,
+    ubot: NDArray,
+    vbot: NDArray,
+    thbot: NDArray,
+    qbot: NDArray,
+    rbot: NDArray,
+    tbot: NDArray,
+    us: NDArray,
+    vs: NDArray,
+    ts: NDArray,
     use_coldair_outbreak_mod: bool = False,
     missval: float = 0.0,
 ):
@@ -311,15 +312,15 @@ def shr_flux_atmOcn(
 def shr_flux_atmIce(
     settings: VercorSettings,
     state: Component,
-    mask: np.ndarray,
-    zbot: np.ndarray,
-    ubot: np.ndarray,
-    vbot: np.ndarray,
-    thbot: np.ndarray,
-    qbot: np.ndarray,
-    rbot: np.ndarray,
-    tbot: np.ndarray,
-    ts: np.ndarray,
+    mask: NDArray,
+    zbot: NDArray,
+    ubot: NDArray,
+    vbot: NDArray,
+    thbot: NDArray,
+    qbot: NDArray,
+    rbot: NDArray,
+    tbot: NDArray,
+    ts: NDArray,
     missval: float = 0.0,
 ):
     """

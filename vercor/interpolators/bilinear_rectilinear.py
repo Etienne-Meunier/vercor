@@ -1,6 +1,5 @@
-from typing import Any, Tuple
-from numpy.typing import NDArray
 import numpy as np
+from numpy.typing import NDArray
 
 
 def _wrap_like(lon_deg: NDArray, base0_deg: float) -> NDArray:
@@ -215,8 +214,8 @@ class Bilinear:
 
     def __init__(
         self,
-        field_in: dict[str, np.ndarray],
-        field_out: dict[str, np.ndarray],
+        field_in: dict[str, NDArray],
+        field_out: dict[str, NDArray],
         periodic_longitude: bool = True,
         nan_renorm: bool = True,
         extrapolation_mode: str | None = "idw",  # 'nearest' | 'idw'
