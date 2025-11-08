@@ -7,6 +7,6 @@ def test_bilinear_rectilinear(atm_grid, ocn_grid):
     regridder = BilinearRectilinear(atm_grid, ocn_grid)
     assert regridder.src_grid == atm_grid
     assert regridder.dst_grid == ocn_grid
-    assert getattr(regridder, 'regridder') == None
-    regridder.prepare()
-    assert regridder.regridder is not None
+    assert getattr(regridder, 'interpolator') == None
+    regridder.setup()
+    assert regridder.interpolator is not None

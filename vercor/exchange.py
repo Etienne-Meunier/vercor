@@ -26,10 +26,10 @@ class Exchange:
     def __post_init__(self) -> None:
         self.name = f"{self.source}2{self.destination}"
 
-    def build(
+    def create(
         self,
         source_grid: Grid,
         destination_grid: Grid,
     ) -> BilinearRectilinear:
         regridder = self.regridder_factory(source_grid, destination_grid)
-        return regridder.prepare()
+        return regridder.setup()

@@ -59,7 +59,7 @@ class Coupler:
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination)
             if key not in self._regridders:
-                self._regridders[key] = exchange.build(
+                self._regridders[key] = exchange.create(
                     self.components[exchange.source].grid,
                     self.components[exchange.destination].grid,
                 )
@@ -88,11 +88,12 @@ class Coupler:
                 f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name} ({when})"
             )
 
-            regridder = self._regridders[(exchange.source, exchange.destination)]
+            regrid = self._regridders[(exchange.source, exchange.destination)]
             source_fields = source_component.export_fields()
             destination_fields = {}
 
             for field_name in exchange.field_names:
+                # Figure out if scalar or vector field to be regridded & passed to destination
                 if isinstance(field_name, tuple):
                     field_name_set = set(field_name)
                     if not field_name_set.issubset(set(source_fields.keys())):
@@ -102,13 +103,15 @@ class Coupler:
                     (
                         destination_fields[field_name[0]],
                         destination_fields[field_name[1]],
-                    ) = regridder(source_fields[field_name[0]], source_fields[field_name[1]])
+                    ) = regrid(
+                        source_fields[field_name[0]], source_fields[field_name[1]]
+                    )
                 else:
                     if field_name not in source_fields:
                         raise ValueError(
                             f"Field {field_name} not present in source fields"
                         )
-                    destination_fields[field_name] = regridder(source_fields[field_name])
+                    destination_fields[field_name] = regrid(source_fields[field_name])
 
             if destination_fields:
                 destination_component.import_fields(destination_fields)

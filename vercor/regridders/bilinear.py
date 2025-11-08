@@ -6,12 +6,14 @@ from vercor.interpolators.bilinear_rectilinear import Bilinear
 
 
 class BilinearRectilinear(Regridder):
-    def prepare(self) -> "BilinearRectilinear":
-        self._define_source_destination_grids_and_masks()
+    def setup(self) -> "BilinearRectilinear":
 
-        self.regridder = Bilinear(
-            self.field_in,
-            self.field_out,
+        self.interpolator = Bilinear(
+            self.src_grid.longitude,
+            self.src_grid.latitude,
+            self.dst_grid.longitude,
+            self.dst_grid.latitude,
+            tgt_mask=self.dst_grid.mask,
             periodic_longitude=True,
             nan_renorm=True,
             extrapolation_mode="nearest",
@@ -27,27 +29,33 @@ class BilinearRectilinear(Regridder):
         Call with positional args for fields and optional src_mask as a keyword-only arg.
 
         Supported calls:
-          - __call__(scalar_src, src_mask=...) -> scalar interpolation
-          - __call__(u_src, v_src, src_mask=...) -> vector interpolation
+          - apply(scalar_src, src_mask=...) -> scalar interpolation
+          - apply(u_src, v_src, src_mask=...) -> vector interpolation
 
         src_mask must be provided as a keyword argument. Passing a mask as a positional
         second argument is not allowed and will raise a TypeError to avoid ambiguity.
         """
+
+        out: Union[NDArray, Tuple[NDArray, NDArray]]
+
+        if self.interpolator is None:
+            raise ValueError("Regridder not properly set up; call setup() before using")
+
         if len(args) == 0:
             raise TypeError(
                 "Must provide either scalar_src or (u_src, v_src) as positional arguments"
             )
 
-        if self.regridder is not None:
-            if len(args) == 1:
-                scalar_src = args[0]
-                return self.regridder.apply_scalar(scalar_src, src_mask=src_mask)
+        if len(args) == 1:
+            scalar_src = args[0]
+            out = self.interpolator.apply_scalar(scalar_src, src_mask=src_mask)
 
-            if len(args) == 2:
-                a0, a1 = args
-                out = self.regridder.apply_vector(a0, a1, src_mask=src_mask)
-                return (out[0], out[1])
+        elif len(args) == 2:
+            v0, v1 = args
+            out = self.interpolator.apply_vector(v0, v1, src_mask=src_mask)
+        else:
+            raise TypeError(
+                "Must provide either scalar_src or (u_src, v_src) as positional arguments"
+            )
 
-        raise TypeError(
-            "Too many positional arguments; provide either (scalar,) or (u_src, v_src)"
-        )
+        return out

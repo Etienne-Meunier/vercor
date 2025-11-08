@@ -215,8 +215,12 @@ class Bilinear:
 
     def __init__(
         self,
-        field_in: dict[str, NDArray],
-        field_out: dict[str, NDArray],
+        lon_src: NDArray,
+        lat_src: NDArray,
+        lon_tgt: NDArray,
+        lat_tgt: NDArray,
+        src_mask: NDArray | None = None,
+        tgt_mask: NDArray | None = None,
         periodic_longitude: bool = True,
         nan_renorm: bool = True,
         extrapolation_mode: str | None = "idw",  # 'nearest' | 'idw'
@@ -234,8 +238,8 @@ class Bilinear:
         self.fill_value = fill_value
 
         # Source grid (1D)
-        lon_src_deg = np.asarray(field_in["lon"], dtype=float)
-        lat_src_deg = np.asarray(field_in["lat"], dtype=float)
+        lon_src_deg = np.asarray(lon_src, dtype=float)
+        lat_src_deg = np.asarray(lat_src, dtype=float)
         assert (
             lon_src_deg.ndim == 1 and lat_src_deg.ndim == 1
         ), "lon_src, lat_src must be 1-D"
@@ -268,10 +272,9 @@ class Bilinear:
         self.lat_src_rad = np.deg2rad(lat_src_deg)
 
         # Target grid (any shape)
-        lon_tgt = np.asarray(field_out["lon"], dtype=float)
-        lat_tgt = np.asarray(field_out["lat"], dtype=float)
+        lon_tgt = np.asarray(lon_tgt, dtype=float)
+        lat_tgt = np.asarray(lat_tgt, dtype=float)
         lon_tgt_deg, lat_tgt_deg = np.meshgrid(lon_tgt, lat_tgt)
-        tgt_mask = field_out.get("mask", None)
 
         self.tshape = np.broadcast_shapes(lon_tgt_deg.shape, lat_tgt_deg.shape)
         self.lon_tgt_deg = np.broadcast_to(lon_tgt_deg, self.tshape).copy()

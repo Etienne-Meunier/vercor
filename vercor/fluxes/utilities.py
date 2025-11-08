@@ -153,7 +153,9 @@ def air_density(
     settings, pf: NDArray[np.floating[Any]], t: NDArray[np.floating[Any]]
 ) -> NDArray[np.floating[Any]]:
     """Air density (kg/m^3)"""
-    result: NDArray[np.floating[Any]] = settings.mwdair / settings.rgas * pf[...] / t[...]
+    result: NDArray[np.floating[Any]] = (
+        settings.mwdair / settings.rgas * pf[...] / t[...]
+    )
     return result
 
 
@@ -161,5 +163,7 @@ def potential_temperature(
     settings, tbot: NDArray[np.floating[Any]], pf: NDArray[np.floating[Any]]
 ) -> NDArray[np.floating[Any]]:
     """Potential temperature (K)"""
-    result: NDArray[np.floating[Any]] = tbot[...] * (settings.p0 / pf[...]) ** settings.cappa
+    result: NDArray[np.floating[Any]] = (
+        tbot[...] * (settings.p0 / pf[...]) ** settings.cappa
+    )
     return result
