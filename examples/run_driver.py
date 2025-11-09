@@ -3,7 +3,7 @@ from datetime import datetime
 from vercor import Coupler, Clock, Exchange
 from vercor.coupler import RunSequence
 from vercor.components import Atmosphere, Ocean, SeaIce, Land
-from vercor.regridders import BilinearRectilinear, make_rectilinear_grid
+from vercor.regridders import BilinearRectilinearRegridder, make_rectilinear_grid
 
 # Build grids
 atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
@@ -32,7 +32,7 @@ cpl.set_components_run_sequence(run_sequence)
 
 # Bilinear interpolation
 bilinear = lambda source_grid, destination_grid:\
-    BilinearRectilinear(source_grid, destination_grid)
+    BilinearRectilinearRegridder(source_grid, destination_grid)
 
 # Exchanges
 # scalar fields (vector field)) 

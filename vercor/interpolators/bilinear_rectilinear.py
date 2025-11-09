@@ -181,7 +181,7 @@ def _great_circle_distance_rad(
     return result
 
 
-class Bilinear:
+class BilinearRectilinearInterpolator:
     """
     Bilinear interpolator for rectilinear lat/lon grids with:
 

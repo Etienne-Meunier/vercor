@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Tuple, Union
 from vercor.grid import Grid
 from vercor.regridders.base import Regridder
-from vercor.regridders.bilinear import BilinearRectilinear
+from vercor.regridders.bilinear import BilinearRectilinearRegridder
 
 
 @dataclass
@@ -30,6 +30,6 @@ class Exchange:
         self,
         source_grid: Grid,
         destination_grid: Grid,
-    ) -> BilinearRectilinear:
+    ) -> BilinearRectilinearRegridder:
         regridder = self.regridder_factory(source_grid, destination_grid)
         return regridder.setup()

@@ -1,1 +1,1 @@
-from vercor.interpolators.bilinear_rectilinear import Bilinear
+from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator

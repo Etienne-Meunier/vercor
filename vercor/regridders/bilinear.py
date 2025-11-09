@@ -2,21 +2,21 @@ from typing import Tuple, Union
 import numpy as np
 from numpy.typing import NDArray
 from vercor.regridders.base import Regridder
-from vercor.interpolators.bilinear_rectilinear import Bilinear
+from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
 
-class BilinearRectilinear(Regridder):
-    def setup(self) -> "BilinearRectilinear":
+class BilinearRectilinearRegridder(Regridder):
+    def setup(self) -> "BilinearRectilinearRegridder":
 
-        self.interpolator = Bilinear(
-            self.src_grid.longitude,
-            self.src_grid.latitude,
-            self.dst_grid.longitude,
-            self.dst_grid.latitude,
-            tgt_mask=self.dst_grid.mask,
+        self.interpolator = BilinearRectilinearInterpolator(
+            self.source_grid.longitude,
+            self.source_grid.latitude,
+            self.destination_grid.longitude,
+            self.destination_grid.latitude,
+            tgt_mask=self.destination_grid.mask,
             periodic_longitude=True,
             nan_renorm=True,
-            extrapolation_mode="nearest",
+            extrapolation_mode="idw",
             idw_k=8,
             idw_eps=1e-12,
             fill_value=np.nan,

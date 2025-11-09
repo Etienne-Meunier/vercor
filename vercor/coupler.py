@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Union
 import logging
 
-from vercor.regridders.bilinear import BilinearRectilinear
+from vercor.regridders.bilinear import BilinearRectilinearRegridder
 from vercor.settings import VercorSettings
 from vercor.components import Atmosphere, Ocean, SeaIce, Land
 from vercor.clock import Clock
@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 class Coupler:
     # Add communicator for MPI???
     clock: Clock
-    runseq: RunSequence = field(init=False)
+    run_sequence: RunSequence = field(init=False)
     components: Dict[str, Union[Atmosphere, Ocean, SeaIce, Land]] = field(
         default_factory=dict
     )
@@ -26,7 +26,7 @@ class Coupler:
     settings: VercorSettings = field(default_factory=VercorSettings)
     _regridders: Dict[
         Tuple[str, str],
-        BilinearRectilinear,
+        BilinearRectilinearRegridder,
     ] = field(default_factory=dict)
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
@@ -47,12 +47,14 @@ class Coupler:
             f" Fields --- {formatted_field_names} --- Call order: {exchange.when}"
         )
 
-    def set_components_run_sequence(self, runseq: RunSequence) -> None:
-        for cname in runseq:
+    def set_components_run_sequence(self, run_sequence: RunSequence) -> None:
+        for cname in run_sequence:
             if cname not in self.components.keys():
                 raise ValueError(f"Component {cname} not registered in coupler")
-        self.runseq = runseq
-        logger.info(f" Set coupler components run sequence: {', '.join(self.runseq)}")
+        self.run_sequence = run_sequence
+        logger.info(
+            f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
+        )
 
     def initialize(self) -> None:
         # Build regridders per (source, destination) pair
@@ -125,7 +127,7 @@ class Coupler:
             logger.info(f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} ")
 
             # Step components in declared order
-            for cname in self.runseq:
+            for cname in self.run_sequence:
                 # Pre-step exchanges
                 self._do_exchanges(self.components[cname], "pre")
 

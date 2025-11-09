@@ -1,4 +1,3 @@
-from typing import Dict
 import numpy as np
 from vercor.components.base import Component
 from vercor.components.forcing import ERA5Forcing
