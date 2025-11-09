@@ -21,4 +21,12 @@ class Regridder(abc.ABC):
         raise NotImplementedError
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(\n source_grid={self.source_grid},\n destination_grid={self.destination_grid})"
+        return (
+            f"{self.__class__.__name__}:"
+            f"\n |Source grid:"
+            f"\n |----Grid type: {self.source_grid.__class__.__name__} ({self.source_grid.name})"
+            f"\n |----Grid shape: {self.source_grid.shape}"
+            f"\n |Destination grid:"
+            f"\n |----Grid type: {self.destination_grid.__class__.__name__} ({self.destination_grid.name})"
+            f"\n |----Grid shape: {self.destination_grid.shape}"
+        )

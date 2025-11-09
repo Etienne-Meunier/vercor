@@ -21,8 +21,6 @@ LND = Land("LND", lnd_grid)
 clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
 run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
 
-# Choose models/components for concurrent execution when MPI is ON
-
 # Coupler
 cpl = Coupler(clock=clock)
 for comp in [ATM, OCN, ICE, LND]:
@@ -31,12 +29,14 @@ for comp in [ATM, OCN, ICE, LND]:
 cpl.set_components_run_sequence(run_sequence)
 
 # Bilinear interpolation
+# Having interpolator factory function allows easy access
+# to different interpolators' args & kwargs
 bilinear = lambda source_grid, destination_grid:\
     BilinearRectilinearRegridder(source_grid, destination_grid)
 
 # Exchanges
-# scalar fields (vector field)) 
-#["SHF", "LHF", ("u10m", "v10m")]
+# scalar fields (vector field))
+# ["SHF", "LHF", ("u10m", "v10m")]
 cpl.add_exchange(Exchange(
     source="ATM",
     destination="OCN",
@@ -77,13 +77,15 @@ cpl.add_exchange(Exchange(
     when="post",
 ))
 
+cpl.initialize()
+# print(cpl._regridders[("ATM", "OCN")])
 cpl.run()
 
 # Inspect a few fields
 print("SST mean:", OCN.state["SST"].mean())
+print("TA2M mean:", ATM.state["TA2M"].mean())
 print("u10m mean:", ATM.state["u10m"].mean())
 print("v10m mean:", ATM.state["v10m"].mean())
-print("TA2M mean:", ATM.state["TA2M"].mean())
+print("SOILM(LND) mean:", LND.state["SOILM"].mean())
+print("SOILM(ATM) mean:", ATM.state["SOILM"].mean())
 print("ICEFRAC mean:", ICE.state["ICEFRAC"].mean())
-print("SOILM mean:", LND.state["SOILM"].mean())
-print("SOILM(LND) mean:", ATM.state["SOILM"].mean())

@@ -65,6 +65,10 @@ class Coupler:
                     self.components[exchange.source].grid,
                     self.components[exchange.destination].grid,
                 )
+            else:
+                logger.warning(
+                    f" Regridder for exchange {exchange.name} already exists, skipping creation"
+                )
 
         # Initialize components
         for name, component in self.components.items():
@@ -122,7 +126,6 @@ class Coupler:
                 )
 
     def run(self) -> None:
-        self.initialize()
         for n, time, dt in self.clock.iter():
             logger.info(f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} ")
 
