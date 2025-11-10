@@ -2,21 +2,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from numpy.typing import NDArray
 import numpy as np
-import h5netcdf
 from vercor.grid import RectilinearGrid
-
-
-@dataclass
-class ForcingData:
-    DATA_FILES: dict[str, str] = field(default_factory=dict)
-
-    def _read_forcing(self, var: str, forcing: str, flip_y: bool = False):
-        with h5netcdf.File(self.DATA_FILES[forcing], "r") as infile:
-            var_obj = np.array(infile.variables[var]).T
-            if flip_y:
-                return np.flip(var_obj, axis=1)
-            else:
-                return var_obj
+from vercor.components.base import ForcingData
 
 
 @dataclass

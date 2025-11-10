@@ -1,8 +1,23 @@
 import abc
 from typing import Dict
 from dataclasses import dataclass, field
+import h5netcdf
+import numpy as np
 from numpy.typing import NDArray
 from vercor.grid import RectilinearGrid
+
+
+@dataclass
+class ForcingData:
+    DATA_FILES: dict[str, str] = field(default_factory=dict)
+
+    def _read_forcing(self, var: str, forcing: str, flip_y: bool = False):
+        with h5netcdf.File(self.DATA_FILES[forcing], "r") as infile:
+            var_obj = np.array(infile.variables[var]).T
+            if flip_y:
+                return np.flip(var_obj, axis=1)
+            else:
+                return var_obj
 
 
 @dataclass

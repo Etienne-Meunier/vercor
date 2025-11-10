@@ -53,6 +53,9 @@ class BilinearRectilinearRegridder(Regridder):
 
         self._ensure_ready(args)
 
+        # Check if components have identical grids internally and
+        # returns fields as-is (from source to destination) if so,
+        # avoiding unnecessary computation
         if self.is_identical_shape:
             return args if len(args) == 2 else args[0]
 
