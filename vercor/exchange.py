@@ -10,7 +10,7 @@ class Exchange:
     source: str
     destination: str
     field_names: List[Union[str, Tuple[str, str]]]
-    regridder_factory: Callable[..., Regridder]
+    regridder_factory: Callable[..., BilinearRectilinearRegridder]
     when: str = "pre"
     """
     Exchange definition between two components
@@ -31,5 +31,4 @@ class Exchange:
         source_grid: Grid,
         destination_grid: Grid,
     ) -> BilinearRectilinearRegridder:
-        regridder = self.regridder_factory(source_grid, destination_grid)
-        return regridder.setup()
+        return self.regridder_factory(source_grid, destination_grid)

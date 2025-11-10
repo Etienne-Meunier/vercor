@@ -11,6 +11,12 @@ class Component(abc.ABC):
     grid: RectilinearGrid
     state: Dict[str, NDArray] = field(default_factory=dict)
 
+    """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
+    Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
+    JCM atmospheric model (nTime, nLev, nLon, nLat). One must implement necessary
+    dimensions check and reshaping of fields during import/export if needed.
+    """
+
     @abc.abstractmethod
     def initialize(self, coupler):
         raise NotImplementedError

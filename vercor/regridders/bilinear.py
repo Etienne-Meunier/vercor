@@ -2,11 +2,24 @@ from typing import Tuple, Union
 import numpy as np
 from numpy.typing import NDArray
 from vercor.regridders.base import Regridder
+from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
 
 class BilinearRectilinearRegridder(Regridder):
-    def setup(self) -> "BilinearRectilinearRegridder":
+    def __init__(
+        self,
+        source_grid: RectilinearGrid,
+        destination_grid: RectilinearGrid,
+        periodic_longitude: bool = True,
+        nan_renorm: bool = True,
+        extrapolation_mode: str = "idw",
+        idw_k: int = 8,
+        idw_eps: float = 1e-12,
+        fill_value: float = np.nan,
+    ) -> None:
+
+        super().__init__(source_grid, destination_grid)
 
         self.interpolator = BilinearRectilinearInterpolator(
             self.source_grid.longitude,
@@ -14,15 +27,13 @@ class BilinearRectilinearRegridder(Regridder):
             self.destination_grid.longitude,
             self.destination_grid.latitude,
             tgt_mask=self.destination_grid.mask,
-            periodic_longitude=True,
-            nan_renorm=True,
-            extrapolation_mode="idw",
-            idw_k=8,
-            idw_eps=1e-12,
-            fill_value=np.nan,
+            periodic_longitude=periodic_longitude,
+            nan_renorm=nan_renorm,
+            extrapolation_mode=extrapolation_mode,
+            idw_k=idw_k,
+            idw_eps=idw_eps,
+            fill_value=fill_value,
         )
-
-        return self
 
     def __call__(self, *args, src_mask=None) -> Union[NDArray, Tuple[NDArray, NDArray]]:
         """
@@ -39,7 +50,7 @@ class BilinearRectilinearRegridder(Regridder):
         out: Union[NDArray, Tuple[NDArray, NDArray]]
 
         if self.interpolator is None:
-            raise ValueError("Regridder not properly set up; call setup() before using")
+            raise ValueError("Regridder not properly set up")
 
         if len(args) == 0:
             raise TypeError(

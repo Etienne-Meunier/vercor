@@ -16,7 +16,6 @@ logging.basicConfig(level=logging.INFO)
 
 @dataclass
 class Coupler:
-    # Add communicator for MPI???
     clock: Clock
     run_sequence: RunSequence = field(init=False)
     components: Dict[str, Union[Atmosphere, Ocean, SeaIce, Land]] = field(
@@ -57,6 +56,8 @@ class Coupler:
         )
 
     def initialize(self) -> None:
+        # TODO: Initialize individual components
+
         # Build regridders per (source, destination) pair
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination)

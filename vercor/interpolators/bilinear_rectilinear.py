@@ -226,7 +226,7 @@ class BilinearRectilinearInterpolator:
         extrapolation_mode: str | None = "idw",  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,
-        fill_value=np.nan,
+        fill_value: float = np.nan,
     ):
 
         # Store config
