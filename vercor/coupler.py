@@ -10,8 +10,12 @@ from vercor.exchange import Exchange
 from vercor.run_sequence import RunSequence
 
 
-logger = logging.getLogger("VerCOR.coupler")
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("VerCOR")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 @dataclass
@@ -56,9 +60,12 @@ class Coupler:
         )
 
     def initialize(self) -> None:
-        # TODO: Initialize individual components
+        # Initialize components
+        for name, component in self.components.items():
+            component.initialize(self)
+            logger.info(f" Initialized {name}")
 
-        # Build regridders per (source, destination) pair
+        # Build regridders per (source component, destination component) pair
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination)
             if key not in self._regridders:
@@ -70,11 +77,6 @@ class Coupler:
                 logger.warning(
                     f" Regridder for exchange {exchange.name} already exists, skipping creation"
                 )
-
-        # Initialize components
-        for name, component in self.components.items():
-            component.initialize(self)
-            logger.info(f" Initialized {name}")
 
     def _do_exchanges(
         self, component: Union[Atmosphere, Ocean, SeaIce, Land], when: str

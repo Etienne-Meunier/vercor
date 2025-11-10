@@ -10,6 +10,10 @@ class Grid(abc.ABC):
     name: str
     mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
 
+    def __post_init__(self) -> None:
+        if self.mask is not None and self.mask.ndim != 2:
+            raise ValueError("Mask must be a 2D array.")
+
     @property
     @abc.abstractmethod
     def shape(self):

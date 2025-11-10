@@ -10,11 +10,13 @@ class Component(abc.ABC):
     name: str
     grid: RectilinearGrid
     state: Dict[str, NDArray] = field(default_factory=dict)
-
     """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
+
     Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
-    JCM atmospheric model (nTime, nLev, nLon, nLat). One must implement necessary
-    dimensions check and reshaping of fields during import/export if needed.
+    JCM atmospheric model (nTime, nLev, nLon, nLat). 
+
+    One must implement necessary dimensions check and reshaping of fields
+    during import/export if needed.
     """
 
     @abc.abstractmethod
