@@ -101,6 +101,8 @@ class Coupler:
             source_fields = source_component.export_fields()
             destination_fields = {}
 
+            # Regridder (regrid) checks if components have identical grids internally and
+            # returns fields as-is (from source to destination) if so, avoiding unnecessary computation
             for field_name in exchange.field_names:
                 # Figure out if scalar or vector field to be regridded & passed to destination
                 if isinstance(field_name, tuple):
@@ -134,11 +136,9 @@ class Coupler:
 
             # Step components in declared order
             for cname in self.run_sequence:
-                # Pre-step exchanges
                 self._do_exchanges(self.components[cname], "pre")
 
                 logger.info(f" Run component: {cname}")
                 self.components[cname].step(dt, time, self)
 
-                # Post-step exchanges
                 self._do_exchanges(self.components[cname], "post")

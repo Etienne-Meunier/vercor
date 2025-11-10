@@ -1,4 +1,4 @@
-from typing import Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 import numpy as np
 from numpy.typing import NDArray
 from vercor.regridders.base import Regridder
@@ -35,7 +35,11 @@ class BilinearRectilinearRegridder(Regridder):
             fill_value=fill_value,
         )
 
-    def __call__(self, *args, src_mask=None) -> Union[NDArray, Tuple[NDArray, NDArray]]:
+    def __call__(
+        self,
+        *args: NDArray,
+        src_mask: Optional[NDArray] = None,
+    ) -> Union[NDArray, Tuple[NDArray, NDArray]]:
         """
         Call with positional args for fields and optional src_mask as a keyword-only arg.
 
@@ -47,26 +51,14 @@ class BilinearRectilinearRegridder(Regridder):
         second argument is not allowed and will raise a TypeError to avoid ambiguity.
         """
 
-        out: Union[NDArray, Tuple[NDArray, NDArray]]
+        self._ensure_ready(args)
 
-        if self.interpolator is None:
-            raise ValueError("Regridder not properly set up")
+        if self.is_identical_shape:
+            return args if len(args) == 2 else args[0]
 
-        if len(args) == 0:
-            raise TypeError(
-                "Must provide either scalar_src or (u_src, v_src) as positional arguments"
-            )
+        handlers: dict[int, Callable[..., NDArray | Tuple[NDArray, NDArray]]] = {
+            1: self._apply_scalar,
+            2: self._apply_vector,
+        }
 
-        if len(args) == 1:
-            scalar_src = args[0]
-            out = self.interpolator.apply_scalar(scalar_src, src_mask=src_mask)
-
-        elif len(args) == 2:
-            v0, v1 = args
-            out = self.interpolator.apply_vector(v0, v1, src_mask=src_mask)
-        else:
-            raise TypeError(
-                "Must provide either scalar_src or (u_src, v_src) as positional arguments"
-            )
-
-        return out
+        return handlers[len(args)](*args, src_mask=src_mask)
