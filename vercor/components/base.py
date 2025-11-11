@@ -1,9 +1,11 @@
 import abc
-from typing import Dict
 from dataclasses import dataclass, field
+from typing import Dict
+
 import h5netcdf
 import numpy as np
 from numpy.typing import NDArray
+
 from vercor.grid import RectilinearGrid
 
 

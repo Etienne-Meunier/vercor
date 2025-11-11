@@ -1,14 +1,14 @@
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Union
 import logging
+from dataclasses import dataclass, field
 from logging import Logger
+from typing import Dict, List, Tuple, Union
 
-from vercor.regridders.bilinear import BilinearRectilinearRegridder
-from vercor.settings import VercorSettings
-from vercor.components import Atmosphere, Ocean, SeaIce, Land
 from vercor.clock import Clock
+from vercor.components import Atmosphere, Land, Ocean, SeaIce
 from vercor.exchange import Exchange
+from vercor.regridders.bilinear import BilinearRectilinearRegridder
 from vercor.run_sequence import RunSequence
+from vercor.settings import VercorSettings
 
 
 def setup_logger():

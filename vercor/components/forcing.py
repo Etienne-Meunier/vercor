@@ -1,9 +1,11 @@
 from dataclasses import dataclass, field
 from typing import Any
-from numpy.typing import NDArray
+
 import numpy as np
-from vercor.grid import RectilinearGrid
+from numpy.typing import NDArray
+
 from vercor.components.base import ForcingData
+from vercor.grid import RectilinearGrid
 
 
 @dataclass

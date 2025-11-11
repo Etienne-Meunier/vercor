@@ -1,6 +1,8 @@
 from typing import Tuple
+
 import numpy as np
 from numpy.typing import NDArray
+
 from vercor.components import Component
 from vercor.settings import VercorSettings
 

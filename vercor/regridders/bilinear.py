@@ -1,9 +1,11 @@
 from typing import Callable, Optional, Tuple, Union
+
 import numpy as np
 from numpy.typing import NDArray
-from vercor.regridders.base import Regridder
+
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor.regridders.base import Regridder
 
 
 class BilinearRectilinearRegridder(Regridder):

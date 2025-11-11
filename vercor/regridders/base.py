@@ -1,4 +1,5 @@
 from typing import Any, Optional, Tuple
+
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid

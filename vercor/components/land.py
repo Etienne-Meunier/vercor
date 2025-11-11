@@ -1,6 +1,7 @@
 import numpy as np
-from vercor.grid import RectilinearGrid
+
 from vercor.components.base import Component
+from vercor.grid import RectilinearGrid
 
 
 class Land(Component):
