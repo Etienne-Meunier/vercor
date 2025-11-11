@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Union
 import logging
+from logging import Logger
 
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
 from vercor.settings import VercorSettings
@@ -10,17 +11,21 @@ from vercor.exchange import Exchange
 from vercor.run_sequence import RunSequence
 
 
-logger = logging.getLogger("VerCOR")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+def setup_logger():
+    logger = logging.getLogger("VerCOR")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    return logger
 
 
 @dataclass
 class Coupler:
     clock: Clock
+    logger: Logger = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
     components: Dict[str, Union[Atmosphere, Ocean, SeaIce, Land]] = field(
         default_factory=dict
@@ -37,7 +42,7 @@ class Coupler:
             raise ValueError(f"Component {component.name} already registered")
 
         self.components[component.name] = component
-        logger.info(f" Registered component {component.name}")
+        self.logger.info(f" Registered component {component.name}")
 
     def add_exchange(self, exchange: Exchange) -> None:
         self.exchanges.append(exchange)
@@ -45,7 +50,7 @@ class Coupler:
             ", ".join(item) if isinstance(item, tuple) else item
             for item in exchange.field_names
         )
-        logger.info(
+        self.logger.info(
             f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination}:"
             f" Fields --- {formatted_field_names} --- Call order: {exchange.when}"
         )
@@ -55,15 +60,17 @@ class Coupler:
             if cname not in self.components.keys():
                 raise ValueError(f"Component {cname} not registered in coupler")
         self.run_sequence = run_sequence
-        logger.info(
+        self.logger.info(
             f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
         )
 
     def initialize(self) -> None:
+        self.logger.info(" Initializing coupler and components")
+
         # Initialize components
         for name, component in self.components.items():
             component.initialize(self)
-            logger.info(f" Initialized {name}")
+            self.logger.info(f" Initialized {name}")
 
         # Build regridders per (source component, destination component) pair
         for exchange in self.exchanges:
@@ -74,7 +81,7 @@ class Coupler:
                     self.components[exchange.destination].grid,
                 )
             else:
-                logger.warning(
+                self.logger.warning(
                     f" Regridder for exchange {exchange.name} already exists, skipping creation"
                 )
 
@@ -93,7 +100,7 @@ class Coupler:
             source_component = self.components[exchange.source]
             destination_component = self.components[exchange.destination]
 
-            logger.info(
+            self.logger.info(
                 f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name} ({when})"
             )
 
@@ -126,19 +133,21 @@ class Coupler:
 
             if destination_fields:
                 destination_component.import_fields(destination_fields)
-                logger.debug(
+                self.logger.debug(
                     f"{when.upper()} step: Exchanged {list(destination_fields)} from {exchange.source} to {exchange.destination}"
                 )
 
     def run(self) -> None:
         for n, time, dt in self.clock.iter():
-            logger.info(f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} ")
+            self.logger.info(
+                f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
+            )
 
             # Step components in declared order
             for cname in self.run_sequence:
                 self._do_exchanges(self.components[cname], "pre")
 
-                logger.info(f" Run component: {cname}")
+                self.logger.info(f" Run component: {cname}")
                 self.components[cname].step(dt, time, self)
 
                 self._do_exchanges(self.components[cname], "post")

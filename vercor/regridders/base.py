@@ -26,6 +26,7 @@ class Regridder:
     def _apply_scalar(
         self, args: NDArray, src_mask: Optional[NDArray] = None
     ) -> NDArray:
+        """A wrapper to call scalar interpolation."""
         assert self.interpolator is not None
         result: NDArray = self.interpolator.apply_scalar(args, src_mask=src_mask)
         return result
@@ -33,6 +34,7 @@ class Regridder:
     def _apply_vector(
         self, v0: NDArray, v1: NDArray, src_mask: Optional[NDArray] = None
     ) -> Tuple[NDArray, NDArray]:
+        """A wrapper to call vector interpolation."""
         assert self.interpolator is not None
         result: Tuple[NDArray, NDArray] = self.interpolator.apply_vector(
             v0, v1, src_mask=src_mask
