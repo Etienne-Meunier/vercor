@@ -1,11 +1,11 @@
 from datetime import datetime
+from typing import List
 
 from vercor import Clock, Coupler, Exchange
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
 from vercor.coupler import RunSequence
 from vercor.regridders import (BilinearRectilinearRegridder,
                                make_rectilinear_grid)
-
 
 # Build grids
 atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
@@ -25,7 +25,8 @@ run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
 
 # Coupler
 cpl = Coupler(clock=clock)
-for component in [atm, ocn, ice, lnd]:
+components: List[Atmosphere | Ocean | SeaIce | Land] = [atm, ocn, ice, lnd]
+for component in components:
     cpl.register(component)
 
 cpl.set_components_run_sequence(run_sequence)

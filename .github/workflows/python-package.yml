@@ -35,6 +35,10 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 120 chars wide
         flake8 . --count --exit-zero --max-line-length=120 --statistics
+    - name: Type checking with mypy
+      run: |
+        pip install mypy
+        mypy vercor tests examples
     - name: Test with pytest
       run: |
         pytest tests
