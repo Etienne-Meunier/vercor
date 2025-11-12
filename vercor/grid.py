@@ -20,6 +20,14 @@ class Grid(abc.ABC):
     def shape(self):
         raise NotImplementedError
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"|----Grid name:  {self.name}\n"
+            f"|----Grid shape: {self.shape}\n"
+            f"|----Mask: {'Provided' if self.mask is not None else 'Not provided'}\n"
+        )
+
 
 class RectilinearGrid(Grid):
     def __init__(

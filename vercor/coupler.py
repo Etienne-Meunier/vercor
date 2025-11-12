@@ -18,7 +18,6 @@ def setup_logger():
         format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
     return logger
 
 
@@ -36,6 +35,17 @@ class Coupler:
         Tuple[str, str],
         BilinearRectilinearRegridder,
     ] = field(default_factory=dict)
+    """
+    Main coupler class to manage components and exchanges between them.
+
+    Attributes:
+        logger: Logger instance for coupler logging
+        run_sequence: sequence of component names defining the call (step) order
+        components: mapping of component name to component instance
+        exchanges: list of all Exchange instances
+        _regridders: mapping of (source component name, destination component name)
+                     to Regridder instance (a pool of all available regridders)
+    """
 
     def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
         if component.name in self.components:

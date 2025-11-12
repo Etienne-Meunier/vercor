@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, List, Tuple, Union
 
 from vercor.grid import Grid
@@ -9,6 +9,7 @@ from vercor.regridders.bilinear import BilinearRectilinearRegridder
 class Exchange:
     source: str
     destination: str
+    name: str = field(init=False)
     field_names: List[Union[str, Tuple[str, str]]]
     regridder_factory: Callable[..., BilinearRectilinearRegridder]
     when: str = "pre"
@@ -25,6 +26,14 @@ class Exchange:
 
     def __post_init__(self) -> None:
         self.name = f"{self.source}2{self.destination}"
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"|----Name: {self.name}\n"
+            f"|----Source component: {self.source}\n"
+            f"|----Destination component: {self.destination}\n"
+        )
 
     def create(
         self,

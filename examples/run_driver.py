@@ -6,6 +6,7 @@ from vercor.coupler import RunSequence
 from vercor.regridders import (BilinearRectilinearRegridder,
                                make_rectilinear_grid)
 
+
 # Build grids
 atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
 ocn_grid = make_rectilinear_grid("ocn-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
@@ -79,7 +80,6 @@ cpl.add_exchange(Exchange(
 ))
 
 cpl.initialize()
-# print(cpl._regridders[("atm", "ocn")])
 cpl.run()
 
 # Inspect a few fields
