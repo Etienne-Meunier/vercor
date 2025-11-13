@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple, Union
 
 from vercor.clock import Clock
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
+from vercor.components.era5_atmosphere import ERA5Atmosphere
 from vercor.exchange import Exchange
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
 from vercor.run_sequence import RunSequence
@@ -26,7 +27,7 @@ class Coupler:
     clock: Clock
     logger: Logger = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
-    components: Dict[str, Union[Atmosphere, Ocean, SeaIce, Land]] = field(
+    components: Dict[str, Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land]] = field(
         default_factory=dict
     )
     exchanges: List[Exchange] = field(default_factory=list)
@@ -47,7 +48,7 @@ class Coupler:
                      to Regridder instance (a pool of all available regridders)
     """
 
-    def register(self, component: Union[Atmosphere, Ocean, SeaIce, Land]) -> None:
+    def register(self, component: Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land]) -> None:
         if component.name in self.components:
             raise ValueError(f"Component {component.name} already registered")
 
@@ -96,7 +97,7 @@ class Coupler:
                 )
 
     def _do_exchanges(
-        self, component: Union[Atmosphere, Ocean, SeaIce, Land], when: str
+        self, component: Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land], when: str
     ) -> None:
         for exchange in self.exchanges:
             # Exchange before or after component stepping

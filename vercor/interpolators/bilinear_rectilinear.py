@@ -782,7 +782,7 @@ class BilinearRectilinearInterpolator:
             self.nlon,
         ):
             raise ValueError(
-                f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon})"
+                f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon}), provided {u_src.shape}, {v_src.shape}"
             )
 
         if src_mask is None:

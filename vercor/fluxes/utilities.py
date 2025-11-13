@@ -108,8 +108,8 @@ def compute_z_level(
     alt: NDArray[np.floating[Any]] = (
         settings.earth_radius
         * zf
-        / settings.grav
-        / (settings.earth_radius - zf / settings.grav)
+        / settings.gravity
+        / (settings.earth_radius - zf / settings.gravity)
     )
 
     return alt[:, :, :]
