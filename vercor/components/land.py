@@ -1,7 +1,13 @@
+from datetime import datetime, timedelta
 import numpy as np
 
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
+
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from vercor.coupler import Coupler
 
 
 class Land(Component):
@@ -13,13 +19,16 @@ class Land(Component):
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
 
-    def initialize(self, coupler) -> None:
+    def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
-        self.state["SOILM"] = 0.3 * np.ones((nlat, nlon))
+        self.shared_fields["SOILM"] = 0.3 * np.ones((nlat, nlon))
 
-    def step(self, dt, time, coupler) -> None:
-        LHF = self.state.get("LHF")
-        soil = self.state["SOILM"]
+    def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
+        LHF = self.shared_fields.get("LHF")
+        soil = self.shared_fields["SOILM"]
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
-        self.state["SOILM"] = soil
+        self.shared_fields["SOILM"] = soil
+
+    def finalize(self, coupler: "Coupler") -> None:
+        pass

@@ -8,7 +8,7 @@ from vercor.settings import VercorSettings
 
 def shr_flux_atmOcn(
     settings: VercorSettings,
-    state: Component,
+    shared_fields: Component,
     mask: NDArray,
     zbot: NDArray,
     ubot: NDArray,
@@ -312,7 +312,7 @@ def shr_flux_atmOcn(
 
 def shr_flux_atmIce(
     settings: VercorSettings,
-    state: Component,
+    shared_fields: Component,
     mask: NDArray,
     zbot: NDArray,
     ubot: NDArray,

@@ -13,7 +13,7 @@ from vercor.grid import RectilinearGrid
 class Component(abc.ABC):
     name: str
     grid: RectilinearGrid
-    state: Dict[str, NDArray] = field(default_factory=dict)
+    shared_fields: Dict[str, NDArray] = field(default_factory=dict)
     """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
 
     Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
@@ -31,27 +31,31 @@ class Component(abc.ABC):
     def step(self, dt, time, coupler):
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def finalize(self, coupler):
+        raise NotImplementedError
+
     def export_fields(self) -> Dict[str, NDArray]:
-        return {k: v for k, v in self.state.items()}
+        return {k: v for k, v in self.shared_fields.items()}
 
     def import_fields(self, fields: Dict[str, NDArray]) -> None:
         # TODO: implement more sophisticated merging with dimensions checks for every array
         # simplistic merge/overwrite
         for name, fld in fields.items():
-            self.state[name] = fld
+            self.shared_fields[name] = fld
 
     def __repr__(self) -> str:
-        state_vars = []
-        state_string = ""
-        if self.state:
-            state_vars = list(self.state.keys())
-            state_string = ", ".join(state_vars)
+        shared_fields_list = []
+        shared_fields_string = ""
+        if self.shared_fields:
+            shared_fields_list = list(self.shared_fields.keys())
+            shared_fields_string = ", ".join(shared_fields_list)
         return (
             f"{self.__class__.__name__}:\n"
             f"|----Name: {self.name}\n"
+            f"|----Shared fields: {shared_fields_string if len(shared_fields_list) > 0 else 'Not provided'}\n"
             f"|----Grid name: {self.grid.name}\n"
-            f"|----Grid shape: {self.grid.shape}\n"
-            f"|----State variables: {state_string if len(state_vars) > 0 else 'Not provided'}\n"
+            f"     |---Shape: {self.grid.shape}\n"
         )
 
 
