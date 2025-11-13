@@ -1,7 +1,13 @@
+from datetime import datetime, timedelta
 import numpy as np
 
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
+
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from vercor.coupler import Coupler
 
 
 class Ocean(Component):
@@ -21,14 +27,14 @@ class Ocean(Component):
             30.0 * 86400.0
         )  # weak restoring to 15C over ~30 days
 
-    def initialize(self, coupler) -> None:
+    def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
-        self.state["SST"] = 273.15 + 15.0 * np.ones((nlat, nlon))
+        self.shared_fields["SST"] = 273.15 + 15.0 * np.ones((nlat, nlon))
 
-    def step(self, dt, time, coupler) -> None:
-        SST = self.state["SST"]
-        SHF = self.state.get("SHF")
-        LHF = self.state.get("LHF")
+    def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
+        SST = self.shared_fields["SST"]
+        SHF = self.shared_fields.get("SHF")
+        LHF = self.shared_fields.get("LHF")
         Qnet = np.zeros_like(SST)
         if SHF is not None:
             Qnet += SHF
@@ -36,4 +42,8 @@ class Ocean(Component):
             Qnet += LHF
         T0 = 273.15 + 15.0
         dTdt = Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (SST - T0)
-        self.state["SST"] = SST + dTdt * dt.total_seconds()
+
+        self.shared_fields["SST"] = SST + dTdt * dt.total_seconds()
+
+    def finalize(self, coupler: "Coupler") -> None:
+        pass

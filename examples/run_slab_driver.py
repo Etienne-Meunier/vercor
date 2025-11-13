@@ -85,10 +85,10 @@ if __name__ == "__main__":
     cpl.run()
 
     # Inspect a few fields
-    print("SST mean:", ocn.state["SST"].mean())
-    print("TA2M mean:", atm.state["TA2M"].mean())
-    print("u10m mean:", atm.state["u10m"].mean())
-    print("v10m mean:", atm.state["v10m"].mean())
-    print("SOILM(LND) mean:", lnd.state["SOILM"].mean())
-    print("SOILM(ATM) mean:", atm.state["SOILM"].mean())
-    print("ICEFRAC mean:", ice.state["ICEFRAC"].mean())
+    print("SST mean:", ocn.shared_fields["SST"].mean())
+    print("TA2M mean:", atm.shared_fields["TA2M"].mean())
+    print("u10m mean:", atm.shared_fields["u10m"].mean())
+    print("v10m mean:", atm.shared_fields["v10m"].mean())
+    print("SOILM(LND) mean:", lnd.shared_fields["SOILM"].mean())
+    print("SOILM(ATM) mean:", atm.shared_fields["SOILM"].mean())
+    print("ICEFRAC mean:", ice.shared_fields["ICEFRAC"].mean())

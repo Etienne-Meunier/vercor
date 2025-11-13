@@ -9,7 +9,7 @@ from vercor.settings import VercorSettings
 
 def bulkf_formula_lanl(
     settings: VercorSettings,
-    state: Component,
+    shared_fields: Component,
     uw: NDArray,
     vw: NDArray,
     ta: NDArray,
