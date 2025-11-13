@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class VercorSettings:
     identifier: str = "UNNAMED"  # Identifier of the current simulation
     output_frequency: int = 1  # Frequency of output in timesteps
@@ -13,12 +13,16 @@ class VercorSettings:
     # ------------------------- Bulk formula constants ------------------------------
     gravity: float = 9.81  # Acceleration due to gravity [m/s^2]
     rhoAir: float = 1.3  # Density of air [kg/m^3]
+    rdair: float = 287.042  # RGAS / MWDAIR - dry air gas constant [J/K/kg]
     cpdair: float = 1.00464e3  # Specific heat capacity of dry air [J/(kg*K)]
     zvir: float = (
         0.608  # (rwv / rdair) - 1.0 - Dry-air water-vapor molecular mass ratio [-]
     )
+    p0: float = 1e5  # reference pressure to compute potential temperature [Pa]
+    mwdair: float = 28.966  # molecular weight of dry air [kg/kmole]
     cpwv: float = 1.810e3  # specific heat of water vapor [J/kg/K]
     cpvir: float = 0.802  # cpwv/cpdair - 1.0 specific heat of vaporization [-]
+    cappa: float = 0.286  # R/Cp [-]    
     latice: float = 3.337e5  # latent heat of fusion  [J/kg]
     rgas: float = 8314.47  # avogad * bolzc - Ideal gas constant [J/K/kmole]
     umin_ocean: float = 0.5  # minimum atm. wind speed over ocean surface [m/s]
@@ -32,3 +36,4 @@ class VercorSettings:
     latfresh: float = 3.34e5  # Latent heat of fusion [J/kg]
     gamma_blk: float = 0.1  # Bulk aerodynamic resistance [-]
     # --------------------------------------------------------------------------------
+    year_in_seconds: float = 360 * 86400.0
