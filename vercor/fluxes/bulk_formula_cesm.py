@@ -280,7 +280,7 @@ def shr_flux_atmOcn(
     # ------------------------------------------------------------
     hol = hol[...] * ztref / zbot[...] * mask[...]
     xsq = np.maximum(1.0, np.sqrt(np.abs(1.0 - 16.0 * hol[...]))) * mask[...]
-    xqq = np.sqrt(xsq[...]) * mask
+    xqq = np.sqrt(xsq[...]) * mask[...]
     psix2 = (
         -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq) * mask[...]
     )
