@@ -20,7 +20,7 @@ class Grid(abc.ABC):
     def shape(self):
         raise NotImplementedError
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"
             f"|----Grid name:  {self.name}\n"

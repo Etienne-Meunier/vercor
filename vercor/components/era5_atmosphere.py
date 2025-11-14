@@ -37,8 +37,8 @@ def get_data_dir() -> Tuple[Path, Path]:
     )
 
 
-def get_values_at_specific_time(
-        variable: str, state: Dict, coupler: "Coupler", current_time: Optional[datetime] = None
+def get_field_at_specific_time(
+        field_name: str, state: Dict, coupler: "Coupler", current_time: Optional[datetime] = None
     ) -> NDArray:
 
     total_seconds = datetime_to_seconds_in_year(
@@ -54,8 +54,8 @@ def get_values_at_specific_time(
 
     # Use transpose to have (lat, lon) ordering
     return (
-        f1 * state[f"{variable}"][..., n1].T
-        + f2 * state[f"{variable}"][..., n2].T
+        f1 * state[f"{field_name}"][..., n1].T
+        + f2 * state[f"{field_name}"][..., n2].T
     )
 
 
@@ -74,10 +74,12 @@ class ERA5Atmosphere(Component, ForcingData):
             model_level_file (Path): path to netCDF file with data at model levels
             surface_file (Path): path to netCDF file with data at surface level
 
-        Logic:
-            - only the lowest to the ground model levels are available and read (L136, L137)
+        Data description:
+            Only the lowest to the ground model levels are available and read (L136, L137)
+            See ECMWF IFS documentation on vertical model resolution for more details:
+            https://confluence.ecmwf.int/display/UDOC/L137+model+level+definitions
 
-        Attributes from base classes to be initialized:
+        Attributes of parent classes to be initialized:
             ForcingData
                 DATA_FILES: dict [str, str]
             Component
@@ -90,6 +92,16 @@ class ERA5Atmosphere(Component, ForcingData):
             "model_level": str(model_level_file),
             "surface": str(surface_file),
         }
+
+        self.fields2share = (
+            "zbot",
+            "ubot",
+            "vbot",
+            "thbot",
+            "qbot",
+            "tbot",
+            "rbot",
+        )
 
         self._state = {}
 
@@ -174,35 +186,19 @@ class ERA5Atmosphere(Component, ForcingData):
                 settings, dataset["tbot"][:, :, m], pf[:, :, 0]
             )
 
-        for variable in (
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-        ):
-            self.shared_fields[variable] = get_values_at_specific_time(
-                variable, self._state, coupler
+        for field in self.fields2share:
+            self.shared_fields[field] = get_field_at_specific_time(
+                field, self._state, coupler
             )
 
     def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
         """Advance to the next time step in the dataset
         using time interpolation from one month to another.
         """
-        # This way we keep variables from different components in the same instance
-        for variable in (
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-        ):
-            self.shared_fields[variable][...] = get_values_at_specific_time(
-                variable, self._state, coupler, current_time=time
+
+        for field in self.fields2share:
+            self.shared_fields[field][...] = get_field_at_specific_time(
+                field, self._state, coupler, current_time=time
             )
 
     def finalize(self, coupler: "Coupler") -> None:

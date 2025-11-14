@@ -27,7 +27,7 @@ class Exchange:
     def __post_init__(self) -> None:
         self.name = f"{self.source}2{self.destination}"
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"
             f"|----Name: {self.name}\n"

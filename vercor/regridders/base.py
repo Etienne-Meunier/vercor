@@ -42,7 +42,7 @@ class Regridder:
         )
         return result
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:"
             f"\n |Source grid:"
