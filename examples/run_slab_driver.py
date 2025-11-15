@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
-    run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
+    run_sequence = RunSequence(order=["OCN", "ATM", "ICE", "LND"])
 
     # Coupler
     cpl = Coupler(clock=clock)
@@ -78,17 +78,17 @@ if __name__ == "__main__":
         destination="LND",
         field_names=["LHF"],
         regridder_factory=bilinear,
-        when="post",
+        when="pre",
     ))
 
     cpl.initialize()
     cpl.run()
 
     # Inspect a few fields
-    print("SST mean:", ocn.shared_fields["SST"].mean())
-    print("TA2M mean:", atm.shared_fields["TA2M"].mean())
-    print("u10m mean:", atm.shared_fields["u10m"].mean())
-    print("v10m mean:", atm.shared_fields["v10m"].mean())
-    print("SOILM(LND) mean:", lnd.shared_fields["SOILM"].mean())
-    print("SOILM(ATM) mean:", atm.shared_fields["SOILM"].mean())
-    print("ICEFRAC mean:", ice.shared_fields["ICEFRAC"].mean())
+    print("SST mean:", ocn.get("SST").mean())
+    print("TA2M mean:", atm.get("TA2M").mean())
+    print("u10m mean:", atm.get("u10m").mean())
+    print("v10m mean:", atm.get("v10m").mean())
+    print("SOILM(LND) mean:", lnd.get("SOILM").mean())
+    print("SOILM(ATM) mean:", atm.get("SOILM").mean())
+    print("ICEFRAC mean:", ice.get("ICEFRAC").mean())

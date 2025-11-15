@@ -23,9 +23,9 @@ class Grid(abc.ABC):
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"
-            f"|----Grid name:  {self.name}\n"
-            f"|----Grid shape: {self.shape}\n"
-            f"|----Mask: {'Provided' if self.mask is not None else 'Not provided'}\n"
+            f"├── Grid name:  {self.name}\n"
+            f"├── Grid shape: {self.shape}\n"
+            f"└── Mask: {'Provided' if self.mask is not None else 'Not provided'}\n"
         )
 
 

@@ -5,6 +5,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.components.base import Component, ForcingData
 from vercor.fluxes.utilities import (
     air_density,
@@ -17,11 +18,12 @@ from vercor.tools import datetime_to_seconds_in_year, get_periodic_interval
 
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-def get_data_dir() -> Tuple[Path, Path]:
+def get_data() -> Tuple[Path, Path]:
     """Return the absolute Paths to the ../data directory relative to this file."""
     return (
         (
@@ -38,8 +40,11 @@ def get_data_dir() -> Tuple[Path, Path]:
 
 
 def get_field_at_specific_time(
-        field_name: str, state: Dict, coupler: "Coupler", current_time: Optional[datetime] = None
-    ) -> NDArray:
+    field_name: str,
+    state: Dict,
+    coupler: "Coupler",
+    current_time: Optional[datetime] = None,
+) -> NDArray:
 
     total_seconds = datetime_to_seconds_in_year(
         coupler.clock.start if current_time is None else current_time
@@ -53,18 +58,19 @@ def get_field_at_specific_time(
     )
 
     # Use transpose to have (lat, lon) ordering
-    return (
-        f1 * state[f"{field_name}"][..., n1].T
-        + f2 * state[f"{field_name}"][..., n2].T
+    out: NDArray = (
+        f1 * state[f"{field_name}"][..., n1].T + f2 * state[f"{field_name}"][..., n2].T
     )
+
+    return out
 
 
 class ERA5Atmosphere(Component, ForcingData):
     def __init__(
         self,
         name: str = "ERA5-ATM",
-        model_level_file: Path = get_data_dir()[0],
-        surface_file: Path = get_data_dir()[1],
+        model_level_file: Path = get_data()[0],
+        surface_file: Path = get_data()[1],
     ) -> None:
         """
         Read all necessary fields from the provided forcing files.
@@ -131,10 +137,14 @@ class ERA5Atmosphere(Component, ForcingData):
 
         lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
         self._state["surf_pressure"] = np.exp(lnsp)
-        self._state["specific_humidity"] = self._read_forcing("q", where="model_level", flip_y=True)[
+        self._state["specific_humidity"] = self._read_forcing(
+            "q", where="model_level", flip_y=True
+        )[
             ..., 1:, :
         ]  # L136-L137
-        self._state["temperature"] = self._read_forcing("t", where="model_level", flip_y=True)[
+        self._state["temperature"] = self._read_forcing(
+            "t", where="model_level", flip_y=True
+        )[
             ..., 1:, :
         ]  # L136-L137
 
@@ -157,14 +167,14 @@ class ERA5Atmosphere(Component, ForcingData):
         self._state["tbot"] = self._state["temperature"][..., 0, :]  # L136
 
     def initialize(self, coupler: "Coupler") -> None:
-        ny, nx = self.grid.shape
+        nlat, nlon = self.grid.shape
         settings = coupler.settings
         dataset = self._state
 
         # Values (local) to be used for time interpolation
-        self._state["zbot"] = np.zeros((nx, ny, 12))
-        self._state["rbot"] = np.zeros((nx, ny, 12))
-        self._state["thbot"] = np.zeros((nx, ny, 12))
+        self._state["zbot"] = np.zeros((nlon, nlat, 12))
+        self._state["rbot"] = np.zeros((nlon, nlat, 12))
+        self._state["thbot"] = np.zeros((nlon, nlat, 12))
 
         for m in range(12):
             ph = get_press_levs(
@@ -178,7 +188,9 @@ class ERA5Atmosphere(Component, ForcingData):
                 dataset["temperature"][..., m],
                 dataset["specific_humidity"][..., m],
                 ph[:, :],
-            )[..., 1]  # L136
+            )[
+                ..., 1
+            ]  # L136
             self._state["rbot"][..., m] = air_density(
                 settings, dataset["tbot"][:, :, m], pf[:, :, 0]
             )
@@ -187,8 +199,14 @@ class ERA5Atmosphere(Component, ForcingData):
             )
 
         for field in self.fields2share:
-            self.shared_fields[field] = get_field_at_specific_time(
-                field, self._state, coupler
+            setattr(
+                self.outgoing_fields,
+                field,
+                TNA(
+                    get_field_at_specific_time(field, self._state, coupler),
+                    coupler.clock.start,
+                    self.name,
+                ),
             )
 
     def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
@@ -197,8 +215,14 @@ class ERA5Atmosphere(Component, ForcingData):
         """
 
         for field in self.fields2share:
-            self.shared_fields[field][...] = get_field_at_specific_time(
-                field, self._state, coupler, current_time=time
+            setattr(
+                self.outgoing_fields,
+                field,
+                TNA(
+                    get_field_at_specific_time(field, self._state, coupler),
+                    time,
+                    self.name,
+                ),
             )
 
     def finalize(self, coupler: "Coupler") -> None:

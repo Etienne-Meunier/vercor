@@ -2,10 +2,12 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from vercor.components.base import Component
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
 
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
@@ -29,12 +31,14 @@ class Ocean(Component):
 
     def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
-        self.shared_fields["SST"] = 273.15 + 15.0 * np.ones((nlat, nlon))
+        self.outgoing_fields.SST = TNA(
+            273.15 + 15.0 * np.ones((nlat, nlon)), coupler.clock.start, self.name
+        )
 
     def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
-        SST = self.shared_fields["SST"]
-        SHF = self.shared_fields.get("SHF")
-        LHF = self.shared_fields.get("LHF")
+        SST = self.outgoing_fields.SST.data
+        SHF = self.incoming_fields.SHF.data
+        LHF = self.incoming_fields.LHF.data
         Qnet = np.zeros_like(SST)
         if SHF is not None:
             Qnet += SHF
@@ -43,7 +47,7 @@ class Ocean(Component):
         T0 = 273.15 + 15.0
         dTdt = Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (SST - T0)
 
-        self.shared_fields["SST"] = SST + dTdt * dt.total_seconds()
+        self.outgoing_fields.SST.data = SST + dTdt * dt.total_seconds()
 
     def finalize(self, coupler: "Coupler") -> None:
         pass

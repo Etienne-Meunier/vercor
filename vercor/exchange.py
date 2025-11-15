@@ -30,9 +30,9 @@ class Exchange:
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"
-            f"|----Name: {self.name}\n"
-            f"|----Source component: {self.source}\n"
-            f"|----Destination component: {self.destination}\n"
+            f"├── Name: {self.name}\n"
+            f"├── Source component: {self.source}\n"
+            f"└── Destination component: {self.destination}\n"
         )
 
     def create(

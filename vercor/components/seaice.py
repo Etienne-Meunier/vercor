@@ -2,10 +2,12 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from vercor.components.base import Component
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
 
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
@@ -21,17 +23,19 @@ class SeaIce(Component):
 
     def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
-        self.shared_fields["ICEFRAC"] = np.zeros((nlat, nlon))
+        self.outgoing_fields.ICEFRAC = TNA(
+            np.zeros((nlat, nlon)), coupler.clock.start, self.name
+        )
 
     def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
-        SST = self.shared_fields.get("SST")
+        SST = self.incoming_fields.SST.data
         if SST is None:
             return
         Tfreeze = 273.15 - 1.8
         # Smooth step: more ice when colder than freezing
         x = (Tfreeze - SST) / 2.0
         ice = 1.0 / (1.0 + np.exp(-x))
-        self.shared_fields["ICEFRAC"] = ice
+        self.outgoing_fields.ICEFRAC.data = ice
 
     def finalize(self, coupler: "Coupler") -> None:
         pass

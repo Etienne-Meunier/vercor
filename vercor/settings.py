@@ -22,7 +22,7 @@ class VercorSettings:
     mwdair: float = 28.966  # molecular weight of dry air [kg/kmole]
     cpwv: float = 1.810e3  # specific heat of water vapor [J/kg/K]
     cpvir: float = 0.802  # cpwv/cpdair - 1.0 specific heat of vaporization [-]
-    cappa: float = 0.286  # R/Cp [-]    
+    cappa: float = 0.286  # R/Cp [-]
     latice: float = 3.337e5  # latent heat of fusion  [J/kg]
     rgas: float = 8314.47  # avogad * bolzc - Ideal gas constant [J/K/kmole]
     umin_ocean: float = 0.5  # minimum atm. wind speed over ocean surface [m/s]

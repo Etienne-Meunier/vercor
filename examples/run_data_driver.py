@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # Exchanges
     # scalar fields (vector field))
-    # ["SHF", "LHF", ("u10m", "v10m")]
+    # ["qbot", "zbot", ("ubot", "vbot")]
     cpl.add_exchange(Exchange(
         source="ERA5",
         destination="OCN",
@@ -61,33 +61,32 @@ if __name__ == "__main__":
     cpl.run()
 
     # Inspect a few fields
-    print("SST(OCN) mean:", ocn.shared_fields["SST"].mean())
-    print("SST(ERA5) mean:", atm.shared_fields["SST"].mean())
-    print("qbot(ERA5) mean:", atm.shared_fields["qbot"].mean())
-    print("qbot(OCN) mean:", ocn.shared_fields["qbot"].mean())
-    print("tbot(ERA5) mean:", atm.shared_fields["tbot"].mean())
-    print("tbot(OCN) mean:", ocn.shared_fields["tbot"].mean())
-    print("zbot(ERA5) mean:", atm.shared_fields["zbot"].mean())
-    print("zbot(OCN) mean:", ocn.shared_fields["zbot"].mean())
-    print("speed(ERA5) mean:", np.sqrt(atm.shared_fields["ubot"]**2 + atm.shared_fields["vbot"]**2).mean())
-    print("speed(OCN) mean:", np.sqrt(ocn.shared_fields["ubot"]**2 + ocn.shared_fields["vbot"]**2).mean())
-
+    print("SST(OCN) mean:", ocn.get("SST").mean())
+    print("SST(ERA5) mean:", atm.get("SST").mean())
+    print("qbot(ERA5) mean:", atm.get("qbot").mean())
+    print("qbot(OCN) mean:", ocn.get("qbot").mean())
+    print("tbot(ERA5) mean:", atm.get("tbot").mean())
+    print("tbot(OCN) mean:", ocn.get("tbot").mean())
+    print("zbot(ERA5) mean:", atm.get("zbot").mean())
+    print("zbot(OCN) mean:", ocn.get("zbot").mean())
+    print("speed(ERA5) mean:", np.sqrt(atm.get("ubot")**2 + atm.get("vbot")**2).mean())
+    print("speed(OCN) mean:", np.sqrt(ocn.get("ubot")**2 + ocn.get("vbot")**2).mean())
     import matplotlib.pyplot as plt
     fig, axs = plt.subplots(2, 2, figsize=(15, 10), layout="constrained")
 
     lon_atm = np.array(atm.grid.longitude)
     lat_atm = np.array(atm.grid.latitude)
     longitude_source_2d, latitude_source_2d = np.meshgrid(lon_atm, lat_atm, indexing="ij")
-    scalar_source = atm.shared_fields["zbot"].T
-    u_source = atm.shared_fields["ubot"].T
-    v_source = atm.shared_fields["vbot"].T
+    scalar_source = atm.get("zbot").T
+    u_source = atm.get("ubot").T
+    v_source = atm.get("vbot").T
 
     lon_ocn = np.array(ocn.grid.longitude)
     lat_ocn = np.array(ocn.grid.latitude)
     longitude_target_2d, latitude_target_2d = np.meshgrid(lon_ocn, lat_ocn, indexing="ij")
-    scalar_target = ocn.shared_fields["zbot"].T
-    u_target = ocn.shared_fields["ubot"].T
-    v_target = ocn.shared_fields["vbot"].T
+    scalar_target = ocn.get("zbot").T
+    u_target = ocn.get("ubot").T
+    v_target = ocn.get("vbot").T
 
     im = axs[0, 0].pcolormesh(
         longitude_source_2d,

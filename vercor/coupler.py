@@ -1,10 +1,15 @@
+from datetime import datetime
 import logging
 from dataclasses import dataclass, field
 from logging import Logger
 from typing import Dict, List, Tuple, Union
 
+import numpy as np
+
 from vercor.clock import Clock
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
+from vercor.components.base import Shared
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.components.era5_atmosphere import ERA5Atmosphere
 from vercor.exchange import Exchange
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
@@ -27,8 +32,8 @@ class Coupler:
     clock: Clock
     logger: Logger = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
-    components: Dict[str, Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land]] = field(
-        default_factory=dict
+    components: Dict[str, Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land]] = (
+        field(default_factory=dict)
     )
     exchanges: List[Exchange] = field(default_factory=list)
     settings: VercorSettings = field(default_factory=VercorSettings)
@@ -48,7 +53,9 @@ class Coupler:
                      to Regridder instance (a pool of all available regridders)
     """
 
-    def register(self, component: Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land]) -> None:
+    def register(
+        self, component: Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land]
+    ) -> None:
         if component.name in self.components:
             raise ValueError(f"Component {component.name} already registered")
 
@@ -97,7 +104,10 @@ class Coupler:
                 )
 
     def _do_exchanges(
-        self, component: Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land], when: str
+        self,
+        timestamp: datetime,
+        component: Union[Atmosphere, ERA5Atmosphere, Ocean, SeaIce, Land],
+        when: str,
     ) -> None:
         for exchange in self.exchanges:
             # Exchange before or after component stepping
@@ -117,7 +127,7 @@ class Coupler:
 
             regrid = self._regridders[(exchange.source, exchange.destination)]
             source_fields = source_component.export_fields()
-            destination_fields = {}
+            destination_fields = Shared()
 
             # Regridder (regrid) checks if components have identical grids internally and
             # returns fields as-is (from source to destination) if so, avoiding unnecessary computation
@@ -125,30 +135,59 @@ class Coupler:
                 # Figure out if scalar or vector field to be regridded & passed to destination
                 if isinstance(field_name, tuple):
                     field_name_set = set(field_name)
-                    if not field_name_set.issubset(set(source_fields.keys())):
+                    if not field_name_set.issubset(set(source_fields.fields().keys())):
                         raise ValueError(
                             f"Not all fields in vector {field_name} are present in source fields"
                         )
                     (
-                        destination_fields[field_name[0]],
-                        destination_fields[field_name[1]],
+                        u_vector,
+                        v_vector,
                     ) = regrid(
-                        source_fields[field_name[0]], source_fields[field_name[1]]
+                        getattr(source_fields, field_name[0]).data,
+                        getattr(source_fields, field_name[1]).data,
+                    )
+                    setattr(
+                        destination_fields,
+                        field_name[0],
+                        TNA(u_vector, timestamp, exchange.source),
+                    )
+                    setattr(
+                        destination_fields,
+                        field_name[1],
+                        TNA(v_vector, timestamp, exchange.source),
                     )
                 else:
-                    if field_name not in source_fields:
+                    if field_name not in source_fields.fields().keys():
                         raise ValueError(
                             f"Field {field_name} not present in source fields"
                         )
-                    destination_fields[field_name] = regrid(source_fields[field_name])
 
-            if destination_fields:
+                    # to pass mypy type checking
+                    scalar = np.asarray(regrid(getattr(source_fields, field_name).data))
+
+                    setattr(
+                        destination_fields,
+                        field_name,
+                        TNA(scalar, timestamp, exchange.source),
+                    )
+
+            if not destination_fields.is_empty:
                 destination_component.import_fields(destination_fields)
                 self.logger.debug(
-                    f"{when.upper()} step: Exchanged {list(destination_fields)} from {exchange.source} to {exchange.destination}"
+                    f"{when.upper()} step: Exchanged {destination_fields.field_names} "
+                    f"from {exchange.source} to {exchange.destination}"
                 )
 
     def run(self) -> None:
+        # TODO: add setup checks like time step consistency,
+        # component's readiness (outgoing fields), etc.
+        # Wrap in a class method or function
+        for cname in self.run_sequence:
+            if self.components[cname].outgoing_fields.is_empty:
+                raise RuntimeError(
+                    f"Component {cname} outgoing fields were not initialized properly."
+                )
+
         for n, time, dt in self.clock.iter():
             self.logger.info(
                 f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
@@ -156,9 +195,9 @@ class Coupler:
 
             # Step components in declared order
             for cname in self.run_sequence:
-                self._do_exchanges(self.components[cname], "pre")
+                self._do_exchanges(time, self.components[cname], "pre")
 
                 self.logger.info(f" Run component: {cname}")
                 self.components[cname].step(dt, time, self)
 
-                self._do_exchanges(self.components[cname], "post")
+                self._do_exchanges(time, self.components[cname], "post")
