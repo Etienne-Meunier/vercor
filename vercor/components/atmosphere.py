@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
 import numpy as np
 
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
@@ -21,20 +23,24 @@ class Atmosphere(Component):
 
     def initialize(self, coupler: "Coupler") -> None:
         ny, nx = self.grid.shape
-        self.shared_fields["TA2M"] = 273.15 + 15.0 * np.ones((ny, nx))
-        self.shared_fields["SHF"] = np.zeros((ny, nx))
-        self.shared_fields["LHF"] = np.zeros((ny, nx))
-        self.shared_fields["u10m"] = np.zeros((ny, nx))
-        self.shared_fields["v10m"] = np.zeros((ny, nx))
+        clock_start = coupler.clock.start
+        zeros = np.zeros((ny, nx))
+        self.outgoing_fields.TA2M = TNA(
+            273.15 + 15.0 * np.ones((ny, nx)), clock_start, self.name
+        )
+        self.outgoing_fields.SHF = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.LHF = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.u10m = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.v10m = TNA(zeros, clock_start, self.name)
 
     def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
         # Bulk formula toy: flux proportional to (TA2M - SST)
-        SST = self.shared_fields.get("SST")
+        SST = self.incoming_fields.SST.data
         if SST is None:
             ny, nx = self.grid.shape
             SST = 273.15 + 15.0 * np.ones((ny, nx))
 
-        TA = self.shared_fields["TA2M"]
+        TA = self.outgoing_fields.TA2M.data
         dT = TA - SST
         C = 10.0  # W m-2 K-1, toy exchange coefficient
         SHF = -C * dT  # ocean heat gain positive when SST < TA
@@ -47,14 +53,14 @@ class Atmosphere(Component):
         u10m = np.cos(np.deg2rad(latitudes))  # zonal flow varying with latitude
         v10m = 0.5 * np.sin(np.deg2rad(longitudes))  # small meridional perturbation
 
-        self.shared_fields["SHF"] = SHF
-        self.shared_fields["LHF"] = LHF
+        self.outgoing_fields.SHF.data = SHF
+        self.outgoing_fields.LHF.data = LHF
 
-        self.shared_fields["u10m"] = u10m
-        self.shared_fields["v10m"] = v10m
+        self.outgoing_fields.u10m.data = u10m
+        self.outgoing_fields.v10m.data = v10m
 
         # Relax TA2M toward SST weakly (toy boundary layer)
-        self.shared_fields["TA2M"] = TA - 0.01 * dT
+        self.outgoing_fields.TA2M.data = TA - 0.01 * dT
 
     def finalize(self, coupler: "Coupler") -> None:
         pass

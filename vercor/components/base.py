@@ -1,7 +1,7 @@
 import abc
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import h5netcdf
 import numpy as np
@@ -13,6 +13,7 @@ from vercor.grid import RectilinearGrid
 @dataclass
 class TimedNamedArray:
     """Container for a field (array), its timestamp, and its component name."""
+
     data: np.ndarray
     timestamp: datetime
     component_name: str
@@ -24,10 +25,11 @@ class TimedNamedArray:
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"
-            f"|----Component name: {self.component_name!r}\n"
-            f"|----Shape: {self.data.shape}\n"
-            f"|----Timestamp: {self.timestamp!r}"
+            f"├── Component name: {self.component_name!r}\n"
+            f"├── Shape: {self.data.shape}\n"
+            f"└── Timestamp: {self.timestamp!r}"
         )
+
 
 @dataclass
 class Shared:
@@ -47,7 +49,7 @@ class Shared:
                 data, timestamp, component_name = value
             else:
                 raise ValueError(
-                f"Expected tuple of length 3 for field assignment, got length {len(value)}"
+                    f"Expected tuple of length 3 for field assignment, got length {len(value)}"
                 )
 
             if not isinstance(timestamp, datetime):
@@ -59,7 +61,7 @@ class Shared:
             raise TypeError(
                 "When assigning a field, provide a tuple (data, timestamp, component name)"
             )
-        
+
         data = np.asarray(data)
         self._fields[name] = TimedNamedArray(
             data=data,
@@ -79,10 +81,18 @@ class Shared:
         )
         return (
             f"{self.__class__.__name__}:\n"
-            f"|----Fields: {field_descriptions if field_descriptions else 'No fields assigned'}"
+            f"└── Fields: {field_descriptions if field_descriptions else 'No fields assigned'}"
         )
 
-    def fields(self) -> Dict[str, np.ndarray]:
+    @property
+    def is_empty(self) -> bool:
+        return len(self._fields) == 0
+
+    @property
+    def field_names(self) -> List[str]:
+        return list(self._fields.keys())
+
+    def fields(self) -> Dict[str, NDArray]:
         return {k: v.data for k, v in self._fields.items()}
 
     def timestamps(self) -> Dict[str, datetime]:
@@ -96,7 +106,8 @@ class Shared:
 class Component(abc.ABC):
     name: str
     grid: RectilinearGrid
-    shared_fields: Dict[str, NDArray] = field(default_factory=dict)
+    incoming_fields: Shared = field(default_factory=Shared)
+    outgoing_fields: Shared = field(default_factory=Shared)
     """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
 
     Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
@@ -108,11 +119,8 @@ class Component(abc.ABC):
     Attributes:
         name: component name
         grid: component grid
-        shared_fields: dictionary of shared fields from the current component 
-            to be exchanged with another component(s)
-
-            N.B! Do not overwrite this directly; use import_fields and export_fields methods
-            to keep the data from all exchanged components.
+        incoming_fields, outgoing_fields: shared fields from the current component
+            received from another component(s)
     """
 
     @abc.abstractmethod
@@ -127,29 +135,53 @@ class Component(abc.ABC):
     def finalize(self, coupler):
         raise NotImplementedError
 
-    def export_fields(self) -> Dict[str, NDArray]:
-        return {k: v for k, v in self.shared_fields.items()}
+    def export_fields(self) -> Shared:
+        # TODO: export only component related fields
+        return self.outgoing_fields
 
-    def import_fields(self, fields: Dict[str, NDArray]) -> None:
-        # TODO: implement more sophisticated merging with dimensions checks for every array
-        # simplistic merge/overwrite
-        for name, fld in fields.items():
-            self.shared_fields[name] = fld
+    def import_fields(self, fields: Shared) -> None:
+        # TODO: import only component related fields
+        incoming_fields = fields.field_names
+        for name in incoming_fields:
+            setattr(self.incoming_fields, name, getattr(fields, name))
+
+    def get(self, field_name: str) -> NDArray:
+        in_fields = self.incoming_fields.fields()
+        out_fields = self.outgoing_fields.fields()
+        in_fieldnames = in_fields.keys()
+        out_fieldnames = out_fields.keys()
+
+        if field_name in in_fieldnames and field_name in out_fieldnames:
+            raise ValueError(
+                f"Field name '{field_name}' found in both incoming and outgoing fields."
+            )
+
+        if field_name in in_fieldnames:
+            return in_fields[field_name]
+
+        if field_name in out_fieldnames:
+            return out_fields[field_name]
+
+        raise AttributeError(
+            f"Field name '{field_name}' not found in incoming or outgoing fields"
+        )
 
     def __str__(self) -> str:
         shared_fields_list = []
         shared_fields_string = ""
 
-        if self.shared_fields:
-            shared_fields_list = list(self.shared_fields.keys())
+        if self.incoming_fields or self.outgoing_fields:
+            shared_fields_list = list(self.incoming_fields.fields().keys()) + list(
+                self.outgoing_fields.fields().keys()
+            )
             shared_fields_string = ", ".join(shared_fields_list)
 
         return (
             f"{self.__class__.__name__}:\n"
-            f" |----Name: {self.name}\n"
-            f" |----Shared fields: {shared_fields_string if len(shared_fields_list) > 0 else 'Not provided'}\n"
-            f" |----Grid name: {self.grid.name}\n"
-            f"      |---Shape: {self.grid.shape}\n"
+            f" ├── Name: {self.name}\n"
+            f" ├── Shared fields: {shared_fields_string if len(shared_fields_list) > 0 else 'Not provided'}\n"
+            f" └── Grid name: {self.grid.name}\n"
+            f"     └── Shape: {self.grid.shape}\n"
         )
 
 
@@ -184,3 +216,25 @@ class ForcingData:
             raise RuntimeError(
                 f"Error reading variable '{variable}' from forcing file '{self.DATA_FILES[where]}'"
             ) from e
+
+
+if __name__ == "__main__":
+    shared = Shared()
+    if not shared.is_empty:
+        print("Shared is not empty initially, something is wrong!")
+
+    t_model = datetime(2025, 11, 14, 12, 0, 0)
+    shared.temperature = (np.array([[1.0, 2.0], [3.0, 4.0]]), t_model, "ocean")
+    shared.humidity = (np.array([[0.5, 0.6], [0.7, 0.8]]), t_model, "atmosphere")
+    shared.temperature.data += 10.0
+
+    if shared.is_empty:
+        print("Shared is not empty!")
+
+    print(shared)
+
+    temp_array = shared.temperature
+    print(temp_array)
+    print("Temperature data:\n", temp_array.data)
+    print("Temperature timestamp:", temp_array.timestamp)
+    print("Temperature component name:", temp_array.component_name)
