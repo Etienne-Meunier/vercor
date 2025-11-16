@@ -9,10 +9,10 @@ from numpy.typing import NDArray
 @dataclass
 class Grid(abc.ABC):
     name: str
-    mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
+    binary_mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
 
     def __post_init__(self) -> None:
-        if self.mask is not None and self.mask.ndim != 2:
+        if self.binary_mask is not None and self.binary_mask.ndim != 2:
             raise ValueError("Mask must be a 2D array.")
 
     @property
@@ -25,7 +25,7 @@ class Grid(abc.ABC):
             f"{self.__class__.__name__}:\n"
             f"├── Grid name:  {self.name}\n"
             f"├── Grid shape: {self.shape}\n"
-            f"└── Mask: {'Provided' if self.mask is not None else 'Not provided'}\n"
+            f"└── Binary mask: {'Provided' if self.binary_mask is not None else 'Not provided'}\n"
         )
 
 
@@ -35,9 +35,9 @@ class RectilinearGrid(Grid):
         name: str,
         longitude: NDArray,
         latitude: NDArray,
-        mask: Optional[NDArray] = None,
+        binary_mask: Optional[NDArray] = None,
     ) -> None:
-        super().__init__(name=name, mask=mask)
+        super().__init__(name=name, binary_mask=binary_mask)
         self.longitude = longitude
         self.latitude = latitude
 
@@ -53,4 +53,4 @@ class RectilinearGrid(Grid):
 
     @property
     def shape(self) -> tuple[int, int]:
-        return (self.latitude.size, self.longitude.size)  # (ny, nx), row-major
+        return (self.latitude.size, self.longitude.size)  # (nlat, nlon), row-major

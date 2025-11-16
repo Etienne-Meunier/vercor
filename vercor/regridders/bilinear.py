@@ -28,7 +28,7 @@ class BilinearRectilinearRegridder(Regridder):
             self.source_grid.latitude,
             self.destination_grid.longitude,
             self.destination_grid.latitude,
-            tgt_mask=self.destination_grid.mask,
+            tgt_mask=self.destination_grid.binary_mask,
             periodic_longitude=periodic_longitude,
             nan_renorm=nan_renorm,
             extrapolation_mode=extrapolation_mode,

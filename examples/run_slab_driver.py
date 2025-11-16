@@ -4,8 +4,7 @@ from typing import List
 from vercor import Clock, Coupler, Exchange
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
 from vercor.coupler import RunSequence
-from vercor.regridders import (BilinearRectilinearRegridder,
-                               make_rectilinear_grid)
+from vercor.regridders import BilinearRectilinearRegridder, make_rectilinear_grid
 
 if __name__ == "__main__":
     # Build grids
@@ -35,51 +34,62 @@ if __name__ == "__main__":
     # Bilinear interpolation
     # Having interpolator factory function allows easy access
     # to different interpolators' args & kwargs
-    bilinear = lambda source_grid, destination_grid:\
-        BilinearRectilinearRegridder(source_grid, destination_grid)
+    bilinear = lambda source_grid, destination_grid: BilinearRectilinearRegridder(
+        source_grid, destination_grid
+    )
 
     # Exchanges
     # scalar fields (vector field))
     # ["SHF", "LHF", ("u10m", "v10m")]
-    cpl.add_exchange(Exchange(
-        source="ATM",
-        destination="OCN",
-        field_names=[("u10m", "v10m"), "SHF", "LHF"],
-        regridder_factory=bilinear,
-        when="pre",
-    ))
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="OCN",
+            field_names=[("u10m", "v10m"), "SHF", "LHF"],
+            regridder_factory=bilinear,
+            when="pre",
+        )
+    )
 
-    cpl.add_exchange(Exchange(
-        source="OCN",
-        destination="ATM",
-        field_names=["SST"],
-        regridder_factory=bilinear,
-        when="pre",
-    ))
+    cpl.add_exchange(
+        Exchange(
+            source="OCN",
+            destination="ATM",
+            field_names=["SST"],
+            regridder_factory=bilinear,
+            when="pre",
+        )
+    )
 
-    cpl.add_exchange(Exchange(
-        source="OCN",
-        destination="ICE",
-        field_names=["SST"],
-        regridder_factory=bilinear,
-        when="pre",
-    ))
+    cpl.add_exchange(
+        Exchange(
+            source="OCN",
+            destination="ICE",
+            field_names=["SST"],
+            regridder_factory=bilinear,
+            when="pre",
+        )
+    )
 
-    cpl.add_exchange(Exchange(
-        source="LND",
-        destination="ATM",
-        field_names=["SOILM"],
-        regridder_factory=bilinear,
-        when="pre",
-    ))
+    cpl.add_exchange(
+        Exchange(
+            source="LND",
+            destination="ATM",
+            field_names=["SOILM"],
+            regridder_factory=bilinear,
+            when="pre",
+        )
+    )
 
-    cpl.add_exchange(Exchange(
-        source="ATM",
-        destination="LND",
-        field_names=["LHF"],
-        regridder_factory=bilinear,
-        when="pre",
-    ))
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="LND",
+            field_names=["LHF"],
+            regridder_factory=bilinear,
+            when="pre",
+        )
+    )
 
     cpl.initialize()
     cpl.run()
