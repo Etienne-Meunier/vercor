@@ -22,11 +22,11 @@ class Atmosphere(Component):
         super().__init__(name, grid)
 
     def initialize(self, coupler: "Coupler") -> None:
-        ny, nx = self.grid.shape
+        grid_shape = self.grid.shape
         clock_start = coupler.clock.start
-        zeros = np.zeros((ny, nx))
+        zeros = np.zeros(grid_shape)
         self.outgoing_fields.TA2M = TNA(
-            273.15 + 15.0 * np.ones((ny, nx)), clock_start, self.name
+            273.15 + 15.0 * np.ones(grid_shape), clock_start, self.name
         )
         self.outgoing_fields.SHF = TNA(zeros, clock_start, self.name)
         self.outgoing_fields.LHF = TNA(zeros, clock_start, self.name)
@@ -37,8 +37,7 @@ class Atmosphere(Component):
         # Bulk formula toy: flux proportional to (TA2M - SST)
         SST = self.incoming_fields.SST.data
         if SST is None:
-            ny, nx = self.grid.shape
-            SST = 273.15 + 15.0 * np.ones((ny, nx))
+            SST = 273.15 + 15.0 * np.ones(self.grid.shape)
 
         TA = self.outgoing_fields.TA2M.data
         dT = TA - SST

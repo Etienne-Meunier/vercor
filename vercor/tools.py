@@ -1,5 +1,13 @@
-import numpy as np
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
+
+import numpy as np
+from numpy.typing import NDArray
+
+
+if TYPE_CHECKING:
+    from vercor.coupler import Coupler
 
 
 def get_periodic_interval(current_time, cycle_length, rec_spacing, n_rec):
@@ -47,3 +55,50 @@ def datetime_to_seconds_in_year(dt: datetime) -> float:
     year_start = datetime(dt.year, 1, 1)
     seconds_since_year_start = (dt - year_start).total_seconds()
     return seconds_since_year_start
+
+
+def get_forcing_data(file_type: str) -> Path:
+    """Return the absolute Paths to the ./forcing directory relative to this file."""
+
+    output = {
+        "model_level": (
+            Path(__file__).parent
+            / ".."
+            / "forcing"
+            / "era5_198x_ml_4x4deg_monthly_mean.nc"
+        ).resolve(),
+        "surface": (
+            Path(__file__).parent
+            / ".."
+            / "forcing"
+            / "era5_198x_sfc_4x4deg_monthly_mean.nc"
+        ).resolve(),
+    }
+
+    return output[file_type]
+
+
+def get_field_at_specific_time(
+    field_name: str,
+    state: Dict,
+    coupler: "Coupler",
+    current_time: Optional[datetime] = None,
+) -> NDArray:
+
+    total_seconds = datetime_to_seconds_in_year(
+        coupler.clock.start if current_time is None else current_time
+    )
+
+    (n1, f1), (n2, f2) = get_periodic_interval(
+        current_time=total_seconds,
+        cycle_length=coupler.settings.year_in_seconds,
+        rec_spacing=coupler.settings.year_in_seconds / 12.0,
+        n_rec=12,
+    )
+
+    # Use transpose to have (lat, lon) ordering
+    out: NDArray = (
+        f1 * state[f"{field_name}"][..., n1].T + f2 * state[f"{field_name}"][..., n2].T
+    )
+
+    return out

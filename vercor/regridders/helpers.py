@@ -18,4 +18,6 @@ def make_rectilinear_grid(
     longitude = np.linspace(longitude_start, longitude_end, nlon, dtype=float)
     latitude = np.linspace(latitude_start, latitude_end, nlat, dtype=float)
 
-    return RectilinearGrid(name=name, longitude=longitude, latitude=latitude, mask=mask)
+    return RectilinearGrid(
+        name=name, longitude=longitude, latitude=latitude, binary_mask=mask
+    )

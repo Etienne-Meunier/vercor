@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import numpy as np
-from numpy.typing import NDArray
 
-from vercor.components.base import TimedNamedArray as TNA
 from vercor.components.base import Component, ForcingData
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.fluxes.utilities import (
     air_density,
     compute_z_level,
@@ -14,63 +13,19 @@ from vercor.fluxes.utilities import (
     potential_temperature,
 )
 from vercor.grid import RectilinearGrid
-from vercor.tools import datetime_to_seconds_in_year, get_periodic_interval
+from vercor.tools import get_field_at_specific_time, get_forcing_data
 
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-
-
-def get_data() -> Tuple[Path, Path]:
-    """Return the absolute Paths to the ../data directory relative to this file."""
-    return (
-        (
-            Path(__file__).parent.parent.parent
-            / "data"
-            / "era5_198x_ml_4x4deg_monthly_mean.nc"
-        ).resolve(),
-        (
-            Path(__file__).parent.parent.parent
-            / "data"
-            / "era5_198x_sfc_4x4deg_monthly_mean.nc"
-        ).resolve(),
-    )
-
-
-def get_field_at_specific_time(
-    field_name: str,
-    state: Dict,
-    coupler: "Coupler",
-    current_time: Optional[datetime] = None,
-) -> NDArray:
-
-    total_seconds = datetime_to_seconds_in_year(
-        coupler.clock.start if current_time is None else current_time
-    )
-
-    (n1, f1), (n2, f2) = get_periodic_interval(
-        current_time=total_seconds,
-        cycle_length=coupler.settings.year_in_seconds,
-        rec_spacing=coupler.settings.year_in_seconds / 12.0,
-        n_rec=12,
-    )
-
-    # Use transpose to have (lat, lon) ordering
-    out: NDArray = (
-        f1 * state[f"{field_name}"][..., n1].T + f2 * state[f"{field_name}"][..., n2].T
-    )
-
-    return out
 
 
 class ERA5Atmosphere(Component, ForcingData):
     def __init__(
         self,
         name: str = "ERA5-ATM",
-        model_level_file: Path = get_data()[0],
-        surface_file: Path = get_data()[1],
+        model_level_file: Path = get_forcing_data("model_level"),
+        surface_file: Path = get_forcing_data("surface"),
     ) -> None:
         """
         Read all necessary fields from the provided forcing files.
