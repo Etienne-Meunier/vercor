@@ -59,6 +59,7 @@ if __name__ == "__main__":
 
     cpl.initialize()
     cpl.run()
+    cpl.finalize()
 
     # Inspect a few fields
     print("SST(OCN) mean:", np.nanmin(ocn.get("sst")))

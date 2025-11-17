@@ -48,6 +48,3 @@ class Ocean(Component):
         dTdt = Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (SST - T0)
 
         self.outgoing_fields.SST.data = SST + dTdt * dt.total_seconds()
-
-    def finalize(self, coupler: "Coupler") -> None:
-        pass

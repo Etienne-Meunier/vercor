@@ -2,10 +2,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 import numpy as np
-from vercor.components.base import Component, ForcingData
+from vercor.components.base import Component, ForcingData, write_shared_to_netcdf
 from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_field_at_specific_time, get_forcing_data
+from vercor.tools import get_field_at_specific_time
 
 
 if TYPE_CHECKING:
@@ -93,6 +93,3 @@ class ERAInterimOcean(Component, ForcingData):
                     self.name,
                 ),
             )
-
-    def finalize(self, coupler: "Coupler") -> None:
-        pass
