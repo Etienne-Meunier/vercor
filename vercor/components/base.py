@@ -141,11 +141,7 @@ class Component(abc.ABC):
 
         merged_fields = self.merge_incoming_outgoing_fields()
 
-        write_shared_to_netcdf(
-            merged_fields,
-            self.grid,
-            filepath
-        )
+        write_shared_to_netcdf(merged_fields, self.grid, filepath)
 
     def export_fields(self) -> Shared:
         # TODO: export only component related fields
@@ -240,7 +236,9 @@ class ForcingData:
             ) from e
 
 
-def write_shared_to_netcdf(shared: Shared, grid: RectilinearGrid, filename: Path) -> None:
+def write_shared_to_netcdf(
+    shared: Shared, grid: RectilinearGrid, filename: Path
+) -> None:
     lat = xr.DataArray(grid.latitude, dims=("nlat",), name="latitude")
     lon = xr.DataArray(grid.longitude, dims=("nlon",), name="longitude")
 
