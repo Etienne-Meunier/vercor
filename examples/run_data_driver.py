@@ -4,13 +4,14 @@ import numpy as np
 
 from vercor import Clock, Coupler, Exchange
 from vercor.components import ERA5Atmosphere, ERA5Ocean
+from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.coupler import RunSequence
-from vercor.regridders import BilinearRectilinearRegridder, make_rectilinear_grid
+from vercor.regridders import BilinearRectilinearRegridder
 
 if __name__ == "__main__":
     # Build components
     atm = ERA5Atmosphere("ATM")
-    ocn = ERA5Ocean("OCN")
+    ocn = ERAInterimOcean("OCN")
 
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=2)
@@ -18,7 +19,7 @@ if __name__ == "__main__":
 
     # Coupler
     cpl = Coupler(clock=clock)
-    components: List[ERA5Atmosphere | ERA5Ocean] = [atm, ocn]
+    components: List[ERA5Atmosphere | ERAInterimOcean] = [atm, ocn]
     for component in components:
         cpl.register(component)
 
@@ -50,7 +51,6 @@ if __name__ == "__main__":
             destination="ATM",
             field_names=[
                 "sst",
-                "lsm",
             ],
             regridder_factory=bilinear,
             when="pre",
@@ -58,23 +58,24 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    print(cpl.components["OCN"].grid.binary_mask)
     cpl.run()
 
     # Inspect a few fields
     print("SST(OCN) mean:", np.nanmin(ocn.get("sst")))
-    print("SST(ERA5) mean:", np.nanmin(atm.get("sst")))
-    print("qbot(ERA5) mean:", atm.get("qbot").mean())
-    print("qbot(OCN) mean:", ocn.get("qbot").mean())
-    print("tbot(ERA5) mean:", atm.get("tbot").mean())
-    print("tbot(OCN) mean:", ocn.get("tbot").mean())
-    print("zbot(ERA5) mean:", atm.get("zbot").mean())
-    print("zbot(OCN) mean:", ocn.get("zbot").mean())
+    print("SST(ERA) mean:", np.nanmin(atm.get("sst")))
+    print("qbot(ERA) mean:", np.nanmin(atm.get("qbot")))
+    print("qbot(OCN) mean:", np.nanmin(ocn.get("qbot")))
+    print("tbot(ERA) mean:", np.nanmin(atm.get("tbot")))
+    print("tbot(OCN) mean:", np.nanmin(ocn.get("tbot")))
+    print("zbot(ERA) mean:", np.nanmin(atm.get("zbot")))
+    print("zbot(OCN) mean:", np.nanmin(ocn.get("zbot")))
     print(
-        "speed(ERA5) mean:", np.sqrt(atm.get("ubot") ** 2 + atm.get("vbot") ** 2).mean()
+        "speed(ERA) mean:",
+        np.nanmean(np.sqrt(atm.get("ubot") ** 2 + atm.get("vbot") ** 2)),
     )
     print(
-        "speed(OCN) mean:", np.sqrt(ocn.get("ubot") ** 2 + ocn.get("vbot") ** 2).mean()
+        "speed(OCN) mean:",
+        np.nanmean(np.sqrt(ocn.get("ubot") ** 2 + ocn.get("vbot") ** 2)),
     )
     import matplotlib.pyplot as plt
 
