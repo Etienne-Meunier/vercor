@@ -12,17 +12,23 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERA5Ocean(Component, ForcingData):
+class ERAInterimOcean(Component, ForcingData):
     def __init__(
         self,
-        name: str = "ERA5-OCN",
-        surface_file: Path = get_forcing_data("surface"),
+        name: str = "ERAINTERIM-OCN",
+        model_level_file: Path = (
+            Path(__file__).parent.parent.parent
+            / ".."
+            / "forcing"
+            / "forcing_4deg_global_open_itf.nc"
+        ).resolve(),
     ) -> None:
         """
         Read all necessary fields from the provided forcing files.
 
         Arguments:
             name (str): component name
+            model_level_file (Path): path to netCDF file with data at model levels
             surface_file (Path): path to netCDF file with data at surface level
 
         Attributes of parent classes to be initialized:
@@ -35,30 +41,29 @@ class ERA5Ocean(Component, ForcingData):
         """
 
         self.DATA_FILES = {
-            "surface": str(surface_file),
+            "model_level": str(model_level_file),
         }
 
         self.fields2share = ("sst",)
 
         self._state = {}
 
-        longitude = self._read_forcing("longitude", where="surface")
-        latitude = self._read_forcing("latitude", where="surface")[::-1]
-        fraction_mask = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
-        fraction_mask = 1 - fraction_mask
-        binary_mask = np.where(fraction_mask > 0.0, 1.0, 0.0)
+        longitude = self._read_forcing("xt", where="model_level")
+        latitude = self._read_forcing("yt", where="model_level")
+        sss = self._read_forcing("sss", where="model_level")
+        binary_mask = np.where(sss > 0.0, 1.0, 0.0)[..., 0].T
 
         self.grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
             binary_mask=binary_mask,
-            fraction_mask=fraction_mask,
         )
 
         super().__init__(name, grid=self.grid)
 
-        self._state["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
+        self._state["sst"] = self._read_forcing("sst", where="model_level")
+        print("sst", self._state["sst"].shape)
 
     def initialize(self, coupler: "Coupler") -> None:
 

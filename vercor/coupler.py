@@ -12,6 +12,7 @@ from vercor.components.base import Shared
 from vercor.components.base import TimedNamedArray as TNA
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_ocean import ERA5Ocean
+from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.exchange import Exchange
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
 from vercor.run_sequence import RunSequence
@@ -34,7 +35,10 @@ class Coupler:
     logger: Logger = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
     components: Dict[
-        str, Union[Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, SeaIce, Land]
+        str,
+        Union[
+            Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, ERAInterimOcean, SeaIce, Land
+        ],
     ] = field(default_factory=dict)
     exchanges: List[Exchange] = field(default_factory=list)
     settings: VercorSettings = field(default_factory=VercorSettings)
@@ -56,7 +60,9 @@ class Coupler:
 
     def register(
         self,
-        component: Union[Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, SeaIce, Land],
+        component: Union[
+            Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, ERAInterimOcean, SeaIce, Land
+        ],
     ) -> None:
         if component.name in self.components:
             raise ValueError(f"Component {component.name} already registered")
@@ -108,7 +114,9 @@ class Coupler:
     def _do_exchanges(
         self,
         timestamp: datetime,
-        component: Union[Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, SeaIce, Land],
+        component: Union[
+            Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, ERAInterimOcean, SeaIce, Land
+        ],
         when: str,
     ) -> None:
         for exchange in self.exchanges:
@@ -179,6 +187,20 @@ class Coupler:
                     f"{when.upper()} step: Exchanged {destination_fields.field_names} "
                     f"from {exchange.source} to {exchange.destination}"
                 )
+
+    def __str__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"├── Run start: {self.clock.start}\n"
+            f"├── Components: "
+            + ", ".join(
+                f"<{component.__class__.__name__}>({name})"
+                for name, component in self.components.items()
+            )
+            + "\n"
+            f"├── Exchanges: {', '.join(exchange.name for exchange in self.exchanges)}\n"
+            f"└── Run sequence: {', '.join(self.run_sequence)}"
+        )
 
     def run(self) -> None:
         # TODO: add setup checks like time step consistency,
