@@ -1,8 +1,9 @@
-from datetime import datetime
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from logging import Logger
-from typing import Dict, List, Tuple, Union
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -65,7 +66,7 @@ class Coupler:
         ],
     ) -> None:
         if component.name in self.components:
-            raise ValueError(f"Component {component.name} already registered")
+            raise KeyError(f"Component {component.name} already registered")
 
         self.components[component.name] = component
         self.logger.info(f" Registered component {component.name}")
@@ -84,7 +85,7 @@ class Coupler:
     def set_components_run_sequence(self, run_sequence: RunSequence) -> None:
         for cname in run_sequence:
             if cname not in self.components.keys():
-                raise ValueError(f"Component {cname} not registered in coupler")
+                raise KeyError(f"Component {cname} not registered in coupler")
         self.run_sequence = run_sequence
         self.logger.info(
             f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
@@ -146,7 +147,7 @@ class Coupler:
                 if isinstance(field_name, tuple):
                     field_name_set = set(field_name)
                     if not field_name_set.issubset(set(source_fields.fields().keys())):
-                        raise ValueError(
+                        raise RuntimeError(
                             f"Not all fields in vector {field_name} are present in source fields"
                         )
                     (
@@ -168,7 +169,7 @@ class Coupler:
                     )
                 else:
                     if field_name not in source_fields.fields().keys():
-                        raise ValueError(
+                        raise KeyError(
                             f"Field {field_name} not present in source fields"
                         )
 
@@ -188,10 +189,10 @@ class Coupler:
                     f"from {exchange.source} to {exchange.destination}"
                 )
 
-    def finalize(self) -> None:
+    def finalize(self, output_file_mask: Optional[Path] = None) -> None:
         self.logger.info(" Finalizing coupler and components")
         for name, component in self.components.items():
-            component.finalize()
+            component.finalize(output_file_mask)
             self.logger.info(f" Finalized {name}")
 
     def __str__(self) -> str:

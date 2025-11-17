@@ -133,14 +133,13 @@ class Component(abc.ABC):
     def step(self, dt, time, coupler):
         raise NotImplementedError
 
-    def finalize(self, outputfile: Optional[Path] = None) -> None:
-        if outputfile is None:
+    def finalize(self, output_file_mask: Optional[Path] = None) -> None:
+        if output_file_mask is None:
             filepath = Path(f"{self.name.lower()}_shared.nc")
         else:
-            filepath = outputfile
+            filepath = Path(f"{self.name.lower()}_{output_file_mask}.nc")
 
         merged_fields = self.merge_incoming_outgoing_fields()
-
         write_shared_to_netcdf(merged_fields, self.grid, filepath)
 
     def export_fields(self) -> Shared:
@@ -160,7 +159,7 @@ class Component(abc.ABC):
         out_fieldnames = out_fields.keys()
 
         if field_name in in_fieldnames and field_name in out_fieldnames:
-            raise ValueError(
+            raise KeyError(
                 f"Field name '{field_name}' found in both incoming and outgoing fields."
             )
 
@@ -170,7 +169,7 @@ class Component(abc.ABC):
         if field_name in out_fieldnames:
             return out_fields[field_name]
 
-        raise AttributeError(
+        raise KeyError(
             f"Field name '{field_name}' not found in incoming or outgoing fields"
         )
 
