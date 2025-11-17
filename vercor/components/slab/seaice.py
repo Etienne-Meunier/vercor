@@ -36,6 +36,3 @@ class SeaIce(Component):
         x = (Tfreeze - SST) / 2.0
         ice = 1.0 / (1.0 + np.exp(-x))
         self.outgoing_fields.ICEFRAC.data = ice
-
-    def finalize(self, coupler: "Coupler") -> None:
-        pass

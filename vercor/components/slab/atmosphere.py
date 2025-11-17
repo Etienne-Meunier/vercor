@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 import numpy as np
 
-from vercor.components.base import TimedNamedArray as TNA
+from vercor.components.base import TimedNamedArray as TNA, write_shared_to_netcdf
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 
@@ -60,6 +61,3 @@ class Atmosphere(Component):
 
         # Relax TA2M toward SST weakly (toy boundary layer)
         self.outgoing_fields.TA2M.data = TA - 0.01 * dT
-
-    def finalize(self, coupler: "Coupler") -> None:
-        pass

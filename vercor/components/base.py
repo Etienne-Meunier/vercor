@@ -1,10 +1,12 @@
 import abc
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import h5netcdf
 import numpy as np
+import xarray as xr
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
@@ -131,9 +133,19 @@ class Component(abc.ABC):
     def step(self, dt, time, coupler):
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def finalize(self, coupler):
-        raise NotImplementedError
+    def finalize(self, outputfile: Optional[Path] = None) -> None:
+        if outputfile is None:
+            filepath = Path(f"{self.name.lower()}_shared.nc")
+        else:
+            filepath = outputfile
+
+        merged_fields = self.merge_incoming_outgoing_fields()
+
+        write_shared_to_netcdf(
+            merged_fields,
+            self.grid,
+            filepath
+        )
 
     def export_fields(self) -> Shared:
         # TODO: export only component related fields
@@ -165,6 +177,16 @@ class Component(abc.ABC):
         raise AttributeError(
             f"Field name '{field_name}' not found in incoming or outgoing fields"
         )
+
+    def merge_incoming_outgoing_fields(self) -> Shared:
+        output_fields = Shared()
+
+        for name, tna in self.incoming_fields._fields.items():
+            setattr(output_fields, name, tna)
+        for name, tna in self.outgoing_fields._fields.items():
+            setattr(output_fields, name, tna)
+
+        return output_fields
 
     def __str__(self) -> str:
         shared_fields_list = []
@@ -216,6 +238,28 @@ class ForcingData:
             raise RuntimeError(
                 f"Error reading variable '{variable}' from forcing file '{self.DATA_FILES[where]}'"
             ) from e
+
+
+def write_shared_to_netcdf(shared: Shared, grid: RectilinearGrid, filename: Path) -> None:
+    lat = xr.DataArray(grid.latitude, dims=("nlat",), name="latitude")
+    lon = xr.DataArray(grid.longitude, dims=("nlon",), name="longitude")
+
+    data_vars = {}
+    for name, tna in shared._fields.items():
+        data_vars[name] = xr.DataArray(
+            data=tna.data,
+            dims=("nlat", "nlon"),
+            coords={"latitude": lat, "longitude": lon},
+            attrs={
+                "timestamp": tna.timestamp.isoformat(),
+                "component": tna.component_name,
+            },
+        )
+
+    xr.Dataset(
+        data_vars=data_vars,
+        coords={"latitude": lat, "longitude": lon},
+    ).to_netcdf(filename)
 
 
 if __name__ == "__main__":

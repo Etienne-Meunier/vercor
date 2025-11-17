@@ -188,6 +188,12 @@ class Coupler:
                     f"from {exchange.source} to {exchange.destination}"
                 )
 
+    def finalize(self) -> None:
+        self.logger.info(" Finalizing coupler and components")
+        for name, component in self.components.items():
+            component.finalize()
+            self.logger.info(f" Finalized {name}")
+
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"

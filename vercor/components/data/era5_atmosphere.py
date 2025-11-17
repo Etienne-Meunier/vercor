@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from vercor.components.base import Component, ForcingData
+from vercor.components.base import Component, ForcingData, write_shared_to_netcdf
 from vercor.components.base import TimedNamedArray as TNA
 from vercor.fluxes.utilities import (
     air_density,
@@ -179,6 +179,3 @@ class ERA5Atmosphere(Component, ForcingData):
                     self.name,
                 ),
             )
-
-    def finalize(self, coupler: "Coupler") -> None:
-        pass
