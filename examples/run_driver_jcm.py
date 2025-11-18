@@ -88,9 +88,7 @@ cpl.add_exchange(Exchange(
 
 cpl.initialize()
 cpl.run()
-
-atm.finalize(output="output_JCM.nc")
-
+cpl.finalize()
 
 # Inspect a few fields
 print("SST mean:", ocn.state["SST"].mean())

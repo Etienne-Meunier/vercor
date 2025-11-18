@@ -13,7 +13,7 @@ import jax_datetime as jdt
 from dinosaur import primitive_equations, primitive_equations_states
 
 import tree_math
-import jcm
+from jcm.model import Model
 from jcm.forcing import ForcingData, default_forcing
 from jcm.physics_interface import dynamics_state_to_physics_state
 from jcm.physics_interface import PhysicsState
@@ -26,7 +26,9 @@ from typing import Any, Optional, List, cast
 
 import xarray as xr
 
-import vercor.settings.latvap as latent_heat_of_vaporization
+import vercor
+
+
 from vercor.components.base import TimedNamedArray as TNA
 
 from typing import TYPE_CHECKING
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 # ===================
 
+latent_heat_of_vaporization = vercor.settings.VercorSettings.latvap
 
 def asfloat64(tree):
     return jax.tree_util.tree_map(lambda arr: arr.astype(jnp.float64), tree)
@@ -56,7 +59,7 @@ class JCM(Component):
     def __init__(
         self,
         name: str,
-        model: jcm.model.Model,
+        model: Model,
         coupling_timestep: timedelta = timedelta(days=1),
         save_interval: timedelta = timedelta(hours=12),
         jitted: bool = True,
@@ -71,7 +74,8 @@ class JCM(Component):
             name=name,
             longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
             latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-            mask=np.where(model.geometry.fmask > 0.0, 1.0, 0.0).transpose() == 0.0,  # true = valid points.
+            binary_mask=np.where(model.geometry.fmask > 0.0, 1.0, 0.0).transpose() == 0.0,  # true = valid points.
+            fraction_mask=model.geometry.fmask.transpose(),
         )
 
         super().__init__(name, grid)
@@ -147,7 +151,7 @@ class JCM(Component):
 
         zeros = np.zeros(grid_shape)
 
-        self.outgoing_fields.SST = TNA(zeros + 273.15 + 15.0, clock_start, self.name)
+        self.incoming_fields.SST = TNA(zeros + 273.15 + 15.0, clock_start, self.name)
         self.outgoing_fields.SHF = TNA(zeros, clock_start, self.name)
         self.outgoing_fields.LHF = TNA(zeros, clock_start, self.name)
         self.outgoing_fields.u10m = TNA(zeros, clock_start, self.name)
@@ -165,7 +169,7 @@ class JCM(Component):
             )
 
         _forcing = self.model.forcing.copy(
-            sea_surface_temperature=jnp.asarray(self.state["SST"].transpose()),
+            sea_surface_temperature=jnp.asarray(self.incoming_fields.SST).transpose(),
         )
 
         _avg_predictions = []
@@ -186,22 +190,22 @@ class JCM(Component):
         p = _avg_predictions.physics
 
         # All the heat and freshwater fluxes are positive upward
-        self.state["SHF"] = np.array(p.surface_flux.shf).sum(axis=2).transpose()
-        self.state["LHF"] = (
+        self.outgoing_fields.SHF = (np.array(p.surface_flux.shf).sum(axis=2).transpose(), time, self.name)
+        self.outgoing_fields.LHF = ((
             np.array(p.surface_flux.evap / 1e3 * latent_heat_of_vaporization)
             .sum(axis=2)
             .transpose()
-        )
-        self.state["precipitation"] = (
+        ), time, self.name)
+        self.outgoing_fields.precipitation = ((
             -np.array(p.condensation.precls + p.convection.precnv).transpose() / 1e3
-        )
-        self.state["evaporation"] = (
+        ), time, self.name)
+        self.outgoing_fields.evaporation = ((
             np.array(p.surface_flux.evap / 1e3).sum(axis=2).transpose()
-        )
-        self.state["u10m"] = np.array(p.surface_flux.u0).transpose()
-        self.state["v10m"] = np.array(p.surface_flux.v0).transpose()
+        ), time, self.name)
+        self.outgoing_fields.u10m = (np.array(p.surface_flux.u0).transpose(), time, self.name)
+        self.outgoing_fields.v10m = (np.array(p.surface_flux.v0).transpose(), time, self.name)
 
-    def finalize(self, output: Optional[str] = None) -> xr.Dataset:
+    def _finalize(self, output: Optional[str] = None) -> xr.Dataset:
         # Current JCM returns an Any but is actually an xr.Dataset
         ds = cast(
             xr.Dataset,
