@@ -1,5 +1,6 @@
 from typing import Any, Optional, Tuple
 
+import numpy as np
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
@@ -15,8 +16,17 @@ class Regridder:
         self.interpolator: Optional[BilinearRectilinearInterpolator] = None
 
     @property
-    def is_identical_shape(self) -> bool:
-        return self.source_grid.shape == self.destination_grid.shape
+    def have_identical_grids(self) -> bool:
+        source = self.source_grid
+        destination = self.destination_grid
+
+        shape_condition = source.shape == destination.shape
+
+        coord_condition = np.array_equal(
+            source.latitude, destination.latitude
+        ) and np.array_equal(source.longitude, destination.longitude)
+
+        return shape_condition and coord_condition
 
     def _ensure_ready(self, args: Tuple[Any, ...]) -> None:
         if self.interpolator is None:
