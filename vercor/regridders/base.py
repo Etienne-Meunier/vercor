@@ -16,7 +16,7 @@ class Regridder:
         self.interpolator: Optional[BilinearRectilinearInterpolator] = None
 
     @property
-    def have_identical_grids(self) -> bool:
+    def has_identical_grids(self) -> bool:
         source = self.source_grid
         destination = self.destination_grid
 

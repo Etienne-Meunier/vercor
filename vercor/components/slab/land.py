@@ -6,7 +6,7 @@ from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -27,7 +27,17 @@ class Land(Component):
             0.3 * np.ones((nlat, nlon)), coupler.clock.start, self.name
         )
 
-    def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
+    def step(
+        self,
+        dt: Optional[timedelta] = None,
+        time: Optional[datetime] = None,
+        coupler: Optional["Coupler"] = None,
+    ) -> None:
+        if dt is None:
+            raise ValueError(
+                f"A 'dt' instance is required to advance {self.__class__.__name__}."
+            )
+
         LHF = self.incoming_fields.LHF.data
         soil = self.outgoing_fields.SOILM.data
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling

@@ -3,7 +3,7 @@ from typing import List
 import numpy as np
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere, ERA5Ocean
+from vercor.components import ERA5Atmosphere
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.coupler import RunSequence
 from vercor.regridders import BilinearRectilinearRegridder

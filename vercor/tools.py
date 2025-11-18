@@ -98,7 +98,7 @@ def get_field_at_specific_time(
 
     # Use transpose to have (lat, lon) ordering
     out: NDArray = (
-        f1 * state[f"{field_name}"][..., n1].T + f2 * state[f"{field_name}"][..., n2].T
-    )
+        f1 * state[f"{field_name}"][..., n1] + f2 * state[f"{field_name}"][..., n2]
+    ).transpose()
 
     return out

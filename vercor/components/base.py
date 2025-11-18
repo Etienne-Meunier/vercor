@@ -1,8 +1,8 @@
 import abc
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import h5netcdf
 import numpy as np
@@ -10,6 +10,9 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
+
+if TYPE_CHECKING:
+    from vercor.coupler import Coupler
 
 
 @dataclass
@@ -130,7 +133,12 @@ class Component(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def step(self, dt, time, coupler):
+    def step(
+        self,
+        dt: Optional[timedelta] = None,
+        time: Optional[datetime] = None,
+        coupler: Optional["Coupler"] = None,
+    ) -> None:
         raise NotImplementedError
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
