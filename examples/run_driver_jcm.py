@@ -26,12 +26,14 @@ ice = SeaIce("ICE", ice_grid)
 lnd = Land("LND", lnd_grid)
 
 # Clock and sequence
-clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
-run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
+clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=2)
+#run_sequence = RunSequence(order=["ATM", "OCN", "ICE", "LND"])
+run_sequence = RunSequence(order=["ATM", "OCN", "ICE", ])
 
 # Coupler
 cpl = Coupler(clock=clock)
-components: List[Atmosphere | Ocean | SeaIce | Land] = [atm, ocn, ice, lnd]
+#components: List[Atmosphere | Ocean | SeaIce | Land] = [atm, ocn, ice, lnd]
+components: List[Atmosphere | Ocean | SeaIce | Land] = [atm, ocn, ice]
 for component in components:
     cpl.register(component)
 
@@ -70,6 +72,7 @@ cpl.add_exchange(Exchange(
     when="pre",
 ))
 
+"""
 cpl.add_exchange(Exchange(
     source="LND",
     destination="ATM",
@@ -85,15 +88,15 @@ cpl.add_exchange(Exchange(
     regridder_factory=bilinear,
     when="post",
 ))
-
+"""
 cpl.initialize()
 cpl.run()
 cpl.finalize()
 
 # Inspect a few fields
-print("SST mean:", ocn.state["SST"].mean())
-print("u10m mean:", atm.state["u10m"].mean())
-print("v10m mean:", atm.state["v10m"].mean())
-print("SOILM(LND) mean:", lnd.state["SOILM"].mean())
-print("SOILM(ATM) mean:", atm.state["SOILM"].mean())
-print("ICEFRAC mean:", ice.state["ICEFRAC"].mean())
+print("SST mean:", ocn.get("SST").mean())
+print("u10m mean:", atm.get("u10m").mean())
+print("v10m mean:", atm.get("v10m").mean())
+#print("SOILM(LND) mean:", lnd.get("SOILM").mean())
+#print("SOILM(ATM) mean:", atm.get("SOILM").mean())
+print("ICEFRAC mean:", ice.get("ICEFRAC").mean())
