@@ -1,13 +1,12 @@
 from datetime import datetime, timedelta
-from pathlib import Path
 import numpy as np
 
-from vercor.components.base import TimedNamedArray as TNA, write_shared_to_netcdf
+from vercor.components.base import TimedNamedArray as TNA
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -34,7 +33,12 @@ class Atmosphere(Component):
         self.outgoing_fields.u10m = TNA(zeros, clock_start, self.name)
         self.outgoing_fields.v10m = TNA(zeros, clock_start, self.name)
 
-    def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
+    def step(
+        self,
+        dt: Optional[timedelta] = None,
+        time: Optional[datetime] = None,
+        coupler: Optional["Coupler"] = None,
+    ) -> None:
         # Bulk formula toy: flux proportional to (TA2M - SST)
         SST = self.incoming_fields.SST.data
         if SST is None:

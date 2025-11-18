@@ -6,7 +6,7 @@ from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -35,7 +35,17 @@ class Ocean(Component):
             273.15 + 15.0 * np.ones((nlat, nlon)), coupler.clock.start, self.name
         )
 
-    def step(self, dt: timedelta, time: datetime, coupler: "Coupler") -> None:
+    def step(
+        self,
+        dt: Optional[timedelta] = None,
+        time: Optional[datetime] = None,
+        coupler: Optional["Coupler"] = None,
+    ) -> None:
+        if dt is None:
+            raise ValueError(
+                f"A 'dt' instance is required to advance {self.__class__.__name__}."
+            )
+
         SST = self.outgoing_fields.SST.data
         SHF = self.incoming_fields.SHF.data
         LHF = self.incoming_fields.LHF.data

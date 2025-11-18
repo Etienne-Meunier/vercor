@@ -58,7 +58,7 @@ class BilinearRectilinearRegridder(Regridder):
         # Check if components have identical grids internally and
         # returns fields as-is (from source to destination) if so,
         # avoiding unnecessary computation
-        if self.have_identical_grids:
+        if self.has_identical_grids:
             return args if len(args) == 2 else args[0]
 
         handlers: dict[int, Callable[..., NDArray | Tuple[NDArray, NDArray]]] = {
