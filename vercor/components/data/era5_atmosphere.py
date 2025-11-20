@@ -7,10 +7,10 @@ import numpy as np
 from vercor.components.base import Component, ForcingData
 from vercor.components.base import TimedNamedArray as TNA
 from vercor.fluxes.utilities import (
-    air_density,
-    compute_z_level,
-    get_press_levs,
-    potential_temperature,
+    compute_air_density,
+    compute_levels_altitudes,
+    compute_pressure_levels,
+    compute_potential_temperature,
 )
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_field_at_specific_time, get_forcing_data
@@ -131,13 +131,13 @@ class ERA5Atmosphere(Component, ForcingData):
         self._state["thbot"] = np.zeros((nlon, nlat, 12))
 
         for m in range(12):
-            ph = get_press_levs(
+            ph = compute_pressure_levels(
                 dataset["surf_pressure"][..., m], dataset["hyai"], dataset["hybi"]
             )
-            pf = get_press_levs(
+            pf = compute_pressure_levels(
                 dataset["surf_pressure"][..., m], dataset["hyam"], dataset["hybm"]
             )
-            self._state["zbot"][..., m] = compute_z_level(
+            self._state["zbot"][..., m] = compute_levels_altitudes(
                 settings,
                 dataset["temperature"][..., m],
                 dataset["specific_humidity"][..., m],
@@ -145,10 +145,10 @@ class ERA5Atmosphere(Component, ForcingData):
             )[
                 ..., 1
             ]  # L136
-            self._state["rbot"][..., m] = air_density(
+            self._state["rbot"][..., m] = compute_air_density(
                 settings, dataset["tbot"][:, :, m], pf[:, :, 0]
             )
-            self._state["thbot"][..., m] = potential_temperature(
+            self._state["thbot"][..., m] = compute_potential_temperature(
                 settings, dataset["tbot"][:, :, m], pf[:, :, 0]
             )
 
