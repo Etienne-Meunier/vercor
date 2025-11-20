@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
 
 from vercor.components.base import Component
 from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
-
-
-from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler

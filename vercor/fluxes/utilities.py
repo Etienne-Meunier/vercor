@@ -37,7 +37,7 @@ def qsat_august_eqn(
     return result
 
 
-def get_press_levs(
+def compute_pressure_levels(
     sp: NDArray[np.floating[Any]],
     hya: NDArray[np.floating[Any]],
     hyb: NDArray[np.floating[Any]],
@@ -60,7 +60,7 @@ def get_press_levs(
     return result
 
 
-def compute_z_level(
+def compute_levels_altitudes(
     settings,
     t: NDArray[np.floating[Any]],
     q: NDArray[np.floating[Any]],
@@ -149,7 +149,7 @@ def psixhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     return 2.0 * np.log((1.0 + xd * xd) / 2.0)
 
 
-def air_density(
+def compute_air_density(
     settings, pf: NDArray[np.floating[Any]], t: NDArray[np.floating[Any]]
 ) -> NDArray[np.floating[Any]]:
     """Air density (kg/m^3)"""
@@ -159,7 +159,7 @@ def air_density(
     return result
 
 
-def potential_temperature(
+def compute_potential_temperature(
     settings, tbot: NDArray[np.floating[Any]], pf: NDArray[np.floating[Any]]
 ) -> NDArray[np.floating[Any]]:
     """Potential temperature (K)"""

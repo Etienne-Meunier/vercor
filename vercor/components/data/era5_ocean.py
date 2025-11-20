@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+
 import numpy as np
+
 from vercor.components.base import Component, ForcingData
 from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_field_at_specific_time, get_forcing_data
-
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
