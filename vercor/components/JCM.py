@@ -152,10 +152,16 @@ class JCM(Component):
         zeros = np.zeros(grid_shape)
 
         self.incoming_fields.SST = TNA(zeros + 273.15 + 15.0, clock_start, self.name)
-        self.outgoing_fields.SHF = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.LHF = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.u10m = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.v10m = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_density = TNA(zeros + 1.22, clock_start, self.name)
+        self.outgoing_fields.bottom_level_zonal_velocity = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_meridional_velocity = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_potential_temperature = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_temperature = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_specific_humidity = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_height = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.net_surface_shortwave_radiation_flux = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.net_surface_longwave_radiation_flux = TNA(zeros, clock_start, self.name)
+        self.outgoing_fields.bottom_level_ = TNA(zeros, clock_start, self.name)
         self.outgoing_fields.precipitation = TNA(zeros, clock_start, self.name)
         self.outgoing_fields.evaporation = TNA(zeros, clock_start, self.name)
 
@@ -188,22 +194,23 @@ class JCM(Component):
             unwrap_leading_dims(stack_objects(_avg_predictions)), axis=0
         )
         p = _avg_predictions.physics
+        d = _avg_predictions.dynamics
 
         # All the heat and freshwater fluxes are positive upward
-        self.outgoing_fields.SHF = (np.array(p.surface_flux.shf).sum(axis=2).transpose(), time, self.name)
-        self.outgoing_fields.LHF = ((
-            np.array(p.surface_flux.evap / 1e3 * latent_heat_of_vaporization)
-            .sum(axis=2)
-            .transpose()
-        ), time, self.name)
+        self.outgoing_fields.net_surface_shortwave_radiation_flux = (- np.array(p.shortwave_rad.rsns).sum(axis=2).transpose(), time, self.name)
+        self.outgoing_fields.net_surface_longwave_radiation_flux = (np.array(p.surface_flux.rlns).sum(axis=2).transpose(), time, self.name)
+        self.outgoing_fields.bottom_level_zonal_velocity = (np.array(d.u_wind[:, :, -1]).transpose(), time, self.name)
+        self.outgoing_fields.bottom_level_meridional_velocity = (np.array(d.v_wind[:, :, -1]).transpose(), time, self.name)
+        self.outgoing_fields.bottom_level_potential_temperature = (np.array(d.temperature[:, :, -1]).transpose(), time, self.name)
+        self.outgoing_fields.bottom_level_temperature = (np.array(d.temperature[:, :, -1]).transpose(), time, self.name)
+        self.outgoing_fields.bottom_level_specific_humidity = (np.array(d.specific_humidity[:, :, -1]).transpose(), time, self.name)
+        self.outgoing_fields.bottom_level_height = (np.array(d.geopotential[:, :, -1] / jcm.constants.grav).transpose(), time, self.name)
         self.outgoing_fields.precipitation = ((
             -np.array(p.condensation.precls + p.convection.precnv).transpose() / 1e3
         ), time, self.name)
         self.outgoing_fields.evaporation = ((
             np.array(p.surface_flux.evap / 1e3).sum(axis=2).transpose()
         ), time, self.name)
-        self.outgoing_fields.u10m = (np.array(p.surface_flux.u0).transpose(), time, self.name)
-        self.outgoing_fields.v10m = (np.array(p.surface_flux.v0).transpose(), time, self.name)
 
     def _finalize(self, output: Optional[str] = None) -> xr.Dataset:
         # Current JCM returns an Any but is actually an xr.Dataset
