@@ -70,9 +70,7 @@ class ERA5Ocean(Component, ForcingData):
         self._cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.send_fields_for_export(
-            coupler.clock.start, coupler
-        )
+        pass
 
     def step(
         self,
@@ -92,7 +90,4 @@ class ERA5Ocean(Component, ForcingData):
             raise ValueError(
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
-
-        self.receive_fields_from_import()
-
-        self.send_fields_for_export(time, coupler)
+        pass

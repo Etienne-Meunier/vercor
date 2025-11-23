@@ -25,10 +25,6 @@ class SeaIce(Component):
     def initialize(self, coupler: "Coupler") -> None:
         self._cdata["ICEFRAC"] = np.zeros(self.grid.shape)
 
-        self.send_fields_for_export(
-            coupler.clock.start, coupler
-        )
-
     def step(
         self,
         dt: Optional[timedelta] = None,
@@ -48,8 +44,6 @@ class SeaIce(Component):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        self.receive_fields_from_import()
-
         sst = self._cdata.get("sst", None)
         if sst is None:
             return
@@ -60,5 +54,3 @@ class SeaIce(Component):
         ice = 1.0 / (1.0 + np.exp(-x))
 
         self._cdata["ICEFRAC"] = ice
-
-        self.send_fields_for_export(time, coupler)

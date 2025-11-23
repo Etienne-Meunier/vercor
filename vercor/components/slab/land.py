@@ -25,10 +25,6 @@ class Land(Component):
     def initialize(self, coupler: "Coupler") -> None:
         self._cdata["SOILM"] = 0.3 * np.ones(self.grid.shape)
 
-        self.send_fields_for_export(
-            coupler.clock.start, coupler
-        )
-
     def step(
         self,
         dt: Optional[timedelta] = None,
@@ -48,13 +44,9 @@ class Land(Component):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        self.receive_fields_from_import()
-
         LHF = self._cdata["LHF"]
         soil = self._cdata["SOILM"]
 
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
         self._cdata["SOILM"] = soil
-
-        self.send_fields_for_export(time, coupler)

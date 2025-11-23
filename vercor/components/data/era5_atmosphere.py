@@ -152,10 +152,6 @@ class ERA5Atmosphere(Component, ForcingData):
                 settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
 
-        self.send_fields_for_export(
-            coupler.clock.start, coupler
-        )
-
     def step(
         self,
         dt: Optional[timedelta] = None,
@@ -174,7 +170,4 @@ class ERA5Atmosphere(Component, ForcingData):
             raise ValueError(
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
-
-        self.receive_fields_from_import()
-
-        self.send_fields_for_export(time, coupler)
+        pass

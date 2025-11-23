@@ -32,10 +32,6 @@ class Ocean(Component):
     def initialize(self, coupler: "Coupler") -> None:
         self._cdata["sst"] = 273.15 + 15.0 * np.ones(self.grid.shape)
 
-        self.send_fields_for_export(
-            coupler.clock.start, coupler
-        )
-
     def step(
         self,
         dt: Optional[timedelta] = None,
@@ -55,8 +51,6 @@ class Ocean(Component):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        self.receive_fields_from_import()
-
         sst = self._cdata["sst"]
         SHF = self._cdata.get("SHF", None)
         LHF = self._cdata.get("LHF", None)
@@ -69,5 +63,3 @@ class Ocean(Component):
         dTdt = Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (sst - T0)
 
         self._cdata["sst"] = sst + dTdt * dt.total_seconds()
-
-        self.send_fields_for_export(time, coupler)
