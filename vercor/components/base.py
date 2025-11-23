@@ -138,15 +138,15 @@ class Component(abc.ABC):
     """
 
     @abc.abstractmethod
-    def initialize(self, coupler):
+    def initialize(self, coupler: "Coupler") -> None:
         raise NotImplementedError
 
     @abc.abstractmethod
     def step(
         self,
-        dt: Optional[timedelta] = None,
-        time: Optional[datetime] = None,
-        coupler: Optional["Coupler"] = None,
+        dt: timedelta,
+        time: datetime,
+        coupler: "Coupler",
     ) -> None:
         raise NotImplementedError
 
@@ -185,12 +185,10 @@ class Component(abc.ABC):
         for name in incoming_fields:
             setattr(self.incoming_fields, name, getattr(fields, name))
 
-    def receive_fields_from_import(self) -> None:
+    def receive_fields(self) -> None:
         self._cdata.update(self.incoming_fields.fields())
 
-    def send_fields_for_export(
-        self, time: datetime, coupler: "Coupler"
-    ) -> None:
+    def send_fields(self, time: datetime, coupler: "Coupler") -> None:
         for field in self._fields2export:
             if self._settings.get("apply_time_interpolation", False):
                 # for data models with monthly means
