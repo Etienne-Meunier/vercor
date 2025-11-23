@@ -5,9 +5,8 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 
 from vercor.components.base import Component, ForcingData
-from vercor.components.base import TimedNamedArray as TNA
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_field_at_specific_time, get_forcing_data
+from vercor.tools import get_forcing_data
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -39,10 +38,6 @@ class ERA5Ocean(Component, ForcingData):
             "surface": str(surface_file),
         }
 
-        self.fields2share = ("sst",)
-
-        self._state = {}
-
         longitude = self._read_forcing("longitude", where="surface")
         latitude = self._read_forcing("latitude", where="surface")[::-1]
         fraction_mask = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
@@ -59,20 +54,25 @@ class ERA5Ocean(Component, ForcingData):
 
         super().__init__(name, grid=self.grid)
 
-        self._state["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
+        self._settings["apply_time_interpolation"] = True
+        self._fields2import = [
+            "zbot",
+            "ubot",
+            "vbot",
+            "thbot",
+            "qbot",
+            "tbot",
+            "rbot",
+            "swr_net",
+            "lwr_dw",]
+        self._fields2export = ["sst"]
+
+        self._cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
 
     def initialize(self, coupler: "Coupler") -> None:
-
-        for field in self.fields2share:
-            setattr(
-                self.outgoing_fields,
-                field,
-                TNA(
-                    get_field_at_specific_time(field, self._state, coupler),
-                    coupler.clock.start,
-                    self.name,
-                ),
-            )
+        self.send_fields_for_export(
+            coupler.clock.start, coupler
+        )
 
     def step(
         self,
@@ -93,13 +93,6 @@ class ERA5Ocean(Component, ForcingData):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        for field in self.fields2share:
-            setattr(
-                self.outgoing_fields,
-                field,
-                TNA(
-                    get_field_at_specific_time(field, self._state, coupler),
-                    time,
-                    self.name,
-                ),
-            )
+        self.receive_fields_from_import()
+
+        self.send_fields_for_export(time, coupler)

@@ -55,7 +55,7 @@ if __name__ == "__main__":
         Exchange(
             source="OCN",
             destination="ATM",
-            field_names=["SST"],
+            field_names=["sst"],
             regridder_factory=bilinear,
             when="pre",
         )
@@ -65,7 +65,7 @@ if __name__ == "__main__":
         Exchange(
             source="OCN",
             destination="ICE",
-            field_names=["SST"],
+            field_names=["sst"],
             regridder_factory=bilinear,
             when="pre",
         )
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     cpl.finalize()
 
     # Inspect a few fields
-    print("SST mean:", ocn.get("SST").mean())
+    print("sst mean:", ocn.get("sst").mean())
     print("TA2M mean:", atm.get("TA2M").mean())
     print("u10m mean:", atm.get("u10m").mean())
     print("v10m mean:", atm.get("v10m").mean())

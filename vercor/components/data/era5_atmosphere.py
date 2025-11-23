@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 
 from vercor.components.base import Component, ForcingData
-from vercor.components.base import TimedNamedArray as TNA
 from vercor.fluxes.utilities import (
     compute_air_density,
     compute_levels_altitudes,
@@ -13,7 +12,7 @@ from vercor.fluxes.utilities import (
     compute_potential_temperature,
 )
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_field_at_specific_time, get_forcing_data
+from vercor.tools import get_forcing_data
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -53,18 +52,6 @@ class ERA5Atmosphere(Component, ForcingData):
             "surface": str(surface_file),
         }
 
-        self.fields2share = (
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-        )
-
-        self._state = {}
-
         longitude = self._read_forcing("longitude", where="model_level")
         latitude = self._read_forcing("latitude", where="model_level")[::-1]
 
@@ -76,92 +63,98 @@ class ERA5Atmosphere(Component, ForcingData):
 
         super().__init__(name, grid=self.grid)
 
-        self._state["hyai"] = self._read_forcing("hyai", where="model_level")[
+        self._settings["apply_time_interpolation"] = True
+        self._fields2import = ["sst",]
+        self._fields2export = [
+            "zbot",
+            "ubot",
+            "vbot",
+            "thbot",
+            "qbot",
+            "tbot",
+            "rbot",
+            "swr_net",
+            "lwr_dw",
+        ]
+
+        self._cdata["hyai"] = self._read_forcing("hyai", where="model_level")[
             -3:
         ]  # L135-L137
-        self._state["hybi"] = self._read_forcing("hybi", where="model_level")[
+        self._cdata["hybi"] = self._read_forcing("hybi", where="model_level")[
             -3:
         ]  # L135-L137
-        self._state["hyam"] = self._read_forcing("hyam", where="model_level")[
+        self._cdata["hyam"] = self._read_forcing("hyam", where="model_level")[
             -2:
         ]  # L136-L137
-        self._state["hybm"] = self._read_forcing("hybm", where="model_level")[
+        self._cdata["hybm"] = self._read_forcing("hybm", where="model_level")[
             -2:
         ]  # L136-L137
 
         lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
-        self._state["surf_pressure"] = np.exp(lnsp)
-        self._state["specific_humidity"] = self._read_forcing(
+        self._cdata["surf_pressure"] = np.exp(lnsp)
+        self._cdata["specific_humidity"] = self._read_forcing(
             "q", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
-        self._state["temperature"] = self._read_forcing(
+        self._cdata["temperature"] = self._read_forcing(
             "t", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
 
-        self._state["ubot"] = self._read_forcing("u", where="model_level", flip_y=True)[
+        self._cdata["ubot"] = self._read_forcing("u", where="model_level", flip_y=True)[
             :, :, 1, :
         ]  # L136
-        self._state["vbot"] = self._read_forcing("v", where="model_level", flip_y=True)[
+        self._cdata["vbot"] = self._read_forcing("v", where="model_level", flip_y=True)[
             :, :, 1, :
         ]  # L136
 
         # tcc = self._read_forcing("tcc", where="surface", flip_y=True)
-        self._state["swr_net"] = self._read_forcing(
+        self._cdata["swr_net"] = self._read_forcing(
             "msnswrf", where="surface", flip_y=True
         )
-        self._state["lwr_dw"] = self._read_forcing(
+        self._cdata["lwr_dw"] = self._read_forcing(
             "msdwlwrf", where="surface", flip_y=True
         )
 
-        self._state["qbot"] = self._state["specific_humidity"][..., 0, :]  # L136
-        self._state["tbot"] = self._state["temperature"][..., 0, :]  # L136
+        self._cdata["qbot"] = self._cdata["specific_humidity"][..., 0, :]  # L136
+        self._cdata["tbot"] = self._cdata["temperature"][..., 0, :]  # L136
 
     def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
         settings = coupler.settings
-        dataset = self._state
+        ds = self._cdata
 
-        # Values (local) to be used for time interpolation
-        self._state["zbot"] = np.zeros((nlon, nlat, 12))
-        self._state["rbot"] = np.zeros((nlon, nlat, 12))
-        self._state["thbot"] = np.zeros((nlon, nlat, 12))
+        self._cdata["zbot"] = np.zeros((nlon, nlat, 12))
+        self._cdata["rbot"] = np.zeros((nlon, nlat, 12))
+        self._cdata["thbot"] = np.zeros((nlon, nlat, 12))
 
         for m in range(12):
             ph = compute_pressure_levels(
-                dataset["surf_pressure"][..., m], dataset["hyai"], dataset["hybi"]
+                ds["surf_pressure"][..., m], ds["hyai"], ds["hybi"]
             )
             pf = compute_pressure_levels(
-                dataset["surf_pressure"][..., m], dataset["hyam"], dataset["hybm"]
+                ds["surf_pressure"][..., m], ds["hyam"], ds["hybm"]
             )
-            self._state["zbot"][..., m] = compute_levels_altitudes(
+            self._cdata["zbot"][..., m] = compute_levels_altitudes(
                 settings,
-                dataset["temperature"][..., m],
-                dataset["specific_humidity"][..., m],
+                ds["temperature"][..., m],
+                ds["specific_humidity"][..., m],
                 ph[:, :],
             )[
                 ..., 1
             ]  # L136
-            self._state["rbot"][..., m] = compute_air_density(
-                settings, dataset["tbot"][:, :, m], pf[:, :, 0]
+            self._cdata["rbot"][..., m] = compute_air_density(
+                settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
-            self._state["thbot"][..., m] = compute_potential_temperature(
-                settings, dataset["tbot"][:, :, m], pf[:, :, 0]
+            self._cdata["thbot"][..., m] = compute_potential_temperature(
+                settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
 
-        for field in self.fields2share:
-            setattr(
-                self.outgoing_fields,
-                field,
-                TNA(
-                    get_field_at_specific_time(field, self._state, coupler),
-                    coupler.clock.start,
-                    self.name,
-                ),
-            )
+        self.send_fields_for_export(
+            coupler.clock.start, coupler
+        )
 
     def step(
         self,
@@ -182,13 +175,6 @@ class ERA5Atmosphere(Component, ForcingData):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        for field in self.fields2share:
-            setattr(
-                self.outgoing_fields,
-                field,
-                TNA(
-                    get_field_at_specific_time(field, self._state, coupler),
-                    time,
-                    self.name,
-                ),
-            )
+        self.receive_fields_from_import()
+
+        self.send_fields_for_export(time, coupler)

@@ -19,11 +19,14 @@ class Land(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
+        self._fields2import = ["LHF", "SHF"]
+        self._fields2export = ["SOILM",]
 
     def initialize(self, coupler: "Coupler") -> None:
-        nlat, nlon = self.grid.shape
-        self.outgoing_fields.SOILM = TNA(
-            0.3 * np.ones((nlat, nlon)), coupler.clock.start, self.name
+        self._cdata["SOILM"] = 0.3 * np.ones(self.grid.shape)
+
+        self.send_fields_for_export(
+            coupler.clock.start, coupler
         )
 
     def step(
@@ -36,9 +39,22 @@ class Land(Component):
             raise ValueError(
                 f"A 'dt' instance is required to advance {self.__class__.__name__}."
             )
+        if time is None:
+            raise ValueError(
+                f"A 'time' instance is required to advance {self.__class__.__name__}."
+            )
+        if coupler is None:
+            raise ValueError(
+                f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
+            )
 
-        LHF = self.incoming_fields.LHF.data
-        soil = self.outgoing_fields.SOILM.data
+        self.receive_fields_from_import()
+
+        LHF = self._cdata["LHF"]
+        soil = self._cdata["SOILM"]
+
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
-        self.outgoing_fields.SOILM.data = soil
+        self._cdata["SOILM"] = soil
+
+        self.send_fields_for_export(time, coupler)

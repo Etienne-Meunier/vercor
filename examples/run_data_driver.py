@@ -62,8 +62,8 @@ if __name__ == "__main__":
     cpl.finalize()
 
     # Inspect a few fields
-    print("SST(OCN) mean:", np.nanmin(ocn.get("sst")))
-    print("SST(ERA) mean:", np.nanmin(atm.get("sst")))
+    print("sst(OCN) mean:", np.nanmin(ocn.get("sst")))
+    print("sst(ERA) mean:", np.nanmin(atm.get("sst")))
     print("qbot(ERA) mean:", np.nanmin(atm.get("qbot")))
     print("qbot(OCN) mean:", np.nanmin(ocn.get("qbot")))
     print("tbot(ERA) mean:", np.nanmin(atm.get("tbot")))
