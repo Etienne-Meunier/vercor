@@ -80,21 +80,12 @@ class ERAInterimOcean(Component, ForcingData):
 
     def step(
         self,
-        dt: Optional[timedelta] = None,
-        time: Optional[datetime] = None,
-        coupler: Optional["Coupler"] = None,
+        dt: timedelta,
+        time: datetime,
+        coupler: "Coupler",
     ) -> None:
-        """Advance to the next time step in the dataset
+        """
+        Advance to the next time step in the dataset
         using time interpolation from one month to another.
         """
-
-        if time is None:
-            raise ValueError(
-                f"A 'time' instance is required to advance {self.__class__.__name__}."
-            )
-
-        if coupler is None:
-            raise ValueError(
-                f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
-            )
         pass

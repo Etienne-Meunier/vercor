@@ -20,7 +20,9 @@ class Ocean(Component):
     def __init__(self, name: str, grid: RectilinearGrid, H: float = 30.0) -> None:
         super().__init__(name, grid)
         self._fields2import = ["u10m", "v10m"]
-        self._fields2export = ["sst",]
+        self._fields2export = [
+            "sst",
+        ]
 
         self.H = H  # mixed-layer depth [m]
         self.rho = 1025.0
@@ -34,9 +36,9 @@ class Ocean(Component):
 
     def step(
         self,
-        dt: Optional[timedelta] = None,
-        time: Optional[datetime] = None,
-        coupler: Optional["Coupler"] = None,
+        dt: timedelta,
+        time: datetime,
+        coupler: "Coupler",
     ) -> None:
         if dt is None:
             raise ValueError(

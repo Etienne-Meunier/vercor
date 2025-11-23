@@ -19,17 +19,21 @@ class SeaIce(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = ["sst",]
-        self._fields2export = ["ICEFRAC",]
+        self._fields2import = [
+            "sst",
+        ]
+        self._fields2export = [
+            "ICEFRAC",
+        ]
 
     def initialize(self, coupler: "Coupler") -> None:
         self._cdata["ICEFRAC"] = np.zeros(self.grid.shape)
 
     def step(
         self,
-        dt: Optional[timedelta] = None,
-        time: Optional[datetime] = None,
-        coupler: Optional["Coupler"] = None,
+        dt: timedelta,
+        time: datetime,
+        coupler: "Coupler",
     ) -> None:
         if dt is None:
             raise ValueError(

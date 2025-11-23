@@ -33,9 +33,9 @@ class Atmosphere(Component):
 
     def step(
         self,
-        dt: Optional[timedelta] = None,
-        time: Optional[datetime] = None,
-        coupler: Optional["Coupler"] = None,
+        dt: timedelta,
+        time: datetime,
+        coupler: "Coupler",
     ) -> None:
 
         if time is None:
