@@ -31,10 +31,6 @@ class Atmosphere(Component):
         self._cdata["u10m"] = zeros
         self._cdata["v10m"] = zeros
 
-        self.send_fields_for_export(
-            coupler.clock.start, coupler
-        )
-
     def step(
         self,
         dt: Optional[timedelta] = None,
@@ -52,8 +48,6 @@ class Atmosphere(Component):
             )
 
         # Bulk formula toy: flux proportional to (TA2M - sst)
-        self.receive_fields_from_import()
-
         sst = self._cdata.get("sst", None)
 
         if sst is None:
@@ -81,5 +75,3 @@ class Atmosphere(Component):
 
         # Relax TA2M toward sst weakly (toy boundary layer)
         self._cdata["TA2M"] = TA - 0.01 * dT
-
-        self.send_fields_for_export(time, coupler)

@@ -98,6 +98,10 @@ class Coupler:
         for name, component in self.components.items():
             component.initialize(self)
             component.check_not_empty_import_export_lists()
+            component.send_fields_for_export(
+                self.clock.start, self
+            )
+
             # component.send_fields_for_export(self.clock.start, self)
             self.logger.info(f" Initialized {name}")
 
@@ -231,6 +235,9 @@ class Coupler:
                 self._do_exchanges(time, self.components[cname], "pre")
 
                 self.logger.info(f" Run component: {cname}")
+
+                self.components[cname].receive_fields_from_import()
                 self.components[cname].step(dt, time, self)
+                self.components[cname].send_fields_for_export(time, self)
 
                 self._do_exchanges(time, self.components[cname], "post")
