@@ -12,18 +12,21 @@ if TYPE_CHECKING:
 
 
 class SeaIce(Component):
-    """Toy thermodynamic sea-ice: diagnostic concentration from SST.
+    """Toy thermodynamic sea-ice: diagnostic concentration from sst.
     Outputs: ICEFRAC [0..1]
-    Inputs: SST [K]
+    Inputs: sst [K]
     """
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
+        self._fields2import = ["sst",]
+        self._fields2export = ["ICEFRAC",]
 
     def initialize(self, coupler: "Coupler") -> None:
-        nlat, nlon = self.grid.shape
-        self.outgoing_fields.ICEFRAC = TNA(
-            np.zeros((nlat, nlon)), coupler.clock.start, self.name
+        self._cdata["ICEFRAC"] = np.zeros(self.grid.shape)
+
+        self.send_fields_for_export(
+            coupler.clock.start, coupler
         )
 
     def step(
@@ -36,12 +39,26 @@ class SeaIce(Component):
             raise ValueError(
                 f"A 'dt' instance is required to advance {self.__class__.__name__}."
             )
+        if time is None:
+            raise ValueError(
+                f"A 'time' instance is required to advance {self.__class__.__name__}."
+            )
+        if coupler is None:
+            raise ValueError(
+                f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
+            )
 
-        SST = self.incoming_fields.SST.data
-        if SST is None:
+        self.receive_fields_from_import()
+
+        sst = self._cdata.get("sst", None)
+        if sst is None:
             return
+
         Tfreeze = 273.15 - 1.8
         # Smooth step: more ice when colder than freezing
-        x = (Tfreeze - SST) / 2.0
+        x = (Tfreeze - sst) / 2.0
         ice = 1.0 / (1.0 + np.exp(-x))
-        self.outgoing_fields.ICEFRAC.data = ice
+
+        self._cdata["ICEFRAC"] = ice
+
+        self.send_fields_for_export(time, coupler)

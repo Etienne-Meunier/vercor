@@ -97,6 +97,8 @@ class Coupler:
         # Initialize components
         for name, component in self.components.items():
             component.initialize(self)
+            component.check_not_empty_import_export_lists()
+            # component.send_fields_for_export(self.clock.start, self)
             self.logger.info(f" Initialized {name}")
 
         # Build regridders per (source component, destination component) pair
@@ -190,7 +192,7 @@ class Coupler:
                 )
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
-        self.logger.info(" Finalizing coupler and components")
+        self.logger.info(" ------------ Finalizing coupler and components ------------")
         for name, component in self.components.items():
             component.finalize(output_file_mask)
             self.logger.info(f" Finalized {name}")

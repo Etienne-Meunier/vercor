@@ -10,6 +10,7 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
+from vercor.tools import get_field_at_specific_time
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -113,6 +114,10 @@ class Component(abc.ABC):
     grid: RectilinearGrid
     incoming_fields: Shared = field(default_factory=Shared)
     outgoing_fields: Shared = field(default_factory=Shared)
+    _cdata: Dict[str, NDArray] = field(default_factory=dict)
+    _fields2import: List[str] = field(default_factory=list)
+    _fields2export: List[str] = field(default_factory=list)
+    _settings: Dict[str, Any] = field(default_factory=dict)
     """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
 
     Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
@@ -126,6 +131,10 @@ class Component(abc.ABC):
         grid: component grid
         incoming_fields, outgoing_fields: shared fields from the current component
             received from another component(s)
+        _settings: component-specific settings
+        _fields2import: list of field names to import from other components
+        _fields2export: list of field names to export to other components
+        _cdata: internal storage for component data arrays
     """
 
     @abc.abstractmethod
@@ -150,6 +159,22 @@ class Component(abc.ABC):
         merged_fields = self.merge_incoming_outgoing_fields()
         write_shared_to_netcdf(merged_fields, self.grid, filepath)
 
+    def check_not_empty_import_export_lists(self) -> None:
+        if not self._fields2import:
+            raise ValueError(
+                f"Component '{self.name}' has no fields to import defined."
+            )
+        if not self._fields2export:
+            raise ValueError(
+                f"Component '{self.name}' has no fields to export defined."
+            )
+
+        all_fields = set(self._fields2import + self._fields2export)
+        if len(all_fields) < len(self._fields2import) + len(self._fields2export):
+            raise ValueError(
+                f"Component '{self.name}' has overlapping fields in import/export lists."
+            )
+
     def export_fields(self) -> Shared:
         # TODO: export only component related fields
         return self.outgoing_fields
@@ -159,6 +184,25 @@ class Component(abc.ABC):
         incoming_fields = fields.field_names
         for name in incoming_fields:
             setattr(self.incoming_fields, name, getattr(fields, name))
+
+    def receive_fields_from_import(self) -> None:
+        self._cdata.update(self.incoming_fields.fields())
+
+    def send_fields_for_export(
+        self, time: datetime, coupler: "Coupler"
+    ) -> None:
+        for field in self._fields2export:
+            if self._settings.get("apply_time_interpolation", False):
+                # for data models with monthly means
+                field2send = get_field_at_specific_time(field, self._cdata, coupler)
+            else:
+                field2send = self._cdata[field]
+
+            setattr(
+                self.outgoing_fields,
+                field,
+                TimedNamedArray(field2send, time, self.name),
+            )
 
     def get(self, field_name: str) -> NDArray:
         in_fields = self.incoming_fields.fields()
