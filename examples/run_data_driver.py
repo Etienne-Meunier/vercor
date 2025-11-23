@@ -39,7 +39,7 @@ if __name__ == "__main__":
         Exchange(
             source="ATM",
             destination="OCN",
-            field_names=[("ubot", "vbot"), "qbot", "zbot", "rbot", "thbot", "tbot"],
+            field_names=[("ubot", "vbot"), "qbot", "zbot", "rbot", "thbot", "tbot", "swr_net", "lwr_dw"],
             regridder_factory=bilinear,
             when="pre",
         )

@@ -85,7 +85,7 @@ if __name__ == "__main__":
         Exchange(
             source="ATM",
             destination="LND",
-            field_names=["LHF"],
+            field_names=["LHF", "SHF"],
             regridder_factory=bilinear,
             when="pre",
         )
