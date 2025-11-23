@@ -231,8 +231,7 @@ class Coupler:
                 self._do_exchanges(time, self.components[cname], "pre")
 
                 self.logger.info(f" Run component: {cname}")
-
-                self.components[cname].receive_fields()
+                self.components[cname].receive_fields(time)
                 self.components[cname].step(dt, time, self)
                 self.components[cname].send_fields(time, self)
 

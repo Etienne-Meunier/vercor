@@ -185,7 +185,22 @@ class Component(abc.ABC):
         for name in incoming_fields:
             setattr(self.incoming_fields, name, getattr(fields, name))
 
-    def receive_fields(self) -> None:
+    def receive_fields(self, time: datetime) -> None:
+        # check that all required fields are present
+        for field in self._fields2import:
+            if field not in self.incoming_fields.field_names:
+                raise KeyError(
+                    f"Field '{field}' required by component '{self.name}' not found in incoming fields."
+                )
+
+        # check if every imported field's timestamp matches the current time
+        for field in self._fields2import:
+            tna = getattr(self.incoming_fields, field)
+            if tna.timestamp != time:
+                raise ValueError(
+                    f"Receive field '{field}' timestamp {tna.timestamp} does not match current time {time} in component '{self.name}'."
+                )
+
         self._cdata.update(self.incoming_fields.fields())
 
     def send_fields(self, time: datetime, coupler: "Coupler") -> None:
