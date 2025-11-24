@@ -69,6 +69,7 @@ class ERA5Ocean(Component, ForcingData):
         self._fields2export = ["sst"]
 
         self.cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
+        self.cdata["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

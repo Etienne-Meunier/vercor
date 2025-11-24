@@ -153,6 +153,7 @@ class Coupler:
                     ) = regrid(
                         getattr(source_fields, field_name[0]).data,
                         getattr(source_fields, field_name[1]).data,
+                        src_mask=self.components[exchange.source].grid.binary_mask,
                     )
                     setattr(
                         destination_fields,
@@ -171,7 +172,10 @@ class Coupler:
                         )
 
                     # to pass mypy type checking
-                    scalar = np.asarray(regrid(getattr(source_fields, field_name).data))
+                    scalar = np.asarray(
+                        regrid(getattr(source_fields, field_name).data,
+                               src_mask=self.components[exchange.source].grid.binary_mask)
+                    )
 
                     setattr(
                         destination_fields,
@@ -228,7 +232,7 @@ class Coupler:
                 self.logger.info(f" Run component: {cname}")
                 self.components[cname].receive_fields(time)
 
-                # add sub-steps for individual components if needed
+                # TODO: add sub-steps for individual components if needed
                 self.components[cname].step(dt, time, self)
 
                 self.components[cname].send_fields(time, self)
