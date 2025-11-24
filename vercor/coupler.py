@@ -173,8 +173,10 @@ class Coupler:
 
                     # to pass mypy type checking
                     scalar = np.asarray(
-                        regrid(getattr(source_fields, field_name).data,
-                               src_mask=self.components[exchange.source].grid.binary_mask)
+                        regrid(
+                            getattr(source_fields, field_name).data,
+                            src_mask=self.components[exchange.source].grid.binary_mask,
+                        )
                     )
 
                     setattr(
