@@ -73,7 +73,7 @@ class ERAInterimOcean(Component, ForcingData):
             "sst",
         ]
 
-        self._cdata["sst"] = self._read_forcing("sst", where="model_level")
+        self.cdata["sst"] = self._read_forcing("sst", where="model_level")
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

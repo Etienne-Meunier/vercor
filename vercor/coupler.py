@@ -79,7 +79,7 @@ class Coupler:
         )
         self.logger.info(
             f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination}:"
-            f" Fields --- {formatted_field_names} --- Call order: {exchange.when}"
+            f" Fields ({formatted_field_names})"
         )
 
     def set_components_run_sequence(self, run_sequence: RunSequence) -> None:
@@ -114,19 +114,14 @@ class Coupler:
                     f" Regridder for exchange {exchange.name} already exists, skipping creation"
                 )
 
-    def _do_exchanges(
+    def interpolate_and_dispatch_fields(
         self,
         timestamp: datetime,
         component: Union[
             Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, ERAInterimOcean, SeaIce, Land
         ],
-        when: str,
     ) -> None:
         for exchange in self.exchanges:
-            # Exchange before or after component stepping
-            if exchange.when != when:
-                continue
-
             # Ensure exchange for currently stepping component only
             if exchange.destination != component.name:
                 continue
@@ -135,7 +130,7 @@ class Coupler:
             destination_component = self.components[exchange.destination]
 
             self.logger.info(
-                f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name} ({when})"
+                f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name}"
             )
 
             regrid = self._regridders[(exchange.source, exchange.destination)]
@@ -187,8 +182,8 @@ class Coupler:
             if not destination_fields.is_empty:
                 destination_component.import_fields(destination_fields)
                 self.logger.debug(
-                    f"{when.upper()} step: Exchanged {destination_fields.field_names} "
-                    f"from {exchange.source} to {exchange.destination}"
+                    f" Exchanged {destination_fields.field_names}"
+                    f" from {exchange.source} to {exchange.destination}"
                 )
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
@@ -228,11 +223,12 @@ class Coupler:
 
             # Step components in declared order
             for cname in self.run_sequence:
-                self._do_exchanges(time, self.components[cname], "pre")
+                self.interpolate_and_dispatch_fields(time, self.components[cname])
 
                 self.logger.info(f" Run component: {cname}")
                 self.components[cname].receive_fields(time)
-                self.components[cname].step(dt, time, self)
-                self.components[cname].send_fields(time, self)
 
-                self._do_exchanges(time, self.components[cname], "post")
+                # add sub-steps for individual components if needed
+                self.components[cname].step(dt, time, self)
+
+                self.components[cname].send_fields(time, self)

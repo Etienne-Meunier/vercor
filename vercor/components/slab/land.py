@@ -25,7 +25,7 @@ class Land(Component):
         ]
 
     def initialize(self, coupler: "Coupler") -> None:
-        self._cdata["SOILM"] = 0.3 * np.ones(self.grid.shape)
+        self.cdata["SOILM"] = 0.3 * np.ones(self.grid.shape)
 
     def step(
         self,
@@ -46,9 +46,9 @@ class Land(Component):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        LHF = self._cdata["LHF"]
-        soil = self._cdata["SOILM"]
+        LHF = self.cdata["LHF"]
+        soil = self.cdata["SOILM"]
 
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
-        self._cdata["SOILM"] = soil
+        self.cdata["SOILM"] = soil
