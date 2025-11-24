@@ -94,7 +94,7 @@ if __name__ == "__main__":
     longitude_source_2d, latitude_source_2d = np.meshgrid(
         lon_atm, lat_atm, indexing="ij"
     )
-    scalar_source = atm.get("zbot").T
+    scalar_source = atm.get("sst").T
     u_source = atm.get("ubot").T
     v_source = atm.get("vbot").T
 
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     longitude_target_2d, latitude_target_2d = np.meshgrid(
         lon_ocn, lat_ocn, indexing="ij"
     )
-    scalar_target = ocn.get("zbot").T
+    scalar_target = ocn.get("sst").T
     u_target = ocn.get("ubot").T
     v_target = ocn.get("vbot").T
 
