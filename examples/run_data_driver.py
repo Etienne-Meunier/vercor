@@ -50,7 +50,6 @@ if __name__ == "__main__":
                 "lwr_dw",
             ],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 
@@ -62,7 +61,6 @@ if __name__ == "__main__":
                 "sst",
             ],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 

@@ -12,7 +12,6 @@ class Exchange:
     name: str = field(init=False)
     field_names: List[Union[str, Tuple[str, str]]]
     regridder_factory: Callable[..., BilinearRectilinearRegridder]
-    when: str = "pre"
     """
     Exchange definition between two components
 
@@ -20,8 +19,6 @@ class Exchange:
         field_names: list of scalar field names and
                      tuples of vectors (u-component, v-component)
         regridder_factory: list of callables that return Regridder instances
-        when: specifies when to perform the exchange, i.e, 
-              before (pre) or after (post) component stepping
     """
 
     def __post_init__(self) -> None:
