@@ -68,7 +68,7 @@ class ERA5Ocean(Component, ForcingData):
         ]
         self._fields2export = ["sst"]
 
-        self._cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
+        self.cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

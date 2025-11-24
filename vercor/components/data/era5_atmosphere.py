@@ -79,58 +79,58 @@ class ERA5Atmosphere(Component, ForcingData):
             "lwr_dw",
         ]
 
-        self._cdata["hyai"] = self._read_forcing("hyai", where="model_level")[
+        self.cdata["hyai"] = self._read_forcing("hyai", where="model_level")[
             -3:
         ]  # L135-L137
-        self._cdata["hybi"] = self._read_forcing("hybi", where="model_level")[
+        self.cdata["hybi"] = self._read_forcing("hybi", where="model_level")[
             -3:
         ]  # L135-L137
-        self._cdata["hyam"] = self._read_forcing("hyam", where="model_level")[
+        self.cdata["hyam"] = self._read_forcing("hyam", where="model_level")[
             -2:
         ]  # L136-L137
-        self._cdata["hybm"] = self._read_forcing("hybm", where="model_level")[
+        self.cdata["hybm"] = self._read_forcing("hybm", where="model_level")[
             -2:
         ]  # L136-L137
 
         lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
-        self._cdata["surf_pressure"] = np.exp(lnsp)
-        self._cdata["specific_humidity"] = self._read_forcing(
+        self.cdata["surf_pressure"] = np.exp(lnsp)
+        self.cdata["specific_humidity"] = self._read_forcing(
             "q", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
-        self._cdata["temperature"] = self._read_forcing(
+        self.cdata["temperature"] = self._read_forcing(
             "t", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
 
-        self._cdata["ubot"] = self._read_forcing("u", where="model_level", flip_y=True)[
+        self.cdata["ubot"] = self._read_forcing("u", where="model_level", flip_y=True)[
             :, :, 1, :
         ]  # L136
-        self._cdata["vbot"] = self._read_forcing("v", where="model_level", flip_y=True)[
+        self.cdata["vbot"] = self._read_forcing("v", where="model_level", flip_y=True)[
             :, :, 1, :
         ]  # L136
 
         # tcc = self._read_forcing("tcc", where="surface", flip_y=True)
-        self._cdata["swr_net"] = self._read_forcing(
+        self.cdata["swr_net"] = self._read_forcing(
             "msnswrf", where="surface", flip_y=True
         )
-        self._cdata["lwr_dw"] = self._read_forcing(
+        self.cdata["lwr_dw"] = self._read_forcing(
             "msdwlwrf", where="surface", flip_y=True
         )
 
-        self._cdata["qbot"] = self._cdata["specific_humidity"][..., 0, :]  # L136
-        self._cdata["tbot"] = self._cdata["temperature"][..., 0, :]  # L136
+        self.cdata["qbot"] = self.cdata["specific_humidity"][..., 0, :]  # L136
+        self.cdata["tbot"] = self.cdata["temperature"][..., 0, :]  # L136
 
     def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
         settings = coupler.settings
-        ds = self._cdata
+        ds = self.cdata
 
-        self._cdata["zbot"] = np.zeros((nlon, nlat, 12))
-        self._cdata["rbot"] = np.zeros((nlon, nlat, 12))
-        self._cdata["thbot"] = np.zeros((nlon, nlat, 12))
+        self.cdata["zbot"] = np.zeros((nlon, nlat, 12))
+        self.cdata["rbot"] = np.zeros((nlon, nlat, 12))
+        self.cdata["thbot"] = np.zeros((nlon, nlat, 12))
 
         for m in range(12):
             ph = compute_pressure_levels(
@@ -139,7 +139,7 @@ class ERA5Atmosphere(Component, ForcingData):
             pf = compute_pressure_levels(
                 ds["surf_pressure"][..., m], ds["hyam"], ds["hybm"]
             )
-            self._cdata["zbot"][..., m] = compute_levels_altitudes(
+            self.cdata["zbot"][..., m] = compute_levels_altitudes(
                 settings,
                 ds["temperature"][..., m],
                 ds["specific_humidity"][..., m],
@@ -147,10 +147,10 @@ class ERA5Atmosphere(Component, ForcingData):
             )[
                 ..., 1
             ]  # L136
-            self._cdata["rbot"][..., m] = compute_air_density(
+            self.cdata["rbot"][..., m] = compute_air_density(
                 settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
-            self._cdata["thbot"][..., m] = compute_potential_temperature(
+            self.cdata["thbot"][..., m] = compute_potential_temperature(
                 settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
 

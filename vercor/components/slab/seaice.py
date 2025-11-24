@@ -27,7 +27,7 @@ class SeaIce(Component):
         ]
 
     def initialize(self, coupler: "Coupler") -> None:
-        self._cdata["ICEFRAC"] = np.zeros(self.grid.shape)
+        self.cdata["ICEFRAC"] = np.zeros(self.grid.shape)
 
     def step(
         self,
@@ -48,7 +48,7 @@ class SeaIce(Component):
                 f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
             )
 
-        sst = self._cdata.get("sst", None)
+        sst = self.cdata.get("sst", None)
         if sst is None:
             return
 
@@ -57,4 +57,4 @@ class SeaIce(Component):
         x = (Tfreeze - sst) / 2.0
         ice = 1.0 / (1.0 + np.exp(-x))
 
-        self._cdata["ICEFRAC"] = ice
+        self.cdata["ICEFRAC"] = ice

@@ -114,7 +114,7 @@ class Component(abc.ABC):
     grid: RectilinearGrid
     incoming_fields: Shared = field(default_factory=Shared)
     outgoing_fields: Shared = field(default_factory=Shared)
-    _cdata: Dict[str, NDArray] = field(default_factory=dict)
+    cdata: Dict[str, NDArray] = field(default_factory=dict)
     _fields2import: List[str] = field(default_factory=list)
     _fields2export: List[str] = field(default_factory=list)
     _settings: Dict[str, Any] = field(default_factory=dict)
@@ -134,7 +134,7 @@ class Component(abc.ABC):
         _settings: component-specific settings
         _fields2import: list of field names to import from other components
         _fields2export: list of field names to export to other components
-        _cdata: internal storage for component data arrays
+        cdata: internal storage for component data arrays
     """
 
     @abc.abstractmethod
@@ -201,15 +201,15 @@ class Component(abc.ABC):
                     f"Receive field '{field}' timestamp {tna.timestamp} does not match current time {time} in component '{self.name}'."
                 )
 
-        self._cdata.update(self.incoming_fields.fields())
+        self.cdata.update(self.incoming_fields.fields())
 
     def send_fields(self, time: datetime, coupler: "Coupler") -> None:
         for field in self._fields2export:
             if self._settings.get("apply_time_interpolation", False):
                 # for data models with monthly means
-                field2send = get_field_at_specific_time(field, self._cdata, coupler)
+                field2send = get_field_at_specific_time(field, self.cdata, coupler)
             else:
-                field2send = self._cdata[field]
+                field2send = self.cdata[field]
 
             setattr(
                 self.outgoing_fields,
