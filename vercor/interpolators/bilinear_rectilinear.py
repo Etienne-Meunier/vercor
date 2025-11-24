@@ -223,7 +223,7 @@ class BilinearRectilinearInterpolator:
         tgt_mask: NDArray | None = None,
         periodic_longitude: bool = True,
         nan_renorm: bool = True,
-        extrapolation_mode: str | None = "idw",  # 'nearest' | 'idw'
+        extrapolation_mode: str | None = None,  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,
         fill_value: float = np.nan,

@@ -47,7 +47,6 @@ if __name__ == "__main__":
             destination="OCN",
             field_names=[("u10m", "v10m"), "SHF", "LHF"],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 
@@ -57,7 +56,6 @@ if __name__ == "__main__":
             destination="ATM",
             field_names=["sst"],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 
@@ -67,7 +65,6 @@ if __name__ == "__main__":
             destination="ICE",
             field_names=["sst"],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 
@@ -77,7 +74,6 @@ if __name__ == "__main__":
             destination="ATM",
             field_names=["SOILM"],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 
@@ -87,7 +83,6 @@ if __name__ == "__main__":
             destination="LND",
             field_names=["LHF", "SHF"],
             regridder_factory=bilinear,
-            when="pre",
         )
     )
 
