@@ -36,6 +36,12 @@ class TimedNamedArray:
             f"└── Timestamp: {self.timestamp!r}"
         )
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(component_name={self.component_name!r}, "
+            f"shape={self.data.shape}, timestamp={self.timestamp!r})"
+        )
+
 
 @dataclass
 class Shared:
@@ -89,6 +95,12 @@ class Shared:
             f"{self.__class__.__name__}:\n"
             f"└── Fields: {field_descriptions if field_descriptions else 'No fields assigned'}"
         )
+
+    def __repr__(self) -> str:
+        field_reprs = ", ".join(
+            f"{name}={repr(value)}" for name, value in self._fields.items()
+        )
+        return f"{self.__class__.__name__}({field_reprs})"
 
     @property
     def is_empty(self) -> bool:
@@ -266,6 +278,9 @@ class Component(abc.ABC):
             f"     └── Shape: {self.grid.shape}\n"
         )
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)}, incoming_fields={repr(self.incoming_fields)}, outgoing_fields={repr(self.outgoing_fields)})"
+
 
 class ForcingData:
     def __init__(self):
@@ -298,6 +313,15 @@ class ForcingData:
             raise RuntimeError(
                 f"Error reading variable '{variable}' from forcing file '{self.DATA_FILES[where]}'"
             ) from e
+
+    def __str__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"└── Forcing files: {self.DATA_FILES if self.DATA_FILES else 'No files assigned'}"
+        )
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(DATA_FILES={self.DATA_FILES})"
 
 
 def write_shared_to_netcdf(

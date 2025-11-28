@@ -62,3 +62,6 @@ class Regridder:
             f"\n      ├──Grid type: {self.destination_grid.__class__.__name__} ({self.destination_grid.name})"
             f"\n      └──Grid shape: {self.destination_grid.shape}"
         )
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(source_grid={repr(self.source_grid)}, destination_grid={repr(self.destination_grid)})"

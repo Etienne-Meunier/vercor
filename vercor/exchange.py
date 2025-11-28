@@ -32,6 +32,12 @@ class Exchange:
             f"└── Destination component: {self.destination}\n"
         )
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(name={self.name}, source={self.source},"
+            f" destination={self.destination}, fields={self.field_names})"
+        )
+
     def create(
         self,
         source_grid: Grid,
