@@ -212,6 +212,9 @@ class Coupler:
             f"└── Run sequence: {', '.join(self.run_sequence)}"
         )
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={'-> '.join(self.run_sequence)})"
+
     def run(self) -> None:
         # TODO: add setup checks like time step consistency,
         # component's readiness (outgoing fields), etc.

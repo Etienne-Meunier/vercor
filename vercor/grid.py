@@ -32,6 +32,9 @@ class Grid(abc.ABC):
             f"└── Fraction mask: {'Provided' if self.fraction_mask is not None else 'Not provided'}\n"
         )
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self.name}, shape={self.shape})"
+
 
 class RectilinearGrid(Grid):
     def __init__(
