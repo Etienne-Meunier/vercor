@@ -144,8 +144,8 @@ class Component(abc.ABC):
         incoming_fields, outgoing_fields: shared fields from the current component
             received from another component(s)
         _settings: component-specific settings
-        _fields2import: list of field names to import from other components
-        _fields2export: list of field names to export to other components
+        _fields2import: list of field names to import from other components to cdata
+        _fields2export: list of field names to export to other components from cdata
         cdata: internal storage for component data arrays
     """
 
