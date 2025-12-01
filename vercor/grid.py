@@ -42,6 +42,8 @@ class RectilinearGrid(Grid):
         name: str,
         longitude: NDArray,
         latitude: NDArray,
+        longitude_edges: Optional[NDArray] = None,
+        latitude_edges: Optional[NDArray] = None,
         binary_mask: Optional[NDArray] = None,
         fraction_mask: Optional[NDArray] = None,
     ) -> None:
@@ -50,6 +52,8 @@ class RectilinearGrid(Grid):
         )
         self.longitude = longitude
         self.latitude = latitude
+        self.longitude_edges = longitude_edges
+        self.latitude_edges = latitude_edges
 
         if self.longitude.ndim != 1 or self.latitude.ndim != 1:
             raise ValueError(

@@ -270,6 +270,8 @@ class BilinearRectilinearInterpolator:
         self.lat_src_deg = lat_src_deg
         self.lon_src_rad = np.deg2rad(lon_src_deg)
         self.lat_src_rad = np.deg2rad(lat_src_deg)
+        self.nx_source = int(self.lon_src_deg.size)
+        self.ny_source = int(self.lat_src_deg.size)
 
         # Target grid (any shape)
         lon_tgt = np.asarray(lon_tgt, dtype=float)
@@ -281,6 +283,13 @@ class BilinearRectilinearInterpolator:
         self.lat_tgt_deg = np.broadcast_to(lat_tgt_deg, self.tshape).copy()
         self.lon_tgt_rad = np.deg2rad(self.lon_tgt_deg)
         self.lat_tgt_rad = np.deg2rad(self.lat_tgt_deg)
+
+        # Source mask
+        self.src_mask: NDArray = np.ones((self.ny_source, self.nx_source), dtype=bool)
+        if src_mask is not None:
+            self.src_mask = np.broadcast_to(
+                np.asarray(src_mask, bool), (self.ny_source, self.nx_source)
+            )
 
         # Target mask
         if tgt_mask is None:
@@ -487,9 +496,7 @@ class BilinearRectilinearInterpolator:
             result[...] = np.asarray(src_mask, dtype=bool) & np.isfinite(src)
         return result
 
-    def _apply_bilinear_scalar(
-        self, src: NDArray, src_mask: NDArray | None
-    ) -> tuple[NDArray, NDArray]:
+    def _apply_bilinear_scalar(self, src: NDArray) -> tuple[NDArray, NDArray]:
         r"""Core bilinear (with optional NaN/mask renormalization).
 
         Mathematics:
@@ -543,7 +550,7 @@ class BilinearRectilinearInterpolator:
             raise ValueError(
                 f"src field must have shape (nlat,nlon)=({self.nlat},{self.nlon})"
             )
-        valid = self._ensure_src_mask(src, src_mask)
+        valid = self._ensure_src_mask(src, self.src_mask)
 
         # Gather corners
         v00 = src[self.j0, self.i0]
@@ -581,7 +588,7 @@ class BilinearRectilinearInterpolator:
             return out, wsum
 
     def _extrapolate_scalar(
-        self, src: NDArray, src_mask: NDArray | None, where_nan: NDArray
+        self, src: NDArray, src_mask: NDArray, where_nan: NDArray
     ) -> NDArray:
         r"""Extrapolate scalar to positions where_nan (boolean mask in target shape).
 
@@ -708,32 +715,28 @@ class BilinearRectilinearInterpolator:
 
     # --------------------------- Public API --------------------------- #
 
-    def apply_scalar(self, src: NDArray, src_mask: NDArray | None = None) -> NDArray:
+    def apply_scalar(self, src: NDArray) -> NDArray:
         """Interpolate a scalar field defined on the source grid to the target grid.
 
         Arguments:
             src (ndarray(NY, NX)): Source scalar field.
-            src_mask (ndarray(NY, NX), optional):
-                True where source is valid. If None, validity = isfinite(src).
 
         Returns:
             (ndarray): target-shaped float array
         """
 
-        out, wsum = self._apply_bilinear_scalar(src, src_mask)
+        out, wsum = self._apply_bilinear_scalar(src)
         # Extrapolate where bilinear had no valid corners
         need = ~np.isfinite(out)
         if np.any(need):
-            ext = self._extrapolate_scalar(np.asarray(src, float), src_mask, need)
+            ext = self._extrapolate_scalar(np.asarray(src, float), self.src_mask, need)
             out = np.where(need, ext, out)
 
         # Apply target mask and fill value
         out = np.where(self.tgt_mask, out, self.fill_value)
         return out.reshape(self.tshape)
 
-    def apply_vector(
-        self, u_src: NDArray, v_src: NDArray, src_mask: NDArray | None = None
-    ) -> tuple[NDArray, NDArray]:
+    def apply_vector(self, u_src: NDArray, v_src: NDArray) -> tuple[NDArray, NDArray]:
         r"""Interpolate a vector field (u,v) in east/north components.
 
         Steps:
@@ -769,7 +772,6 @@ class BilinearRectilinearInterpolator:
         Arguments:
             u_src (ndarray(NY, NX)): Eastward components on source grid.
             v_src (ndarray(NY, NX)): Northward components on source grid.
-            src_mask (ndarray(NY, NX), optional): True where vector is valid. If None, validity = isfinite(u) & isfinite(v).
 
         Returns:
             tuple (ndarray, ndarray): target-shaped arrays
@@ -785,11 +787,11 @@ class BilinearRectilinearInterpolator:
                 f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon}), provided {u_src.shape}, {v_src.shape}"
             )
 
-        if src_mask is None:
+        if self.src_mask is None:
             valid = np.isfinite(u_src) & np.isfinite(v_src)
         else:
             valid = (
-                np.asarray(src_mask, dtype=bool)
+                np.asarray(self.src_mask, dtype=bool)
                 & np.isfinite(u_src)
                 & np.isfinite(v_src)
             )

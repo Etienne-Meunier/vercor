@@ -16,6 +16,7 @@ from vercor.components.data.era5_ocean import ERA5Ocean
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.exchange import Exchange
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
+from vercor.regridders.conservative import ConservativeRectilinearRegridder
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 
@@ -45,7 +46,7 @@ class Coupler:
     settings: VercorSettings = field(default_factory=VercorSettings)
     _regridders: Dict[
         Tuple[str, str],
-        BilinearRectilinearRegridder,
+        BilinearRectilinearRegridder | ConservativeRectilinearRegridder,
     ] = field(default_factory=dict)
     """
     Main coupler class to manage components and exchanges between them.
@@ -153,7 +154,6 @@ class Coupler:
                     ) = regrid(
                         getattr(source_fields, field_name[0]).data,
                         getattr(source_fields, field_name[1]).data,
-                        src_mask=self.components[exchange.source].grid.binary_mask,
                     )
                     setattr(
                         destination_fields,
@@ -172,12 +172,7 @@ class Coupler:
                         )
 
                     # to pass mypy type checking
-                    scalar = np.asarray(
-                        regrid(
-                            getattr(source_fields, field_name).data,
-                            src_mask=self.components[exchange.source].grid.binary_mask,
-                        )
-                    )
+                    scalar = np.asarray(regrid(getattr(source_fields, field_name).data))
 
                     setattr(
                         destination_fields,

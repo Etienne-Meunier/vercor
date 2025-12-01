@@ -14,7 +14,7 @@ class BilinearRectilinearRegridder(Regridder):
         source_grid: RectilinearGrid,
         destination_grid: RectilinearGrid,
         periodic_longitude: bool = True,
-        nan_renorm: bool = True,
+        nan_renorm: bool = False,
         extrapolation_mode: str | None = None,  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,
@@ -41,17 +41,11 @@ class BilinearRectilinearRegridder(Regridder):
     def __call__(
         self,
         *args: NDArray,
-        src_mask: Optional[NDArray] = None,
     ) -> Union[NDArray, Tuple[NDArray, NDArray]]:
         """
-        Call with positional args for fields and optional src_mask as a keyword-only arg.
-
         Supported calls:
-          - apply(scalar_src, src_mask=...) -> scalar interpolation
-          - apply(u_src, v_src, src_mask=...) -> vector interpolation
-
-        src_mask must be provided as a keyword argument. Passing a mask as a positional
-        second argument is not allowed and will raise a TypeError to avoid ambiguity.
+          - apply(scalar_src) -> scalar interpolation
+          - apply(u_src, v_src) -> vector interpolation
         """
 
         self._ensure_ready(args)
@@ -67,4 +61,4 @@ class BilinearRectilinearRegridder(Regridder):
             2: self._apply_vector,
         }
 
-        return handlers[len(args)](*args, src_mask=src_mask)
+        return handlers[len(args)](*args)

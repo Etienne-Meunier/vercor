@@ -14,7 +14,7 @@ if __name__ == "__main__":
     ocn = ERAInterimOcean("OCN")
 
     # Clock and sequence
-    clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=2)
+    clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
     run_sequence = RunSequence(order=["OCN", "ATM"])
 
     # Coupler
