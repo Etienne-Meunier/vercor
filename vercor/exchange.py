@@ -3,6 +3,7 @@ from typing import Callable, List, Tuple, Union
 
 from vercor.grid import Grid
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
+from vercor.regridders.conservative import ConservativeRectilinearRegridder
 
 
 @dataclass
@@ -11,7 +12,9 @@ class Exchange:
     destination: str
     name: str = field(init=False)
     field_names: List[Union[str, Tuple[str, str]]]
-    regridder_factory: Callable[..., BilinearRectilinearRegridder]
+    regridder_factory: Callable[
+        ..., BilinearRectilinearRegridder | ConservativeRectilinearRegridder
+    ]
     """
     Exchange definition between two components
 
@@ -42,5 +45,5 @@ class Exchange:
         self,
         source_grid: Grid,
         destination_grid: Grid,
-    ) -> BilinearRectilinearRegridder:
+    ) -> BilinearRectilinearRegridder | ConservativeRectilinearRegridder:
         return self.regridder_factory(source_grid, destination_grid)

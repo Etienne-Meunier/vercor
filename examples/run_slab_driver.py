@@ -4,14 +4,18 @@ from typing import List
 from vercor import Clock, Coupler, Exchange
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
 from vercor.coupler import RunSequence
-from vercor.regridders import BilinearRectilinearRegridder, make_rectilinear_grid
+from vercor.regridders import (
+    BilinearRectilinearRegridder,
+    ConservativeRectilinearRegridder,
+    make_rectilinear_grid,
+)
 
 if __name__ == "__main__":
     # Build grids
     atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
-    ocn_grid = make_rectilinear_grid("ocn-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
-    ice_grid = make_rectilinear_grid("ice-grid", 64, 32, 0.0, 360.0, -80.0, 80.0)
-    lnd_grid = make_rectilinear_grid("lnd-grid", 96, 48, 0.0, 360.0, -60.0, 60.0)
+    ocn_grid = make_rectilinear_grid("ocn-grid", 64, 32, 0.0, 360.0, -80.0, 90.0)
+    ice_grid = make_rectilinear_grid("ice-grid", 64, 32, 0.0, 360.0, -90.0, 90.0)
+    lnd_grid = make_rectilinear_grid("lnd-grid", 96, 48, 0.0, 360.0, -90.0, 90.0)
 
     # Build components
     atm = Atmosphere("ATM", atm_grid)
@@ -36,6 +40,11 @@ if __name__ == "__main__":
     # to different interpolators' args & kwargs
     bilinear = lambda source_grid, destination_grid: BilinearRectilinearRegridder(
         source_grid, destination_grid
+    )
+    conservative = (
+        lambda source_grid, destination_grid: ConservativeRectilinearRegridder(
+            source_grid, destination_grid
+        )
     )
 
     # Exchanges
@@ -82,7 +91,7 @@ if __name__ == "__main__":
             source="ATM",
             destination="LND",
             field_names=["LHF", "SHF"],
-            regridder_factory=bilinear,
+            regridder_factory=conservative,
         )
     )
 
@@ -91,10 +100,13 @@ if __name__ == "__main__":
     cpl.finalize()
 
     # Inspect a few fields
-    print("sst mean:", ocn.get("sst").mean())
+    print("sst(OCN) mean:", ocn.get("sst").mean())
+    print("sst(ATM) mean:", atm.get("sst").mean())
     print("TA2M mean:", atm.get("TA2M").mean())
     print("u10m mean:", atm.get("u10m").mean())
     print("v10m mean:", atm.get("v10m").mean())
     print("SOILM(LND) mean:", lnd.get("SOILM").mean())
     print("SOILM(ATM) mean:", atm.get("SOILM").mean())
     print("ICEFRAC mean:", ice.get("ICEFRAC").mean())
+    print("SHF(ATM) mean:", atm.get("SHF").mean())
+    print("SHF(LND) mean:", lnd.get("SHF").mean())

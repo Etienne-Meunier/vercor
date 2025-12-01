@@ -1,10 +1,13 @@
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor.interpolators.conservative_remap_rectilinear import (
+    ConservativeRectilinearRemapper,
+)
 
 
 class Regridder:
@@ -13,7 +16,9 @@ class Regridder:
     ) -> None:
         self.source_grid = source_grid
         self.destination_grid = destination_grid
-        self.interpolator: Optional[BilinearRectilinearInterpolator] = None
+        self.interpolator: Union[
+            BilinearRectilinearInterpolator, ConservativeRectilinearRemapper, None
+        ] = None
 
     @property
     def has_identical_grids(self) -> bool:
@@ -34,22 +39,16 @@ class Regridder:
         if len(args) not in (1, 2):
             raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
 
-    def _apply_scalar(
-        self, args: NDArray, src_mask: Optional[NDArray] = None
-    ) -> NDArray:
+    def _apply_scalar(self, args: NDArray) -> NDArray:
         """A wrapper to call scalar interpolation."""
         assert self.interpolator is not None
-        result: NDArray = self.interpolator.apply_scalar(args, src_mask=src_mask)
+        result: NDArray = self.interpolator.apply_scalar(args)
         return result
 
-    def _apply_vector(
-        self, v0: NDArray, v1: NDArray, src_mask: Optional[NDArray] = None
-    ) -> Tuple[NDArray, NDArray]:
+    def _apply_vector(self, v0: NDArray, v1: NDArray) -> Tuple[NDArray, NDArray]:
         """A wrapper to call vector interpolation."""
         assert self.interpolator is not None
-        result: Tuple[NDArray, NDArray] = self.interpolator.apply_vector(
-            v0, v1, src_mask=src_mask
-        )
+        result: Tuple[NDArray, NDArray] = self.interpolator.apply_vector(v0, v1)
         return result
 
     def __str__(self) -> str:
