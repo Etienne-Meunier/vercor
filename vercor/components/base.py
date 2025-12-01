@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import h5netcdf
 import numpy as np
+import xarray as xr
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
