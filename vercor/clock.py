@@ -10,6 +10,12 @@ class Clock:
     steps: int
 
     def iter(self) -> Iterator[Tuple[int, datetime, timedelta]]:
+        """
+        Iterator over simulation time steps.
+
+        Yields:
+            Tuple of (step index, current time, time delta)
+        """
         time = self.start
         dt = timedelta(seconds=self.dt_seconds)
         for n in range(self.steps):

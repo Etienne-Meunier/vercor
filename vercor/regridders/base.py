@@ -1,4 +1,4 @@
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Tuple, Union
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,6 +22,8 @@ class Regridder:
 
     @property
     def has_identical_grids(self) -> bool:
+        """Check if source and destination grids are identical in shape and coordinates."""
+
         source = self.source_grid
         destination = self.destination_grid
 
@@ -34,6 +36,11 @@ class Regridder:
         return shape_condition and coord_condition
 
     def _ensure_ready(self, args: Tuple[Any, ...]) -> None:
+        """
+        Ensure that the Regridder is properly set up before applying interpolation.
+        Checks if the interpolator is initialized and if the correct number of arguments
+        are provided (either one for scalar fields or two for vector fields)."""
+
         if self.interpolator is None:
             raise ValueError("Regridder not properly set up")
         if len(args) not in (1, 2):

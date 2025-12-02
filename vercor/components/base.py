@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class TimedNamedArray:
-    """Container for a field (array), its timestamp, and its component name."""
+    """Container class for a field (array), its timestamp, and its component name."""
 
     data: np.ndarray
     timestamp: datetime
@@ -104,19 +104,24 @@ class Shared:
 
     @property
     def is_empty(self) -> bool:
+        """Check if the Shared object has no fields."""
         return len(self._fields) == 0
 
     @property
     def field_names(self) -> List[str]:
+        """Return a list of all field names in the Shared object."""
         return list(self._fields.keys())
 
     def fields(self) -> Dict[str, NDArray]:
+        """Return a dictionary of all fields' data arrays."""
         return {k: v.data for k, v in self._fields.items()}
 
     def timestamps(self) -> Dict[str, datetime]:
+        """Return a dictionary of all fields' timestamps."""
         return {k: v.timestamp for k, v in self._fields.items()}
 
     def component_names(self) -> Dict[str, str]:
+        """Return a dictionary of all fields' component names."""
         return {k: v.component_name for k, v in self._fields.items()}
 
 
@@ -141,12 +146,15 @@ class Component(abc.ABC):
     Attributes:
         name: component name
         grid: component grid
-        incoming_fields, outgoing_fields: shared fields from the current component
-            received from another component(s)
+        incoming_fields: shared fields received by the current component
+                         from another component(s) 
+        outgoing_fields: shared fields to be sent from the current component
+                         to another component(s)
+        cdata: internal storage for component data arrays to/from which fields
+                        are imported/exported
         _settings: component-specific settings
         _fields2import: list of field names to import from other components to cdata
         _fields2export: list of field names to export to other components from cdata
-        cdata: internal storage for component data arrays
     """
 
     @abc.abstractmethod
@@ -163,6 +171,13 @@ class Component(abc.ABC):
         raise NotImplementedError
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
+        """Finalize the component by writing its all shared fields (incoming and outgoing)
+        to a netCDF file.
+
+        Arguments:
+            output_file_mask: optional mask to include in the output filename
+        """
+
         if output_file_mask is None:
             filepath = Path(f"{self.name.lower()}_shared.nc")
         else:
@@ -172,6 +187,10 @@ class Component(abc.ABC):
         write_shared_to_netcdf(merged_fields, self.grid, filepath)
 
     def check_not_empty_import_export_lists(self) -> None:
+        """Check that the component has non-empty and non-overlapping
+        import and export fields.
+        """
+
         if not self._fields2import:
             raise ValueError(
                 f"Component '{self.name}' has no fields to import defined."
@@ -188,16 +207,34 @@ class Component(abc.ABC):
             )
 
     def export_fields(self) -> Shared:
+        """
+        Prepare and deposit/return the outgoing_fields to be sent to another component(s).
+        """
         # TODO: export only component related fields
         return self.outgoing_fields
 
     def import_fields(self, fields: Shared) -> None:
+        """
+        Import fields received from another component(s) into receptor/incoming_fields.
+
+        Arguments:
+            fields: Shared object containing fields to import from another component
+        """
         # TODO: import only component related fields
+
         incoming_fields = fields.field_names
         for name in incoming_fields:
             setattr(self.incoming_fields, name, getattr(fields, name))
 
     def receive_fields(self, time: datetime) -> None:
+        """
+        Receive interpolated fields from receptor/incoming_fields (from another component(s))
+        and store them in cdata.
+
+        Arguments:
+            time: current simulation (coupler's) time
+        """
+
         # check that all required fields are present
         for field in self._fields2import:
             if field not in self.incoming_fields.field_names:
@@ -216,6 +253,15 @@ class Component(abc.ABC):
         self.cdata.update(self.incoming_fields.fields())
 
     def send_fields(self, time: datetime, coupler: "Coupler") -> None:
+        """
+        Prepare fields from cdata to be deposited to outgoing_fields,
+        to be later sent to another component(s).
+
+        Arguments:
+            time: current simulation (coupler's) time
+            coupler: Coupler instance for possible time interpolation
+        """
+
         for field in self._fields2export:
             if self._settings.get("apply_time_interpolation", False):
                 # for data models with monthly means
@@ -230,6 +276,14 @@ class Component(abc.ABC):
             )
 
     def get(self, field_name: str) -> NDArray:
+        """
+        Returns the data array of the specified field from either
+        incoming_fields or outgoing_fields.
+
+        Arguments:
+            field_name (str): name of the field to retrieve
+        """
+
         in_fields = self.incoming_fields.fields()
         out_fields = self.outgoing_fields.fields()
         in_fieldnames = in_fields.keys()
@@ -251,6 +305,10 @@ class Component(abc.ABC):
         )
 
     def merge_incoming_outgoing_fields(self) -> Shared:
+        """
+        Merge incoming_fields and outgoing_fields into a single Shared object for further output.
+        """
+
         output_fields = Shared()
 
         for name, tna in self.incoming_fields._fields.items():
@@ -279,7 +337,10 @@ class Component(abc.ABC):
         )
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)}, incoming_fields={repr(self.incoming_fields)}, outgoing_fields={repr(self.outgoing_fields)})"
+        return (
+            f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)},"
+            f" incoming_fields={repr(self.incoming_fields)}, outgoing_fields={repr(self.outgoing_fields)})"
+        )
 
 
 class ForcingData:
@@ -327,6 +388,13 @@ class ForcingData:
 def write_shared_to_netcdf(
     shared: Shared, grid: RectilinearGrid, filename: Path
 ) -> None:
+    """Write the contents of a Shared object to a netCDF file.
+    Arguments:
+        shared: Shared object containing fields to write
+        grid: Grid object defining the grid
+        filename: path to the output netCDF file
+    """
+
     lat = xr.DataArray(grid.latitude, dims=("nlat",), name="latitude")
     lon = xr.DataArray(grid.longitude, dims=("nlon",), name="longitude")
 

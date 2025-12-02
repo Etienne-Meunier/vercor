@@ -14,7 +14,22 @@ def make_rectilinear_grid(
     latitude_end: float,
     mask=None,
 ) -> RectilinearGrid:
-    """Helper to build rectilinear grid"""
+    """
+    Helper to build rectilinear grid with equally spaced coordinates.
+
+    Arguments:
+        name: grid name
+        nlon: number of longitude points
+        nlat: number of latitude points
+        longitude_start: starting longitude value (degrees)
+        longitude_end: ending longitude value (degrees)
+        latitude_start: starting latitude value (degrees)
+        latitude_end: ending latitude value (degrees)
+        mask: optional binary mask (2D array with shape (nlat, nlon))
+
+    Returns:
+        RectilinearGrid instance
+    """
 
     longitude = np.linspace(longitude_start, longitude_end, nlon, dtype=float)
     latitude = np.linspace(latitude_start, latitude_end, nlat, dtype=float)
@@ -24,13 +39,20 @@ def make_rectilinear_grid(
     )
 
 
-def centers_to_bounds(centers: NDArray, kind: str = "lat") -> NDArray:
+def centers_to_edges(centers: NDArray, kind: str = "lat") -> NDArray:
     """
     Convert grid centers to grid boundaries (edges).
     Smartly handles clamping:
     - Latitude: Always clamped to [-90, 90].
-    - Longitude: Clamped only if bounds exceed 360-degree span (redundancy).
+    - Longitude: Clamped only if edges exceed 360-degree span (redundancy).
     Otherwise preserves wrapping edges (e.g. -182.5) for periodicity.
+
+    Arguments:
+        centers: 1D array of grid cell centers
+        kind: 'lat' for latitude edges, 'lon' for longitude edges
+
+    Returns:
+        1D array of grid cell edges
     """
     centers = np.asarray(centers, dtype=np.float64)
 
@@ -42,25 +64,25 @@ def centers_to_bounds(centers: NDArray, kind: str = "lat") -> NDArray:
     d_start = inner_edges[0] - centers[0]
     d_end = centers[-1] - inner_edges[-1]
 
-    bound_start = centers[0] - d_start
-    bound_end = centers[-1] + d_end
+    edge_start = centers[0] - d_start
+    edge_end = centers[-1] + d_end
 
-    bounds: NDArray = np.concatenate(([bound_start], inner_edges, [bound_end]))
+    edges: NDArray = np.concatenate(([edge_start], inner_edges, [edge_end]))
 
     if kind == "lat":
         # Latitude must strictly be within physical poles
-        bounds = np.clip(bounds, -90.0, 90.0)
+        edges = np.clip(edges, -90.0, 90.0)
     elif kind == "lon":
         # Check total span
-        span = bounds[-1] - bounds[0]
+        span = edges[-1] - edges[0]
 
         # Only clamp if the grid defines REDUNDANT coverage (e.g. 0 to 360 centers -> 370 span)
         # If span is ~360, it's a periodic grid; we keep the 'overhanging' edges
         # (e.g. -182.5) so they can wrap around to 177.5 in the overlap check.
         if span > 360.0 + 1e-10:
-            if np.min(bounds) < -5.0:
-                bounds = np.clip(bounds, -180.0, 180.0)
+            if np.min(edges) < -5.0:
+                edges = np.clip(edges, -180.0, 180.0)
             else:
-                bounds = np.clip(bounds, 0.0, 360.0)
+                edges = np.clip(edges, 0.0, 360.0)
 
-    return bounds
+    return edges

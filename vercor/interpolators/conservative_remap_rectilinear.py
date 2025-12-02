@@ -92,6 +92,8 @@ class ConservativeRectilinearRemapper:
         self.weights *= self.radius**2
 
     def _standardize_lat(self, bounds: NDArray) -> tuple[NDArray, bool]:
+        """Ensure latitude bounds are monotonically increasing."""
+
         b = np.array(bounds, dtype=np.float64)
         is_flipped = False
 
@@ -187,6 +189,8 @@ class ConservativeRectilinearRemapper:
         return areas
 
     def apply_scalar(self, field: NDArray) -> NDArray:
+        """Apply conservative remapping to a scalar field."""
+
         if field.shape != (self.n_src_lat, self.n_src_lon):
             raise ValueError(
                 f"Shape mismatch: {field.shape} vs grid ({self.n_src_lat}, {self.n_src_lon})"
@@ -230,11 +234,15 @@ class ConservativeRectilinearRemapper:
         raise RuntimeError("Conservative remapping for vectors not implemented.")
 
     def get_src_total_mass(self, field_on_src: NDArray) -> float:
+        """Calculate total mass on source grid given field values."""
+
         src_areas: NDArray = self.get_src_areas()
         result: float = np.nansum(field_on_src * src_areas)
         return result
 
     def get_dst_total_mass(self, field_on_dst: NDArray) -> float:
+        """Calculate total mass on destination grid given field values."""
+
         clean_areas: NDArray = np.where(np.isinf(self.dst_areas), 0.0, self.dst_areas)
         result: float = np.nansum(field_on_dst.flatten() * clean_areas)
         return result

@@ -22,6 +22,9 @@ from vercor.settings import VercorSettings
 
 
 def setup_logger():
+    """
+    Setup and return a logger for the Coupler.
+    """
     logger = logging.getLogger("VerCOR")
     logging.basicConfig(
         level=logging.INFO,
@@ -52,10 +55,12 @@ class Coupler:
     Main coupler class to manage components and exchanges between them.
 
     Attributes:
+        clock: Clock instance for managing simulation time
         logger: Logger instance for coupler logging
         run_sequence: sequence of component names defining the call (step) order
         components: mapping of component name to component instance
         exchanges: list of all Exchange instances
+        settings: VercorSettings instance for coupler settings
         _regridders: mapping of (source component name, destination component name)
                      to Regridder instance (a pool of all available regridders)
     """
@@ -66,6 +71,13 @@ class Coupler:
             Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, ERAInterimOcean, SeaIce, Land
         ],
     ) -> None:
+        """
+        Register a component with the coupler.
+
+        Arguments:
+            component: component instance to register
+        """
+
         if component.name in self.components:
             raise KeyError(f"Component {component.name} already registered")
 
@@ -73,6 +85,13 @@ class Coupler:
         self.logger.info(f" Registered component {component.name}")
 
     def add_exchange(self, exchange: Exchange) -> None:
+        """
+        Add an exchange definition to the coupler.
+
+        Arguments:
+            exchange: Exchange instance defining the exchange between components to add
+        """
+
         self.exchanges.append(exchange)
         formatted_field_names = ", ".join(
             ", ".join(item) if isinstance(item, tuple) else item
@@ -84,6 +103,13 @@ class Coupler:
         )
 
     def set_components_run_sequence(self, run_sequence: RunSequence) -> None:
+        """
+        Set the run sequence for the coupler components.
+
+        Arguments:
+            run_sequence: RunSequence instance defining the order of components execution
+        """
+
         for cname in run_sequence:
             if cname not in self.components.keys():
                 raise KeyError(f"Component {cname} not registered in coupler")
@@ -93,6 +119,10 @@ class Coupler:
         )
 
     def initialize(self) -> None:
+        """
+        Initialize the coupler and all registered components.
+        """
+
         self.logger.info(" Initializing coupler and components")
 
         # Initialize components
@@ -122,6 +152,14 @@ class Coupler:
             Atmosphere, ERA5Atmosphere, Ocean, ERA5Ocean, ERAInterimOcean, SeaIce, Land
         ],
     ) -> None:
+        """
+        Interpolate and dispatch fields to the given component at the specified timestamp.
+
+        Arguments:
+            timestamp: current simulation (coupler's) time
+            component: destination component instance to process exchanges for
+        """
+
         for exchange in self.exchanges:
             # Ensure exchange for currently stepping component only
             if exchange.destination != component.name:
@@ -188,6 +226,13 @@ class Coupler:
                 )
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
+        """
+        Finalize the coupler and all registered components.
+
+        Arguments:
+            output_file_mask: optional path mask for output files
+        """
+
         self.logger.info(" ------------ Finalizing coupler and components ------------")
         for name, component in self.components.items():
             component.finalize(output_file_mask)
@@ -211,6 +256,10 @@ class Coupler:
         return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={'-> '.join(self.run_sequence)})"
 
     def run(self) -> None:
+        """
+        Run the coupler and all registered components according to the run sequence.
+        """
+
         # TODO: add setup checks like time step consistency,
         # component's readiness (outgoing fields), etc.
         # Wrap in a class method or function
