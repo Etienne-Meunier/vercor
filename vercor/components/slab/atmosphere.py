@@ -37,16 +37,6 @@ class Atmosphere(Component):
         time: datetime,
         coupler: "Coupler",
     ) -> None:
-
-        if time is None:
-            raise ValueError(
-                f"A 'time' instance is required to advance {self.__class__.__name__}."
-            )
-        if coupler is None:
-            raise ValueError(
-                f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
-            )
-
         # Bulk formula toy: flux proportional to (TA2M - sst)
         sst = self.cdata.get("sst", None)
 

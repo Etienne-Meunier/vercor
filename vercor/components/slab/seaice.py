@@ -35,19 +35,6 @@ class SeaIce(Component):
         time: datetime,
         coupler: "Coupler",
     ) -> None:
-        if dt is None:
-            raise ValueError(
-                f"A 'dt' instance is required to advance {self.__class__.__name__}."
-            )
-        if time is None:
-            raise ValueError(
-                f"A 'time' instance is required to advance {self.__class__.__name__}."
-            )
-        if coupler is None:
-            raise ValueError(
-                f"A 'Coupler' instance is required to advance {self.__class__.__name__}."
-            )
-
         sst = self.cdata.get("sst", None)
         if sst is None:
             return

@@ -4,7 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
-from vercor.regridders.helpers import centers_to_bounds
+from vercor.regridders.helpers import centers_to_edges
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
@@ -31,9 +31,9 @@ class ConservativeRectilinearRegridder(Regridder):
             src_lon_bnds = source_grid.longitude_edges
             src_lat_bnds = source_grid.latitude_edges
         else:
-            src_lon_bnds = centers_to_bounds(self.source_grid.longitude, kind="lon")
-            src_lat_bnds = centers_to_bounds(self.source_grid.latitude, kind="lat")
-            # TODO: Through a warning, to inform the user that bounds are being computed
+            src_lon_bnds = centers_to_edges(self.source_grid.longitude, kind="lon")
+            src_lat_bnds = centers_to_edges(self.source_grid.latitude, kind="lat")
+            # TODO: Through a warning, to inform the user that bounds are being computed for source grid
             # print(f"Source Longitude Edges (Start/End): {src_lon_bnds[0]:.2f}, {src_lon_bnds[-1]:.2f}")
             # print(f"Source Latitude Edges (Start/End): {src_lat_bnds[0]:.2f}, {src_lat_bnds[-1]:.2f}")
 
@@ -44,11 +44,9 @@ class ConservativeRectilinearRegridder(Regridder):
             dst_lon_bnds = destination_grid.longitude_edges
             dst_lat_bnds = destination_grid.latitude_edges
         else:
-            dst_lon_bnds = centers_to_bounds(
-                self.destination_grid.longitude, kind="lon"
-            )
-            dst_lat_bnds = centers_to_bounds(self.destination_grid.latitude, kind="lat")
-            # TODO: Through a warning, to inform the user that bounds are being computed
+            dst_lon_bnds = centers_to_edges(self.destination_grid.longitude, kind="lon")
+            dst_lat_bnds = centers_to_edges(self.destination_grid.latitude, kind="lat")
+            # TODO: Through a warning, to inform the user that bounds are being computed for destination grid
             # print(f"Destination Longitude Edges (Start/End): {dst_lon_bnds[0]:.2f}, {dst_lon_bnds[-1]:.2f}")
             # print(f"Destination Latitude Edges (Start/End): {dst_lat_bnds[0]:.2f}, {dst_lat_bnds[-1]:.2f}")
 

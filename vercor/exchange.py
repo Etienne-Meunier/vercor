@@ -19,6 +19,7 @@ class Exchange:
     Exchange definition between two components
 
         source, destination: component names
+        name: exchange name (automatically set to "SOURCE2DESTINATION")
         field_names: list of scalar field names and
                      tuples of vectors (u-component, v-component)
         regridder_factory: list of callables that return Regridder instances
@@ -46,4 +47,14 @@ class Exchange:
         source_grid: Grid,
         destination_grid: Grid,
     ) -> BilinearRectilinearRegridder | ConservativeRectilinearRegridder:
+        """
+        Create and return a Regridder instance using the provided factory.
+
+        Arguments:
+            source_grid: Grid of the source component
+            destination_grid: Grid of the destination component
+
+        Returns:
+            Regridder instance created by the factory
+        """
         return self.regridder_factory(source_grid, destination_grid)

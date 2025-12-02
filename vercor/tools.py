@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -52,6 +52,14 @@ def get_periodic_interval(current_time, cycle_length, rec_spacing, n_rec):
 
 
 def datetime_to_seconds_in_year(dt: datetime) -> float:
+    """Convert a datetime object to the number of seconds since the start of the year.
+
+    Arguments:
+        dt: datetime object to convert.
+
+    Returns:
+        float: Number of seconds since the start of the year.
+    """
     year_start = datetime(dt.year, 1, 1)
     seconds_since_year_start = (dt - year_start).total_seconds()
     return seconds_since_year_start
@@ -80,10 +88,22 @@ def get_forcing_data(file_type: str) -> Path:
 
 def get_field_at_specific_time(
     field_name: str,
-    state: Dict,
+    cdata: Dict,
     coupler: "Coupler",
     current_time: Optional[datetime] = None,
 ) -> NDArray:
+    """Retrieve a field from a component data storage dictionary at a specific time,
+    applying time interpolation if necessary.
+
+    Arguments:
+        field_name: Name of the field to retrieve.
+        cdata: Dictionary containing the component data with time-dependent fields.
+        coupler: Coupler instance for time settings.
+        current_time: Optional datetime object representing the current time.
+                      If None, coupler's start time is used.
+    Returns:
+        NDArray: The field data interpolated to the specified time.
+    """
 
     total_seconds = datetime_to_seconds_in_year(
         coupler.clock.start if current_time is None else current_time
@@ -98,7 +118,7 @@ def get_field_at_specific_time(
 
     # Use transpose to have (lat, lon) ordering
     out: NDArray = (
-        f1 * state[f"{field_name}"][..., n1] + f2 * state[f"{field_name}"][..., n2]
+        f1 * cdata[f"{field_name}"][..., n1] + f2 * cdata[f"{field_name}"][..., n2]
     ).transpose()
 
     return out
