@@ -118,7 +118,9 @@ def compute_1d_overlap_rectilinear(
     inter_min = np.maximum(t_min, s_min)
     inter_max = np.minimum(t_max, s_max)
 
-    return np.maximum(0, inter_max - inter_min)
+    out: NDArray =  np.maximum(0, inter_max - inter_min)
+
+    return out
 
 
 def calculate_fraction_rectilinear(
@@ -185,7 +187,9 @@ def calculate_fraction_rectilinear(
     fractions = covered_area / tgt_area
 
     # Clip to [0, 1] to handle floating point noise
-    return np.clip(fractions, 0.0, 1.0)
+    output: NDArray = np.clip(fractions, 0.0, 1.0)
+
+    return output
 
 
 def compute_land_mask(ocean_binary_mask: NDArray) -> NDArray:
@@ -202,12 +206,8 @@ def compute_land_mask(ocean_binary_mask: NDArray) -> NDArray:
     FMAXVAL = 1.0
 
     land_binary_mask = 1.0 - ocean_binary_mask
-    land_binary_mask = np.where(
-        land_binary_mask > FMAXVAL, 1.0, land_binary_mask
-    )
-    land_binary_mask = np.where(
-        land_binary_mask < FMINVAL, 0.0, land_binary_mask
-    )
+    land_binary_mask = np.where(land_binary_mask > FMAXVAL, 1.0, land_binary_mask)
+    land_binary_mask = np.where(land_binary_mask < FMINVAL, 0.0, land_binary_mask)
 
     land_binary_mask = np.where(land_binary_mask != 0.0, 1, 0)
 

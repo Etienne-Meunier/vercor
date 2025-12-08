@@ -42,9 +42,7 @@ class RectilinearGrid(Grid):
         latitude_edges: Optional[NDArray] = None,
         binary_mask: Optional[NDArray] = None,
     ) -> None:
-        super().__init__(
-            name=name, binary_mask=binary_mask
-        )
+        super().__init__(name=name, binary_mask=binary_mask)
         self.longitude = longitude
         self.latitude = latitude
         self.longitude_edges = longitude_edges
