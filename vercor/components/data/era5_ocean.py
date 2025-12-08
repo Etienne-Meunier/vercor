@@ -49,7 +49,6 @@ class ERA5Ocean(Component, ForcingData):
             longitude=longitude,
             latitude=latitude,
             binary_mask=binary_mask,
-            fraction_mask=fraction_mask,
         )
 
         super().__init__(name, grid=self.grid)
@@ -70,6 +69,7 @@ class ERA5Ocean(Component, ForcingData):
 
         self.cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
         self.cdata["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
+        self.cdata["fraction_mask"] = fraction_mask
 
     def initialize(self, coupler: "Coupler") -> None:
         pass
