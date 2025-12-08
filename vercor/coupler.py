@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from vercor.clock import Clock
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
@@ -51,6 +52,7 @@ class Coupler:
         Tuple[str, str],
         BilinearRectilinearRegridder | ConservativeRectilinearRegridder,
     ] = field(default_factory=dict)
+    _fractions: Dict[Tuple[str, str], NDArray] = field(default_factory=dict)
     """
     Main coupler class to manage components and exchanges between them.
 
@@ -63,6 +65,11 @@ class Coupler:
         settings: VercorSettings instance for coupler settings
         _regridders: mapping of (source component name, destination component name)
                      to Regridder instance (a pool of all available regridders)
+        _fractions: mapping of (source component name, destination component name) 
+                    to a fractional mask NDArray. This mask is applied after regridding
+                    during field exchanges to ensure that only the appropriate portion
+                    of the forcing or boundary conditions is transferred, reflecting 
+                    the partial coverage of source grid cells within destination grid cells.
     """
 
     def register(

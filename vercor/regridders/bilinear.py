@@ -38,27 +38,3 @@ class BilinearRectilinearRegridder(Regridder):
             fill_value=fill_value,
         )
 
-    def __call__(
-        self,
-        *args: NDArray,
-    ) -> Union[NDArray, Tuple[NDArray, NDArray]]:
-        """
-        Supported calls:
-          - apply(scalar_src) -> scalar interpolation
-          - apply(u_src, v_src) -> vector interpolation
-        """
-
-        self._ensure_ready(args)
-
-        # Check if components have identical grids internally and
-        # returns fields as-is (from source to destination) if so,
-        # avoiding unnecessary computation
-        if self.has_identical_grids:
-            return args if len(args) == 2 else args[0]
-
-        handlers: dict[int, Callable[..., NDArray | Tuple[NDArray, NDArray]]] = {
-            1: self._apply_scalar,
-            2: self._apply_vector,
-        }
-
-        return handlers[len(args)](*args)

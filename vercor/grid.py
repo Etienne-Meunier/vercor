@@ -10,12 +10,9 @@ from numpy.typing import NDArray
 class Grid(abc.ABC):
     name: str
     binary_mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
-    fraction_mask: Optional[NDArray] = None  # values between 0 and 1
 
     def __post_init__(self) -> None:
         if self.binary_mask is not None and self.binary_mask.ndim != 2:
-            raise ValueError("Mask must be a 2D array.")
-        if self.fraction_mask is not None and self.fraction_mask.ndim != 2:
             raise ValueError("Mask must be a 2D array.")
 
     @property
@@ -28,8 +25,7 @@ class Grid(abc.ABC):
             f"{self.__class__.__name__}:\n"
             f"├── Grid name:  {self.name}\n"
             f"├── Grid shape: {self.shape}\n"
-            f"├── Binary mask: {'Provided' if self.binary_mask is not None else 'Not provided'}\n"
-            f"└── Fraction mask: {'Provided' if self.fraction_mask is not None else 'Not provided'}\n"
+            f"└── Binary mask: {'Provided' if self.binary_mask is not None else 'Not provided'}\n"
         )
 
     def __repr__(self) -> str:
@@ -45,10 +41,9 @@ class RectilinearGrid(Grid):
         longitude_edges: Optional[NDArray] = None,
         latitude_edges: Optional[NDArray] = None,
         binary_mask: Optional[NDArray] = None,
-        fraction_mask: Optional[NDArray] = None,
     ) -> None:
         super().__init__(
-            name=name, binary_mask=binary_mask, fraction_mask=fraction_mask
+            name=name, binary_mask=binary_mask
         )
         self.longitude = longitude
         self.latitude = latitude

@@ -14,10 +14,10 @@ class ConservativeRectilinearRemapper:
 
     def __init__(
         self,
-        src_lon_bnds: NDArray,
-        src_lat_bnds: NDArray,
-        dst_lon_bnds: NDArray,
-        dst_lat_bnds: NDArray,
+        src_lon_edges: NDArray,
+        src_lat_edges: NDArray,
+        dst_lon_edges: NDArray,
+        dst_lat_edges: NDArray,
         src_mask: Optional[NDArray] = None,
         normalize: str = "conservation",
         radius: float = 6371.0,
@@ -26,10 +26,10 @@ class ConservativeRectilinearRemapper:
         Initialize and precompute remapping weights.
 
         Arguments:
-            src_lon_bnds (1D array): Source longitude cell boundaries (Monotonic).
-            src_lat_bnds (1D array): Source latitude cell boundaries.
-            dst_lon_bnds (1D array): Target longitude cell boundaries (Monotonic).
-            dst_lat_bnds (1D array): Target latitude cell boundaries.
+            src_lon_edges (1D array): Source longitude cell edges (Monotonic).
+            src_lat_edges (1D array): Source latitude cell edges.
+            dst_lon_edges (1D array): Target longitude cell edges (Monotonic).
+            dst_lat_edges (1D array): Target latitude cell edges.
             source_mask (2D array, optional): Boolean mask for source grid (True=Invalid).
             normalize (str):
                 'conservation': Normalize by total area of target cell. (Mass Preserving)
@@ -41,11 +41,11 @@ class ConservativeRectilinearRemapper:
         self.normalize = normalize
 
         # 1. Standardize and Store Bounds
-        self.src_lon_b = np.asarray(src_lon_bnds, dtype=np.float64)
-        self.src_lat_b, self._s_lat_flip = self._standardize_lat(src_lat_bnds)
+        self.src_lon_b = np.asarray(src_lon_edges, dtype=np.float64)
+        self.src_lat_b, self._s_lat_flip = self._standardize_lat(src_lat_edges)
 
-        self.dst_lon_b = np.asarray(dst_lon_bnds, dtype=np.float64)
-        self.dst_lat_b, self._d_lat_flip = self._standardize_lat(dst_lat_bnds)
+        self.dst_lon_b = np.asarray(dst_lon_edges, dtype=np.float64)
+        self.dst_lat_b, self._d_lat_flip = self._standardize_lat(dst_lat_edges)
 
         self.n_src_lon = len(self.src_lon_b) - 1
         self.n_src_lat = len(self.src_lat_b) - 1
@@ -104,25 +104,25 @@ class ConservativeRectilinearRemapper:
         return b, is_flipped
 
     def _compute_interval_overlaps(
-        self, src_bnds: NDArray, dst_bnds: NDArray
+        self, src_edges: NDArray, dst_edges: NDArray
     ) -> sparse.csr_matrix:
         """1D Overlap calculation (Latitude)."""
-        n_src = len(src_bnds) - 1
-        n_dst = len(dst_bnds) - 1
+        n_src = len(src_edges) - 1
+        n_dst = len(dst_edges) - 1
         row_ind, col_ind, data = [], [], []
 
         for i in range(n_dst):
-            d1, d2 = dst_bnds[i], dst_bnds[i + 1]
+            d1, d2 = dst_edges[i], dst_edges[i + 1]
             if abs(d2 - d1) < 1e-15:
                 continue
 
-            idx_start = np.searchsorted(src_bnds, d1, side="left") - 1
+            idx_start = np.searchsorted(src_edges, d1, side="left") - 1
             idx_start = max(0, idx_start)
-            idx_end = np.searchsorted(src_bnds, d2, side="right")
+            idx_end = np.searchsorted(src_edges, d2, side="right")
             idx_end = min(n_src, idx_end)
 
             for j in range(idx_start, idx_end):
-                s1, s2 = src_bnds[j], src_bnds[j + 1]
+                s1, s2 = src_edges[j], src_edges[j + 1]
                 overlap = max(0.0, min(d2, s2) - max(d1, s1))
                 if overlap > 1e-15:
                     row_ind.append(i)
@@ -132,15 +132,15 @@ class ConservativeRectilinearRemapper:
         return sparse.csr_matrix((data, (row_ind, col_ind)), shape=(n_dst, n_src))
 
     def _compute_lon_overlaps(
-        self, src_bnds: NDArray, dst_bnds: NDArray
+        self, src_edges: NDArray, dst_edges: NDArray
     ) -> sparse.csr_matrix:
         """1D Longitude overlap with periodicity check."""
-        n_src = len(src_bnds) - 1
-        n_dst = len(dst_bnds) - 1
+        n_src = len(src_edges) - 1
+        n_dst = len(dst_edges) - 1
         row_ind, col_ind, data = [], [], []
 
         for i in range(n_dst):
-            d1, d2 = dst_bnds[i], dst_bnds[i + 1]
+            d1, d2 = dst_edges[i], dst_edges[i + 1]
             if d1 > d2:
                 d1, d2 = d2, d1
 
@@ -153,16 +153,16 @@ class ConservativeRectilinearRemapper:
                 t_s, t_e = d1 + shift, d2 + shift
 
                 # Bounding box check optimization
-                if t_e <= src_bnds[0] or t_s >= src_bnds[-1]:
+                if t_e <= src_edges[0] or t_s >= src_edges[-1]:
                     continue
 
-                idx_start = np.searchsorted(src_bnds, t_s, side="left") - 1
+                idx_start = np.searchsorted(src_edges, t_s, side="left") - 1
                 idx_start = max(0, idx_start)
-                idx_end = np.searchsorted(src_bnds, t_e, side="right")
+                idx_end = np.searchsorted(src_edges, t_e, side="right")
                 idx_end = min(n_src, idx_end)
 
                 for j in range(idx_start, idx_end):
-                    s1, s2 = src_bnds[j], src_bnds[j + 1]
+                    s1, s2 = src_edges[j], src_edges[j + 1]
                     overlap = max(0.0, min(t_e, s2) - max(t_s, s1))
 
                     if overlap > 1e-15:

@@ -1,4 +1,4 @@
-from typing import Any, Tuple, Union
+from typing import Any, Tuple, Union, Callable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -57,6 +57,30 @@ class Regridder:
         assert self.interpolator is not None
         result: Tuple[NDArray, NDArray] = self.interpolator.apply_vector(v0, v1)
         return result
+
+    def __call__(
+        self,
+        *args: NDArray,
+    ) -> Union[NDArray, Tuple[NDArray, NDArray]]:
+        """
+        Supported calls:
+          - apply(scalar_src) -> scalar interpolation
+        """
+
+        self._ensure_ready(args)
+
+        # Check if components have identical grids internally and
+        # returns fields as-is (from source to destination) if so,
+        # avoiding unnecessary computation
+        if self.has_identical_grids:
+            return args if len(args) == 2 else args[0]
+
+        handlers: dict[int, Callable[..., NDArray | Tuple[NDArray, NDArray]]] = {
+            1: self._apply_scalar,
+            2: self._apply_vector,
+        }
+
+        return handlers[len(args)](*args)
 
     def __str__(self) -> str:
         return (
