@@ -59,4 +59,3 @@ class ConservativeRectilinearRegridder(Regridder):
             normalize=normalize,
             radius=radius,
         )
-
