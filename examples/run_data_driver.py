@@ -3,8 +3,7 @@ from typing import List
 import numpy as np
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere
-from vercor.components.data.erainterim_ocean import ERAInterimOcean
+from vercor.components import ERA5Atmosphere, ERAInterimOcean, ERA5Land
 from vercor.coupler import RunSequence
 from vercor.regridders import BilinearRectilinearRegridder
 
@@ -12,14 +11,15 @@ if __name__ == "__main__":
     # Build components
     atm = ERA5Atmosphere("ATM")
     ocn = ERAInterimOcean("OCN")
+    lnd = ERA5Land("LND")
 
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
-    run_sequence = RunSequence(order=["OCN", "ATM"])
+    run_sequence = RunSequence(order=["OCN", "ATM", "LND"])
 
     # Coupler
     cpl = Coupler(clock=clock)
-    components: List[ERA5Atmosphere | ERAInterimOcean] = [atm, ocn]
+    components: List[ERA5Atmosphere | ERAInterimOcean | ERA5Land] = [atm, ocn, lnd]
     for component in components:
         cpl.register(component)
 
@@ -59,6 +59,31 @@ if __name__ == "__main__":
             destination="ATM",
             field_names=[
                 "sst",
+            ],
+            regridder_factory=bilinear,
+        )
+    )
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="LND",
+            field_names=[
+                "qbot",
+                "zbot",
+                "tbot",
+                "swr_net",
+                "lwr_dw",
+            ],
+            regridder_factory=bilinear,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="LND",
+            destination="ATM",
+            field_names=[
+                "skt",
             ],
             regridder_factory=bilinear,
         )

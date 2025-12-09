@@ -118,12 +118,12 @@ def compute_1d_overlap_rectilinear(
     inter_min = np.maximum(t_min, s_min)
     inter_max = np.minimum(t_max, s_max)
 
-    out: NDArray =  np.maximum(0, inter_max - inter_min)
+    out: NDArray = np.maximum(0, inter_max - inter_min)
 
     return out
 
 
-def calculate_fraction_rectilinear(
+def compute_grid_fraction_rectilinear(
     tgt_lat_edges: NDArray,
     tgt_lon_edges: NDArray,
     src_lat_edges: NDArray,
@@ -201,6 +201,9 @@ def compute_land_mask(ocean_binary_mask: NDArray) -> NDArray:
 
     Returns:
         land_binary_mask: 2D array with 1 for land, 0 for ocean
+
+    References:
+        Adapted from CESM CPL7 source code
     """
     FMINVAL = 0.001
     FMAXVAL = 1.0

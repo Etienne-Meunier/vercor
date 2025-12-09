@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+from numpy.typing import NDArray
 
 from vercor.components.base import Component, ForcingData
 from vercor.grid import RectilinearGrid
@@ -36,16 +37,20 @@ class ERAInterimOcean(Component, ForcingData):
             Component
                 name: str
                 grid: RectilinearGrid
-                shared_fields: Dict[str, NDArray] = field(default_factory=dict)
         """
 
         self.DATA_FILES = {
             "model_level": str(model_level_file),
         }
 
+        # To cover the whole globe with 4 degree resolution
+        latitude: NDArray = np.arange(-90.0, 94.0, 4.0)
+        sss: NDArray = np.zeros((90, latitude.size, 12))
+        sst: NDArray = np.zeros((90, latitude.size, 12))
+
         longitude = self._read_forcing("xt", where="model_level")
-        latitude = self._read_forcing("yt", where="model_level")
-        sss = self._read_forcing("sss", where="model_level")
+        latitude[3:-3] = self._read_forcing("yt", where="model_level")
+        sss[:, 3:-3, :] = self._read_forcing("sss", where="model_level")
         binary_mask = np.where(sss > 0.0, 1.0, 0.0)[..., 0].T
 
         self.grid = RectilinearGrid(
@@ -73,8 +78,9 @@ class ERAInterimOcean(Component, ForcingData):
             "sst",
         ]
 
-        self.cdata["sst"] = self._read_forcing("sst", where="model_level")
-        self.cdata["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
+        sst[:, 3:-3, :] = self._read_forcing("sst", where="model_level")
+        sst *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
+        self.cdata["sst"] = sst
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

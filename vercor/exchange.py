@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Callable, List, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 from vercor.grid import Grid
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
@@ -15,14 +15,19 @@ class Exchange:
     regridder_factory: Callable[
         ..., BilinearRectilinearRegridder | ConservativeRectilinearRegridder
     ]
+    invert_mask: bool = False
     """
     Exchange definition between two components
 
         source, destination: component names
         name: exchange name (automatically set to "SOURCE2DESTINATION")
         field_names: list of scalar field names and
-                     tuples of vectors (u-component, v-component)
+                tuples of vectors (u-component, v-component)
         regridder_factory: list of callables that return Regridder instances
+        invert_mask: whether to invert the binary mask from the origin component
+                specified in binary_mask_origin 
+                (useful when the origin component represents ocean and 
+                the destination component represents land)
     """
 
     def __post_init__(self) -> None:

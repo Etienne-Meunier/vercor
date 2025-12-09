@@ -44,7 +44,6 @@ class ERA5Atmosphere(Component, ForcingData):
             Component
                 name: str
                 grid: RectilinearGrid
-                shared_fields: Dict[str, NDArray] = field(default_factory=dict)
         """
 
         self.DATA_FILES = {

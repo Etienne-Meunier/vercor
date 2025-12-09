@@ -1,13 +1,43 @@
+from vercor.types import AllComponentsType
+
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional, List, Tuple, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from vercor.grid import RectilinearGrid
+
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
+    return (
+        g0.shape == g1.shape
+        and np.array_equal(g0.latitude, g1.latitude)
+        and np.array_equal(g0.longitude, g1.longitude)
+    )
+
+
+def get_component(
+    allcomponents: Dict[str, AllComponentsType], types: Tuple[Any, ...], label: str
+) -> AllComponentsType:
+    components: List[AllComponentsType] = [
+        component
+        for component in allcomponents.values()
+        if isinstance(component, types)
+    ]
+    if len(components) > 1:
+        names = ", ".join(component.name for component in components)
+        raise RuntimeError(
+            f"Multiple {label} components registered; only one supported (found: {names})"
+        )
+    if not components:
+        raise RuntimeError(f"No {label} component registered")
+    return components[0]
 
 
 def get_periodic_interval(current_time, cycle_length, rec_spacing, n_rec):

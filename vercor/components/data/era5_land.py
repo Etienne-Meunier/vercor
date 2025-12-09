@@ -6,17 +6,21 @@ import numpy as np
 
 from vercor.components.base import Component, ForcingData
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_forcing_data
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERA5Ocean(Component, ForcingData):
+class ERA5Land(Component, ForcingData):
     def __init__(
         self,
-        name: str = "ERA5-OCN",
-        surface_file: Path = get_forcing_data("surface"),
+        name: str = "ERA5-LND",
+        surface_file: Path = (
+            Path(__file__).parent.parent.parent
+            / ".."
+            / "forcing"
+            / "era5_lnd_skt_1980.nc"
+        ).resolve(),
     ) -> None:
         """
         Read all necessary fields from the provided forcing files.
@@ -37,17 +41,13 @@ class ERA5Ocean(Component, ForcingData):
             "surface": str(surface_file),
         }
 
-        longitude = self._read_forcing("longitude", where="surface")
-        latitude = self._read_forcing("latitude", where="surface")[::-1]
-        fraction_mask = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
-        fraction_mask = 1 - fraction_mask
-        binary_mask = np.where(fraction_mask > 0.0, 1.0, 0.0)
+        longitude = self._read_forcing("lon", where="surface")
+        latitude = self._read_forcing("lat", where="surface")
 
         self.grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
-            binary_mask=binary_mask,
         )
 
         super().__init__(name, grid=self.grid)
@@ -55,20 +55,16 @@ class ERA5Ocean(Component, ForcingData):
         self._settings["apply_time_interpolation"] = True
         self._fields2import = [
             "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
             "qbot",
             "tbot",
-            "rbot",
             "swr_net",
             "lwr_dw",
         ]
-        self._fields2export = ["sst"]
+        self._fields2export = [
+            "skt",
+        ]
 
-        self.cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
-        self.cdata["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
-        self.cdata["fraction_mask"] = fraction_mask
+        self.cdata["skt"] = self._read_forcing("skt", where="surface", flip_y=True)
 
     def initialize(self, coupler: "Coupler") -> None:
         pass
