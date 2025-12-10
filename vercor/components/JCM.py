@@ -39,7 +39,6 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 # ===================
 
-latent_heat_of_vaporization = vercor.settings.VercorSettings.latvap
 
 def asfloat64(tree):
     return jax.tree_util.tree_map(lambda arr: arr.astype(jnp.float64), tree)
@@ -65,20 +64,31 @@ class JCM(Component):
         save_interval: timedelta = timedelta(hours=12),
         jitted: bool = True,
     ) -> None:
+        
         self.model = model
         self.coupling_timestep = coupling_timestep
         self.save_interval = save_interval
         self.jitted = jitted
 
+        
         hgrid = model.coords.horizontal
         grid = RectilinearGrid(
             name=name,
             longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
             latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
             binary_mask=np.where(model.geometry.fmask > 0.0, 1.0, 0.0).transpose() == 0.0,  # true = valid points.
-            fraction_mask=model.geometry.fmask.transpose(),
         )
         super().__init__(name, grid)
+
+        # has to be defined after super() is called
+        self._fields2import = [
+            "sst",
+        ]
+ 
+        self._fields2export = [
+            "u10m",
+            "v10m",
+        ]
 
     def _generate_step_function(self, jitted: bool = True):
         def step_function(state, forcing, t):
@@ -113,19 +123,9 @@ class JCM(Component):
         grid_shape = self.grid.shape
 
         zeros = np.zeros(grid_shape)
-        self.incoming_fields.SST = TNA(zeros + 273.15 + 15.0, clock_start, self.name)
-        self.outgoing_fields.bottom_level_density = TNA(zeros + 1.22, clock_start, self.name)
-        self.outgoing_fields.bottom_level_zonal_velocity = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.bottom_level_meridional_velocity = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.bottom_level_potential_temperature = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.bottom_level_temperature = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.bottom_level_specific_humidity = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.bottom_level_height = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.net_surface_shortwave_radiation_flux = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.net_surface_longwave_radiation_flux = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.bottom_level_ = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.precipitation = TNA(zeros, clock_start, self.name)
-        self.outgoing_fields.evaporation = TNA(zeros, clock_start, self.name)
+        self.cdata["sst"] = zeros + 273.15 + 15.0
+        self.cdata["u10m"] = zeros.copy()
+        self.cdata["v10m"] = zeros.copy()
 
         self._predictions_list = []
 
@@ -137,7 +137,7 @@ class JCM(Component):
             )
 
         _forcing = self.forcing.copy(
-            sea_surface_temperature=jnp.asarray(self.incoming_fields.SST).transpose(),
+            sea_surface_temperature=jnp.asarray(self.incoming_fields.sst).transpose(),
         )
 
         _avg_predictions = []
@@ -159,20 +159,19 @@ class JCM(Component):
         d = _avg_predictions.dynamics
 
         # All the heat and freshwater fluxes are positive upward
-        self.outgoing_fields.net_surface_shortwave_radiation_flux = (- np.array(p.shortwave_rad.rsns).transpose(), time, self.name)
-        self.outgoing_fields.net_surface_longwave_radiation_flux = (np.array(p.surface_flux.rlns).transpose(), time, self.name)
-        self.outgoing_fields.bottom_level_zonal_velocity = (np.array(d.u_wind[:, :]).transpose(), time, self.name)
-        self.outgoing_fields.bottom_level_meridional_velocity = (np.array(d.v_wind[:, :]).transpose(), time, self.name)
-        self.outgoing_fields.bottom_level_potential_temperature = (np.array(d.temperature[:, :]).transpose(), time, self.name)
-        self.outgoing_fields.bottom_level_temperature = (np.array(d.temperature[:, :]).transpose(), time, self.name)
-        self.outgoing_fields.bottom_level_specific_humidity = (np.array(d.specific_humidity[:, :]).transpose(), time, self.name)
-        self.outgoing_fields.bottom_level_height = (np.array(d.geopotential[:, :] / jcm.constants.grav).transpose(), time, self.name)
-        self.outgoing_fields.precipitation = ((
-            - np.array(p.condensation.precls + p.convection.precnv).transpose() / 1e3
-        ), time, self.name)
-        self.outgoing_fields.evaporation = ((
-            np.array(p.surface_flux.evap / 1e3).transpose()
-        ), time, self.name)
+        #self.outgoing_fields.swr_net = (np.array(p.shortwave_rad.rsns).transpose(), time, self.name) # downward positive
+        #self.outgoing_fields.lwr_dw = (- np.array(p.surface_flux.rlns).transpose(), time, self.name) # downward positive
+        self.cdata["u10m"] = np.array(d.u_wind[:, :]).transpose()
+        self.cdata["v10m"] = np.array(d.v_wind[:, :]).transpose()
+        #self.outgoing_fields.thbot = (np.array(d.temperature[:, :]).transpose(), time, self.name)
+        #self.outgoing_fields.tbot = (np.array(d.temperature[:, :]).transpose(), time, self.name)
+        #self.outgoing_fields.qbot = (np.array(d.specific_humidity[:, :]).transpose(), time, self.name)
+        #self.outgoing_fields.precipitation = ((
+        #    - np.array(p.condensation.precls + p.convection.precnv).transpose() / 1e3
+        #), time, self.name)
+        #self.outgoing_fields.evaporation = ((
+        #    np.array(p.surface_flux.evap / 1e3).transpose()
+        #), time, self.name)
 
     def _finalize(self, output: Optional[str] = None) -> xr.Dataset:
         # Current JCM returns an Any but is actually an xr.Dataset
