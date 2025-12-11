@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from vercor.components.base import Component
+from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:

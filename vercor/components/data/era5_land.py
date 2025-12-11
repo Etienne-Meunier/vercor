@@ -2,9 +2,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 
-from vercor.components.base import Component, ForcingData
+from vercor.components import Component, ForcingData
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
@@ -14,7 +13,7 @@ if TYPE_CHECKING:
 class ERA5Land(Component, ForcingData):
     def __init__(
         self,
-        name: str = "ERA5-LND",
+        name: str = "LND",
         surface_file: Path = (
             Path(__file__).parent.parent.parent
             / ".."
@@ -64,7 +63,7 @@ class ERA5Land(Component, ForcingData):
             "skt",
         ]
 
-        self.cdata["skt"] = self._read_forcing("skt", where="surface", flip_y=True)
+        self.cdata["skt"] = self._read_forcing("skt", where="surface")
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

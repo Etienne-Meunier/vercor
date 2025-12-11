@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from vercor.components.base import Component
+from vercor.components import Component
 from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
 from vercor.settings import VercorSettings
 

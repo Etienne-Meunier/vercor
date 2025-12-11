@@ -9,24 +9,30 @@ import numpy as np
 from numpy.typing import NDArray
 
 from vercor.clock import Clock
-from vercor.components import Atmosphere, Land, Ocean
-from vercor.components.base import Shared
-from vercor.components.base import TimedNamedArray as TNA
-from vercor.components.data.era5_atmosphere import ERA5Atmosphere
-from vercor.components.data.era5_land import ERA5Land
-from vercor.components.data.era5_ocean import ERA5Ocean
-from vercor.components.data.erainterim_ocean import ERAInterimOcean
+from vercor.components import (
+    Atmosphere,
+    ERA5Atmosphere,
+    ERA5Land,
+    ERA5Ocean,
+    ERAInterimOcean,
+    Land,
+    Ocean,
+    Shared,
+)
+from vercor.components import TimedNamedArray as TNA
 from vercor.exchange import Exchange
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
-from vercor.regridders import BilinearRectilinearRegridder
-from vercor.regridders import ConservativeRectilinearRegridder
-from vercor.regridders import compute_grid_fraction_rectilinear
+from vercor.regridders import (
+    BilinearRectilinearRegridder,
+    ConservativeRectilinearRegridder,
+    compute_grid_fraction_rectilinear,
+)
 from vercor.regridders.helpers import centers_to_edges, compute_land_mask
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
-from vercor.tools import grids_identical, get_component
+from vercor.tools import get_component, grids_identical
 from vercor.types import AllComponentsType
 
 
@@ -54,12 +60,16 @@ class Coupler:
     ] = field(default_factory=dict)
     exchanges: List[Exchange] = field(default_factory=list)
     settings: VercorSettings = field(default_factory=VercorSettings)
+    ocn_bmask_on_atm_grid: NDArray = field(init=False)
+    lnd_bmask_on_atm_grid: NDArray = field(init=False)
+    ocn_fmask_on_atm_grid: NDArray = field(init=False)
+    lnd_fmask_on_atm_grid: NDArray = field(init=False)
     _regridders: Dict[
-        Tuple[str, str],
+        Tuple[str, str, str],
         BilinearRectilinearRegridder | ConservativeRectilinearRegridder,
     ] = field(default_factory=dict)
-    _binary_masks: Dict[Tuple[str, str], NDArray] = field(default_factory=dict)
-    _fractional_masks: Dict[Tuple[str, str], NDArray] = field(default_factory=dict)
+    _binary_masks: Dict[Tuple[str, str, str], NDArray] = field(default_factory=dict)
+    _fractional_masks: Dict[Tuple[str, str, str], NDArray] = field(default_factory=dict)
 
     """
     Main coupler class to manage components and exchanges between them.
@@ -71,6 +81,10 @@ class Coupler:
         components: mapping of component name to component instance
         exchanges: list of all Exchange instances
         settings: VercorSettings instance for coupler settings
+        ocn_bmask_on_atm_grid: binary ocean mask regridded onto atmosphere grid
+        lnd_bmask_on_atm_grid: binary land mask regridded onto atmosphere grid
+        ocn_fmask_on_atm_grid: fractional ocean mask regridded onto atmosphere grid
+        lnd_fmask_on_atm_grid: fractional land mask regridded onto atmosphere grid
         _regridders: mapping of (source component name, destination component name)
                 to Regridder instance (a pool of all available regridders)
         _binary_masks: mapping of (source component name, destination component name)
@@ -150,22 +164,51 @@ class Coupler:
             component.send_fields(self.clock.start, self)
             self.logger.info(f" Initialized {name}")
 
+        self._create_exchange_masks()
+        self.logger.info(" LND <--> ATM & OCN <--> ATM masks initialization complete")
+
         # Build regridders per (source component, destination component) pair
         for exchange in self.exchanges:
-            key = (exchange.source, exchange.destination)
+            key = (exchange.source, exchange.destination, exchange.interpolation_type)
+
             if key not in self._regridders:
                 self._regridders[key] = exchange.create(
                     self.components[exchange.source].grid,
                     self.components[exchange.destination].grid,
+                )
+                self._binary_masks[key] = np.ones(
+                    self.components[exchange.destination].grid.shape
+                )
+                self._fractional_masks[key] = np.ones(
+                    self.components[exchange.destination].grid.shape
                 )
             else:
                 self.logger.warning(
                     f" Regridder for exchange {exchange.name} already exists, skipping creation"
                 )
 
-        self._create_exchange_masks()
+        self._patch_exchange_masks()
+        self.logger.info(" Exchange masks patching complete")
+
+    def _patch_exchange_masks(self) -> None:
+        keys = self._binary_masks.keys()
+
+        for key in keys:
+            source, destination, interp_type = key
+            if "bilinear" in interp_type:
+                if source == "OCN" and destination == "ATM":
+                    # self._binary_masks[key] = self.ocn_bmask_on_atm_grid
+                    self._fractional_masks[key] = self.ocn_fmask_on_atm_grid
+                elif source == "LND" and destination == "ATM":
+                    self._binary_masks[key] = self.lnd_bmask_on_atm_grid
+                    self._fractional_masks[key] = self.lnd_fmask_on_atm_grid
 
     def _create_exchange_masks(self) -> None:
+        """
+        Create binary and fractional masks for exchanges between
+        land, ocean, and atmosphere components.
+        """
+
         land_component = get_component(self.components, (Land, ERA5Land), "land")
         atmosphere_component = get_component(
             self.components, (Atmosphere, ERA5Atmosphere), "atmosphere"
@@ -193,15 +236,15 @@ class Coupler:
             )
 
         ocn_bmask_on_atm_grid = np.asarray(regridder(ocean_bmask))
-        ocn_bmask_on_atm_grid = np.clip(ocn_bmask_on_atm_grid, 0.0, 1.0)
-        lnd_bmask_on_atm_grid = compute_land_mask(ocn_bmask_on_atm_grid)
+        self.ocn_bmask_on_atm_grid = np.clip(ocn_bmask_on_atm_grid, 0.0, 1.0)
+        self.lnd_bmask_on_atm_grid = compute_land_mask(self.ocn_bmask_on_atm_grid)
 
         if regridder.interpolator is not None and isinstance(
             regridder.interpolator, ConservativeRectilinearRemapper
         ):
             src_total_mass = regridder.interpolator.get_src_total_mass(ocean_bmask)
             dst_total_mass = regridder.interpolator.get_dst_total_mass(
-                ocn_bmask_on_atm_grid
+                self.ocn_bmask_on_atm_grid
             )
 
             if not np.isclose(src_total_mass, dst_total_mass, atol=1e-6):
@@ -210,7 +253,7 @@ class Coupler:
                     f"(source mass: {src_total_mass}, destination mass: {dst_total_mass})"
                 )
 
-        bmask_sum = lnd_bmask_on_atm_grid + ocn_bmask_on_atm_grid
+        bmask_sum = self.lnd_bmask_on_atm_grid + self.ocn_bmask_on_atm_grid
         min_sum = bmask_sum.min()
         if not np.isclose(min_sum, 1.0, atol=1e-12):
             raise RuntimeError(
@@ -218,23 +261,16 @@ class Coupler:
                 f"(minimum sum {min_sum})"
             )
 
-        self._binary_masks[(ocean_component.name, atmosphere_component.name)] = (
-            ocn_bmask_on_atm_grid
-        )
-        self._binary_masks[(land_component.name, atmosphere_component.name)] = (
-            lnd_bmask_on_atm_grid
-        )
-
-        ocn_fmask_on_atm_grid = compute_grid_fraction_rectilinear(
+        self.lnd_fmask_on_atm_grid = compute_grid_fraction_rectilinear(
             centers_to_edges(atmosphere_component.grid.latitude, "lat"),
             centers_to_edges(atmosphere_component.grid.longitude, "lon"),
             centers_to_edges(ocean_component.grid.latitude, "lat"),
             centers_to_edges(ocean_component.grid.longitude, "lon"),
             ocean_bmask.astype(bool),
         )
-        lnd_fmask_on_atm_grid = 1.0 - ocn_fmask_on_atm_grid
+        self.ocn_fmask_on_atm_grid = 1.0 - self.lnd_fmask_on_atm_grid
 
-        fmask_sum = lnd_fmask_on_atm_grid + ocn_fmask_on_atm_grid
+        fmask_sum = self.lnd_fmask_on_atm_grid + self.ocn_fmask_on_atm_grid
         min_fsum = fmask_sum.min()
         max_fsum = fmask_sum.max()
         if not (
@@ -246,17 +282,10 @@ class Coupler:
                 f"(minimum sum {min_fsum}, maximum sum {max_fsum})"
             )
 
-        self._fractional_masks[(ocean_component.name, atmosphere_component.name)] = (
-            ocn_fmask_on_atm_grid
-        )
-        self._fractional_masks[(land_component.name, atmosphere_component.name)] = (
-            lnd_fmask_on_atm_grid
-        )
-
     def interpolate_and_dispatch_fields(
         self,
-        timestamp: datetime,
         component: AllComponentsType,
+        timestamp: datetime,
     ) -> None:
         """
         Interpolate and dispatch fields to the given component at the specified timestamp.
@@ -278,7 +307,12 @@ class Coupler:
                 f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name}"
             )
 
-            regrid = self._regridders[(exchange.source, exchange.destination)]
+            key = (exchange.source, exchange.destination, exchange.interpolation_type)
+
+            regrid = self._regridders[key]
+            binary_mask = self._binary_masks[key]
+            fractional_mask = self._fractional_masks[key]
+
             source_fields = source_component.export_fields()
             destination_fields = Shared()
 
@@ -315,16 +349,15 @@ class Coupler:
                             f"Field {field_name} not present in source fields"
                         )
 
-                    # to pass mypy type checking
-                    scalar = np.asarray(regrid(getattr(source_fields, field_name).data))
+                    field_data = getattr(source_fields, field_name).data
+                    scalar = np.asarray(regrid(field_data))
+                    scalar *= binary_mask * fractional_mask
 
                     setattr(
                         destination_fields,
                         field_name,
                         TNA(scalar, timestamp, exchange.source),
                     )
-
-            # TODO: apply fractional mask if available
 
             if not destination_fields.is_empty:
                 destination_component.import_fields(destination_fields)
@@ -361,7 +394,7 @@ class Coupler:
         )
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={'-> '.join(self.run_sequence)})"
+        return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={' -> '.join(self.run_sequence)})"
 
     def run(self) -> None:
         """
@@ -384,7 +417,7 @@ class Coupler:
 
             # Step components in declared order
             for cname in self.run_sequence:
-                self.interpolate_and_dispatch_fields(time, self.components[cname])
+                self.interpolate_and_dispatch_fields(self.components[cname], time)
 
                 self.logger.info(f" Run component: {cname}")
                 self.components[cname].receive_fields(time)

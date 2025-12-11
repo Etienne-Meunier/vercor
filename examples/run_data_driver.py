@@ -1,11 +1,14 @@
 from datetime import datetime
 from typing import List
+
 import numpy as np
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere, ERAInterimOcean, ERA5Land
+from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
 from vercor.coupler import RunSequence
+from vercor.grid import RectilinearGrid
 from vercor.regridders import BilinearRectilinearRegridder
+from vercor.regridders.conservative import ConservativeRectilinearRegridder
 
 if __name__ == "__main__":
     # Build components
@@ -28,9 +31,15 @@ if __name__ == "__main__":
     # Bilinear interpolation
     # Having interpolator factory function allows easy access
     # to different interpolators' args & kwargs
-    bilinear = lambda source_grid, destination_grid: BilinearRectilinearRegridder(
-        source_grid, destination_grid
-    )
+    def bilinear(
+        source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+    ) -> BilinearRectilinearRegridder:
+        return BilinearRectilinearRegridder(source_grid, destination_grid)
+
+    def conservative(
+        source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+    ) -> ConservativeRectilinearRegridder:
+        return ConservativeRectilinearRegridder(source_grid, destination_grid)
 
     # Exchanges
     # scalar fields (vector field))
@@ -46,10 +55,45 @@ if __name__ == "__main__":
                 "rbot",
                 "thbot",
                 "tbot",
+            ],
+            regridder_factory=bilinear,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="OCN",
+            field_names=[
                 "swr_net",
                 "lwr_dw",
             ],
+            regridder_factory=conservative,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="LND",
+            field_names=[
+                "qbot",
+                "zbot",
+                "tbot",
+            ],
             regridder_factory=bilinear,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="LND",
+            field_names=[
+                "swr_net",
+                "lwr_dw",
+            ],
+            regridder_factory=conservative,
         )
     )
 
@@ -59,20 +103,6 @@ if __name__ == "__main__":
             destination="ATM",
             field_names=[
                 "sst",
-            ],
-            regridder_factory=bilinear,
-        )
-    )
-    cpl.add_exchange(
-        Exchange(
-            source="ATM",
-            destination="LND",
-            field_names=[
-                "qbot",
-                "zbot",
-                "tbot",
-                "swr_net",
-                "lwr_dw",
             ],
             regridder_factory=bilinear,
         )
@@ -119,7 +149,8 @@ if __name__ == "__main__":
     longitude_source_2d, latitude_source_2d = np.meshgrid(
         lon_atm, lat_atm, indexing="ij"
     )
-    scalar_source = atm.get("sst").T
+    scalar_source = atm.get("skt").T + np.nan_to_num(atm.get("sst").T, nan=0.0)
+    # scalar_source = atm.get("swr_net").T
     u_source = atm.get("ubot").T
     v_source = atm.get("vbot").T
 
@@ -138,6 +169,8 @@ if __name__ == "__main__":
         scalar_source,
         shading="auto",
         cmap="coolwarm",
+        vmin=240,
+        vmax=310,
     )
     axs[0, 0].set_title("Initial Scalar Field")
     axs[0, 0].set_xlabel("Longitude")
@@ -160,6 +193,8 @@ if __name__ == "__main__":
         scalar_target,
         shading="auto",
         cmap="coolwarm",
+        vmin=240,
+        vmax=310,
     )
     axs[1, 0].set_title("Interpolated Scalar Field")
     axs[1, 0].set_xlabel("Longitude")

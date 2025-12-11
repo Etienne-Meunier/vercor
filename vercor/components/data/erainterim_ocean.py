@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
-from vercor.components.base import Component, ForcingData
+from vercor.components import Component, ForcingData
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class ERAInterimOcean(Component, ForcingData):
     def __init__(
         self,
-        name: str = "ERAINTERIM-OCN",
+        name: str = "OCN",
         model_level_file: Path = (
             Path(__file__).parent.parent.parent
             / ".."
@@ -78,7 +78,7 @@ class ERAInterimOcean(Component, ForcingData):
             "sst",
         ]
 
-        sst[:, 3:-3, :] = self._read_forcing("sst", where="model_level")
+        sst[:, 3:-3, :] = self._read_forcing("sst", where="model_level") + 273.15
         sst *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
         self.cdata["sst"] = sst
 

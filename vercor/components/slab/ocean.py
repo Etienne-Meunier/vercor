@@ -1,10 +1,9 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components.base import Component
-from vercor.components.base import TimedNamedArray as TNA
+from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
@@ -18,7 +17,13 @@ class Ocean(Component):
     """
 
     def __init__(self, name: str, grid: RectilinearGrid, H: float = 30.0) -> None:
+
+        binary_mask = np.ones(grid.shape)
+        binary_mask[:2, :] = 0.0  # land points
+        grid.binary_mask = binary_mask
+
         super().__init__(name, grid)
+
         self._fields2import = ["u10m", "v10m"]
         self._fields2export = [
             "sst",
@@ -43,6 +48,7 @@ class Ocean(Component):
         sst = self.cdata.get("sst", None)
         if sst is None:
             return
+
         SHF = self.cdata.get("SHF", None)
         LHF = self.cdata.get("LHF", None)
         Qnet = np.zeros_like(sst)
