@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components.base import Component, ForcingData
+from vercor.components import Component, ForcingData
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_forcing_data
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class ERA5Ocean(Component, ForcingData):
     def __init__(
         self,
-        name: str = "ERA5-OCN",
+        name: str = "OCN",
         surface_file: Path = get_forcing_data("surface"),
     ) -> None:
         """

@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components.base import Component, ForcingData
+from vercor.components import Component, ForcingData
 from vercor.fluxes.utilities import (
     compute_air_density,
     compute_levels_altitudes,
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class ERA5Atmosphere(Component, ForcingData):
     def __init__(
         self,
-        name: str = "ERA5-ATM",
+        name: str = "ATM",
         model_level_file: Path = get_forcing_data("model_level"),
         surface_file: Path = get_forcing_data("surface"),
     ) -> None:
@@ -65,6 +65,7 @@ class ERA5Atmosphere(Component, ForcingData):
         self._settings["apply_time_interpolation"] = True
         self._fields2import = [
             "sst",
+            "skt",
         ]
         self._fields2export = [
             "zbot",

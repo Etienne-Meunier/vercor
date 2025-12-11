@@ -1,14 +1,12 @@
-from vercor.types import AllComponentsType
-
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, List, Tuple, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
-
+from vercor.types import AllComponentsType
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler

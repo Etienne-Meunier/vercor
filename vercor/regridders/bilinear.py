@@ -1,7 +1,4 @@
-from typing import Callable, Tuple, Union
-
 import numpy as np
-from numpy.typing import NDArray
 
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
@@ -14,7 +11,7 @@ class BilinearRectilinearRegridder(Regridder):
         source_grid: RectilinearGrid,
         destination_grid: RectilinearGrid,
         periodic_longitude: bool = True,
-        nan_renorm: bool = False,
+        nan_renorm: bool = True,  # keep it True otherwise NaN will propagate to another components during regridding and will keep growing over domains
         extrapolation_mode: str | None = None,  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,

@@ -1,10 +1,9 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components.base import Component
-from vercor.components.base import TimedNamedArray as TNA
+from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:

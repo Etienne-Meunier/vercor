@@ -208,7 +208,7 @@ class Component(abc.ABC):
 
     def export_fields(self) -> Shared:
         """
-        Prepare and deposit/return the outgoing_fields to be sent to another component(s).
+        Prepare and deposit/return the outgoing_fields to be sent/dispatched to another component(s).
         """
         # TODO: export only component related fields
         return self.outgoing_fields
