@@ -12,9 +12,9 @@ from vercor.regridders.conservative import ConservativeRectilinearRegridder
 
 if __name__ == "__main__":
     # Build components
-    atm = ERA5Atmosphere("ATM")
-    ocn = ERAInterimOcean("OCN")
-    lnd = ERA5Land("LND")
+    atm = ERA5Atmosphere()
+    ocn = ERAInterimOcean()
+    lnd = ERA5Land()
 
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
