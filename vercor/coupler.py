@@ -27,9 +27,8 @@ from vercor.interpolators.conservative_remap_rectilinear import (
 from vercor.regridders import (
     BilinearRectilinearRegridder,
     ConservativeRectilinearRegridder,
-    compute_grid_fraction_rectilinear,
 )
-from vercor.regridders.helpers import centers_to_edges, compute_land_mask
+from vercor.regridders.helpers import compute_land_mask
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 from vercor.tools import get_component, grids_identical
@@ -160,6 +159,12 @@ class Coupler:
         # Initialize each component
         for name, component in self.components.items():
             component.initialize(self)
+
+            if name not in ("ATM", "OCN", "LND", "ICE"):
+                raise KeyError(
+                    f"Incorrect component name: {name}, must be ATM, OCN, LND, or ICE"
+                )
+
             component.check_not_empty_import_export_lists()
             component.send_fields(self.clock.start, self)
             self.logger.info(f" Initialized {name}")
@@ -197,7 +202,6 @@ class Coupler:
             source, destination, interp_type = key
             if "bilinear" in interp_type:
                 if source == "OCN" and destination == "ATM":
-                    # self._binary_masks[key] = self.ocn_bmask_on_atm_grid
                     self._fractional_masks[key] = self.ocn_fmask_on_atm_grid
                 elif source == "LND" and destination == "ATM":
                     self._binary_masks[key] = self.lnd_bmask_on_atm_grid
@@ -235,16 +239,20 @@ class Coupler:
                 f"Ocean component {ocean_component.name} has no binary mask defined"
             )
 
-        ocn_bmask_on_atm_grid = np.asarray(regridder(ocean_bmask))
-        self.ocn_bmask_on_atm_grid = np.clip(ocn_bmask_on_atm_grid, 0.0, 1.0)
-        self.lnd_bmask_on_atm_grid = compute_land_mask(self.ocn_bmask_on_atm_grid)
+        # Conservative remapping of binary mask to atmosphere grid
+        # results to fractional mask on atmosphere grid
+        ocn_fmask_on_atm_grid = np.asarray(regridder(ocean_bmask))
+        self.ocn_fmask_on_atm_grid = np.clip(ocn_fmask_on_atm_grid, 0.0, 1.0)
+
+        self.lnd_fmask_on_atm_grid = 1.0 - self.ocn_fmask_on_atm_grid
+        self.lnd_bmask_on_atm_grid = compute_land_mask(self.ocn_fmask_on_atm_grid)
 
         if regridder.interpolator is not None and isinstance(
             regridder.interpolator, ConservativeRectilinearRemapper
         ):
             src_total_mass = regridder.interpolator.get_src_total_mass(ocean_bmask)
             dst_total_mass = regridder.interpolator.get_dst_total_mass(
-                self.ocn_bmask_on_atm_grid
+                self.ocn_fmask_on_atm_grid
             )
 
             if not np.isclose(src_total_mass, dst_total_mass, atol=1e-6):
@@ -252,23 +260,6 @@ class Coupler:
                     "Regridding ocean binary mask to atmospheric grid does not conserve total mass "
                     f"(source mass: {src_total_mass}, destination mass: {dst_total_mass})"
                 )
-
-        bmask_sum = self.lnd_bmask_on_atm_grid + self.ocn_bmask_on_atm_grid
-        min_sum = bmask_sum.min()
-        if not np.isclose(min_sum, 1.0, atol=1e-12):
-            raise RuntimeError(
-                "Binary land and ocean masks on atmospheric grid must sum to approx. 1 everywhere "
-                f"(minimum sum {min_sum})"
-            )
-
-        self.lnd_fmask_on_atm_grid = compute_grid_fraction_rectilinear(
-            centers_to_edges(atmosphere_component.grid.latitude, "lat"),
-            centers_to_edges(atmosphere_component.grid.longitude, "lon"),
-            centers_to_edges(ocean_component.grid.latitude, "lat"),
-            centers_to_edges(ocean_component.grid.longitude, "lon"),
-            ocean_bmask.astype(bool),
-        )
-        self.ocn_fmask_on_atm_grid = 1.0 - self.lnd_fmask_on_atm_grid
 
         fmask_sum = self.lnd_fmask_on_atm_grid + self.ocn_fmask_on_atm_grid
         min_fsum = fmask_sum.min()
