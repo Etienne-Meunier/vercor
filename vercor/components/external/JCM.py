@@ -176,11 +176,14 @@ class JCM(Component):
 
     def _finalize(self, output: Optional[str] = None) -> xr.Dataset:
         # Current JCM returns an Any but is actually an xr.Dataset
-        ds = xr.merge(
-            [
-                _prediction.to_xarray()
-                for _prediction in self._predictions_list
-            ]
+        ds = cast(
+            xr.Dataset,
+            xr.merge(
+                [
+                    _prediction.to_xarray()
+                    for _prediction in self._predictions_list
+                ]
+            )
         )
         if output is not None:
             print(f"Output file: {output:s}")
