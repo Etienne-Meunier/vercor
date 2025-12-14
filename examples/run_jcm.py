@@ -15,10 +15,6 @@ from vercor.regridders import (
 
 import jcm
 
-
-# Set alias
-Atmosphere = JCM
-
 if __name__ == "__main__":
     
     land_fraction_threshold = 0.9
@@ -58,7 +54,7 @@ if __name__ == "__main__":
     cpl = Coupler(clock=clock)
     components = [atm, ocn, ice, lnd]
     for component in components:
-        cpl.register(component)
+        cpl.register(component)  # type: ignore
 
     cpl.set_components_run_sequence(run_sequence)
 
