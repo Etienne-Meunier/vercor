@@ -24,11 +24,18 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Get jax-gcm
+      uses: actions/checkout@v4
+      with:
+        repository: climate-analytics-lab/jax-gcm
+        path: jax-gcm
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest
         pip install .
+        export PYTHONPATH=./jax-gcm:$PYTHONPATH
+
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
