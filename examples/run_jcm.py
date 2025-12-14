@@ -4,7 +4,7 @@ from typing import List
 import numpy as np
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import Land, Ocean, SeaIce
+from vercor.components import Land, Ocean, SeaIce, JCM
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
 from vercor.regridders import (
@@ -14,7 +14,6 @@ from vercor.regridders import (
 )
 
 import jcm
-from vercor.components.JCM import JCM
 
 
 # Set alias
@@ -57,7 +56,7 @@ if __name__ == "__main__":
 
     # Coupler
     cpl = Coupler(clock=clock)
-    components: List[Atmosphere | Ocean | SeaIce | Land] = [atm, ocn, ice, lnd]
+    components = [atm, ocn, ice, lnd]
     for component in components:
         cpl.register(component)
 

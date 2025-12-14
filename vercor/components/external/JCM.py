@@ -18,7 +18,7 @@ from jcm.forcing import default_forcing
 from jcm.physics.speedy.physics_data import PhysicsData
 from jcm.physics_interface import dynamics_state_to_physics_state
 from jcm.physics_interface import PhysicsState
-from vercor.components.JCM_tools import mean_leaf, stack_objects, unwrap_leading_dims
+from vercor.components.external.JCM_tools import mean_leaf, stack_objects, unwrap_leading_dims
 from vercor.settings import VercorSettings
 
 from datetime import timedelta
