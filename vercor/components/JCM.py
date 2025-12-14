@@ -10,28 +10,26 @@ import jax.numpy as jnp
 
 import jax_datetime as jdt
 
-from dinosaur import primitive_equations, primitive_equations_states
+from dinosaur import primitive_equations_states
 
 import tree_math
-import jcm
 from jcm.model import Model
-from jcm.forcing import ForcingData, default_forcing
+from jcm.forcing import default_forcing
 from jcm.physics.speedy.physics_data import PhysicsData
 from jcm.physics_interface import dynamics_state_to_physics_state
 from jcm.physics_interface import PhysicsState
 from vercor.components.JCM_tools import mean_leaf, stack_objects, unwrap_leading_dims
+from vercor.settings import VercorSettings
 
 from datetime import timedelta
 
 from dataclasses import dataclass
-from typing import Any, Optional, List, cast
+from typing import Any, Optional, List
 
 import xarray as xr
 
-import vercor
 
 
-from vercor.components.base import TimedNamedArray as TNA
 
 from typing import TYPE_CHECKING
 
@@ -39,6 +37,7 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 # ===================
 
+latent_heat_of_vaporization = VercorSettings.latvap
 
 def asfloat64(tree):
     return jax.tree_util.tree_map(lambda arr: arr.astype(jnp.float64), tree)
@@ -88,6 +87,9 @@ class JCM(Component):
         self._fields2export = [
             "u10m",
             "v10m",
+            "SHF",
+            "LHF",
+            "TA2M",
         ]
 
     def _generate_step_function(self, jitted: bool = True):
@@ -119,13 +121,16 @@ class JCM(Component):
         self.forcing = default_forcing(self.model.coords.horizontal)
         self._step_function = self._generate_step_function(jitted=self.jitted)
         
-        clock_start = coupler.clock.start
         grid_shape = self.grid.shape
 
         zeros = np.zeros(grid_shape)
         self.cdata["sst"] = zeros + 273.15 + 15.0
         self.cdata["u10m"] = zeros.copy()
         self.cdata["v10m"] = zeros.copy()
+        self.cdata["LHF"] = zeros.copy()
+        self.cdata["SHF"] = zeros.copy()
+        self.cdata["TA2M"] = zeros.copy()
+
 
         self._predictions_list = []
 
@@ -159,27 +164,23 @@ class JCM(Component):
         d = _avg_predictions.dynamics
 
         # All the heat and freshwater fluxes are positive upward
-        #self.outgoing_fields.swr_net = (np.array(p.shortwave_rad.rsns).transpose(), time, self.name) # downward positive
-        #self.outgoing_fields.lwr_dw = (- np.array(p.surface_flux.rlns).transpose(), time, self.name) # downward positive
-        self.cdata["u10m"] = np.array(d.u_wind[:, :]).transpose()
-        self.cdata["v10m"] = np.array(d.v_wind[:, :]).transpose()
-        #self.outgoing_fields.thbot = (np.array(d.temperature[:, :]).transpose(), time, self.name)
-        #self.outgoing_fields.tbot = (np.array(d.temperature[:, :]).transpose(), time, self.name)
-        #self.outgoing_fields.qbot = (np.array(d.specific_humidity[:, :]).transpose(), time, self.name)
-        #self.outgoing_fields.precipitation = ((
-        #    - np.array(p.condensation.precls + p.convection.precnv).transpose() / 1e3
-        #), time, self.name)
-        #self.outgoing_fields.evaporation = ((
-        #    np.array(p.surface_flux.evap / 1e3).transpose()
-        #), time, self.name)
+        self.cdata["u10m"] = np.array(p.surface_flux.u0).transpose()
+        self.cdata["v10m"] = np.array(p.surface_flux.v0).transpose()
+        self.cdata["TA2M"] = np.array(p.surface_flux.t0).transpose()
+        self.cdata["SHF"] = np.array(p.surface_flux.shf).sum(axis=2).transpose()
+        self.cdata["LHF"] = (
+            np.array(p.surface_flux.evap / 1e3 * latent_heat_of_vaporization)
+            .sum(axis=2)
+            .transpose()
+        )
 
     def _finalize(self, output: Optional[str] = None) -> xr.Dataset:
         # Current JCM returns an Any but is actually an xr.Dataset
-        ds = cast(
-            xr.Dataset,
-            self.model.predictions_to_xarray(
-                unwrap_leading_dims(stack_objects(self._predictions_list))
-            ),
+        ds = xr.merge(
+            [
+                _prediction.to_xarray()
+                for _prediction in self._predictions_list
+            ]
         )
         if output is not None:
             print(f"Output file: {output:s}")
