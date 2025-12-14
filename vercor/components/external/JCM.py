@@ -25,6 +25,7 @@ from datetime import timedelta
 
 from dataclasses import dataclass
 from typing import Any, Optional, List
+import typing
 
 import xarray as xr
 
@@ -176,7 +177,7 @@ class JCM(Component):
 
     def _finalize(self, output: Optional[str] = None) -> xr.Dataset:
         # Current JCM returns an Any but is actually an xr.Dataset
-        ds = cast(
+        ds = typing.cast(
             xr.Dataset,
             xr.merge(
                 [
