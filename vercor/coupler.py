@@ -226,7 +226,7 @@ class Coupler:
                 "Land and atmospheric components must use identical horizontal grids"
             )
 
-        # Regrid the binary mask from the mask origin component
+        # Remapping the binary mask from the mask origin component
         # to the destination component grid
         regridder = ConservativeRectilinearRegridder(
             ocean_component.grid,

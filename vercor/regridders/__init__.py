@@ -5,7 +5,6 @@ from vercor.regridders.helpers import (
     make_rectilinear_grid,
     centers_to_edges,
     compute_land_mask,
-    compute_grid_fraction_rectilinear,
 )
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     "make_rectilinear_grid",
     "centers_to_edges",
     "compute_land_mask",
-    "compute_grid_fraction_rectilinear",
 ]
