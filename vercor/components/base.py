@@ -290,6 +290,7 @@ class Component(abc.ABC):
         out_fields = self.outgoing_fields.fields()
         in_fieldnames = in_fields.keys()
         out_fieldnames = out_fields.keys()
+        internal_fieldnames = self.cdata.keys()
 
         if field_name in in_fieldnames and field_name in out_fieldnames:
             raise KeyError(
@@ -301,6 +302,9 @@ class Component(abc.ABC):
 
         if field_name in out_fieldnames:
             return out_fields[field_name]
+
+        if field_name in internal_fieldnames:
+            return self.cdata[field_name]
 
         raise KeyError(
             f"Field name '{field_name}' not found in incoming or outgoing fields"
