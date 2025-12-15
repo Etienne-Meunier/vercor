@@ -164,4 +164,6 @@ class ERA5Atmosphere(Component, ForcingData):
         Advance to the next time step in the dataset
         using time interpolation from one month to another.
         """
-        pass
+        self.cdata["surface_temperature"] =\
+            np.nan_to_num(self.cdata["skt"], nan=0.0)\
+          + np.nan_to_num(self.cdata["sst"], nan=0.0)

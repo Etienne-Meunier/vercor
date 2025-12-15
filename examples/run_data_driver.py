@@ -149,7 +149,7 @@ if __name__ == "__main__":
     longitude_source_2d, latitude_source_2d = np.meshgrid(
         lon_atm, lat_atm, indexing="ij"
     )
-    scalar_source = atm.get("skt").T + np.nan_to_num(atm.get("sst").T, nan=0.0)
+    scalar_source = atm.get("surface_temperature").T
     # scalar_source = atm.get("swr_net").T
     u_source = atm.get("ubot").T
     v_source = atm.get("vbot").T
@@ -169,7 +169,7 @@ if __name__ == "__main__":
         scalar_source,
         shading="auto",
         cmap="coolwarm",
-        vmin=240,
+        vmin=220,
         vmax=310,
     )
     axs[0, 0].set_title("Initial Scalar Field")
@@ -193,7 +193,7 @@ if __name__ == "__main__":
         scalar_target,
         shading="auto",
         cmap="coolwarm",
-        vmin=240,
+        vmin=220,
         vmax=310,
     )
     axs[1, 0].set_title("Interpolated Scalar Field")
