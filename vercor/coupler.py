@@ -273,6 +273,38 @@ class Coupler:
                 f"(minimum sum {min_fsum}, maximum sum {max_fsum})"
             )
 
+    def append_masks_to_output(
+        self,
+        name: str,
+        shared_fields: Shared,
+    ) -> None:
+        """
+        Append binary and fractional masks to the output shared fields of component 'name'.
+
+        Arguments:
+            name: component name
+            shared_fields: Shared instance containing fields to be written to output
+        """
+
+        for exchange in self.exchanges:
+            if name != exchange.destination:
+                continue
+
+            key = (exchange.source, name, exchange.interpolation_type)
+            source_destination_name = "_".join(key)
+
+            setattr(shared_fields, "bmask_" + source_destination_name, (
+                    self._binary_masks[key],
+                    datetime.now(),
+                    name,
+                ))
+            
+            setattr(shared_fields, "fmask_" + source_destination_name, (
+                    self._fractional_masks[key],
+                    datetime.now(),
+                    name,
+                ))
+
     def interpolate_and_dispatch_fields(
         self,
         component: AllComponentsType,
@@ -340,8 +372,8 @@ class Coupler:
                             f"Field {field_name} not present in source fields"
                         )
 
-                    field_data = getattr(source_fields, field_name).data
-                    scalar = np.asarray(regrid(field_data))
+                    source_field_data = getattr(source_fields, field_name).data
+                    scalar = np.asarray(regrid(source_field_data))
                     scalar *= binary_mask * fractional_mask
 
                     setattr(
@@ -367,7 +399,7 @@ class Coupler:
 
         self.logger.info(" ------------ Finalizing coupler and components ------------")
         for name, component in self.components.items():
-            component.finalize(output_file_mask)
+            component.finalize(self, output_file_mask)
             self.logger.info(f" Finalized {name}")
 
     def __str__(self) -> str:
