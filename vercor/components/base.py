@@ -170,7 +170,7 @@ class Component(abc.ABC):
     ) -> None:
         raise NotImplementedError
 
-    def finalize(self, output_file_mask: Optional[Path] = None) -> None:
+    def finalize(self, coupler: "Coupler", output_file_mask: Optional[Path] = None) -> None:
         """Finalize the component by writing its all shared fields (incoming and outgoing)
         to a netCDF file.
 
@@ -179,11 +179,13 @@ class Component(abc.ABC):
         """
 
         if output_file_mask is None:
-            filepath = Path(f"{self.name.lower()}_shared.nc")
+            filepath = Path(f"{self.name.lower()}_component_shared_fields.nc")
         else:
             filepath = Path(f"{self.name.lower()}_{output_file_mask}.nc")
 
         merged_fields = self.merge_incoming_outgoing_fields()
+        coupler.append_masks_to_output(self.name, merged_fields)
+
         write_shared_to_netcdf(merged_fields, self.grid, filepath)
 
     def check_not_empty_import_export_lists(self) -> None:
