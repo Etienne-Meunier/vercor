@@ -2,6 +2,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from vercor.settings import VercorSettings
+
 
 def qsat(tk: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """The saturation humidity of air (kg/m^3)
@@ -61,7 +63,7 @@ def compute_pressure_levels(
 
 
 def compute_levels_altitudes(
-    settings,
+    settings: VercorSettings,
     t: NDArray[np.floating[Any]],
     q: NDArray[np.floating[Any]],
     ph: NDArray[np.floating[Any]],
@@ -150,7 +152,9 @@ def psixhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
 
 
 def compute_air_density(
-    settings, pf: NDArray[np.floating[Any]], t: NDArray[np.floating[Any]]
+    settings: VercorSettings,
+    pf: NDArray[np.floating[Any]],
+    t: NDArray[np.floating[Any]],
 ) -> NDArray[np.floating[Any]]:
     """Air density (kg/m^3)"""
     result: NDArray[np.floating[Any]] = (
@@ -160,7 +164,9 @@ def compute_air_density(
 
 
 def compute_potential_temperature(
-    settings, tbot: NDArray[np.floating[Any]], pf: NDArray[np.floating[Any]]
+    settings: VercorSettings,
+    tbot: NDArray[np.floating[Any]],
+    pf: NDArray[np.floating[Any]],
 ) -> NDArray[np.floating[Any]]:
     """Potential temperature (K)"""
     result: NDArray[np.floating[Any]] = (

@@ -17,7 +17,7 @@ class Grid(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def shape(self):
+    def shape(self) -> tuple[int, int]:
         raise NotImplementedError
 
     def __str__(self) -> str:
