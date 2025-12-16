@@ -3,6 +3,7 @@ from typing import Any, Callable, Tuple, Union
 import numpy as np
 from numpy.typing import NDArray
 
+from vercor.exceptions import RegridderError
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 from vercor.interpolators.conservative_remap_rectilinear import (
@@ -42,7 +43,7 @@ class Regridder:
         are provided (either one for scalar fields or two for vector fields)."""
 
         if self.interpolator is None:
-            raise ValueError("Regridder not properly set up")
+            raise RegridderError("Regridder not properly set up")
         if len(args) not in (1, 2):
             raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import numpy as np
 from numpy.typing import NDArray
 
+from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.types import AllComponentsType
 
@@ -30,11 +31,11 @@ def get_component(
     ]
     if len(components) > 1:
         names = ", ".join(component.name for component in components)
-        raise RuntimeError(
+        raise CouplerError(
             f"Multiple {label} components registered; only one supported (found: {names})"
         )
     if not components:
-        raise RuntimeError(f"No {label} component registered")
+        raise CouplerError(f"No {label} component registered")
     return components[0]
 
 

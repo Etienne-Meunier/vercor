@@ -9,6 +9,7 @@ import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
 
+from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_field_at_specific_time
 
@@ -170,7 +171,9 @@ class Component(abc.ABC):
     ) -> None:
         raise NotImplementedError
 
-    def finalize(self, coupler: "Coupler", output_file_mask: Optional[Path] = None) -> None:
+    def finalize(
+        self, coupler: "Coupler", output_file_mask: Optional[Path] = None
+    ) -> None:
         """Finalize the component by writing its all shared fields (incoming and outgoing)
         to a netCDF file.
 
@@ -194,17 +197,17 @@ class Component(abc.ABC):
         """
 
         if not self._fields2import:
-            raise ValueError(
+            raise ComponentError(
                 f"Component '{self.name}' has no fields to import defined."
             )
         if not self._fields2export:
-            raise ValueError(
+            raise ComponentError(
                 f"Component '{self.name}' has no fields to export defined."
             )
 
         all_fields = set(self._fields2import + self._fields2export)
         if len(all_fields) < len(self._fields2import) + len(self._fields2export):
-            raise ValueError(
+            raise ComponentError(
                 f"Component '{self.name}' has overlapping fields in import/export lists."
             )
 
@@ -240,7 +243,7 @@ class Component(abc.ABC):
         # check that all required fields are present
         for field in self._fields2import:
             if field not in self.incoming_fields.field_names:
-                raise KeyError(
+                raise ComponentError(
                     f"Field '{field}' required by component '{self.name}' not found in incoming fields."
                 )
 
@@ -248,7 +251,7 @@ class Component(abc.ABC):
         for field in self._fields2import:
             tna = getattr(self.incoming_fields, field)
             if tna.timestamp != time:
-                raise ValueError(
+                raise ComponentError(
                     f"Receive field '{field}' timestamp {tna.timestamp} does not match current time {time} in component '{self.name}'."
                 )
 
@@ -288,26 +291,23 @@ class Component(abc.ABC):
 
         in_fields = self.incoming_fields.fields()
         out_fields = self.outgoing_fields.fields()
-        in_fieldnames = in_fields.keys()
-        out_fieldnames = out_fields.keys()
-        internal_fieldnames = self.cdata.keys()
 
-        if field_name in in_fieldnames and field_name in out_fieldnames:
-            raise KeyError(
+        if field_name in in_fields and field_name in out_fields:
+            raise ComponentError(
                 f"Field name '{field_name}' found in both incoming and outgoing fields."
             )
 
-        if field_name in in_fieldnames:
+        if field_name in in_fields:
             return in_fields[field_name]
 
-        if field_name in out_fieldnames:
+        if field_name in out_fields:
             return out_fields[field_name]
 
-        if field_name in internal_fieldnames:
+        if field_name in self.cdata:
             return self.cdata[field_name]
 
-        raise KeyError(
-            f"Field name '{field_name}' not found in incoming or outgoing fields"
+        raise ComponentError(
+            f"Field name '{field_name}' not found in incoming, outgoing or internal pool of fields"
         )
 
     def merge_incoming_outgoing_fields(self) -> Shared:
