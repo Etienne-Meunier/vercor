@@ -170,6 +170,7 @@ class Coupler:
             self.logger.info(f" Initialized {name}")
 
         self._create_exchange_masks()
+        self._validate_land_mask_consistency()
         self.logger.info(" LND <--> ATM & OCN <--> ATM masks initialization complete")
 
         # Build regridders per (source component, destination component) pair
@@ -272,6 +273,24 @@ class Coupler:
                 "Fractional land and ocean masks on atmospheric grid must sum to approx. 1 everywhere "
                 f"(minimum sum {min_fsum}, maximum sum {max_fsum})"
             )
+
+    def _validate_land_mask_consistency(self) -> None:
+        land_component = get_component(self.components, (Land, ERA5Land), "land")
+        lnd_mask_from_component = land_component.grid.binary_mask
+        if lnd_mask_from_component is not None:
+            component_mask = np.asarray(lnd_mask_from_component)
+            if component_mask.shape != self.lnd_bmask_on_atm_grid.shape:
+                raise RuntimeError(
+                    "Land binary mask read from component does not match atmospheric grid shape"
+                )
+            if not np.array_equal(component_mask, self.lnd_bmask_on_atm_grid):
+                mismatch = np.count_nonzero(
+                    component_mask != self.lnd_bmask_on_atm_grid
+                )
+                raise RuntimeError(
+                    "Land binary mask created from remapped ocean mask does not match component-provided mask "
+                    f"(mismatched points: {mismatch})"
+                )
 
     def append_masks_to_output(
         self,
