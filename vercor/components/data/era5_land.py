@@ -18,7 +18,7 @@ class ERA5Land(Component, ForcingData):
             Path(__file__).parent.parent.parent
             / ".."
             / "forcing"
-            / "era5_lnd_skt_1980.nc"
+            / "era5_lnd_skt_masked_1980.nc"
         ).resolve(),
     ) -> None:
         """
@@ -42,11 +42,12 @@ class ERA5Land(Component, ForcingData):
 
         longitude = self._read_forcing("lon", where="surface")
         latitude = self._read_forcing("lat", where="surface")
-
+        binary_mask = self._read_forcing("mask", where="surface").T
         self.grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
+            binary_mask=binary_mask,
         )
 
         super().__init__(name, grid=self.grid)
