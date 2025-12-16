@@ -20,6 +20,12 @@ from vercor.components import (
     Shared,
 )
 from vercor.components import TimedNamedArray as TNA
+from vercor.exceptions import (
+    CouplerError,
+    ComponentError,
+    RegridderError,
+    ExchangerError,
+)
 from vercor.exchange import Exchange
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
@@ -110,7 +116,7 @@ class Coupler:
         """
 
         if component.name in self.components:
-            raise KeyError(f"Component {component.name} already registered")
+            raise CouplerError(f"Component {component.name} already registered")
 
         self.components[component.name] = component
         self.logger.info(f" Registered component {component.name}")
@@ -143,7 +149,7 @@ class Coupler:
 
         for cname in run_sequence:
             if cname not in self.components.keys():
-                raise KeyError(f"Component {cname} not registered in coupler")
+                raise CouplerError(f"Component {cname} not registered in coupler")
         self.run_sequence = run_sequence
         self.logger.info(
             f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
@@ -161,7 +167,7 @@ class Coupler:
             component.initialize(self)
 
             if name not in ("ATM", "OCN", "LND", "ICE"):
-                raise KeyError(
+                raise ComponentError(
                     f"Incorrect component name: {name}, must be ATM, OCN, LND, or ICE"
                 )
 
@@ -223,7 +229,7 @@ class Coupler:
         )
 
         if not grids_identical(land_component.grid, atmosphere_component.grid):
-            raise RuntimeError(
+            raise CouplerError(
                 "Land and atmospheric components must use identical horizontal grids"
             )
 
@@ -236,7 +242,7 @@ class Coupler:
 
         ocean_bmask = np.asarray(ocean_component.grid.binary_mask)
         if ocean_bmask is None:
-            raise RuntimeError(
+            raise ComponentError(
                 f"Ocean component {ocean_component.name} has no binary mask defined"
             )
 
@@ -257,7 +263,7 @@ class Coupler:
             )
 
             if not np.isclose(src_total_mass, dst_total_mass, atol=1e-6):
-                raise RuntimeError(
+                raise RegridderError(
                     "Regridding ocean binary mask to atmospheric grid does not conserve total mass "
                     f"(source mass: {src_total_mass}, destination mass: {dst_total_mass})"
                 )
@@ -269,7 +275,7 @@ class Coupler:
             np.isclose(min_fsum, 1.0, atol=1e-3)
             and np.isclose(max_fsum, 1.0, atol=1e-3)
         ):
-            raise RuntimeError(
+            raise RegridderError(
                 "Fractional land and ocean masks on atmospheric grid must sum to approx. 1 everywhere "
                 f"(minimum sum {min_fsum}, maximum sum {max_fsum})"
             )
@@ -280,14 +286,14 @@ class Coupler:
         if lnd_mask_from_component is not None:
             component_mask = np.asarray(lnd_mask_from_component)
             if component_mask.shape != self.lnd_bmask_on_atm_grid.shape:
-                raise RuntimeError(
+                raise CouplerError(
                     "Land binary mask read from component does not match atmospheric grid shape"
                 )
             if not np.array_equal(component_mask, self.lnd_bmask_on_atm_grid):
                 mismatch = np.count_nonzero(
                     component_mask != self.lnd_bmask_on_atm_grid
                 )
-                raise RuntimeError(
+                raise CouplerError(
                     "Land binary mask created from remapped ocean mask does not match component-provided mask "
                     f"(mismatched points: {mismatch})"
                 )
@@ -312,17 +318,25 @@ class Coupler:
             key = (exchange.source, name, exchange.interpolation_type)
             source_destination_name = "_".join(key)
 
-            setattr(shared_fields, "bmask_" + source_destination_name, (
+            setattr(
+                shared_fields,
+                "bmask_" + source_destination_name,
+                (
                     self._binary_masks[key],
                     datetime.now(),
                     name,
-                ))
-            
-            setattr(shared_fields, "fmask_" + source_destination_name, (
+                ),
+            )
+
+            setattr(
+                shared_fields,
+                "fmask_" + source_destination_name,
+                (
                     self._fractional_masks[key],
                     datetime.now(),
                     name,
-                ))
+                ),
+            )
 
     def interpolate_and_dispatch_fields(
         self,
@@ -365,7 +379,7 @@ class Coupler:
                 if isinstance(field_name, tuple):
                     field_name_set = set(field_name)
                     if not field_name_set.issubset(set(source_fields.fields().keys())):
-                        raise RuntimeError(
+                        raise ExchangerError(
                             f"Not all fields in vector {field_name} are present in source fields"
                         )
                     (
@@ -387,7 +401,7 @@ class Coupler:
                     )
                 else:
                     if field_name not in source_fields.fields().keys():
-                        raise KeyError(
+                        raise ExchangerError(
                             f"Field {field_name} not present in source fields"
                         )
 
@@ -448,7 +462,7 @@ class Coupler:
         # Wrap in a class method or function
         for cname in self.run_sequence:
             if self.components[cname].outgoing_fields.is_empty:
-                raise RuntimeError(
+                raise ComponentError(
                     f"Component {cname} outgoing fields were not initialized properly."
                 )
 
