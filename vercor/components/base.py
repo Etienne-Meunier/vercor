@@ -21,11 +21,11 @@ if TYPE_CHECKING:
 class TimedNamedArray:
     """Container class for a field (array), its timestamp, and its component name."""
 
-    data: np.ndarray
+    data: NDArray
     timestamp: datetime
     component_name: str
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype: Optional[NDArray] = None) -> NDArray:
         """Let NumPy see this as an array transparently."""
         return np.asarray(self.data, dtype=dtype)
 
@@ -350,10 +350,10 @@ class Component(abc.ABC):
 
 
 class ForcingData:
-    def __init__(self):
-        self.DATA_FILES = {}
+    def __init__(self) -> None:
+        self.DATA_FILES: Dict[str, str] = {}
 
-    def _read_forcing(self, variable: str, where: str, flip_y: bool = False):
+    def _read_forcing(self, variable: str, where: str, flip_y: bool = False) -> NDArray:
         """Read a variable from the specified forcing file.
 
         Arguments:

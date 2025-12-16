@@ -41,7 +41,7 @@ from vercor.tools import get_component, grids_identical
 from vercor.types import AllComponentsType
 
 
-def setup_logger():
+def setup_logger() -> Logger:
     """
     Setup and return a logger for the Coupler.
     """

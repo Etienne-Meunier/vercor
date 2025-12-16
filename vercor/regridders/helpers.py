@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 from numpy.typing import NDArray
 
@@ -12,7 +13,7 @@ def make_rectilinear_grid(
     longitude_end: float,
     latitude_start: float,
     latitude_end: float,
-    mask=None,
+    mask: Optional[NDArray] = None,
 ) -> RectilinearGrid:
     """
     Helper to build rectilinear grid with equally spaced coordinates.

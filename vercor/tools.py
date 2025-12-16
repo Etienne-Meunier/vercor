@@ -39,7 +39,9 @@ def get_component(
     return components[0]
 
 
-def get_periodic_interval(current_time, cycle_length, rec_spacing, n_rec):
+def get_periodic_interval(
+    current_time: float, cycle_length: float, rec_spacing: float, n_rec: int
+) -> Tuple[Tuple[NDArray, NDArray], Tuple[NDArray, NDArray]]:
     """
     Ported from Veros: https://github.com/team-ocean/veros/blob/main/veros/tools/setup.py#L88
 
