@@ -20,11 +20,13 @@ class Land(Component):
         super().__init__(name, grid)
         self._fields2import = ["LHF", "SHF"]
         self._fields2export = [
+            "land_surface_temperature",
             "SOILM",
         ]
 
     def initialize(self, coupler: "Coupler") -> None:
         self.cdata["SOILM"] = 0.3 * np.ones(self.grid.shape)
+        self.cdata["land_surface_temperature"] = np.zeros(self.grid.shape) + 288.15
 
     def step(
         self,
@@ -38,3 +40,4 @@ class Land(Component):
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
         self.cdata["SOILM"] = soil
+
