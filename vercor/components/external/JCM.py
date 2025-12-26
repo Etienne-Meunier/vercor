@@ -61,7 +61,7 @@ class JCM(Component):
         name: str,
         model: Model,
         coupling_timestep: timedelta = timedelta(days=1),
-        save_interval: timedelta = timedelta(hours=12),
+        save_interval: timedelta = timedelta(hours=24),
         jitted: bool = True,
     ) -> None:
         
@@ -70,19 +70,19 @@ class JCM(Component):
         self.save_interval = save_interval
         self.jitted = jitted
 
-        
         hgrid = model.coords.horizontal
         grid = RectilinearGrid(
             name=name,
             longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
             latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-            binary_mask=np.where(model.geometry.fmask > 0.0, 1.0, 0.0).transpose() == 0.0,  # true = valid points.
+            binary_mask=np.ones_like(model.geometry.fmask).transpose(),  # This is used for interpolation, which all points are valid
         )
         super().__init__(name, grid)
-
+        
         # has to be defined after super() is called
         self._fields2import = [
             "sst",
+            "land_surface_temperature",
         ]
  
         self._fields2export = [
@@ -119,20 +119,20 @@ class JCM(Component):
             phydata = PhysicsData.zeros(self.model.coords.horizontal.nodal_shape, self.model.coords.vertical.layers),
             prog = dynamics_state_to_physics_state(_modal_state, self.model.primitive),
         )
-        self.forcing = default_forcing(self.model.coords.horizontal)
+        
+        self.forcing = default_forcing(self.model.coords.horizontal).copy(lfluxland=True)
         self._step_function = self._generate_step_function(jitted=self.jitted)
         
         grid_shape = self.grid.shape
 
         zeros = np.zeros(grid_shape)
         self.cdata["sst"] = zeros + 273.15 + 15.0
+        self.cdata["land_surface_temperature"] = zeros
         self.cdata["u10m"] = zeros.copy()
         self.cdata["v10m"] = zeros.copy()
         self.cdata["LHF"] = zeros.copy()
         self.cdata["SHF"] = zeros.copy()
         self.cdata["TA2M"] = zeros.copy()
-
-
         self._predictions_list = []
 
     def step(self, dt, time, coupler) -> None:
@@ -142,7 +142,14 @@ class JCM(Component):
                 f"dt={str(dt)} must be an integer multiple of coupling_timestep={str(self.coupling_timestep)}."
             )
 
-        _forcing = self.forcing.copy(
+        print("Mean of sst: ", jnp.asarray(self.incoming_fields.sst.data).mean())
+        print("number of sst that is less than 250: ", np.sum(self.incoming_fields.sst.data < 250.0))
+
+        self.incoming_fields.sst.data[self.incoming_fields.sst.data < 250.0] = 288.15
+        self.incoming_fields.land_surface_temperature.data[self.incoming_fields.land_surface_temperature.data < 250.0] = 288.15
+
+        forcing = self.forcing.copy(
+            stl_am=jnp.asarray(self.incoming_fields.land_surface_temperature).transpose(),
             sea_surface_temperature=jnp.asarray(self.incoming_fields.sst).transpose(),
         )
 
@@ -151,7 +158,7 @@ class JCM(Component):
         for _ in range(N):
             _new_state, _predictions = self._step_function(
                 self._state,
-                _forcing,
+                forcing,
                 jdt.to_datetime(time.strftime("%Y-%m-%d %H:%M:%S")),
             )
             self._state = _new_state
