@@ -4,7 +4,7 @@ from typing import List
 import numpy as np
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import Land, Ocean, SeaIce, JCM
+from vercor.components import Land, Ocean, JCM
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
 from vercor.regridders import (
@@ -13,46 +13,56 @@ from vercor.regridders import (
     make_rectilinear_grid,
 )
 
+from vercor.components.external.JCM_tools  import (
+    generate_jcm_forcing_and_topography_files,
+)
+
 import jcm
 
 if __name__ == "__main__":
-    
-    land_fraction_threshold = 0.9
-    
-    # Build grids
-    ocn_grid = make_rectilinear_grid("ocn-grid", 64, 32, 0.0, 360.0, -90.0, 90.0)
-    ice_grid = make_rectilinear_grid("ice-grid", 64, 32, 0.0, 360.0, -90.0, 90.0)
 
-    # Build components
-    atm = JCM("ATM", jcm.model.Model(), jitted=True)
+    atm_resolution = 31
+
+    # JCM topography stuff 
+    external_files = generate_jcm_forcing_and_topography_files(resolution=atm_resolution)
+    geometry = jcm.geometry.Geometry.from_file(external_files["terrain"])
     
+    # Build components
+    atm = JCM("ATM", jcm.model.Model(geometry=geometry), jitted=True)
+
+    ocn_binary_mask = np.where( geometry.fmask < 1, 1, 0).transpose() 
+    lnd_binary_mask = 1 - ocn_binary_mask
+ 
     hgrid = atm.model.coords.horizontal
     lnd_grid = RectilinearGrid(
         name="LND",
         longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
         latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-        binary_mask=np.where(atm.model.geometry.fmask > land_fraction_threshold, 0.0, 1.0).transpose(),  # 0 = land, 1 = ocean
+        binary_mask = lnd_binary_mask,
     )
 
     ocn_grid = RectilinearGrid(
         name="OCN",
         longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
         latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-        binary_mask=np.where(atm.model.geometry.fmask <= land_fraction_threshold, 1.0, 0.0).transpose(),  # 0 = land, 1 = ocean
+        binary_mask = ocn_binary_mask,
     )
 
-
     ocn = Ocean("OCN", ocn_grid)
-    ice = SeaIce("ICE", ice_grid)
     lnd = Land("LND", lnd_grid)
 
+    print("Total number of grids = ", atm.grid.binary_mask.size)
+    print("Sum of atm.grid.binary_mask = ", np.sum(atm.grid.binary_mask))
+    print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
+    print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
+ 
     # Clock and sequence
-    clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=2)
-    run_sequence = RunSequence(order=["OCN", "ATM", "ICE", "LND"])
+    clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
+    run_sequence = RunSequence(order=["OCN", "ATM", "LND"])
 
     # Coupler
     cpl = Coupler(clock=clock)
-    components = [atm, ocn, ice, lnd]
+    components = [atm, ocn, lnd]
     for component in components:
         cpl.register(component)  # type: ignore
 
@@ -94,18 +104,9 @@ if __name__ == "__main__":
 
     cpl.add_exchange(
         Exchange(
-            source="OCN",
-            destination="ICE",
-            field_names=["sst"],
-            regridder_factory=bilinear,
-        )
-    )
-
-    cpl.add_exchange(
-        Exchange(
             source="LND",
             destination="ATM",
-            field_names=["SOILM"],
+            field_names=["SOILM", "land_surface_temperature"],
             regridder_factory=bilinear,
         )
     )
@@ -133,7 +134,6 @@ if __name__ == "__main__":
     print("v10m mean:", np.nanmean(atm.get("v10m")))
     print("SOILM(LND) mean:", np.nanmean(lnd.get("SOILM")))
     print("SOILM(ATM) mean:", np.nanmean(atm.get("SOILM")))
-    print("ICEFRAC mean:", np.nanmean(ice.get("ICEFRAC")))
     print("SHF(ATM) mean:", np.nanmean(atm.get("SHF")))
     print("SHF(LND) mean:", np.nanmean(lnd.get("SHF")))
 
