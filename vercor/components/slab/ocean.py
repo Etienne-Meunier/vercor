@@ -18,10 +18,6 @@ class Ocean(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid, H: float = 30.0) -> None:
 
-        binary_mask = np.ones(grid.shape)
-        binary_mask[:2, :] = 0.0  # land points
-        grid.binary_mask = binary_mask
-
         super().__init__(name, grid)
 
         self._fields2import = ["u10m", "v10m"]
@@ -57,6 +53,5 @@ class Ocean(Component):
         if LHF is not None:
             Qnet += LHF
         T0 = 273.15 + 15.0
-        dTdt = Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (sst - T0)
-
+        dTdt = - Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (sst - T0)
         self.cdata["sst"] = sst + dTdt * dt.total_seconds()
