@@ -1,23 +1,24 @@
 from datetime import datetime
-from typing import List
 
 import numpy as np
+import matplotlib.pyplot as plt
+
+from jcm.model import Model
+from jcm import geometry
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import Land, Ocean, JCM
+from vercor.components import JAXGCM, Land, Ocean
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
 from vercor.regridders import (
     BilinearRectilinearRegridder,
     ConservativeRectilinearRegridder,
-    make_rectilinear_grid,
 )
 
-from vercor.components.external.JCM_tools  import (
+from vercor.components.external.jax_gcm_tools  import (
     generate_jcm_forcing_and_topography_files,
 )
 
-import jcm
 
 if __name__ == "__main__":
 
@@ -25,10 +26,10 @@ if __name__ == "__main__":
 
     # JCM topography stuff 
     external_files = generate_jcm_forcing_and_topography_files(resolution=atm_resolution)
-    geometry = jcm.geometry.Geometry.from_file(external_files["terrain"])
+    geometry = geometry.Geometry.from_file(external_files["terrain"])
     
     # Build components
-    atm = JCM("ATM", jcm.model.Model(geometry=geometry), jitted=True)
+    atm = JAXGCM("ATM", Model(geometry=geometry), jitted=True)
 
     ocn_binary_mask = np.where( geometry.fmask < 1, 1, 0).transpose() 
     lnd_binary_mask = 1 - ocn_binary_mask
@@ -51,10 +52,15 @@ if __name__ == "__main__":
     ocn = Ocean("OCN", ocn_grid)
     lnd = Land("LND", lnd_grid)
 
-    print("Total number of grids = ", atm.grid.binary_mask.size)
-    print("Sum of atm.grid.binary_mask = ", np.sum(atm.grid.binary_mask))
-    print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
-    print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
+    if atm.grid.binary_mask is not None:
+        print("Total number of grids = ", atm.grid.binary_mask.size)
+        print("Sum of atm.grid.binary_mask = ", np.sum(atm.grid.binary_mask))
+
+    if lnd.grid.binary_mask is not None:
+        print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
+    
+    if ocn.grid.binary_mask is not None:
+        print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
  
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
@@ -136,8 +142,6 @@ if __name__ == "__main__":
     print("SOILM(ATM) mean:", np.nanmean(atm.get("SOILM")))
     print("SHF(ATM) mean:", np.nanmean(atm.get("SHF")))
     print("SHF(LND) mean:", np.nanmean(lnd.get("SHF")))
-
-    import matplotlib.pyplot as plt
 
     fig, axs = plt.subplots(2, 2, figsize=(15, 10), layout="constrained")
 

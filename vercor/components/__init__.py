@@ -13,7 +13,7 @@ from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
-from vercor.components.external.JCM import JCM
+from vercor.components.external.jax_gcm import JAXGCM
 
 __all__ = [
     "TimedNamedArray",
@@ -29,5 +29,5 @@ __all__ = [
     "ERA5Ocean",
     "ERAInterimOcean",
     "ERA5Land",
-    "JCM",
+    "JAXGCM",
 ]

@@ -1,4 +1,5 @@
 from typing import Any, List
+
 import jax
 import jax.numpy as jnp
 
@@ -64,40 +65,34 @@ def positive_cosine_cubic_latitude_squared(
 def mean_leaf(
     tree: Any,
     axis: int | List[int],
-):
+) -> Any:
     """
     A tool function that does the jnp.mean to leaf nodes.
 
-    Args:
-
+    Arguments:
         tree : a tree object
 
     Returns:
-
         tree_mean : tree with jnp.mean applied to each of its leaf node.
-
     """
     return jax.tree_util.tree_map(lambda arr: jnp.mean(arr, axis=axis), tree)
 
 
 def unwrap_leading_dims(
-    obj,
-    first_n_dim=2,
-):
+    obj: Any,
+    first_n_dim: int = 2,
+) -> Any:
     """
     A tool function that unwraps the leading dimensions of jax arrays
 
-    Args:
-
+    Arguments:
         obj : A structure containining jax arrays
 
     Returns:
-
         unwrapped object.
-
     """
 
-    def _unwrap(arr):
+    def _unwrap(arr: jnp.ndarray) -> jnp.ndarray:
         new_shape = (-1,) + arr.shape[first_n_dim:]
         return jnp.reshape(arr, new_shape)
 
@@ -105,19 +100,16 @@ def unwrap_leading_dims(
 
 
 def stack_objects(
-    objs: List,
-):
+    objs: List[Any],
+) -> Any:
     """
     A tool function that stack dataclasses together.
 
-    Args:
-
+    Arguments:
         objs : A list of objects that need to be stacked
 
     Returns:
-
         stacked : Stacked object.
-
     """
     # objs is a list of pytrees with same structure
     stacked = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *objs)
@@ -125,20 +117,17 @@ def stack_objects(
 
 
 def concat_objects(
-    objs: List,
+    objs: List[Any],
     axis: int,
-):
+) -> Any:
     """
     A tool function that concats dataclasses together.
 
-    Args:
-
+    Arguments:
         objs : A list of objects that need to be concat
 
     Returns:
-
         concatenated : Concatenated object.
-
     """
     # objs is a list of pytrees with same structure
     concatenated = jax.tree_util.tree_map(

@@ -18,7 +18,7 @@ from vercor.components import (
     Land,
     Ocean,
     Shared,
-    JCM
+    JAXGCM,
 )
 from vercor.components import TimedNamedArray as TNA
 from vercor.exceptions import (
@@ -223,7 +223,7 @@ class Coupler:
 
         land_component = get_component(self.components, (Land, ERA5Land), "land")
         atmosphere_component = get_component(
-            self.components, (Atmosphere, ERA5Atmosphere, JCM), "atmosphere"
+            self.components, (Atmosphere, ERA5Atmosphere, JAXGCM), "atmosphere"
         )
         ocean_component = get_component(
             self.components, (Ocean, ERA5Ocean, ERAInterimOcean), "ocean"
