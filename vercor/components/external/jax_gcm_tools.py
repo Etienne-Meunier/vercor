@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Any, List, Dict
+import subprocess
+import sys
 
 import jax
 import jax.numpy as jnp
@@ -8,13 +10,14 @@ import jax.numpy as jnp
 def generate_jcm_forcing_and_topography_files(resolution: int = 31) -> Dict[str, Path]:
     import jcm
 
+    data_folder = Path(jcm.__file__).parent / f"data/bc"
     # Prepare boundary file
     files_to_check = dict(
         terrain=(
-            Path(jcm.__file__).parent / f"data/bc/terrain_t{resolution:d}.nc"
+            data_folder / f"terrain_t{resolution:d}.nc"
         ).resolve(),
         forcing=(
-            Path(jcm.__file__).parent / f"data/bc/forcing_t{resolution:d}.nc"
+            data_folder / f"forcing_t{resolution:d}.nc"
         ).resolve(),
     )
 
@@ -22,17 +25,16 @@ def generate_jcm_forcing_and_topography_files(resolution: int = 31) -> Dict[str,
         Path(jcm.__file__).parent / "data/bc/interpolate.py"
     ).resolve()
 
-    def get_files_exist(file_dict: dict[str, Path]) -> List[bool]:
-        return [Path(file).exists() for _, file in file_dict.items()]
+    def check_if_file_exist(file_dict, verbose=True):
+        file_status = { file : Path(file).exists() for _, file in file_dict.items() }
+        if verbose:
+            for file, result in file_status.items():
+                print(f"Check file {str(file):s}...", "found." if result else "not found.") 
+        return file_status
 
-    for _, file_name in files_to_check.items():
-        print(f"Check file: {str(file_name)}")
-
-    if not all(get_files_exist(files_to_check)):
+    file_status = check_if_file_exist(files_to_check)
+    if not all(list(file_status.values())):
         print("Some files do not exist. Need to produce it.")
-
-        import subprocess
-        import sys
 
         try:
             result = subprocess.run(
@@ -40,28 +42,21 @@ def generate_jcm_forcing_and_topography_files(resolution: int = 31) -> Dict[str,
                 check=True,
                 capture_output=True,
                 text=True,
+                cwd=data_folder,
             )
             print(result.stdout)
         except subprocess.CalledProcessError as e:
             print("Error output:", e.stderr)
-    if all(get_files_exist(files_to_check)):
-        print("All files exist!")
-    else:
-        raise Exception(
-            "Something went wrong. The daily file is not generated. Please check."
-        )
+    
+        new_file_status = check_if_file_exist(files_to_check)
+        if all(list(new_file_status.values())):
+            print("All files exist!")
+        else:
+            raise FileNotFoundError(
+                "Something went wrong. The daily file is not generated. Please check."
+            )
 
     return files_to_check
-
-
-def positive_cosine_cubic_latitude_squared(
-    lat: jnp.ndarray,
-    amplitude: float = 1.0,
-) -> jnp.ndarray:
-    return jnp.where(
-        jnp.abs(lat) < jnp.pi / 3, amplitude * jnp.cos(3 * lat / 2) ** 2, 0
-    )
-
 
 def mean_leaf(
     tree: Any,
