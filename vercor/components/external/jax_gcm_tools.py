@@ -1,29 +1,43 @@
 from pathlib import Path
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 import subprocess
+import os
 import sys
+import shutil
 
 import jax
 import jax.numpy as jnp
 
 
-def generate_jcm_forcing_and_topography_files(resolution: int = 31) -> Dict[str, Path]:
+def generate_jcm_forcing_and_topography_files(
+    resolution: int = 31,
+    data_directory: Optional[str | Path] = None,
+) -> Dict[str, Path]:
     import jcm
 
-    data_folder = Path(jcm.__file__).parent / f"data/bc"
+
+    if data_directory is None:
+        print("Warning: `data_directory` is `None`. Attempting to set it to $HOME/.cache/jcm")
+        data_directory = os.environ.get('HOME', None)
+        if data_directory is None:
+            print("Warning: Cannot find environment variable $HOME. Use Path.cwd() instead.")
+            data_directory = Path.cwd()
+        else:
+            data_directory = Path(data_directory)
+
+        data_directory = data_directory / ".cache/jcm"
+        print(f"Notice: Using `data_directory = \"{str(data_directory)}\".")
+
+    raw_data_directory = Path(jcm.__file__).parent / f"data/bc"
     # Prepare boundary file
     files_to_check = dict(
         terrain=(
-            data_folder / f"terrain_t{resolution:d}.nc"
+            data_directory / f"terrain_t{resolution:d}.nc"
         ).resolve(),
         forcing=(
-            data_folder / f"forcing_t{resolution:d}.nc"
+            data_directory / f"forcing_t{resolution:d}.nc"
         ).resolve(),
     )
-
-    interpolation_code = (
-        Path(jcm.__file__).parent / "data/bc/interpolate.py"
-    ).resolve()
 
     def check_if_file_exist(file_dict, verbose=True):
         file_status = { file : Path(file).exists() for _, file in file_dict.items() }
@@ -35,16 +49,26 @@ def generate_jcm_forcing_and_topography_files(resolution: int = 31) -> Dict[str,
     file_status = check_if_file_exist(files_to_check)
     if not all(list(file_status.values())):
         print("Some files do not exist. Need to produce it.")
-
         try:
+            
+            data_directory.mkdir(parents=True, exist_ok=True)
+            interpolation_code = (
+                raw_data_directory / "interpolate.py"
+            ).resolve()
+
             result = subprocess.run(
                 [sys.executable, str(interpolation_code), f"{resolution:d}"],
                 check=True,
                 capture_output=True,
                 text=True,
-                cwd=data_folder,
+                cwd=data_directory,
             )
-            print(result.stdout)
+            
+            for destination_file in files_to_check.values():
+                source_file = Path(raw_data_directory / destination_file.name)
+                print(f"Copying {str(source_file):s} => {str(destination_file):s}")
+                shutil.copy(source_file, destination_file)
+
         except subprocess.CalledProcessError as e:
             print("Error output:", e.stderr)
     
