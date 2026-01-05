@@ -1,12 +1,13 @@
-from typing import Any, List
+from pathlib import Path
+from typing import Any, List, Dict
 
 import jax
 import jax.numpy as jnp
 
 
-def generate_jcm_forcing_and_topography_files(resolution: int = 31):
+def generate_jcm_forcing_and_topography_files(resolution: int = 31) -> Dict[str, Path]:
     import jcm
-    from pathlib import Path
+
     # Prepare boundary file
     files_to_check = dict(
         terrain=(
@@ -21,7 +22,7 @@ def generate_jcm_forcing_and_topography_files(resolution: int = 31):
         Path(jcm.__file__).parent / "data/bc/interpolate.py"
     ).resolve()
 
-    def get_files_exist(file_dict):
+    def get_files_exist(file_dict: dict[str, Path]) -> List[bool]:
         return [Path(file).exists() for _, file in file_dict.items()]
 
     for _, file_name in files_to_check.items():
@@ -54,7 +55,7 @@ def generate_jcm_forcing_and_topography_files(resolution: int = 31):
 
 
 def positive_cosine_cubic_latitude_squared(
-    lat,
+    lat: jnp.ndarray,
     amplitude: float = 1.0,
 ) -> jnp.ndarray:
     return jnp.where(

@@ -69,10 +69,12 @@ class JAXGCM(Component):
             name=name,
             longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
             latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-            binary_mask=np.ones_like(model.geometry.fmask).transpose(),  # This is used for interpolation, which all points are valid
+            binary_mask=np.ones_like(
+                model.geometry.fmask
+            ).transpose(),  # This is used for interpolation, which all points are valid
         )
         super().__init__(name, grid)
-        
+
         # has to be defined after super() is called
         self._fields2import = [
             "sst",
@@ -123,8 +125,10 @@ class JAXGCM(Component):
             ),
             prog=dynamics_state_to_physics_state(_modal_state, self.model.primitive),
         )
-        
-        self.forcing = default_forcing(self.model.coords.horizontal).copy(lfluxland=True)
+
+        self.forcing = default_forcing(self.model.coords.horizontal).copy(
+            lfluxland=True
+        )
         self._step_function = self._generate_step_function(jitted=self.jitted)
 
         grid_shape = self.grid.shape
@@ -152,13 +156,20 @@ class JAXGCM(Component):
             )
 
         print("Mean of sst: ", jnp.asarray(self.incoming_fields.sst.data).mean())
-        print("number of sst that is less than 250: ", np.sum(self.incoming_fields.sst.data < 250.0))
+        print(
+            "number of sst that is less than 250: ",
+            np.sum(self.incoming_fields.sst.data < 250.0),
+        )
 
         self.incoming_fields.sst.data[self.incoming_fields.sst.data < 250.0] = 288.15
-        self.incoming_fields.land_surface_temperature.data[self.incoming_fields.land_surface_temperature.data < 250.0] = 288.15
+        self.incoming_fields.land_surface_temperature.data[
+            self.incoming_fields.land_surface_temperature.data < 250.0
+        ] = 288.15
 
         forcing = self.forcing.copy(
-            stl_am=jnp.asarray(self.incoming_fields.land_surface_temperature).transpose(),
+            stl_am=jnp.asarray(
+                self.incoming_fields.land_surface_temperature
+            ).transpose(),
             sea_surface_temperature=jnp.asarray(self.incoming_fields.sst).transpose(),
         )
 
