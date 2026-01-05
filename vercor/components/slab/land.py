@@ -40,4 +40,3 @@ class Land(Component):
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
         self.cdata["SOILM"] = soil
-

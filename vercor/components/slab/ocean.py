@@ -53,5 +53,5 @@ class Ocean(Component):
         if LHF is not None:
             Qnet += LHF
         T0 = 273.15 + 15.0
-        dTdt = - Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (sst - T0)
+        dTdt = -Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (sst - T0)
         self.cdata["sst"] = sst + dTdt * dt.total_seconds()

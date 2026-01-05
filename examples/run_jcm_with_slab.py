@@ -15,7 +15,7 @@ from vercor.regridders import (
     ConservativeRectilinearRegridder,
 )
 
-from vercor.components.external.jax_gcm_tools  import (
+from vercor.components.external.jax_gcm_tools import (
     generate_jcm_forcing_and_topography_files,
 )
 
@@ -24,29 +24,31 @@ if __name__ == "__main__":
 
     atm_resolution = 31
 
-    # JCM topography stuff 
-    external_files = generate_jcm_forcing_and_topography_files(resolution=atm_resolution)
+    # JCM topography stuff
+    external_files = generate_jcm_forcing_and_topography_files(
+        resolution=atm_resolution
+    )
     geometry = geometry.Geometry.from_file(external_files["terrain"])
-    
+
     # Build components
     atm = JAXGCM("ATM", Model(geometry=geometry), jitted=True)
 
-    ocn_binary_mask = np.where( geometry.fmask < 1, 1, 0).transpose() 
+    ocn_binary_mask = np.where(geometry.fmask < 1, 1, 0).transpose()
     lnd_binary_mask = 1 - ocn_binary_mask
- 
+
     hgrid = atm.model.coords.horizontal
     lnd_grid = RectilinearGrid(
         name="LND",
         longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
         latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-        binary_mask = lnd_binary_mask,
+        binary_mask=lnd_binary_mask,
     )
 
     ocn_grid = RectilinearGrid(
         name="OCN",
         longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
         latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
-        binary_mask = ocn_binary_mask,
+        binary_mask=ocn_binary_mask,
     )
 
     ocn = Ocean("OCN", ocn_grid)
@@ -58,10 +60,10 @@ if __name__ == "__main__":
 
     if lnd.grid.binary_mask is not None:
         print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
-    
+
     if ocn.grid.binary_mask is not None:
         print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
- 
+
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
     run_sequence = RunSequence(order=["OCN", "ATM", "LND"])
