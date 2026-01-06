@@ -349,7 +349,7 @@ class Component(abc.ABC):
         )
 
 
-class ForcingData:
+class ComponentForcingData:
     def __init__(self) -> None:
         self.DATA_FILES: Dict[str, str] = {}
 

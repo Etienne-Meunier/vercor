@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components import Component, ForcingData
+from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_forcing_data
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERA5Ocean(Component, ForcingData):
+class ERA5Ocean(Component, ComponentForcingData):
     def __init__(
         self,
         name: str = "OCN",
@@ -26,7 +26,7 @@ class ERA5Ocean(Component, ForcingData):
             surface_file (Path): path to netCDF file with data at surface level
 
         Attributes of parent classes to be initialized:
-            ForcingData
+            ComponentForcingData
                 DATA_FILES: dict [str, str]
             Component
                 name: str

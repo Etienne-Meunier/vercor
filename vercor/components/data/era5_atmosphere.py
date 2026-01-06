@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components import Component, ForcingData
+from vercor.components import Component, ComponentForcingData
 from vercor.fluxes.utilities import (
     compute_air_density,
     compute_levels_altitudes,
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERA5Atmosphere(Component, ForcingData):
+class ERA5Atmosphere(Component, ComponentForcingData):
     def __init__(
         self,
         name: str = "ATM",
@@ -39,7 +39,7 @@ class ERA5Atmosphere(Component, ForcingData):
             https://confluence.ecmwf.int/display/UDOC/L137+model+level+definitions
 
         Attributes of parent classes to be initialized:
-            ForcingData
+            ComponentForcingData
                 DATA_FILES: dict [str, str]
             Component
                 name: str

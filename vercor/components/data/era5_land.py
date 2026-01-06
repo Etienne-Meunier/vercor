@@ -3,14 +3,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 
-from vercor.components import Component, ForcingData
+from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERA5Land(Component, ForcingData):
+class ERA5Land(Component, ComponentForcingData):
     def __init__(
         self,
         name: str = "LND",
@@ -29,7 +29,7 @@ class ERA5Land(Component, ForcingData):
             surface_file (Path): path to netCDF file with data at surface level
 
         Attributes of parent classes to be initialized:
-            ForcingData
+            ComponentForcingData
                 DATA_FILES: dict [str, str]
             Component
                 name: str
