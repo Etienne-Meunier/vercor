@@ -29,7 +29,7 @@ def generate_jcm_forcing_and_topography_files(
 
         data_directory = data_directory / ".cache/jcm"
 
-        print(f"Using input data directory: \"{str(data_directory)}\".")
+        print(f'Using input data directory: "{str(data_directory)}".')
 
     raw_data_directory = Path(jcm.__file__).parent / f"data/bc"
 
@@ -48,7 +48,8 @@ def generate_jcm_forcing_and_topography_files(
         if verbose:
             for file, result in file_status.items():
                 print(
-                    f"Check file: {str(file):s}...", "found." if result else "not found."
+                    f"Check file: {str(file):s}...",
+                    "found." if result else "not found.",
                 )
 
         return file_status

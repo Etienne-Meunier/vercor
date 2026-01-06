@@ -35,15 +35,15 @@ if __name__ == "__main__":
     hgrid = atm.model.coords.horizontal
     lnd_grid = RectilinearGrid(
         name="LND",
-        longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
-        latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
+        longitude=np.rad2deg(hgrid.longitudes),
+        latitude=np.rad2deg(hgrid.latitudes),
         binary_mask=lnd_binary_mask,
     )
 
     ocn_grid = RectilinearGrid(
         name="OCN",
-        longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
-        latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
+        longitude=np.rad2deg(hgrid.longitudes),
+        latitude=np.rad2deg(hgrid.latitudes),
         binary_mask=ocn_binary_mask,
     )
 
