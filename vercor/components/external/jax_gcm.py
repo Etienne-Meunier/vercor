@@ -67,8 +67,8 @@ class JAXGCM(Component):
         hgrid = model.coords.horizontal
         grid = RectilinearGrid(
             name=name,
-            longitude=np.array(hgrid.longitudes) * 180.0 / np.pi,
-            latitude=np.array(hgrid.latitudes) * 180.0 / np.pi,
+            longitude= np.rad2deg(hgrid.longitudes),
+            latitude=np.rad2deg(hgrid.latitudes),
             binary_mask=np.ones_like(
                 model.geometry.fmask
             ).transpose(),  # This is used for interpolation, which all points are valid
