@@ -2,7 +2,7 @@ from vercor.components.base import (
     Component,
     TimedNamedArray,
     Shared,
-    ForcingData,
+    ComponentForcingData,
     write_shared_to_netcdf,
 )
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
@@ -18,7 +18,7 @@ from vercor.components.external.jax_gcm import JAXGCM
 __all__ = [
     "TimedNamedArray",
     "Shared",
-    "ForcingData",
+    "ComponentForcingData",
     "write_shared_to_netcdf",
     "Component",
     "Atmosphere",
