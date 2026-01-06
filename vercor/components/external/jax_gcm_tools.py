@@ -58,10 +58,10 @@ def generate_jcm_forcing_and_topography_files(
     if not all(list(file_status.values())):
         print("Some files are missing. Need to generate them.")
 
-        try:
-            data_directory.mkdir(parents=True, exist_ok=True)
-            interpolation_code = (raw_data_directory / "interpolate.py").resolve()
+        data_directory.mkdir(parents=True, exist_ok=True)
+        interpolation_code = (raw_data_directory / "interpolate.py").resolve()
 
+        try:
             result = subprocess.run(
                 [sys.executable, str(interpolation_code), f"{resolution:d}"],
                 check=True,
@@ -69,14 +69,13 @@ def generate_jcm_forcing_and_topography_files(
                 text=True,
                 cwd=data_directory,
             )
-
-            for destination_file in files_to_check.values():
-                source_file = Path(raw_data_directory / destination_file.name)
-                print(f"Copying: {str(source_file):s} => {str(destination_file):s}")
-                shutil.copy(source_file, destination_file)
-
         except subprocess.CalledProcessError as e:
             print("Error output:", e.stderr)
+
+        for destination_file in files_to_check.values():
+            source_file = Path(raw_data_directory / destination_file.name)
+            print(f"Copying: {str(source_file):s} => {str(destination_file):s}")
+            shutil.copy(source_file, destination_file)
 
         new_file_status = check_if_file_exist(files_to_check)
         if not all(list(new_file_status.values())):
