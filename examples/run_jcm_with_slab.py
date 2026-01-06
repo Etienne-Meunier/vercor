@@ -22,12 +22,8 @@ from vercor.components.external.jax_gcm_tools import (
 
 if __name__ == "__main__":
 
-    atm_resolution = 31
-
     # JCM topography stuff
-    external_files = generate_jcm_forcing_and_topography_files(
-        resolution=atm_resolution
-    )
+    external_files = generate_jcm_forcing_and_topography_files(resolution=31)
     geometry = geometry.Geometry.from_file(external_files["terrain"])
 
     # Build components
@@ -66,7 +62,7 @@ if __name__ == "__main__":
 
     # Clock and sequence
     clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
-    run_sequence = RunSequence(order=["OCN", "ATM", "LND"])
+    run_sequence = RunSequence(order=["OCN", "LND", "ATM"])
 
     # Coupler
     cpl = Coupler(clock=clock)
