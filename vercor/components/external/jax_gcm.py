@@ -155,22 +155,22 @@ class JAXGCM(Component):
                 f"dt={str(dt)} must be an integer multiple of coupling_timestep={str(self.coupling_timestep)}."
             )
 
-        print("Mean of sst: ", jnp.asarray(self.incoming_fields.sst.data).mean())
+        print("Mean of sst: ", jnp.asarray(self.data["sst"]).mean())
         print(
             "number of sst that is less than 250: ",
-            np.sum(self.incoming_fields.sst.data < 250.0),
+            np.sum(self.data["sst"] < 250.0),
         )
 
-        self.incoming_fields.sst.data[self.incoming_fields.sst.data < 250.0] = 288.15
-        self.incoming_fields.land_surface_temperature.data[
-            self.incoming_fields.land_surface_temperature.data < 250.0
+        self.data["sst"][self.data["sst"] < 250.0] = 288.15
+        self.data["land_surface_temperature"][
+            self.data["land_surface_temperature"] < 250.0
         ] = 288.15
 
         forcing = self.forcing.copy(
             stl_am=jnp.asarray(
-                self.incoming_fields.land_surface_temperature
+                self.data["land_surface_temperature"]
             ).transpose(),
-            sea_surface_temperature=jnp.asarray(self.incoming_fields.sst).transpose(),
+            sea_surface_temperature=jnp.asarray(self.data["sst"]).transpose(),
         )
 
         _avg_predictions = []
