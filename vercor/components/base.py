@@ -132,7 +132,7 @@ class Component(abc.ABC):
     grid: RectilinearGrid
     incoming_fields: Shared = field(default_factory=Shared)
     outgoing_fields: Shared = field(default_factory=Shared)
-    cdata: Dict[str, NDArray] = field(default_factory=dict)
+    data: Dict[str, NDArray] = field(default_factory=dict)
     _fields2import: List[str] = field(default_factory=list)
     _fields2export: List[str] = field(default_factory=list)
     _settings: Dict[str, Any] = field(default_factory=dict)
@@ -151,11 +151,11 @@ class Component(abc.ABC):
                          from another component(s) 
         outgoing_fields: shared fields to be sent from the current component
                          to another component(s)
-        cdata: internal storage for component data arrays to/from which fields
+        data: internal storage for component data arrays to/from which fields
                         are imported/exported
         _settings: component-specific settings
-        _fields2import: list of field names to import from other components to cdata
-        _fields2export: list of field names to export to other components from cdata
+        _fields2import: list of field names to import from other components to data
+        _fields2export: list of field names to export to other components from data
     """
 
     @abc.abstractmethod
@@ -234,7 +234,7 @@ class Component(abc.ABC):
     def receive_fields(self, time: datetime) -> None:
         """
         Receive interpolated fields from receptor/incoming_fields (from another component(s))
-        and store them in cdata.
+        and store them in data.
 
         Arguments:
             time: current simulation (coupler's) time
@@ -255,11 +255,11 @@ class Component(abc.ABC):
                     f"Receive field '{field}' timestamp {tna.timestamp} does not match current time {time} in component '{self.name}'."
                 )
 
-        self.cdata.update(self.incoming_fields.fields())
+        self.data.update(self.incoming_fields.fields())
 
     def send_fields(self, time: datetime, coupler: "Coupler") -> None:
         """
-        Prepare fields from cdata to be deposited to outgoing_fields,
+        Prepare fields from data to be deposited to outgoing_fields,
         to be later sent to another component(s).
 
         Arguments:
@@ -270,9 +270,9 @@ class Component(abc.ABC):
         for field in self._fields2export:
             if self._settings.get("apply_time_interpolation", False):
                 # for data models with monthly means
-                field2send = get_field_at_specific_time(field, self.cdata, coupler)
+                field2send = get_field_at_specific_time(field, self.data, coupler)
             else:
-                field2send = self.cdata[field]
+                field2send = self.data[field]
 
             setattr(
                 self.outgoing_fields,
@@ -303,8 +303,8 @@ class Component(abc.ABC):
         if field_name in out_fields:
             return out_fields[field_name]
 
-        if field_name in self.cdata:
-            return self.cdata[field_name]
+        if field_name in self.data:
+            return self.data[field_name]
 
         raise ComponentError(
             f"Field name '{field_name}' not found in incoming, outgoing or internal pool of fields"

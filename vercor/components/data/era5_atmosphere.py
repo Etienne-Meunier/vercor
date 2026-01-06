@@ -79,58 +79,58 @@ class ERA5Atmosphere(Component, ForcingData):
             "lwr_dw",
         ]
 
-        self.cdata["hyai"] = self._read_forcing("hyai", where="model_level")[
+        self.data["hyai"] = self._read_forcing("hyai", where="model_level")[
             -3:
         ]  # L135-L137
-        self.cdata["hybi"] = self._read_forcing("hybi", where="model_level")[
+        self.data["hybi"] = self._read_forcing("hybi", where="model_level")[
             -3:
         ]  # L135-L137
-        self.cdata["hyam"] = self._read_forcing("hyam", where="model_level")[
+        self.data["hyam"] = self._read_forcing("hyam", where="model_level")[
             -2:
         ]  # L136-L137
-        self.cdata["hybm"] = self._read_forcing("hybm", where="model_level")[
+        self.data["hybm"] = self._read_forcing("hybm", where="model_level")[
             -2:
         ]  # L136-L137
 
         lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
-        self.cdata["surf_pressure"] = np.exp(lnsp)
-        self.cdata["specific_humidity"] = self._read_forcing(
+        self.data["surf_pressure"] = np.exp(lnsp)
+        self.data["specific_humidity"] = self._read_forcing(
             "q", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
-        self.cdata["temperature"] = self._read_forcing(
+        self.data["temperature"] = self._read_forcing(
             "t", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
 
-        self.cdata["ubot"] = self._read_forcing("u", where="model_level", flip_y=True)[
+        self.data["ubot"] = self._read_forcing("u", where="model_level", flip_y=True)[
             :, :, 1, :
         ]  # L136
-        self.cdata["vbot"] = self._read_forcing("v", where="model_level", flip_y=True)[
+        self.data["vbot"] = self._read_forcing("v", where="model_level", flip_y=True)[
             :, :, 1, :
         ]  # L136
 
         # tcc = self._read_forcing("tcc", where="surface", flip_y=True)
-        self.cdata["swr_net"] = self._read_forcing(
+        self.data["swr_net"] = self._read_forcing(
             "msnswrf", where="surface", flip_y=True
         )
-        self.cdata["lwr_dw"] = self._read_forcing(
+        self.data["lwr_dw"] = self._read_forcing(
             "msdwlwrf", where="surface", flip_y=True
         )
 
-        self.cdata["qbot"] = self.cdata["specific_humidity"][..., 0, :]  # L136
-        self.cdata["tbot"] = self.cdata["temperature"][..., 0, :]  # L136
+        self.data["qbot"] = self.data["specific_humidity"][..., 0, :]  # L136
+        self.data["tbot"] = self.data["temperature"][..., 0, :]  # L136
 
     def initialize(self, coupler: "Coupler") -> None:
         nlat, nlon = self.grid.shape
         settings = coupler.settings
-        ds = self.cdata
+        ds = self.data
 
-        self.cdata["zbot"] = np.zeros((nlon, nlat, 12))
-        self.cdata["rbot"] = np.zeros((nlon, nlat, 12))
-        self.cdata["thbot"] = np.zeros((nlon, nlat, 12))
+        self.data["zbot"] = np.zeros((nlon, nlat, 12))
+        self.data["rbot"] = np.zeros((nlon, nlat, 12))
+        self.data["thbot"] = np.zeros((nlon, nlat, 12))
 
         for m in range(12):
             ph = compute_pressure_levels(
@@ -139,7 +139,7 @@ class ERA5Atmosphere(Component, ForcingData):
             pf = compute_pressure_levels(
                 ds["surf_pressure"][..., m], ds["hyam"], ds["hybm"]
             )
-            self.cdata["zbot"][..., m] = compute_levels_altitudes(
+            self.data["zbot"][..., m] = compute_levels_altitudes(
                 settings,
                 ds["temperature"][..., m],
                 ds["specific_humidity"][..., m],
@@ -147,10 +147,10 @@ class ERA5Atmosphere(Component, ForcingData):
             )[
                 ..., 1
             ]  # L136
-            self.cdata["rbot"][..., m] = compute_air_density(
+            self.data["rbot"][..., m] = compute_air_density(
                 settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
-            self.cdata["thbot"][..., m] = compute_potential_temperature(
+            self.data["thbot"][..., m] = compute_potential_temperature(
                 settings, ds["tbot"][:, :, m], pf[:, :, 0]
             )
 
@@ -164,6 +164,6 @@ class ERA5Atmosphere(Component, ForcingData):
         Advance to the next time step in the dataset
         using time interpolation from one month to another.
         """
-        self.cdata["surface_temperature"] = np.nan_to_num(
-            self.cdata["skt"], nan=0.0
-        ) + np.nan_to_num(self.cdata["sst"], nan=0.0)
+        self.data["surface_temperature"] = np.nan_to_num(
+            self.data["skt"], nan=0.0
+        ) + np.nan_to_num(self.data["sst"], nan=0.0)

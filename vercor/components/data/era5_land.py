@@ -64,7 +64,7 @@ class ERA5Land(Component, ForcingData):
             "skt",
         ]
 
-        self.cdata["skt"] = self._read_forcing("skt", where="surface")
+        self.data["skt"] = self._read_forcing("skt", where="surface")
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

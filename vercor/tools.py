@@ -119,7 +119,7 @@ def get_forcing_data(file_type: str) -> Path:
 
 def get_field_at_specific_time(
     field_name: str,
-    cdata: Dict,
+    data: Dict,
     coupler: "Coupler",
     current_time: Optional[datetime] = None,
 ) -> NDArray:
@@ -128,7 +128,7 @@ def get_field_at_specific_time(
 
     Arguments:
         field_name: Name of the field to retrieve.
-        cdata: Dictionary containing the component data with time-dependent fields.
+        data: Dictionary containing the component data with time-dependent fields.
         coupler: Coupler instance for time settings.
         current_time: Optional datetime object representing the current time.
                       If None, coupler's start time is used.
@@ -149,7 +149,7 @@ def get_field_at_specific_time(
 
     # Use transpose to have (lat, lon) ordering
     out: NDArray = (
-        f1 * cdata[f"{field_name}"][..., n1] + f2 * cdata[f"{field_name}"][..., n2]
+        f1 * data[f"{field_name}"][..., n1] + f2 * data[f"{field_name}"][..., n2]
     ).transpose()
 
     return out
