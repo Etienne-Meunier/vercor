@@ -80,7 +80,7 @@ class ERAInterimOcean(Component, ForcingData):
 
         sst[:, 3:-3, :] = self._read_forcing("sst", where="model_level") + 273.15
         sst *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
-        self.cdata["sst"] = sst
+        self.data["sst"] = sst
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

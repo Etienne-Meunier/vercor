@@ -134,13 +134,13 @@ class JAXGCM(Component):
         grid_shape = self.grid.shape
 
         zeros = np.zeros(grid_shape)
-        self.cdata["sst"] = zeros + 273.15 + 15.0
-        self.cdata["land_surface_temperature"] = zeros
-        self.cdata["u10m"] = zeros.copy()
-        self.cdata["v10m"] = zeros.copy()
-        self.cdata["LHF"] = zeros.copy()
-        self.cdata["SHF"] = zeros.copy()
-        self.cdata["TA2M"] = zeros.copy()
+        self.data["sst"] = zeros + 273.15 + 15.0
+        self.data["land_surface_temperature"] = zeros
+        self.data["u10m"] = zeros.copy()
+        self.data["v10m"] = zeros.copy()
+        self.data["LHF"] = zeros.copy()
+        self.data["SHF"] = zeros.copy()
+        self.data["TA2M"] = zeros.copy()
         self._predictions_list = []
 
     def step(
@@ -192,11 +192,11 @@ class JAXGCM(Component):
         d = _avg_predictions.dynamics
 
         # All the heat and freshwater fluxes are positive upward
-        self.cdata["u10m"] = np.array(p.surface_flux.u0).transpose()
-        self.cdata["v10m"] = np.array(p.surface_flux.v0).transpose()
-        self.cdata["TA2M"] = np.array(p.surface_flux.t0).transpose()
-        self.cdata["SHF"] = np.array(p.surface_flux.shf).sum(axis=2).transpose()
-        self.cdata["LHF"] = (
+        self.data["u10m"] = np.array(p.surface_flux.u0).transpose()
+        self.data["v10m"] = np.array(p.surface_flux.v0).transpose()
+        self.data["TA2M"] = np.array(p.surface_flux.t0).transpose()
+        self.data["SHF"] = np.array(p.surface_flux.shf).sum(axis=2).transpose()
+        self.data["LHF"] = (
             np.array(p.surface_flux.evap / 1e3 * latent_heat_of_vaporization)
             .sum(axis=2)
             .transpose()

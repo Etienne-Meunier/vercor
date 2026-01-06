@@ -33,7 +33,7 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.cdata["sst"] = 273.15 + 15.0 * np.ones(self.grid.shape)
+        self.data["sst"] = 273.15 + 15.0 * np.ones(self.grid.shape)
 
     def step(
         self,
@@ -41,12 +41,12 @@ class Ocean(Component):
         time: datetime,
         coupler: "Coupler",
     ) -> None:
-        sst = self.cdata.get("sst", None)
+        sst = self.data.get("sst", None)
         if sst is None:
             return
 
-        SHF = self.cdata.get("SHF", None)
-        LHF = self.cdata.get("LHF", None)
+        SHF = self.data.get("SHF", None)
+        LHF = self.data.get("LHF", None)
         Qnet = np.zeros_like(sst)
         if SHF is not None:
             Qnet += SHF
@@ -54,4 +54,4 @@ class Ocean(Component):
             Qnet += LHF
         T0 = 273.15 + 15.0
         dTdt = -Qnet / (self.rho * self.cp * self.H) - self.lambda_relax * (sst - T0)
-        self.cdata["sst"] = sst + dTdt * dt.total_seconds()
+        self.data["sst"] = sst + dTdt * dt.total_seconds()
