@@ -48,7 +48,7 @@ class TimedNamedArray:
 class Shared:
     _fields: Dict[str, TimedNamedArray] = field(default_factory=dict, init=False)
 
-    def __setattr__(self, name: str, value: Any) -> None:
+    def _assign_field(self, name: str, value: Any) -> None:
         # internal attributes
         if name.startswith("_"):
             return super().__setattr__(name, value)
@@ -82,11 +82,24 @@ class Shared:
             component_name=component_name,
         )
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        self._assign_field(name, value)
+
+    def __setitem__(self, name: str, value: Any) -> None:
+        self._assign_field(name, value)
+
     def __getattr__(self, name: str) -> TimedNamedArray:
         try:
             return self._fields[name]
         except KeyError:
             raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+
+    def __getitem__(self, name: str) -> TimedNamedArray | None:
+        try:
+            return self._fields[name]
+        except KeyError:
+            print(f"{type(self).__name__!s} has no item {name!r}")
+            return None
 
     def __str__(self) -> str:
         field_descriptions = ", ".join(
@@ -229,7 +242,7 @@ class Component(abc.ABC):
 
         incoming_fields = fields.field_names
         for name in incoming_fields:
-            setattr(self.incoming_fields, name, getattr(fields, name))
+            self.incoming_fields[name] = fields[name]
 
     def receive_fields(self, time: datetime) -> None:
         """
@@ -240,17 +253,15 @@ class Component(abc.ABC):
             time: current simulation (coupler's) time
         """
 
-        # check that all required fields are present
         for field in self._fields2import:
-            if field not in self.incoming_fields.field_names:
+            try:
+                tna = self.incoming_fields[field]
+            except KeyError as exc:
                 raise ComponentError(
                     f"Field '{field}' required by component '{self.name}' not found in incoming fields."
-                )
+                ) from exc
 
-        # check if every imported field's timestamp matches the current time
-        for field in self._fields2import:
-            tna = getattr(self.incoming_fields, field)
-            if tna.timestamp != time:
+            if tna is not None and tna.timestamp != time:
                 raise ComponentError(
                     f"Receive field '{field}' timestamp {tna.timestamp} does not match current time {time} in component '{self.name}'."
                 )
@@ -274,11 +285,7 @@ class Component(abc.ABC):
             else:
                 field2send = self.data[field]
 
-            setattr(
-                self.outgoing_fields,
-                field,
-                TimedNamedArray(field2send, time, self.name),
-            )
+            self.outgoing_fields[field] = (field2send, time, self.name)
 
     def get(self, field_name: str) -> NDArray:
         """
@@ -318,9 +325,9 @@ class Component(abc.ABC):
         output_fields = Shared()
 
         for name, tna in self.incoming_fields._fields.items():
-            setattr(output_fields, name, tna)
+            output_fields[name] = tna
         for name, tna in self.outgoing_fields._fields.items():
-            setattr(output_fields, name, tna)
+            output_fields[name] = tna
 
         return output_fields
 

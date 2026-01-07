@@ -67,7 +67,7 @@ class JAXGCM(Component):
         hgrid = model.coords.horizontal
         grid = RectilinearGrid(
             name=name,
-            longitude= np.rad2deg(hgrid.longitudes),
+            longitude=np.rad2deg(hgrid.longitudes),
             latitude=np.rad2deg(hgrid.latitudes),
             binary_mask=np.ones_like(
                 model.geometry.fmask
@@ -167,9 +167,7 @@ class JAXGCM(Component):
         ] = 288.15
 
         forcing = self.forcing.copy(
-            stl_am=jnp.asarray(
-                self.data["land_surface_temperature"]
-            ).transpose(),
+            stl_am=jnp.asarray(self.data["land_surface_temperature"]).transpose(),
             sea_surface_temperature=jnp.asarray(self.data["sst"]).transpose(),
         )
 
