@@ -319,24 +319,16 @@ class Coupler:
             key = (exchange.source, name, exchange.interpolation_type)
             source_destination_name = "_".join(key)
 
-            setattr(
-                shared_fields,
-                "bmask_" + source_destination_name,
-                (
-                    self._binary_masks[key],
-                    datetime.now(),
-                    name,
-                ),
+            shared_fields["bmask_" + source_destination_name] = (
+                self._binary_masks[key],
+                datetime.now(),
+                name,
             )
 
-            setattr(
-                shared_fields,
-                "fmask_" + source_destination_name,
-                (
-                    self._fractional_masks[key],
-                    datetime.now(),
-                    name,
-                ),
+            shared_fields["fmask_" + source_destination_name] = (
+                self._fractional_masks[key],
+                datetime.now(),
+                name,
             )
 
     def interpolate_and_dispatch_fields(
