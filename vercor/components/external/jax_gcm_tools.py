@@ -7,6 +7,33 @@ import shutil
 
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
+
+from jcm.geometry import Geometry, get_terrain
+
+def generate_jcm_geometry_from_orography(
+    orography: ArrayLike,
+    num_levels:int = 8,
+    truncation_number:int = None,
+):
+    """Initialize all of the speedy model geometry variables from a given terrain file containing orog and lsm.
+    
+    Args:
+        orography: A 2-dimensional array of orography
+        num_levels (optional): Number of vertical levels `kx` (default 8).
+        truncation_number (optional): Spectral truncation number for surface geopotential. If None, inferred from nodal_shape.
+    Returns:
+        Geometry object
+
+    """
+    orography, fmask = get_terrain(orography=orography)
+    return Geometry.from_grid_shape(
+        nodal_shape=orography.shape,
+        num_levels=num_levels,
+        orography=orography,
+        fmask=fmask,
+        truncation_number=truncation_number
+    )
 
 
 def generate_jcm_forcing_and_topography_files(
