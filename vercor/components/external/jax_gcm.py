@@ -173,7 +173,7 @@ class JAXGCM(Component):
             unwrap_leading_dims(stack_objects(_avg_predictions)), axis=0
         )
         p = _avg_predictions.physics
-        d = _avg_predictions.dynamics
+        # d = _avg_predictions.dynamics
 
         # All the heat and freshwater fluxes are positive upward
         self.data["u10m"] = np.array(p.surface_flux.u0).transpose()

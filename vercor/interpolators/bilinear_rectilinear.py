@@ -51,7 +51,7 @@ def _unit_east_north(lon_rad: NDArray, lat_rad: NDArray) -> tuple[NDArray, NDArr
                 -\sin\phi \cos\lambda \\
                 -\sin\phi \sin\lambda \\
                 \cos\phi
-            \end{pmatrix} 
+            \end{pmatrix}
 
     These satisfy:
         .. math::
@@ -141,25 +141,25 @@ def _great_circle_distance_rad(
                 + \cos\varphi_1\,\cos\varphi_2\,
                 \sin^2\!\left(\frac{\Delta\lambda}{2}\right),\\[6pt]
             c &= 2\,\operatorname{atan2}\!\left(\sqrt{a},\sqrt{1-a}\right).
-        
+
         The returned value is the central angle :math:`c` in radians. For an
         earth-radius-scaled distance multiply :math:`c` by the desired radius.
 
     Arguments:
-        lon1 (ndarray): 
+        lon1 (ndarray):
             Longitudes of the first point(s) in radians. May be scalar or array.
-        lat1 (ndarray): 
+        lat1 (ndarray):
             Latitudes of the first point(s) in radians. Must be broadcastable
             with ``lon1``.
-        lon2 (ndarray): 
+        lon2 (ndarray):
             Longitudes of the second point(s) in radians. May be scalar or array.
             Must be broadcastable with ``lat2`` and the other inputs.
-        lat2 (ndarray): 
+        lat2 (ndarray):
             Latitudes of the second point(s) in radians. Must be broadcastable
             with ``lon2`` and the other inputs.
 
     Returns:
-        (ndarray): Array of great-circle distances (central angles) in radians. 
+        (ndarray): Array of great-circle distances (central angles) in radians.
             The shape is the result of NumPy broadcasting of the inputs.
 
     Notes:
@@ -330,7 +330,8 @@ class BilinearRectilinearInterpolator:
             such that :math: `(i_0, i_1)` are consecutive longitudes around :math: `(\tilde{\lambda}^*)`,
             and :math: `(j_0, j_1)` are consecutive latitudes around :math: `(\varphi^*)`.
 
-            If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude, indices wrap modulo :math: `(N_x)`.
+            If the target lies beyond the non-periodic ends, indices are clamped; for periodic longitude,
+            indices wrap modulo :math: `(N_x)`.
 
             Let
             .. math::
@@ -361,7 +362,7 @@ class BilinearRectilinearInterpolator:
                     \Delta \tilde{\lambda}^*, & \text{otherwise.}
                 \end{cases}
 
-            Then the fractional longitudinal coordinate is  
+            Then the fractional longitudinal coordinate is
 
             .. math::
                 f_x = \frac{\Delta \tilde{\lambda}^*}{\Delta \lambda_{\text{cell}}} \in [0, 1],
@@ -377,7 +378,7 @@ class BilinearRectilinearInterpolator:
                 \quad
                 f_y = \frac{\varphi^* - \varphi_0}{\Delta \varphi_{\text{cell}}}.
 
-            and then clip :math: `f_y` to :math: `[0, 1]`. If latitudes are descending, 
+            and then clip :math: `f_y` to :math: `[0, 1]`. If latitudes are descending,
             :math: `(\Delta \varphi_{\text{cell}} < 0)`, and the fraction remains consistent after clipping.
 
             **Bilinear shape functions (weights)**
@@ -600,7 +601,8 @@ class BilinearRectilinearInterpolator:
                 \mathcal{S} = \{(\lambda_p, \varphi_p) : m^{\text{src}}_p = 1\}
 
             be all valid source points (flattened index :math: `p` maps to :math: `(j, i)`).
-            For a target :math: `(\lambda^*, \varphi^*)`, we compute **great-circle distances** using the haversine formula.
+            For a target :math: `(\lambda^*, \varphi^*)`, we compute **great-circle distances**
+            using the haversine formula.
 
             ---
 
@@ -759,7 +761,8 @@ class BilinearRectilinearInterpolator:
                 \mathbf{V}^* = \sum_{a,b} \hat{w}_{ab} \, \mathbf{V}_{ab}
                 \quad (\text{if } W > 0; \text{ else extrapolate}).
 
-            Finally, **project** the blended 3-D vector onto the target tangent basis at :math: `(\lambda^*, \varphi^*)`:
+            Finally, **project** the blended 3-D vector onto the target tangent basis at
+            :math: `(\lambda^*, \varphi^*)`:
 
             .. math::
                 u^* = \mathbf{V}^* \cdot \mathbf{e}_{\text{east}}(\lambda^*, \varphi^*),
@@ -784,7 +787,8 @@ class BilinearRectilinearInterpolator:
             self.nlon,
         ):
             raise ValueError(
-                f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon}), provided {u_src.shape}, {v_src.shape}"
+                f"(u_src,v_src) must both have shape (nlat,nlon)=({self.nlat},{self.nlon}),"
+                f" provided {u_src.shape}, {v_src.shape}"
             )
 
         if self.src_mask is None:

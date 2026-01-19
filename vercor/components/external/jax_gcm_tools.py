@@ -21,7 +21,8 @@ def generate_jcm_geometry_from_orography(
     Arguments:
         orography: A 2-dimensional array of orography
         num_levels (optional): Number of vertical levels `kx` (default 8).
-        truncation_number (optional): Spectral truncation number for surface geopotential. If None, inferred from nodal_shape.
+        truncation_number (optional): Spectral truncation number for surface geopotential.
+                                      If None, inferred from nodal_shape.
 
     Returns:
         Geometry object
@@ -58,7 +59,7 @@ def generate_jcm_forcing_and_topography_files(
 
         print(f'Using input data directory: "{str(data_directory)}".')
 
-    raw_data_directory = Path(jcm.__file__).parent / f"data/bc"
+    raw_data_directory = Path(jcm.__file__).parent / "data/bc"
 
     # Prepare boundary file
     files_to_check = dict(
@@ -90,7 +91,7 @@ def generate_jcm_forcing_and_topography_files(
         interpolation_code = (raw_data_directory / "interpolate.py").resolve()
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [sys.executable, str(interpolation_code), f"{resolution:d}"],
                 check=True,
                 capture_output=True,

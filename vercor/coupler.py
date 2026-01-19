@@ -100,7 +100,7 @@ class Coupler:
         _fractional_masks: mapping of (source component name, destination component name)
                 to a fractional mask NDArray. This mask is applied during field exchanges
                 after regridding to ensure that only the appropriate portion from source
-                grid cells of the forcing or boundary conditions is transferred to 
+                grid cells of the forcing or boundary conditions is transferred to
                 destination grid cells, reflecting the partial coverage of source grid cells
                 within destination grid cells.
     """

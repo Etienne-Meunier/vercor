@@ -11,7 +11,9 @@ class BilinearRectilinearRegridder(Regridder):
         source_grid: RectilinearGrid,
         destination_grid: RectilinearGrid,
         periodic_longitude: bool = True,
-        nan_renorm: bool = True,  # keep it True otherwise NaN will propagate to another components during regridding and will keep growing over domains
+        # keep nan_renorm = True otherwise NaN will propagate to another components
+        # during regridding and will keep growing over domains
+        nan_renorm: bool = True,
         extrapolation_mode: str | None = None,  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,

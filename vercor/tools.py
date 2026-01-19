@@ -24,6 +24,7 @@ def _flatten_fields(
             flattened.append(item)
     return flattened
 
+
 def _append_unique(target: List[str], items: List[str]) -> None:
     target.extend([item for item in items if item not in target])
 

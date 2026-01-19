@@ -152,7 +152,7 @@ class Component(abc.ABC):
     """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
 
     Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
-    JCM atmospheric model (nTime, nLev, nLon, nLat). 
+    JCM atmospheric model (nTime, nLev, nLon, nLat).
 
     One must implement necessary dimensions check and reshaping of fields
     during import/export if needed.
@@ -161,7 +161,7 @@ class Component(abc.ABC):
         name: component name
         grid: component grid
         incoming_fields: shared fields received by the current component
-                         from another component(s) 
+                         from another component(s)
         outgoing_fields: shared fields to be sent from the current component
                          to another component(s)
         data: internal storage for component data arrays to/from which fields
@@ -253,17 +253,18 @@ class Component(abc.ABC):
             time: current simulation (coupler's) time
         """
 
-        for field in self._fields2import:
+        for fld in self._fields2import:
             try:
-                tna = self.incoming_fields[field]
+                tna = self.incoming_fields[fld]
             except KeyError as exc:
                 raise ComponentError(
-                    f"Field '{field}' required by component '{self.name}' not found in incoming fields."
+                    f"Field '{fld}' required by component '{self.name}' not found in incoming fields."
                 ) from exc
 
             if tna is not None and tna.timestamp != time:
                 raise ComponentError(
-                    f"Receive field '{field}' timestamp {tna.timestamp} does not match current time {time} in component '{self.name}'."
+                    f"Receive field '{fld}' timestamp {tna.timestamp} does not match "
+                    f"current time {time} in component '{self.name}'."
                 )
 
         self.data.update(self.incoming_fields.fields())
@@ -278,14 +279,14 @@ class Component(abc.ABC):
             coupler: Coupler instance for possible time interpolation
         """
 
-        for field in self._fields2export:
+        for fld in self._fields2export:
             if self._settings.get("apply_time_interpolation", False):
                 # for data models with monthly means
-                field2send = get_field_at_specific_time(field, self.data, coupler)
+                field2send = get_field_at_specific_time(fld, self.data, coupler)
             else:
-                field2send = self.data[field]
+                field2send = self.data[fld]
 
-            self.outgoing_fields[field] = (field2send, time, self.name)
+            self.outgoing_fields[fld] = (field2send, time, self.name)
 
     def get(self, field_name: str) -> NDArray:
         """
