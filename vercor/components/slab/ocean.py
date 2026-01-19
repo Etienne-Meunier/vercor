@@ -17,13 +17,7 @@ class Ocean(Component):
     """
 
     def __init__(self, name: str, grid: RectilinearGrid, H: float = 30.0) -> None:
-
         super().__init__(name, grid)
-
-        self._fields2import = ["u10m", "v10m"]
-        self._fields2export = [
-            "sst",
-        ]
 
         self.H = H  # mixed-layer depth [m]
         self.rho = 1025.0

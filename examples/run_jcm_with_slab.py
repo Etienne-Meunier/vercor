@@ -23,16 +23,9 @@ from vercor.components.external.jax_gcm_tools import (
 
 if __name__ == "__main__":
 
-    # JCM topography stuff
-
-    # Method 1: Read topography file
+    # Read JCM topography file
     external_files = generate_jcm_forcing_and_topography_files(resolution=31)
-    dummy_geometry = geometry.Geometry.from_file(external_files["terrain"])
-
-    # Method 2: Construct with an orography. In this case I simply halve the
-    #           orography from the external file loaded above
-    geometry = generate_jcm_geometry_from_orography(dummy_geometry.orog * 0.5)
-
+    geometry = geometry.Geometry.from_file(external_files["terrain"])
 
     # Build components
     atm = JAXGCM("ATM", Model(geometry=geometry), jitted=True)

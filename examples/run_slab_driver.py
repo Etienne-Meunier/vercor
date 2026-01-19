@@ -108,6 +108,24 @@ if __name__ == "__main__":
         )
     )
 
+    cpl.add_exchange(
+        Exchange(
+            source="OCN",
+            destination="ICE",
+            field_names=["sst"],
+            regridder_factory=conservative,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="ICE",
+            destination="OCN",
+            field_names=["ICEFRAC"],
+            regridder_factory=conservative,
+        )
+    )
+
     cpl.initialize()
     cpl.run()
     cpl.finalize()

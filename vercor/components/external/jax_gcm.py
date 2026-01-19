@@ -75,20 +75,6 @@ class JAXGCM(Component):
         )
         super().__init__(name, grid)
 
-        # has to be defined after super() is called
-        self._fields2import = [
-            "sst",
-            "land_surface_temperature",
-        ]
-
-        self._fields2export = [
-            "u10m",
-            "v10m",
-            "SHF",
-            "LHF",
-            "TA2M",
-        ]
-
     def _generate_step_function(
         self, jitted: bool = True
     ) -> Callable[[JCMState, ForcingData, jdt.Datetime], Tuple[JCMState, Predictions]]:

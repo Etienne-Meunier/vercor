@@ -63,21 +63,6 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         super().__init__(name, grid=self.grid)
 
         self._settings["apply_time_interpolation"] = True
-        self._fields2import = [
-            "sst",
-            "skt",
-        ]
-        self._fields2export = [
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-            "swr_net",
-            "lwr_dw",
-        ]
 
         self.data["hyai"] = self._read_forcing("hyai", where="model_level")[
             -3:

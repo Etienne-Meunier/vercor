@@ -18,12 +18,6 @@ class SeaIce(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = [
-            "sst",
-        ]
-        self._fields2export = [
-            "ICEFRAC",
-        ]
 
     def initialize(self, coupler: "Coupler") -> None:
         self.data["ICEFRAC"] = np.zeros(self.grid.shape)
