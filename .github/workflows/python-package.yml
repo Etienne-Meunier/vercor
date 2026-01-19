@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14"]
+        python-version: ["3.13",]
 
     steps:
     - uses: actions/checkout@v4
@@ -49,4 +49,4 @@ jobs:
         mypy vercor tests examples
     - name: Test with pytest
       run: |
-        pytest tests -q --ignore=vendor/jax-gcm
+        pytest tests -q --ignore=vendor

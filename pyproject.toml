@@ -18,7 +18,7 @@ dependencies = [
 "h5netcdf>=1.4.1",
 "xarray>=2025.1.2",
 "jax",
-"jax_datetime",
+"jax-datetime",
 "tree-math",
 ]
 classifiers = [
