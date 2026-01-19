@@ -1,31 +1,74 @@
 from datetime import datetime
-from typing import List
 
 import numpy as np
+import matplotlib.pyplot as plt
+
+from jcm.model import Model
+from jcm import geometry
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
+from vercor.components import JAXGCM, Land, Ocean
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
-from vercor.regridders import BilinearRectilinearRegridder
-from vercor.regridders.conservative import ConservativeRectilinearRegridder
+from vercor.regridders import (
+    BilinearRectilinearRegridder,
+    ConservativeRectilinearRegridder,
+)
+
+from vercor.components.external.jax_gcm_tools import (
+    generate_jcm_forcing_and_topography_files,
+)
 
 
 if __name__ == "__main__":
+
+    # Read JCM topography file
+    external_files = generate_jcm_forcing_and_topography_files(resolution=31)
+    geometry = geometry.Geometry.from_file(external_files["terrain"])
+
     # Build components
-    atm = ERA5Atmosphere()
-    ocn = ERAInterimOcean()
-    lnd = ERA5Land()
+    atm = JAXGCM("ATM", Model(geometry=geometry), jitted=True)
+
+    ocn_binary_mask = np.where(geometry.fmask < 1, 1, 0).transpose()
+    lnd_binary_mask = 1 - ocn_binary_mask
+
+    hgrid = atm.model.coords.horizontal
+    lnd_grid = RectilinearGrid(
+        name="LND",
+        longitude=np.rad2deg(hgrid.longitudes),
+        latitude=np.rad2deg(hgrid.latitudes),
+        binary_mask=lnd_binary_mask,
+    )
+
+    ocn_grid = RectilinearGrid(
+        name="OCN",
+        longitude=np.rad2deg(hgrid.longitudes),
+        latitude=np.rad2deg(hgrid.latitudes),
+        binary_mask=ocn_binary_mask,
+    )
+
+    ocn = Ocean("OCN", ocn_grid)
+    lnd = Land("LND", lnd_grid)
+
+    if atm.grid.binary_mask is not None:
+        print("Total number of grids = ", atm.grid.binary_mask.size)
+        print("Sum of atm.grid.binary_mask = ", np.sum(atm.grid.binary_mask))
+
+    if lnd.grid.binary_mask is not None:
+        print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
+
+    if ocn.grid.binary_mask is not None:
+        print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
 
     # Clock and sequence
-    clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
-    run_sequence = RunSequence(order=["OCN", "ATM", "LND"])
+    clock = Clock(start=datetime(2025, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
+    run_sequence = RunSequence(order=["OCN", "LND", "ATM"])
 
     # Coupler
     cpl = Coupler(clock=clock)
-    components: List[ERA5Atmosphere | ERAInterimOcean | ERA5Land] = [atm, ocn, lnd]
+    components = [atm, ocn, lnd]
     for component in components:
-        cpl.register(component)
+        cpl.register(component)  # type: ignore
 
     cpl.set_components_run_sequence(run_sequence)
 
@@ -44,57 +87,13 @@ if __name__ == "__main__":
 
     # Exchanges
     # scalar fields (vector field))
-    # ["qbot", "zbot", ("ubot", "vbot")]
+    # ["SHF", "LHF", ("u10m", "v10m")]
     cpl.add_exchange(
         Exchange(
             source="ATM",
             destination="OCN",
-            field_names=[
-                ("ubot", "vbot"),
-                "qbot",
-                "zbot",
-                "rbot",
-                "thbot",
-                "tbot",
-            ],
+            field_names=[("u10m", "v10m"), "SHF", "LHF"],
             regridder_factory=bilinear,
-        )
-    )
-
-    cpl.add_exchange(
-        Exchange(
-            source="ATM",
-            destination="OCN",
-            field_names=[
-                "swr_net",
-                "lwr_dw",
-            ],
-            regridder_factory=conservative,
-        )
-    )
-
-    cpl.add_exchange(
-        Exchange(
-            source="ATM",
-            destination="LND",
-            field_names=[
-                "qbot",
-                "zbot",
-                "tbot",
-            ],
-            regridder_factory=bilinear,
-        )
-    )
-
-    cpl.add_exchange(
-        Exchange(
-            source="ATM",
-            destination="LND",
-            field_names=[
-                "swr_net",
-                "lwr_dw",
-            ],
-            regridder_factory=conservative,
         )
     )
 
@@ -102,9 +101,7 @@ if __name__ == "__main__":
         Exchange(
             source="OCN",
             destination="ATM",
-            field_names=[
-                "sst",
-            ],
+            field_names=["sst"],
             regridder_factory=bilinear,
         )
     )
@@ -113,10 +110,17 @@ if __name__ == "__main__":
         Exchange(
             source="LND",
             destination="ATM",
-            field_names=[
-                "skt",
-            ],
+            field_names=["SOILM", "land_surface_temperature"],
             regridder_factory=bilinear,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="LND",
+            field_names=["LHF", "SHF"],
+            regridder_factory=conservative,
         )
     )
 
@@ -124,24 +128,18 @@ if __name__ == "__main__":
     cpl.run()
     cpl.finalize()
 
+    atm._finalize("JCM-output.nc")
+
     # Inspect a few fields
-    print("sst(OCN) mean:", np.nanmin(ocn.get("sst")))
-    print("sst(ERA) mean:", np.nanmin(atm.get("sst")))
-    print("qbot(ERA) mean:", np.nanmin(atm.get("qbot")))
-    print("qbot(OCN) mean:", np.nanmin(ocn.get("qbot")))
-    print("tbot(ERA) mean:", np.nanmin(atm.get("tbot")))
-    print("tbot(OCN) mean:", np.nanmin(ocn.get("tbot")))
-    print("zbot(ERA) mean:", np.nanmin(atm.get("zbot")))
-    print("zbot(OCN) mean:", np.nanmin(ocn.get("zbot")))
-    print(
-        "speed(ERA) mean:",
-        np.nanmean(np.sqrt(atm.get("ubot") ** 2 + atm.get("vbot") ** 2)),
-    )
-    print(
-        "speed(OCN) mean:",
-        np.nanmean(np.sqrt(ocn.get("ubot") ** 2 + ocn.get("vbot") ** 2)),
-    )
-    import matplotlib.pyplot as plt
+    print("sst(OCN) mean:", np.nanmean(ocn.get("sst")))
+    print("sst(ATM) mean:", np.nanmean(atm.get("sst")))
+    print("TA2M mean:", np.nanmean(atm.get("TA2M")))
+    print("u10m mean:", np.nanmean(atm.get("u10m")))
+    print("v10m mean:", np.nanmean(atm.get("v10m")))
+    print("SOILM(LND) mean:", np.nanmean(lnd.get("SOILM")))
+    print("SOILM(ATM) mean:", np.nanmean(atm.get("SOILM")))
+    print("SHF(ATM) mean:", np.nanmean(atm.get("SHF")))
+    print("SHF(LND) mean:", np.nanmean(lnd.get("SHF")))
 
     fig, axs = plt.subplots(2, 2, figsize=(15, 10), layout="constrained")
 
@@ -150,10 +148,9 @@ if __name__ == "__main__":
     longitude_source_2d, latitude_source_2d = np.meshgrid(
         lon_atm, lat_atm, indexing="ij"
     )
-    scalar_source = atm.get("surface_temperature").T
-    # scalar_source = atm.get("swr_net").T
-    u_source = atm.get("ubot").T
-    v_source = atm.get("vbot").T
+    scalar_source = atm.get("sst").T
+    u_source = atm.get("u10m").T
+    v_source = atm.get("v10m").T
 
     lon_ocn = np.array(ocn.grid.longitude)
     lat_ocn = np.array(ocn.grid.latitude)
@@ -161,8 +158,8 @@ if __name__ == "__main__":
         lon_ocn, lat_ocn, indexing="ij"
     )
     scalar_target = ocn.get("sst").T
-    u_target = ocn.get("ubot").T
-    v_target = ocn.get("vbot").T
+    u_target = ocn.get("u10m").T
+    v_target = ocn.get("v10m").T
 
     im = axs[0, 0].pcolormesh(
         longitude_source_2d,
@@ -170,8 +167,6 @@ if __name__ == "__main__":
         scalar_source,
         shading="auto",
         cmap="coolwarm",
-        vmin=220,
-        vmax=310,
     )
     axs[0, 0].set_title("Initial Scalar Field")
     axs[0, 0].set_xlabel("Longitude")
@@ -182,7 +177,7 @@ if __name__ == "__main__":
         latitude_source_2d,
         u_source,
         v_source,
-        scale=150,
+        scale=100,
     )
     axs[0, 1].set_title("Initial Vector Field")
     axs[0, 1].set_xlabel("Longitude")
@@ -194,8 +189,6 @@ if __name__ == "__main__":
         scalar_target,
         shading="auto",
         cmap="coolwarm",
-        vmin=220,
-        vmax=310,
     )
     axs[1, 0].set_title("Interpolated Scalar Field")
     axs[1, 0].set_xlabel("Longitude")
@@ -206,7 +199,7 @@ if __name__ == "__main__":
         latitude_target_2d,
         u_target,
         v_target,
-        scale=150,
+        scale=100,
     )
     axs[1, 1].set_title("Interpolated Vector Field")
     axs[1, 1].set_xlabel("Longitude")

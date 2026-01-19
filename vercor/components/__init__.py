@@ -2,7 +2,7 @@ from vercor.components.base import (
     Component,
     TimedNamedArray,
     Shared,
-    ForcingData,
+    ComponentForcingData,
     write_shared_to_netcdf,
 )
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
@@ -13,11 +13,12 @@ from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
+from vercor.components.external.jax_gcm import JAXGCM
 
 __all__ = [
     "TimedNamedArray",
     "Shared",
-    "ForcingData",
+    "ComponentForcingData",
     "write_shared_to_netcdf",
     "Component",
     "Atmosphere",
@@ -28,4 +29,5 @@ __all__ = [
     "ERA5Ocean",
     "ERAInterimOcean",
     "ERA5Land",
+    "JAXGCM",
 ]

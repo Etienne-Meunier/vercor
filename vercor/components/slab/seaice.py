@@ -18,15 +18,9 @@ class SeaIce(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = [
-            "sst",
-        ]
-        self._fields2export = [
-            "ICEFRAC",
-        ]
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.cdata["ICEFRAC"] = np.zeros(self.grid.shape)
+        self.data["ICEFRAC"] = np.zeros(self.grid.shape)
 
     def step(
         self,
@@ -34,7 +28,7 @@ class SeaIce(Component):
         time: datetime,
         coupler: "Coupler",
     ) -> None:
-        sst = self.cdata.get("sst", None)
+        sst = self.data.get("sst", None)
         if sst is None:
             return
 
@@ -43,4 +37,4 @@ class SeaIce(Component):
         x = (Tfreeze - sst) / 2.0
         ice = 1.0 / (1.0 + np.exp(-x))
 
-        self.cdata["ICEFRAC"] = ice
+        self.data["ICEFRAC"] = ice

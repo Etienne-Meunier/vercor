@@ -18,18 +18,16 @@ class Atmosphere(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = ["sst"]
-        self._fields2export = ["TA2M", "SHF", "LHF", "u10m", "v10m"]
 
     def initialize(self, coupler: "Coupler") -> None:
         grid_shape = self.grid.shape
         zeros = np.zeros(grid_shape)
 
-        self.cdata["TA2M"] = 273.15 + 15.0 * np.ones(grid_shape)
-        self.cdata["SHF"] = zeros
-        self.cdata["LHF"] = zeros
-        self.cdata["u10m"] = zeros
-        self.cdata["v10m"] = zeros
+        self.data["TA2M"] = 273.15 + 15.0 * np.ones(grid_shape)
+        self.data["SHF"] = zeros
+        self.data["LHF"] = zeros
+        self.data["u10m"] = zeros
+        self.data["v10m"] = zeros
 
     def step(
         self,
@@ -38,12 +36,12 @@ class Atmosphere(Component):
         coupler: "Coupler",
     ) -> None:
         # Bulk formula toy: flux proportional to (TA2M - sst)
-        sst = self.cdata.get("sst", None)
+        sst = self.data.get("sst", None)
 
         if sst is None:
             sst = 273.15 + 15.0 * np.ones(self.grid.shape)
 
-        TA = self.cdata["TA2M"]
+        TA = self.data["TA2M"]
         dT = TA - sst
         C = 10.0  # W m-2 K-1, toy exchange coefficient
         SHF = -C * dT  # ocean heat gain positive when sst < TA
@@ -53,15 +51,15 @@ class Atmosphere(Component):
         lat = np.array(self.grid.latitude)
         lon = np.array(self.grid.longitude) - 180.0
         latitudes, longitudes = np.meshgrid(lat, lon, indexing="ij")
-        self.cdata["u10m"] = np.cos(
+        self.data["u10m"] = np.cos(
             np.deg2rad(latitudes)
         )  # zonal flow varying with latitude
-        self.cdata["v10m"] = 0.5 * np.sin(
+        self.data["v10m"] = 0.5 * np.sin(
             np.deg2rad(longitudes)
         )  # small meridional perturbation
 
-        self.cdata["SHF"] = SHF
-        self.cdata["LHF"] = LHF
+        self.data["SHF"] = SHF
+        self.data["LHF"] = LHF
 
         # Relax TA2M toward sst weakly (toy boundary layer)
-        self.cdata["TA2M"] = TA - 0.01 * dT
+        self.data["TA2M"] = TA - 0.01 * dT

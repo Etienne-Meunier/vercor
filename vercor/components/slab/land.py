@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -18,13 +18,10 @@ class Land(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = ["LHF", "SHF"]
-        self._fields2export = [
-            "SOILM",
-        ]
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.cdata["SOILM"] = 0.3 * np.ones(self.grid.shape)
+        self.data["SOILM"] = 0.3 * np.ones(self.grid.shape)
+        self.data["land_surface_temperature"] = np.zeros(self.grid.shape) + 288.15
 
     def step(
         self,
@@ -32,9 +29,9 @@ class Land(Component):
         time: datetime,
         coupler: "Coupler",
     ) -> None:
-        LHF = self.cdata["LHF"]
-        soil = self.cdata["SOILM"]
+        LHF = self.data["LHF"]
+        soil = self.data["SOILM"]
 
         evap = 1e-9 * (LHF if LHF is not None else 0.0)  # tiny dt scaling
         soil = np.clip(soil - evap * dt.total_seconds(), 0.0, 1.0)
-        self.cdata["SOILM"] = soil
+        self.data["SOILM"] = soil

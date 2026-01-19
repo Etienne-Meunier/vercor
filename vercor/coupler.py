@@ -18,6 +18,7 @@ from vercor.components import (
     Land,
     Ocean,
     Shared,
+    JAXGCM,
 )
 from vercor.components import TimedNamedArray as TNA
 from vercor.exceptions import (
@@ -37,7 +38,7 @@ from vercor.regridders import (
 from vercor.regridders.helpers import compute_land_mask
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
-from vercor.tools import get_component, grids_identical
+from vercor.tools import get_component, grids_identical, _append_unique, _flatten_fields
 from vercor.types import AllComponentsType
 
 
@@ -171,7 +172,26 @@ class Coupler:
                     f"Incorrect component name: {name}, must be ATM, OCN, LND, or ICE"
                 )
 
+            # Setup components' import/export field lists based on exchanges
+            for exchange in self.exchanges:
+                if exchange.source not in self.components:
+                    raise CouplerError(
+                        f"Source component '{exchange.source}' not registered in coupler"
+                    )
+                if exchange.destination not in self.components:
+                    raise CouplerError(
+                        f"Destination component '{exchange.destination}' not registered in coupler"
+                    )
+
+                source_component = self.components[exchange.source]
+                destination_component = self.components[exchange.destination]
+
+                flattened_fields = _flatten_fields(exchange.field_names)
+                _append_unique(source_component._fields2export, flattened_fields)
+                _append_unique(destination_component._fields2import, flattened_fields)
+
             component.check_not_empty_import_export_lists()
+            # Deposit initial data to be sent from component to coupler
             component.send_fields(self.clock.start, self)
             self.logger.info(f" Initialized {name}")
 
@@ -222,7 +242,7 @@ class Coupler:
 
         land_component = get_component(self.components, (Land, ERA5Land), "land")
         atmosphere_component = get_component(
-            self.components, (Atmosphere, ERA5Atmosphere), "atmosphere"
+            self.components, (Atmosphere, ERA5Atmosphere, JAXGCM), "atmosphere"
         )
         ocean_component = get_component(
             self.components, (Ocean, ERA5Ocean, ERAInterimOcean), "ocean"
@@ -318,24 +338,16 @@ class Coupler:
             key = (exchange.source, name, exchange.interpolation_type)
             source_destination_name = "_".join(key)
 
-            setattr(
-                shared_fields,
-                "bmask_" + source_destination_name,
-                (
-                    self._binary_masks[key],
-                    datetime.now(),
-                    name,
-                ),
+            shared_fields["bmask_" + source_destination_name] = (
+                self._binary_masks[key],
+                datetime.now(),
+                name,
             )
 
-            setattr(
-                shared_fields,
-                "fmask_" + source_destination_name,
-                (
-                    self._fractional_masks[key],
-                    datetime.now(),
-                    name,
-                ),
+            shared_fields["fmask_" + source_destination_name] = (
+                self._fractional_masks[key],
+                datetime.now(),
+                name,
             )
 
     def interpolate_and_dispatch_fields(

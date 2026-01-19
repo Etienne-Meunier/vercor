@@ -16,8 +16,17 @@ from vercor.regridders import (
 if __name__ == "__main__":
     # Build grids
     atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
-    ocn_grid = make_rectilinear_grid("ocn-grid", 64, 32, 0.0, 360.0, -90.0, 90.0)
-    ice_grid = make_rectilinear_grid("ice-grid", 64, 32, 0.0, 360.0, -90.0, 90.0)
+
+    ocn_grid_shape = (64, 32)
+    binary_mask = np.ones(ocn_grid_shape).T
+    binary_mask[:2, :] = 0.0  # land points
+    ocn_grid = make_rectilinear_grid(
+        "ocn-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0, mask=binary_mask
+    )
+
+    ice_grid = make_rectilinear_grid(
+        "ice-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0
+    )
     lnd_grid = make_rectilinear_grid("lnd-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
 
     # Build components
@@ -95,6 +104,24 @@ if __name__ == "__main__":
             source="ATM",
             destination="LND",
             field_names=["LHF", "SHF"],
+            regridder_factory=conservative,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="OCN",
+            destination="ICE",
+            field_names=["sst"],
+            regridder_factory=conservative,
+        )
+    )
+
+    cpl.add_exchange(
+        Exchange(
+            source="ICE",
+            destination="OCN",
+            field_names=["ICEFRAC"],
             regridder_factory=conservative,
         )
     )

@@ -5,14 +5,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from vercor.components import Component, ForcingData
+from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERAInterimOcean(Component, ForcingData):
+class ERAInterimOcean(Component, ComponentForcingData):
     def __init__(
         self,
         name: str = "OCN",
@@ -32,7 +32,7 @@ class ERAInterimOcean(Component, ForcingData):
             surface_file (Path): path to netCDF file with data at surface level
 
         Attributes of parent classes to be initialized:
-            ForcingData
+            ComponentForcingData
                 DATA_FILES: dict [str, str]
             Component
                 name: str
@@ -63,24 +63,10 @@ class ERAInterimOcean(Component, ForcingData):
         super().__init__(name, grid=self.grid)
 
         self._settings["apply_time_interpolation"] = True
-        self._fields2import = [
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-            "swr_net",
-            "lwr_dw",
-        ]
-        self._fields2export = [
-            "sst",
-        ]
 
         sst[:, 3:-3, :] = self._read_forcing("sst", where="model_level") + 273.15
         sst *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
-        self.cdata["sst"] = sst
+        self.data["sst"] = sst
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

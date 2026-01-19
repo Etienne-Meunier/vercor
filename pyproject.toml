@@ -16,6 +16,9 @@ dependencies = [
 "pytest>=7.4.0",
 "h5netcdf>=1.4.1",
 "xarray>=2025.1.2",
+"jax",
+"jax_datetime",
+"tree-math",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -23,7 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache-2.0",
     "Operating System :: POSIX",
     "Operating System :: Unix",
     "Operating System :: MacOS",
@@ -31,6 +34,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Oceanography",
     "Topic :: Scientific/Engineering :: Physics",
 ]
+
+[project.optional-dependencies]
+jcm = ["jcm"]
+veros = ["veros"]
 
 [build-system]
 requires = ["flit_core<4", "versioneer[toml]"]

@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from vercor.components import Component, ForcingData
+from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_forcing_data
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
-class ERA5Ocean(Component, ForcingData):
+class ERA5Ocean(Component, ComponentForcingData):
     def __init__(
         self,
         name: str = "OCN",
@@ -26,7 +26,7 @@ class ERA5Ocean(Component, ForcingData):
             surface_file (Path): path to netCDF file with data at surface level
 
         Attributes of parent classes to be initialized:
-            ForcingData
+            ComponentForcingData
                 DATA_FILES: dict [str, str]
             Component
                 name: str
@@ -53,22 +53,10 @@ class ERA5Ocean(Component, ForcingData):
         super().__init__(name, grid=self.grid)
 
         self._settings["apply_time_interpolation"] = True
-        self._fields2import = [
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-            "swr_net",
-            "lwr_dw",
-        ]
-        self._fields2export = ["sst"]
 
-        self.cdata["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
-        self.cdata["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
-        self.cdata["fraction_mask"] = fraction_mask
+        self.data["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
+        self.data["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
+        self.data["fraction_mask"] = fraction_mask
 
     def initialize(self, coupler: "Coupler") -> None:
         pass
