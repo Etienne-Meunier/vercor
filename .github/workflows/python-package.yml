@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v4
@@ -28,13 +28,13 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: climate-analytics-lab/jax-gcm
-        path: jax-gcm
+        path: vendor/jax-gcm
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest
         pip install .
-        export PYTHONPATH=./jax-gcm:$PYTHONPATH
+        export PYTHONPATH=./vendor/jax-gcm:$PYTHONPATH
 
     - name: Lint with flake8
       run: |
@@ -48,4 +48,4 @@ jobs:
         mypy vercor tests examples
     - name: Test with pytest
       run: |
-        pytest tests
+        pytest tests -q --ignore=vendor/jax-gcm
