@@ -53,18 +53,6 @@ class ERA5Ocean(Component, ComponentForcingData):
         super().__init__(name, grid=self.grid)
 
         self._settings["apply_time_interpolation"] = True
-        self._fields2import = [
-            "zbot",
-            "ubot",
-            "vbot",
-            "thbot",
-            "qbot",
-            "tbot",
-            "rbot",
-            "swr_net",
-            "lwr_dw",
-        ]
-        self._fields2export = ["sst"]
 
         self.data["sst"] = self._read_forcing("sst", where="surface", flip_y=True)
         self.data["sst"] *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]

@@ -18,8 +18,6 @@ class Atmosphere(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = ["sst"]
-        self._fields2export = ["TA2M", "SHF", "LHF", "u10m", "v10m"]
 
     def initialize(self, coupler: "Coupler") -> None:
         grid_shape = self.grid.shape

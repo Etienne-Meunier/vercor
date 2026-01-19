@@ -18,11 +18,6 @@ class Land(Component):
 
     def __init__(self, name: str, grid: RectilinearGrid) -> None:
         super().__init__(name, grid)
-        self._fields2import = ["LHF", "SHF"]
-        self._fields2export = [
-            "land_surface_temperature",
-            "SOILM",
-        ]
 
     def initialize(self, coupler: "Coupler") -> None:
         self.data["SOILM"] = 0.3 * np.ones(self.grid.shape)

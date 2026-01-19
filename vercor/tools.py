@@ -13,6 +13,21 @@ if TYPE_CHECKING:
     from vercor.coupler import Coupler
 
 
+def _flatten_fields(
+    field_names: List[str | Tuple[str, str]],
+) -> List[str]:
+    flattened: List[str] = []
+    for item in field_names:
+        if isinstance(item, tuple):
+            flattened.extend(item)
+        else:
+            flattened.append(item)
+    return flattened
+
+def _append_unique(target: List[str], items: List[str]) -> None:
+    target.extend([item for item in items if item not in target])
+
+
 def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
     return (
         g0.shape == g1.shape

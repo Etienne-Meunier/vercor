@@ -53,16 +53,6 @@ class ERA5Land(Component, ComponentForcingData):
         super().__init__(name, grid=self.grid)
 
         self._settings["apply_time_interpolation"] = True
-        self._fields2import = [
-            "zbot",
-            "qbot",
-            "tbot",
-            "swr_net",
-            "lwr_dw",
-        ]
-        self._fields2export = [
-            "skt",
-        ]
 
         self.data["skt"] = self._read_forcing("skt", where="surface")
 
