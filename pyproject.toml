@@ -52,7 +52,7 @@ source = ["vercor"]
 
 [tool.flake8]
 exclude = [
-  "vendor/jax-gcm",
+  "vendor",
 ]
 
 [tool.mypy]
