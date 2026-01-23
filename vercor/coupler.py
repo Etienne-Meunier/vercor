@@ -21,6 +21,7 @@ from vercor.components import (
     JAXGCM,
 )
 from vercor.components import TimedNamedArray as TNA
+from vercor.components.external.veros_gcm import VerosGCM
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -136,8 +137,7 @@ class Coupler:
             for item in exchange.field_names
         )
         self.logger.info(
-            f" Added exchange {exchange.name}: {exchange.source} -> {exchange.destination}:"
-            f" Fields ({formatted_field_names})"
+            f" Added exchange {exchange.name}: Fields ({formatted_field_names})"
         )
 
     def set_components_run_sequence(self, run_sequence: RunSequence) -> None:
@@ -245,7 +245,7 @@ class Coupler:
             self.components, (Atmosphere, ERA5Atmosphere, JAXGCM), "atmosphere"
         )
         ocean_component = get_component(
-            self.components, (Ocean, ERA5Ocean, ERAInterimOcean), "ocean"
+            self.components, (Ocean, ERA5Ocean, ERAInterimOcean, VerosGCM), "ocean"
         )
 
         if not grids_identical(land_component.grid, atmosphere_component.grid):
@@ -371,9 +371,7 @@ class Coupler:
             source_component = self.components[exchange.source]
             destination_component = self.components[exchange.destination]
 
-            self.logger.info(
-                f" Exchange fields ({exchange.name}): {source_component.name} ---> {destination_component.name}"
-            )
+            self.logger.info(f" Exchange fields: {exchange.name}")
 
             key = (exchange.source, exchange.destination, exchange.interpolation_type)
 
@@ -416,7 +414,6 @@ class Coupler:
                         raise ExchangerError(
                             f"Field {field_name} not present in source fields"
                         )
-
                     source_field_data = getattr(source_fields, field_name).data
                     scalar = np.asarray(regrid(source_field_data))
                     scalar *= binary_mask * fractional_mask

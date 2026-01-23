@@ -2,14 +2,12 @@ from typing import Tuple
 import numpy as np
 from numpy.typing import NDArray
 
-from vercor.components import Component
 from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
 from vercor.settings import VercorSettings
 
 
 def shr_flux_atmOcn(
     settings: VercorSettings,
-    shared_fields: Component,
     mask: NDArray,
     zbot: NDArray,
     ubot: NDArray,
@@ -313,7 +311,6 @@ def shr_flux_atmOcn(
 
 def shr_flux_atmIce(
     settings: VercorSettings,
-    shared_fields: Component,
     mask: NDArray,
     zbot: NDArray,
     ubot: NDArray,

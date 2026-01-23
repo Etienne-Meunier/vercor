@@ -35,5 +35,7 @@ class VercorSettings:
     latvap: float = 2.501e6  # Latent heat of vaporization [J/kg]
     latfresh: float = 3.34e5  # Latent heat of fusion [J/kg]
     gamma_blk: float = 0.1  # Bulk aerodynamic resistance [-]
+    zref: float = 10.0  # reference height           (m)
+    ztref: float = 2.0  # reference height for air T (m)
     # --------------------------------------------------------------------------------
     year_in_seconds: float = 360 * 86400.0

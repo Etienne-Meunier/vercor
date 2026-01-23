@@ -113,9 +113,9 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         settings = coupler.settings
         ds = self.data
 
-        self.data["zbot"] = np.zeros((nlon, nlat, 12))
-        self.data["rbot"] = np.zeros((nlon, nlat, 12))
-        self.data["thbot"] = np.zeros((nlon, nlat, 12))
+        ds["zbot"] = np.zeros((nlon, nlat, 12))
+        ds["rbot"] = np.zeros((nlon, nlat, 12))
+        ds["thbot"] = np.zeros((nlon, nlat, 12))
 
         for m in range(12):
             ph = compute_pressure_levels(
@@ -128,12 +128,12 @@ class ERA5Atmosphere(Component, ComponentForcingData):
                 settings,
                 ds["temperature"][..., m],
                 ds["specific_humidity"][..., m],
-                ph[:, :],
+                ph[...],
             )[
                 ..., 1
             ]  # L136
             self.data["rbot"][..., m] = compute_air_density(
-                settings, ds["tbot"][:, :, m], pf[:, :, 0]
+                settings, pf[:, :, 0], ds["tbot"][:, :, m]
             )
             self.data["thbot"][..., m] = compute_potential_temperature(
                 settings, ds["tbot"][:, :, m], pf[:, :, 0]

@@ -577,7 +577,9 @@ class BilinearRectilinearInterpolator:
             num += np.where(m01, w01 * v01, 0.0)
             num += np.where(m11, w11 * v11, 0.0)
 
-            out = np.where(wsum > 0.0, num / wsum, np.nan)
+            out = np.full_like(num, np.nan, dtype=float)
+            np.divide(num, wsum, out=out, where=wsum > 0.0)
+
             return out, wsum
         else:
             num = self.w00 * v00 + self.w10 * v10 + self.w01 * v01 + self.w11 * v11
