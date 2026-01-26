@@ -10,10 +10,7 @@ from vercor import Clock, Coupler, Exchange
 from vercor.components import JAXGCM, Land, Ocean
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
-from vercor.regridders import (
-    BilinearRectilinearRegridder,
-    ConservativeRectilinearRegridder,
-)
+from vercor.regridders import bilinear, conservative
 
 from vercor.components.external.jax_gcm_tools import (
     generate_jcm_forcing_and_topography_files,
@@ -71,19 +68,6 @@ if __name__ == "__main__":
         cpl.register(component)  # type: ignore
 
     cpl.set_components_run_sequence(run_sequence)
-
-    # Bilinear interpolation
-    # Having interpolator factory function allows easy access
-    # to different interpolators' args & kwargs
-    def bilinear(
-        source_grid: RectilinearGrid, destination_grid: RectilinearGrid
-    ) -> BilinearRectilinearRegridder:
-        return BilinearRectilinearRegridder(source_grid, destination_grid)
-
-    def conservative(
-        source_grid: RectilinearGrid, destination_grid: RectilinearGrid
-    ) -> ConservativeRectilinearRegridder:
-        return ConservativeRectilinearRegridder(source_grid, destination_grid)
 
     # Exchanges
     # scalar fields (vector field))

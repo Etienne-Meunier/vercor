@@ -1,6 +1,9 @@
 from vercor.regridders.base import Regridder
-from vercor.regridders.bilinear import BilinearRectilinearRegridder
-from vercor.regridders.conservative import ConservativeRectilinearRegridder
+from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
+from vercor.regridders.conservative import (
+    ConservativeRectilinearRegridder,
+    conservative,
+)
 from vercor.regridders.helpers import (
     make_rectilinear_grid,
     centers_to_edges,
@@ -14,4 +17,6 @@ __all__ = [
     "make_rectilinear_grid",
     "centers_to_edges",
     "compute_land_mask",
+    "bilinear",
+    "conservative",
 ]

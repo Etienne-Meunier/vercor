@@ -36,3 +36,9 @@ class BilinearRectilinearRegridder(Regridder):
             idw_eps=idw_eps,
             fill_value=fill_value,
         )
+
+
+def bilinear(
+    source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+) -> BilinearRectilinearRegridder:
+    return BilinearRectilinearRegridder(source_grid, destination_grid)

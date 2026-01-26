@@ -59,3 +59,9 @@ class ConservativeRectilinearRegridder(Regridder):
             normalize=normalize,
             radius=radius,
         )
+
+
+def conservative(
+    source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+) -> ConservativeRectilinearRegridder:
+    return ConservativeRectilinearRegridder(source_grid, destination_grid)
