@@ -5,22 +5,72 @@ import numpy as np
 from numpy.typing import NDArray
 from datetime import datetime, timedelta
 
-from vercor.components.external.veros_runtime_settings import *
+from vercor.components.external.veros_runtime_settings import *  # noqa: F403,F401
 
 from veros.setups.global_4deg import GlobalFourDegreeSetup
 from veros.core.operators import update, at
-from veros.core.operators import numpy as npx, update, at
-from veros.routines import veros_kernel
-from veros.state import KernelOutput, VerosState
-from veros.tools import get_periodic_interval
+from veros.state import VerosState
 
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
-from vercor.fluxes.bulk_formula_cesm import shr_flux_atmOcn
+from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
+from vercor.settings import VercorSettings
 
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def compute_fluxes(
+    component_state: "VerosGCM", settings: VercorSettings
+) -> tuple[NDArray, NDArray, NDArray, NDArray]:
+
+    cs = component_state
+    vs = cs._veros_state.variables
+
+    u_tgrid = 0.5 * (vs.u[1:, 2:-2, -1, vs.tau] + vs.u[:-1, 2:-2, -1, vs.tau])
+    v_tgrid = 0.5 * (vs.v[2:-2, 1:, -1, vs.tau] + vs.v[2:-2, :-1, -1, vs.tau])
+    temp = vs.temp[2:-2, 2:-2, -1, vs.tau].T + 273.15
+
+    (
+        senf,
+        latf,
+        lwup,
+        evap,
+        taux,
+        tauy,
+        tref,
+        qref,
+        duu10n,
+        ustar,
+        tstar,
+        qstar,
+        dqfldt,
+    ) = new_flux_atmOcn(
+        settings,
+        np.array(vs.maskT[2:-2, 2:-2, -1].T),
+        cs.data["zbot"],
+        cs.data["ubot"],
+        cs.data["vbot"],
+        cs.data["thbot"],
+        cs.data["qbot"],
+        cs.data["rbot"],
+        cs.data["tbot"],
+        # u & v have Arakawa-C grid staggering in Veros
+        # (need additional interpolation)
+        u_tgrid[1:-2, :].T,
+        v_tgrid[:, 1:-2].T,
+        temp,
+    )
+
+    # Signs & directions convention in Veros
+    # Negative out:           LW_up ↑  SENf ↑  LATf ↑
+    # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
+
+    qnet = cs.data["swr_net"] + cs.data["lwr_dw"] + lwup + senf + latf
+    qnec = -np.where(dqfldt <= -1e10, 0.0, dqfldt)
+
+    return (taux, tauy, qnet, qnec)
 
 
 def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
@@ -62,7 +112,7 @@ def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
 
 
 def set_variable(
-    variable_name: str, state: VerosState, variable_value: NDArray, jitted: bool = True
+    state: VerosState, variable_name: str, variable_value: NDArray, jitted: bool = True
 ) -> VerosState:
 
     n_state = copy_state(state, jitted=jitted)
@@ -76,88 +126,11 @@ def set_variable(
     return n_state
 
 
-class CustomGlobalFourDegree(GlobalFourDegreeSetup):
-    @veros_kernel
-    def set_forcing_kernel(state): # type: ignore
-        vs = state.variables
-        settings = state.settings
-
-        year_in_seconds = 360 * 86400.0
-        (n1, f1), (n2, f2) = get_periodic_interval(
-            vs.time, year_in_seconds, year_in_seconds / 12.0, 12
-        )
-
-        # wind stress
-        vs.surface_taux = f1 * vs.taux[:, :, n1] + f2 * vs.taux[:, :, n2]
-        vs.surface_tauy = f1 * vs.tauy[:, :, n1] + f2 * vs.tauy[:, :, n2]
-
-        # tke flux
-        if settings.enable_tke:
-            vs.forc_tke_surface = update(
-                vs.forc_tke_surface,
-                at[1:-1, 1:-1],
-                npx.sqrt(
-                    (
-                        0.5
-                        * (vs.surface_taux[1:-1, 1:-1] + vs.surface_taux[:-2, 1:-1])
-                        / settings.rho_0
-                    )
-                    ** 2
-                    + (
-                        0.5
-                        * (vs.surface_tauy[1:-1, 1:-1] + vs.surface_tauy[1:-1, :-2])
-                        / settings.rho_0
-                    )
-                    ** 2
-                )
-                ** 1.5,
-            )
-
-        # heat flux : W/m^2 K kg/J m^3/kg = K m/s
-        cp_0 = 3991.86795711963
-        sst = f1 * vs.sst_clim[:, :, n1] + f2 * vs.sst_clim[:, :, n2]
-        qnec = f1 * vs.qnec[:, :, n1] + f2 * vs.qnec[:, :, n2]
-        qnet = f1 * vs.qnet[:, :, n1] + f2 * vs.qnet[:, :, n2]
-        vs.forc_temp_surface = (
-            (qnet + qnec * (sst - vs.temp[:, :, -1, vs.tau]))
-            * vs.maskT[:, :, -1]
-            / cp_0
-            / settings.rho_0
-        )
-
-        # salinity restoring
-        t_rest = 30 * 86400.0
-        sss = f1 * vs.sss_clim[:, :, n1] + f2 * vs.sss_clim[:, :, n2]
-        vs.forc_salt_surface = (
-            1.0
-            / t_rest
-            * (sss - vs.salt[:, :, -1, vs.tau])
-            * vs.maskT[:, :, -1]
-            * vs.dzt[-1]
-        )
-
-        # apply simple ice mask
-        mask = npx.logical_and(
-            vs.temp[:, :, -1, vs.tau] * vs.maskT[:, :, -1] < -1.8,
-            vs.forc_temp_surface < 0.0,
-        )
-        vs.forc_temp_surface = npx.where(mask, 0.0, vs.forc_temp_surface)
-        vs.forc_salt_surface = npx.where(mask, 0.0, vs.forc_salt_surface)
-
-        return KernelOutput(
-            surface_taux=vs.surface_taux,
-            surface_tauy=vs.surface_tauy,
-            forc_tke_surface=vs.forc_tke_surface,
-            forc_temp_surface=vs.forc_temp_surface,
-            forc_salt_surface=vs.forc_salt_surface,
-        )
-
-
 class VerosGCM(Component):
     def __init__(
         self,
         name: str = "OCN",
-        do_spinup: bool = True,
+        do_spinup: bool = False,
         spinup_days: int = 2,
         jitted: bool = False,
     ) -> None:
@@ -168,28 +141,27 @@ class VerosGCM(Component):
             name (str): component name
         """
 
-        self.model = CustomGlobalFourDegree()
+        self.model = GlobalFourDegreeSetup()
         self.model.setup()
-        self._state = copy_state(self.model.state, jitted=jitted)
+        self._veros_state = copy_state(self.model.state, jitted=jitted)
         self._step_function = lambda state: pure(
             state, jitted=jitted, step=self.model.step
         )
 
-        # TODO: pass the below as settings
+        seconds_per_day = 86400.0
         self.do_spinup = do_spinup
         self.spinup_days = spinup_days
         self.jitted = jitted
 
-        self.dt_tracer = getattr(self._state.settings, "dt_tracer")
-        self.dt_mom = getattr(self._state.settings, "dt_mom")
-        self.spinup_steps = int(self.dt_tracer * self.spinup_days // self.dt_mom)
+        self.dt_tracer = getattr(self._veros_state.settings, "dt_tracer")
+        self.spinup_steps = int(seconds_per_day * self.spinup_days // self.dt_tracer)
 
-        mask = np.where(self._state.variables.maskT[:, :, -1] > 0.0, 1.0, 0.0)
+        mask = np.where(self._veros_state.variables.maskT[:, :, -1] > 0.0, 1.0, 0.0)
 
         self.grid = RectilinearGrid(
             name=name,
-            longitude=self._state.variables.xt[2:-2],
-            latitude=self._state.variables.yt[2:-2],
+            longitude=self._veros_state.variables.xt[2:-2],
+            latitude=self._veros_state.variables.yt[2:-2],
             binary_mask=mask[2:-2, 2:-2].T,
         )
 
@@ -197,11 +169,11 @@ class VerosGCM(Component):
 
     def initialize(self, coupler: "Coupler") -> None:
         dt_seconds = coupler.clock.dt_seconds
-        self.model_substeps = int(dt_seconds // self.dt_mom)
+        self.model_substeps = int(dt_seconds // self.dt_tracer)
 
-        if dt_seconds % self.dt_mom != 0:
+        if dt_seconds % self.dt_tracer != 0:
             raise ValueError(
-                f"dt_mom ({self.dt_mom}) must be a multiple of dt ({dt_seconds})"
+                f"dt_tracer ({self.dt_tracer}) must be a multiple of dt ({dt_seconds})"
             )
 
         if self.do_spinup and "ATM" in coupler.run_sequence.order:
@@ -211,10 +183,10 @@ class VerosGCM(Component):
             )
             for i in range(self.spinup_steps):
                 print(" " * 40 + f"Step {i+1} / {self.spinup_steps}", end="\r")
-                self._state = self._step_function(self._state)
+                self._veros_state = self._step_function(self._veros_state)
 
-        self.data["sst"] = self._state.variables.temp[
-            2:-2, 2:-2, -1, self._state.variables.tau
+        self.data["sst"] = self._veros_state.variables.temp[
+            2:-2, 2:-2, -1, self._veros_state.variables.tau
         ].T
 
     def step(
@@ -224,68 +196,22 @@ class VerosGCM(Component):
         coupler: "Coupler",
     ) -> None:
 
-        vs = self._state.variables
+        taux, tauy, qnet, qnec = compute_fluxes(self, coupler.settings)
 
-        u_tgrid = 0.5 * (vs.u[1:, 2:-2, -1, vs.tau] + vs.u[:-1, 2:-2, -1, vs.tau])
-
-        v_tgrid = 0.5 * (vs.v[2:-2, 1:, -1, vs.tau] + vs.v[2:-2, :-1, -1, vs.tau])
-
-        temp = vs.temp[2:-2, 2:-2, -1, vs.tau].T + 273.15
-        dummy_mask = np.ones_like(self.data["ubot"])
-
-        """senf, latf, lwup, evap, taux, tauy, tref, qref, duu10n, ustar, tstar, qstar = flux_atmOcn(
-            coupler.settings,
-            dummy_mask,# 1 - vs.maskT[2:-2, 2:-2, -1].T,
-            self.data["rbot"],
-            self.data["zbot"],
-            self.data["ubot"],
-            self.data["vbot"],
-            self.data["qbot"],
-            self.data["tbot"],
-            self.data["thbot"],
-            u_tgrid[1:-2, :].T,
-            v_tgrid[:, 1:-2].T,
-            temp,
-        )"""
-
-        senf, latf, lwup, evap, taux, tauy, tref, qref, duu10n, ustar, tstar, qstar = (
-            shr_flux_atmOcn(
-                coupler.settings,
-                dummy_mask,  # 1 - vs.maskT[2:-2, 2:-2, -1].T,
-                self.data["zbot"],
-                self.data["ubot"],
-                self.data["vbot"],
-                self.data["thbot"],
-                self.data["qbot"],
-                self.data["rbot"],
-                self.data["tbot"],
-                # u & v have Arakawa-C grid staggering in Veros
-                # (need additional interpolation)
-                u_tgrid[1:-2, :].T,
-                v_tgrid[:, 1:-2].T,
-                temp,
-            )
-        )
-
-        # Signs & directions convention in Veros
-        # Negative out:           LW_up ↑  SENf ↑  LATf ↑
-        # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
-
-        qnet = self.data["swr_net"] + self.data["lwr_dw"] + lwup + senf + latf
-
-        for var_name, var_value in {
-            "taux": taux.T[..., np.newaxis],
-            "tauy": tauy.T[..., np.newaxis],
-            "qnet": qnet.T[..., np.newaxis],
+        for variable_name, variable_value in {
+            "taux": np.nan_to_num(taux.T[..., np.newaxis]),
+            "tauy": np.nan_to_num(tauy.T[..., np.newaxis]),
+            "qnet": np.nan_to_num(qnet.T[..., np.newaxis]),
+            "qnec": np.nan_to_num(qnec.T[..., np.newaxis]),
         }.items():
-            self._state = set_variable(
-                var_name, self._state, var_value, jitted=self.jitted
+            self._veros_state = set_variable(
+                self._veros_state, variable_name, variable_value, jitted=self.jitted
             )
 
         for i in range(self.model_substeps):
             print(" " * 40 + f"Veros sub-step {i+1} / {self.model_substeps}", end="\r")
-            self._state = self._step_function(self._state)
+            self._veros_state = self._step_function(self._veros_state)
 
-        self.data["sst"] = self._state.variables.temp[
-            2:-2, 2:-2, -1, self._state.variables.tau
+        self.data["sst"] = self._veros_state.variables.temp[
+            2:-2, 2:-2, -1, self._veros_state.variables.tau
         ].T

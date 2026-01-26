@@ -6,7 +6,226 @@ from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
 from vercor.settings import VercorSettings
 
 
-def shr_flux_atmOcn(
+def old_flux_atmOcn(
+    settings: VercorSettings,
+    mask: NDArray,
+    rbot: NDArray,
+    zbot: NDArray,
+    ubot: NDArray,
+    vbot: NDArray,
+    qbot: NDArray,
+    tbot: NDArray,
+    thbot: NDArray,
+    us: NDArray,
+    vs: NDArray,
+    ts: NDArray,
+) -> Tuple[NDArray, ...]:
+    """atm/ocn fluxes calculation
+
+    Arguments:
+        mask (:obj:`ndarray`): ocn domain mask       0 <=> out of domain
+        rbot (:obj:`ndarray`): atm density           (kg/m^3)
+        zbot (:obj:`ndarray`): atm level height      (m)
+        ubot (:obj:`ndarray`): atm u wind            (m/s)
+        vbot (:obj:`ndarray`): atm v wind            (m/s)
+        qbot (:obj:`ndarray`): atm specific humidity (kg/kg)
+        tbot (:obj:`ndarray`): atm T                 (K)
+        thbot(:obj:`ndarray`): atm potential T       (K)
+        us   (:obj:`ndarray`): ocn u-velocity        (m/s)
+        vs   (:obj:`ndarray`): ocn v-velocity        (m/s)
+        ts   (:obj:`ndarray`): ocn temperature       (K)
+
+    Returns:
+        sen  (:obj:`ndarray`): heat flux: sensible    (W/m^2)
+        lat  (:obj:`ndarray`): heat flux: latent      (W/m^2)
+        lwup (:obj:`ndarray`): heat flux: lw upward   (W/m^2)
+        evap (:obj:`ndarray`): water flux: evap  ((kg/s)/m^2)
+        taux (:obj:`ndarray`): surface stress, zonal      (N)
+        tauy (:obj:`ndarray`): surface stress, maridional (N)
+
+        tref (:obj:`ndarray`): diag:  2m ref height T     (K)
+        qref (:obj:`ndarray`): diag:  2m ref humidity (kg/kg)
+        duu10n(:obj:`ndarray`): diag: 10m wind speed squared (m/s)^2
+
+        ustar_sv(:obj:`ndarray`): diag: ustar
+        re_sv   (:obj:`ndarray`): diag: sqrt of exchange coefficient (water)
+        ssq_sv  (:obj:`ndarray`): diag: sea surface humidity  (kg/kg)
+
+    Reference:
+        - Large, W. G., & Pond, S. (1981). Open Ocean Momentum Flux Measurements in Moderate to Strong Winds,
+        Journal of Physical Oceanography, 11(3), pp. 324-336
+        - Large, W. G., & Pond, S. (1982). Sensible and Latent Heat Flux Measurements over the Ocean,
+        Journal of Physical Oceanography, 12(5), 464-482.
+        - https://svn-ccsm-release.cgd.ucar.edu/model_versions/cesm1_0_5/models/csm_share/shr/shr_flux_mod.F90
+    """
+
+    al2 = np.log(settings.zref / settings.ztref)
+
+    vmag = np.maximum(
+        settings.umin_ocean,
+        np.sqrt((ubot[...] - us[...]) ** 2 + (vbot[...] - vs[...]) ** 2),
+    )
+
+    # sea surface humidity (kg/kg)
+    ssq = 0.98 * qsat(ts[...]) / rbot[...]
+
+    # potential temperature diff. (K)
+    delt = thbot[...] - ts[...]
+
+    # specific humidity diff. (kg/kg)
+    delq = qbot[...] - ssq[...]
+
+    alz = np.log(zbot[...] / settings.zref)
+    cp = settings.cpdair * (1.0 + settings.cpvir * ssq[...])
+
+    # first estimate of Z/L and ustar, tstar and qstar
+
+    # neutral coefficients, z/L = 0.0
+    stable = 0.5 + 0.5 * np.sign(delt[...])
+    rdn = np.sqrt(cdn(vmag[...]))
+    rhn = (1.0 - stable) * 0.0327 + stable * 0.018
+    ren = 0.0346
+
+    ustar = rdn * vmag[...]
+    tstar = rhn * delt[...]
+    qstar = ren * delq[...]
+
+    # compute stability & evaluate all stability functions
+    hol = (
+        settings.karman
+        * settings.gravity
+        * zbot[...]
+        * (tstar[...] / thbot[...] + qstar[...] / (1.0 / settings.zvir + qbot[...]))
+        / ustar[...] ** 2
+    )
+    hol = np.minimum(np.abs(hol[...]), 10.0) * np.sign(hol[...])
+    stable = 0.5 + 0.5 * np.sign(hol[...])
+    xsq = np.maximum(np.sqrt(np.abs(1.0 - 16.0 * hol[...])), 1.0)
+    xqq = np.sqrt(xsq[...])
+    psimh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psimhu(xqq[...])
+    psixh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq[...])
+
+    # shift wind speed using old coefficient
+    rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz[...] - psimh[...]))
+    u10n = vmag[...] * rd[...] / rdn[...]
+
+    # update transfer coeffs at 10m and neutral stability
+    rdn = np.sqrt(cdn(u10n[...]))
+    ren = 0.0346
+    rhn = (1.0 - stable[...]) * 0.0327 + stable[...] * 0.018
+
+    # shift all coeffs to measurement height and stability
+    rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz[...] - psimh[...]))
+    rh = rhn[...] / (1.0 + rhn[...] / settings.karman * (alz[...] - psixh[...]))
+    re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
+
+    # update ustar, tstar, qstar using updated, shifted coeffs
+    ustar = rd[...] * vmag[...]
+    tstar = rh[...] * delt[...]
+    qstar = re[...] * delq[...]
+
+    # iterate to converge on Z/L, ustar, tstar and qstar
+
+    # compute stability & evaluate all stability functions
+    hol = (
+        settings.karman
+        * settings.gravity
+        * zbot[...]
+        * (tstar[...] / thbot[...] + qstar[...] / (1.0 / settings.zvir + qbot[...]))
+        / ustar[...] ** 2
+    )
+    hol = np.minimum(np.abs(hol[...]), 10.0) * np.sign(hol[...])
+    stable = 0.5 + 0.5 * np.sign(hol[...])
+    xsq = np.maximum(np.sqrt(np.abs(1.0 - 16.0 * hol[...])), 1.0)
+    xqq = np.sqrt(xsq[...])
+    psimh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psimhu(xqq[...])
+    psixh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq[...])
+
+    # shift wind speed using old coefficient
+    rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz[...] - psimh[...]))
+    u10n = vmag[...] * rd[...] / rdn[...]
+
+    # update transfer coeffs at 10m and neutral stability
+    rdn = np.sqrt(cdn(u10n[...]))
+    ren = 0.0346
+    rhn = (1.0 - stable[...]) * 0.0327 + stable[...] * 0.018
+
+    # shift all coeffs to measurement height and stability
+    rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz[...] - psimh[...]))
+    rh = rhn[...] / (1.0 + rhn[...] / settings.karman * (alz[...] - psixh[...]))
+    re = ren / (1.0 + ren / settings.karman * (alz[...] - psixh[...]))
+
+    # update ustar, tstar, qstar using updated, shifted coeffs
+    ustar = rd[...] * vmag[...]
+    tstar = rh[...] * delt[...]
+    qstar = re[...] * delq[...]
+
+    # compute the fluxes
+
+    tau = rbot[...] * ustar[...] * ustar[...]
+
+    # momentum flux
+    taux = tau[...] * (ubot[...] - us[...]) / vmag[...] * mask[...]
+    tauy = tau[...] * (vbot[...] - vs[...]) / vmag[...] * mask[...]
+
+    # heat flux
+    sen = cp[...] * tau[...] * tstar[...] / ustar[...] * mask[...]
+    lat = settings.latvap * tau[...] * qstar[...] / ustar[...] * mask[...]
+    lwup = -settings.stefBoltz * ts[...] ** 4 * mask[...]
+
+    # water flux
+    evap = lat[...] / settings.latvap * mask[...]
+
+    # compute diagnositcs: 2m ref T & Q, 10m wind speed squared
+
+    hol = hol[...] * settings.ztref / zbot[...]
+    xsq = np.maximum(1.0, np.sqrt(np.abs(1.0 - 16.0 * hol[...])))
+    xqq = np.sqrt(xsq)
+    psix2 = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq[...])
+    fac = (rh[...] / settings.karman) * (alz[...] + al2 - psixh[...] + psix2[...])
+    tref = thbot[...] - delt[...] * fac[...]
+
+    # pot. temp to temp correction
+    tref = (tref[...] - 0.01 * settings.ztref) * mask[...]
+    fac = (
+        (re[...] / settings.karman)
+        * (alz[...] + al2 - psixh[...] + psix2[...])
+        * mask[...]
+    )
+    qref = (qbot[...] - delq[...] * fac[...]) * mask[...]
+
+    # 10m wind speed squared
+    duu10n = u10n[...] * u10n[...] * mask[...]
+
+    # Calculate correction term of net ocean heat flux (W/m^2) for data forced ocean
+    # total derivative with respect to surface temperature
+    # Ported from MITgcm bulkf_formula_lanl.f90
+    clha = rbot[...] * settings.latvap * vmag[...] * re[...] * rd[...]
+    devdt = clha[...] * ssq[...] * 2.166847e-3 / (ts[...] * ts[...])
+
+    dflwupdt = -4.0 * settings.ocean_emissivity * settings.stefBoltz * (ts[...] ** 3)
+    dfshdt = -rbot[...] * settings.cpdair * vmag[...] * rh[...] * rd[...]
+    dflhdt = -settings.latvap * devdt[...]
+    df0dt = (dflwupdt[...] + dfshdt[...] + dflhdt[...]) * mask[...]
+
+    return (
+        sen,
+        lat,
+        lwup,
+        evap,
+        taux,
+        tauy,
+        tref,
+        qref,
+        duu10n,
+        ustar,
+        tstar,
+        qstar,
+        df0dt,
+    )
+
+
+def new_flux_atmOcn(
     settings: VercorSettings,
     mask: NDArray,
     zbot: NDArray,
@@ -127,23 +346,10 @@ def shr_flux_atmOcn(
 
     """
 
-    taux = np.full_like(mask, missval)
-    tauy = np.full_like(mask, missval)
-    sen = np.full_like(mask, missval)
-    lat = np.full_like(mask, missval)
-    lwup = np.full_like(mask, missval)
-    evap = np.full_like(mask, missval)
-    tref = np.full_like(mask, missval)
-    qref = np.full_like(mask, missval)
-    u10n = np.full_like(mask, missval)
-    duu10n = np.full_like(mask, missval)
-    rh = np.full_like(mask, missval)
-    psixh = np.full_like(mask, missval)
-    hol = np.full_like(mask, missval)
-    ustar_sv = np.full_like(mask, missval)
-    re_sv = np.full_like(mask, missval)
-    ssq_sv = np.full_like(mask, missval)
-    re = np.full_like(mask, missval)
+    hol = np.zeros_like(mask)
+    u10n = np.zeros_like(mask)
+    duu10n = np.zeros_like(mask)
+    psixh = np.zeros_like(mask)
 
     # reference height           (m)
     zref = 10.0
@@ -199,6 +405,10 @@ def shr_flux_atmOcn(
     # (1.0-stable) * chxcdu + stable * chxcds
     ren = np.ones_like(rdn) * 0.0346  # cexcd
 
+    rd = rdn[...]  # initial guess for rd
+    rh = rhn[...]  # initial guess for rh
+    re = ren[...]  # initial guess for re
+
     # --- ustar, tstar, qstar ---
     ustar = rdn[...] * vmag[...]
     tstar = rhn[...] * delt[...]
@@ -216,7 +426,7 @@ def shr_flux_atmOcn(
             settings.karman
             * settings.gravity
             * zbot[...]
-            * (tstar[...] / thbot[...] + qstar / (1.0 / settings.zvir + qbot[...]))
+            * (tstar[...] / thbot[...] + qstar[...] / (1.0 / settings.zvir + qbot[...]))
             / ustar[...] ** 2
         )
         hol = np.minimum(np.abs(hol[...]), 10.0) * np.sign(hol[...])
@@ -227,7 +437,7 @@ def shr_flux_atmOcn(
         psixh = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq)
 
         # --- shift wind speed using old coefficient ---
-        rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz - psimh[...]))
+        rd = rdn[...] / (1.0 + rdn[...] / settings.karman * (alz[...] - psimh[...]))
         u10n = vmag[...] * rd[...] / rdn[...]
 
         # --- update transfer coeffs at 10m and neutral stability ---
@@ -254,59 +464,75 @@ def shr_flux_atmOcn(
     # compute the fluxes
     # ------------------------------------------------------------
 
-    tau = rbot[...] * ustar[...] * ustar[...] * mask[...]
+    tau = rbot[...] * ustar[...] * ustar[...]
 
     # --- momentum flux ---
     # x surface stress (N)
-    taux[...] = tau[...] * (ubot[...] - us[...]) / vmag[...] * mask[...]
+    taux = tau[...] * (ubot[...] - us[...]) / vmag[...] * mask[...]
     # y surface stress (N)
-    tauy[...] = tau[...] * (vbot[...] - vs[...]) / vmag[...] * mask[...]
+    tauy = tau[...] * (vbot[...] - vs[...]) / vmag[...] * mask[...]
 
     # --- heat flux ---
     # sensible heat flux  (W/m^2)
-    sen[...] = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
+    sen = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
     # latent heat flux  (W/m^2)
-    lat[...] = settings.latvap * tau[...] * qstar[...] / ustar[...] * mask[...]
+    lat = settings.latvap * tau[...] * qstar[...] / ustar[...] * mask[...]
     # long-wave upward heat flux  (W/m^2)
-    lwup[...] = -settings.stefBoltz * ts[...] ** 4 * mask[...]
-
+    lwup = -settings.stefBoltz * ts[...] ** 4 * mask[...]
     # --- water flux ---
     # evaporative water flux ((kg/s)/m^2)
-    evap[...] = lat[...] / settings.latvap * mask[...]
+    evap = lat[...] / settings.latvap * mask[...]
 
     # ------------------------------------------------------------
     # compute diagnositcs: 2m ref T & Q, 10m wind speed squared
     # ------------------------------------------------------------
-    hol = hol[...] * ztref / zbot[...] * mask[...]
-    xsq = np.maximum(1.0, np.sqrt(np.abs(1.0 - 16.0 * hol[...]))) * mask[...]
-    xqq = np.sqrt(xsq[...]) * mask[...]
-    psix2 = (
-        -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq) * mask[...]
-    )
-    fac = (
-        (rh[...] / settings.karman)
-        * (alz[...] + al2 - psixh[...] + psix2[...])
-        * mask[...]
-    )
+    hol = hol[...] * ztref / zbot[...]
+    xsq = np.maximum(1.0, np.sqrt(np.abs(1.0 - 16.0 * hol[...])))
+    xqq = np.sqrt(xsq[...])
+    psix2 = -5.0 * hol[...] * stable[...] + (1.0 - stable[...]) * psixhu(xqq)
+    fac = (rh[...] / settings.karman) * (alz[...] + al2 - psixh[...] + psix2[...])
     # 2m reference height temperature (K)
-    tref[...] = thbot[...] - delt[...] * fac[...] * mask[...]
-    tref[...] = tref[...] - 0.01 * ztref * mask[...]  # pot temp to temp correction
-    fac[...] = (
-        (re / settings.karman) * (alz[...] + al2 - psixh[...] + psix2[...]) * mask[...]
-    )
+    tref = thbot[...] - delt[...] * fac[...]
+    tref[...] = (tref[...] - 0.01 * ztref) * mask[...]  # pot temp to temp correction
+    fac[...] = (re / settings.karman) * (alz[...] + al2 - psixh[...] + psix2[...])
     # 2m reference height humidity (kg/kg)
-    qref[...] = qbot[...] - delq[...] * fac[...] * mask[...]
+    qref = qbot[...] - delq[...] * fac[...] * mask[...]
     # 10m wind speed squared (m/s)^2
-    duu10n[...] = u10n[...] * u10n[...] * mask[...]  # 10m wind speed squared
+    duu10n = u10n[...] * u10n[...] * mask[...]  # 10m wind speed squared
 
     # ------------------------------------------------------------
     # optional diagnostics, needed for water tracer fluxes (dcn)
     # ------------------------------------------------------------
-    ustar_sv[...] = ustar[...] * mask[...]
-    re_sv[...] = re * mask[...]
-    ssq_sv[...] = ssq[...] * mask[...]
+    ustar_sv = ustar[...] * mask[...]  # noqa: F841
+    re_sv = re[...] * mask[...]  # noqa: F841
+    ssq_sv = ssq[...] * mask[...]  # noqa: F841
 
-    return (sen, lat, lwup, evap, taux, tauy, tref, qref, duu10n, ustar, tstar, qstar)
+    # Calculate correction term of net ocean heat flux (W/m^2) for data forced ocean
+    # total derivative with respect to surface temperature
+    # Ported from MITgcm bulkf_formula_lanl.f90
+    clha = rbot[...] * settings.latvap * vmag[...] * re[...] * rd[...]
+    devdt = clha[...] * ssq[...] * 2.166847e-3 / (ts[...] * ts[...])
+
+    dflwupdt = -4.0 * settings.ocean_emissivity * settings.stefBoltz * (ts[...] ** 3)
+    dfshdt = -rbot[...] * settings.cpdair * vmag[...] * rh[...] * rd[...]
+    dflhdt = -settings.latvap * devdt[...]
+    df0dt = dflwupdt[...] + dfshdt[...] + dflhdt[...] * mask[...]
+
+    return (
+        sen,
+        lat,
+        lwup,
+        evap,
+        taux,
+        tauy,
+        tref,
+        qref,
+        duu10n,
+        ustar,
+        tstar,
+        qstar,
+        df0dt,
+    )
 
 
 def shr_flux_atmIce(
@@ -381,15 +607,6 @@ def shr_flux_atmIce(
         ln0     log factor for interpolation
         ln3     log factor for interpolation
     """
-
-    taux = np.full_like(mask, missval)
-    tauy = np.full_like(mask, missval)
-    sen = np.full_like(mask, missval)
-    lat = np.full_like(mask, missval)
-    lwup = np.full_like(mask, missval)
-    evap = np.full_like(mask, missval)
-    tref = np.full_like(mask, missval)
-    qref = np.full_like(mask, missval)
 
     zref = 10.0  # ref height           ~ m
     ztref = 2.0  # ref height for air T ~ m
@@ -481,16 +698,16 @@ def shr_flux_atmIce(
     tau = rbot[...] * ustar[...] * ustar[...]
 
     # --- momentum flux ---
-    taux[...] = tau[...] * ubot[...] / vmag[...] * mask[...]
-    tauy[...] = tau[...] * vbot[...] / vmag[...] * mask[...]
+    taux = tau[...] * ubot[...] / vmag[...] * mask[...]
+    tauy = tau[...] * vbot[...] / vmag[...] * mask[...]
 
     # --- heat flux ---
-    sen[...] = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
-    lat[...] = ltheat * tau[...] * qstar[...] / ustar[...] * mask[...]
-    lwup[...] = -settings.stefBoltz * ts[...] ** 4 * mask[...]
+    sen = cp * tau[...] * tstar[...] / ustar[...] * mask[...]
+    lat = ltheat * tau[...] * qstar[...] / ustar[...] * mask[...]
+    lwup = -settings.stefBoltz * ts[...] ** 4 * mask[...]
 
     # --- water flux ---
-    evap[...] = lat[...] / ltheat * mask[...]
+    evap = lat[...] / ltheat * mask[...]
 
     # ----------------------------------------------------------
     # compute diagnostic: 2m reference height temperature
@@ -511,7 +728,7 @@ def shr_flux_atmIce(
     fac[...] = np.minimum(np.maximum(fac[...], 0.0), 1.0)
 
     # Actual interpolation
-    tref[...] = ts[...] + (tbot[...] - ts[...]) * fac[...] * mask[...]
-    qref[...] = qbot[...] - delq[...] * fac[...] * mask[...]
+    tref = ts[...] + (tbot[...] - ts[...]) * fac[...] * mask[...]
+    qref = qbot[...] - delq[...] * fac[...] * mask[...]
 
     return (sen, lat, lwup, evap, taux, tauy, tref, qref, ustar, tstar, qstar)
