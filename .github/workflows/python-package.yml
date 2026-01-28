@@ -29,13 +29,19 @@ jobs:
       with:
         repository: climate-analytics-lab/jax-gcm
         path: vendor/jax-gcm
+    - name: Get Veros
+      uses: actions/checkout@v4
+      with:
+        repository: team-ocean/veros
+        path: vendor/veros
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest
         pip install vendor/jax-gcm -r vendor/jax-gcm/requirements.txt
+        pip install vendor/veros -r vendor/veros/requirements.txt
         pip install .
-        export PYTHONPATH=./vendor/jax-gcm:$PYTHONPATH
+        export PYTHONPATH=./vendor/jax-gcm:./vendor/veros:$PYTHONPATH
 
     - name: Lint with flake8
       run: |
