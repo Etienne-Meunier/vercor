@@ -6,7 +6,6 @@ from vercor.components import CAMulatorGCM, CAMulatorLand, VerosGCM
 from vercor.coupler import RunSequence
 from vercor.regridders import bilinear
 
-
 if __name__ == "__main__":
     ocn = VerosGCM(
         do_spinup=True,

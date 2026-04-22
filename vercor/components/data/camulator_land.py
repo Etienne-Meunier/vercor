@@ -11,7 +11,6 @@ from vercor.components import Component
 from vercor.tools import create_lnd_mask_from_ocn
 from vercor.clock import CustomDateTime
 
-
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
 

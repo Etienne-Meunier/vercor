@@ -13,7 +13,6 @@ from vercor.regridders import bilinear
 
 from jcm.physics.speedy.params import Parameters
 
-
 if __name__ == "__main__":
     optimized_parameters: list = [
         "surface_flux.vgust",

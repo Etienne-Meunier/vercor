@@ -1,0 +1,179 @@
+# VerCOR: Design Specification
+
+A fully differentiable coupler in JAX for different Earth system models written in JAX.
+
+---
+
+## 1. Goals and Non-Goals
+
+### Goals
+
+- **End-to-end differentiable**: exact gradients of any output with respect to any
+  coupled models parameters, via JAX reverse-mode AD.
+- **No global arrays or mutable state**: all data is passed explicitly via function arguments and return values.
+- **Accelerated**: pure functions are JIT-compiled with `jax.jit` decorator, 
+single device parallelism via `jax.vmap` where applicable, use jax.lax.scan for iterative methods/solvers, 
+use `jax.lax.fori_loop`, `jax.numpy.where` and  `jax.lax.cond` etc. to avoid Python control flow.
+- **Modularity**: clean, modular code structure for easy maintenance and extension.
+- **Documentation**: comprehensive docstrings and usage examples.
+- **Testing**: extensive unit tests for correctness and regression prevention.
+
+## 2. Architecture Overview
+
+### Modular design
+
+The codebase is organized into modules corresponding to physical, numerical and different coupled models/components.
+
+Interpolation, exchangers, grids, model components, output routines etc. are all separate modules with well-defined interfaces. 
+This allows different agents to work on different components in parallel and makes testing easier.
+
+The output module handles all data saving and logging, ensuring a clean separation between computation and I/O.
+
+### Pure functional style
+
+All functions are pure, jitted with `jax.jit` decorator and stateless. No mutable global state. No side effects.
+This is critical for JAX compatibility and makes reasoning about the code easier.
+Each function takes explicit inputs and returns explicit outputs, which can be easily tested and debugged.
+
+### Input / Output
+
+All I/O is handled by a dedicated module that reads/writes from/to disk.
+The core computational modules are completely decoupled from file formats and storage details.
+This allows us to easily swap out the I/O layer if needed, and keeps the core logic clean and focused on the physics.
+
+The output is done in a structured format, such as NetCDF, HDF5, that can be easily read by visualization tools and post-processing scripts.
+
+Model restart files are supported and written in compact HDF5 format using `h5py`.
+
+Current example output snapshots are also written in HDF5. NetCDF output for broader
+VerCOR workflows remains future work.
+
+### Data flow: PyTree-based result objects
+
+Create a JAX helper module for common PyTree utilities & classes (to be reused by many modules),
+such as flattening, tree mapping, etc.
+
+Every module returns a frozen dataclass (registered as a JAX PyTree) containing
+arrays and objects. 
+
+No mutable state. No side effects.
+
+```python
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class RectilinearGrid:
+    longitude: Array
+    latitude: Array
+    longitude_edges: Array
+    latitude_edges: Array
+    binary_mask: Array
+    ...
+```
+
+---
+
+## 3. Module Specifications
+
+### 3.1 Constants and Parameters
+
+**File**: `constants.py`
+
+For physical constants, such as gravitational acceleration, gas constant, etc.
+
+**File**: `parameters.py`
+
+For runtime parameters, such as coupled run identifier, precision, time interpolation type,
+type of year (leap, noleap, 360day), etc.
+
+Two parameter containers:
+
+```python
+@dataclass(frozen=True)
+class PhysicsParameters:
+    """All fields are JAX-traceable floats."""
+    # Scalars
+    gravity: float
+    rhoAir: float
+    rgas: float
+    latvap: float
+    zref: float
+    mwdair: float
+    ...
+
+
+@dataclass(frozen=True)
+class ControlParameters:
+    """Control parameters. NOT traced by JAX (static)."""
+    get_field_time_slice: bool
+    apply_time_interpolation: bool
+    enable_x64: bool
+    identifier: str
+    ...
+```
+
+The split between `PhysicsParameters` (traced) and `ControlParameters` (static) is critical:
+JAX traces through `PhysicsParameters` for AD, while `ControlParameters` controls array
+shapes and solver settings that must be compile-time constants.
+
+## 4. Validation and Testing
+
+### Test design philosophy
+
+The test harness is the most important part of this project. Without high-quality
+tests, autonomous agents will solve the wrong problem.
+
+1. **Tests must be nearly perfect.** Agents will optimize for whatever the tests
+   measure. If a test is wrong or has loose tolerances, agents will produce code
+   that passes the bad test but gives wrong physics. Invest more time in the test
+   harness than in the code it tests.
+
+2. **Tests must give concise, actionable feedback.** Print the max relative error
+   and where it occurs, not full arrays. Pre-compute aggregate statistics.
+   Log details to files, not stdout, to avoid context window pollution.
+
+3. **Tests must be fast by default.** Every test file supports a `--fast` mode
+   (~10% subsample) for rapid iteration. Full validation runs before commits.
+
+4. **Tests must decompose monolithic tasks.** Test sub-components independently:
+   - Regridding with mock meshes and fields
+   - Different clock functionalities and options
+   - Coupler stepping with mock models and fields
+   - Fluxes computations with mock meshes and fields
+   - Exchanges of fields between models with mock models, meshes and fields
+   - Input / Output
+   - etc.
+   This lets different agents work on different subsystems.
+
+5. **Tests must enable bisection.** When solution disagrees, we need to find the
+   first module in the pipeline that diverges from original code. The test suite
+   should make this easy by testing every intermediate quantity, not just
+   the final output. This is the "oracle bisection" pattern.
+
+### Test hierarchy
+
+We use a layered testing approach, from unit tests to full pipeline validation.
+
+**level 1**: Unit tests (fast)
+
+**level 2**: Module tests.
+For each module, pre-generate reference data and check agreement.
+
+**level 3**: Gradient tests
+
+For each module, verify that AD gradients match finite-difference gradients.
+
+**level 5**: End-to-end integration tests (from examples in `examples/`)
+
+---
+
+## 5. Performance Strategy
+
+### JIT compilation
+
+The entire `run_simulation()` function should be JIT-compiled:
+
+Since `ControlParameters` is static (controls array shapes), it should be passed via
+`static_argnums` or as a `static_field` in an Equinox module.
+
+First call will be slow (~30-60s for XLA compilation). Subsequent calls with the
+same shapes will be fast.
