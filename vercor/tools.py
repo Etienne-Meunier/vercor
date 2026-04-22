@@ -3,7 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Any, Callable, Optional, Mapping, Sequence
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 from urllib.request import urlopen
 
 import numpy as np
@@ -24,10 +24,6 @@ from vercor.interpolators.conservative_remap_rectilinear import (
 )
 from vercor.regridders.helpers import compute_land_mask
 from vercor.types import AllComponentsType
-
-if TYPE_CHECKING:
-    from vercor.coupler import Coupler
-
 
 VERCOR_ASSETS_BASE_URL = (
     os.environ.get("VERCOR_ASSETS_BASE_URL")
@@ -66,6 +62,24 @@ _FORCING_ASSETS: dict[str, dict[str, str]] = {
         "md5": "d1b4e0e199d7a5883cf7c88d3d6bcb27",
     },
 }
+
+
+class _ClockWithStart(Protocol):
+    @property
+    def start(self) -> datetime: ...
+
+
+class _SettingsWithYearInSeconds(Protocol):
+    @property
+    def year_in_seconds(self) -> float: ...
+
+
+class SupportsFieldTimeLookup(Protocol):
+    @property
+    def clock(self) -> _ClockWithStart: ...
+
+    @property
+    def settings(self) -> _SettingsWithYearInSeconds: ...
 
 
 def _md5sum(path: Path) -> str:
@@ -492,7 +506,7 @@ def get_field_time_slice(
 def get_field_at_specific_time(
     field_name: str,
     data: Mapping[str, NDArray],
-    coupler: "Coupler",
+    coupler: SupportsFieldTimeLookup,
     current_time: Optional[datetime | ModelDateTime] = None,
 ) -> NDArray:
     """Retrieve a field from a component data storage dictionary at a specific time,
@@ -501,7 +515,8 @@ def get_field_at_specific_time(
     Arguments:
         field_name: Name of the field to retrieve.
         data: Dictionary containing the component data with time-dependent fields.
-        coupler: Coupler instance for time settings.
+        coupler: Coupler-like object exposing `clock.start` and
+            `settings.year_in_seconds`.
         current_time: Optional datetime or CustomDateTime object representing the current time.
                       If None, coupler's start time is used.
     Returns:

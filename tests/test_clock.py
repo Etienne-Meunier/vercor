@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from tests.conftest import SelectFastCases
 from vercor.clock import Clock, DateTime360, DateTime365
 
 
@@ -16,8 +17,25 @@ class StringCase:
     expected: str
 
 
+@dataclass(frozen=True)
+class ArithmeticCase:
+    case_id: str
+    base_time: DateTime360
+    delta: timedelta
+    expected: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ClockIterationCase:
+    case_id: str
+    clock: Clock
+    expected_times: list[datetime | DateTime360 | DateTime365]
+
+
 @pytest.mark.fast_always
-def test_model_datetime_string_and_repr_cases(select_fast_cases) -> None:
+def test_model_datetime_string_and_repr_cases(
+    select_fast_cases: SelectFastCases,
+) -> None:
     cases = [
         StringCase(
             case_id="365-str-no-microseconds",
@@ -71,38 +89,46 @@ def test_model_datetime_string_and_repr_cases(select_fast_cases) -> None:
 
 
 @pytest.mark.fast_always
-def test_model_datetime_arithmetic_cases(select_fast_cases) -> None:
+def test_model_datetime_arithmetic_cases(
+    select_fast_cases: SelectFastCases,
+) -> None:
     cases = select_fast_cases(
         [
-            (
-                "add-wrap-360",
-                DateTime360(2025, 12, 30, 6, 0, 0, 0, 360),
-                timedelta(days=1),
-                (2026, 1, 1, 1, 6),
+            ArithmeticCase(
+                case_id="add-wrap-360",
+                base_time=DateTime360(2025, 12, 30, 6, 0, 0, 0, 360),
+                delta=timedelta(days=1),
+                expected=(2026, 1, 1, 1, 6),
             ),
-            (
-                "radd-hours",
-                DateTime360(2025, 1, 1, 0, 0, 0, 0, 1),
-                timedelta(hours=12),
-                (2025, 1, 1, 12),
+            ArithmeticCase(
+                case_id="radd-hours",
+                base_time=DateTime360(2025, 1, 1, 0, 0, 0, 0, 1),
+                delta=timedelta(hours=12),
+                expected=(2025, 1, 1, 12),
             ),
-            (
-                "sub-second",
-                DateTime360(2025, 1, 1, 0, 0, 0, 0, 1),
-                -timedelta(seconds=1),
-                (2024, 12, 30, 360, 23, 59, 59),
+            ArithmeticCase(
+                case_id="sub-second",
+                base_time=DateTime360(2025, 1, 1, 0, 0, 0, 0, 1),
+                delta=-timedelta(seconds=1),
+                expected=(2024, 12, 30, 360, 23, 59, 59),
             ),
         ],
-        case_id=lambda case: case[0],
+        case_id=lambda case: case.case_id,
         min_cases=2,
     )
 
-    for case_id, base_time, delta, expected in cases:
-        out = base_time + delta
-        if case_id == "add-wrap-360":
-            assert (out.year, out.month, out.day, out.day_of_year, out.hour) == expected
-        elif case_id == "radd-hours":
-            assert (out.year, out.month, out.day, out.hour) == expected
+    for case in cases:
+        out = case.base_time + case.delta
+        if case.case_id == "add-wrap-360":
+            assert (
+                out.year,
+                out.month,
+                out.day,
+                out.day_of_year,
+                out.hour,
+            ) == case.expected
+        elif case.case_id == "radd-hours":
+            assert (out.year, out.month, out.day, out.hour) == case.expected
         else:
             assert isinstance(out, DateTime360)
             assert (
@@ -113,7 +139,7 @@ def test_model_datetime_arithmetic_cases(select_fast_cases) -> None:
                 out.hour,
                 out.minute,
                 out.second,
-            ) == expected
+            ) == case.expected
 
 
 def test_model_datetime_subtract_model_datetime_returns_timedelta() -> None:
@@ -149,73 +175,114 @@ def test_model_datetime_mixed_calendar_arithmetic_and_order_raise() -> None:
     assert (t360 == t365) is False
 
 
+def test_model_datetime_day_of_year_must_match_calendar_date() -> None:
+    with pytest.raises(ValueError, match="day_of_year is inconsistent"):
+        DateTime365(2025, 1, 2, 0, 0, 0, 0, 1)
+
+    with pytest.raises(ValueError, match="day_of_year is inconsistent"):
+        DateTime360(2025, 2, 1, 0, 0, 0, 0, 60)
+
+
 @pytest.mark.fast_always
-def test_clock_iteration_cases(select_fast_cases) -> None:
+def test_clock_iteration_cases(select_fast_cases: SelectFastCases) -> None:
     cases = [
-        (
-            "360-wrap",
-            Clock(
+        ClockIterationCase(
+            case_id="360-wrap",
+            clock=Clock(
                 start=datetime(2025, 12, 30, 6, 0, 0),
                 dt_seconds=86400.0,
                 steps=3,
                 year_type="360",
             ),
-            [
+            expected_times=[
                 DateTime360(2025, 12, 30, 6, 0, 0, 0, 360),
                 DateTime360(2026, 1, 1, 6, 0, 0, 0, 1),
                 DateTime360(2026, 1, 2, 6, 0, 0, 0, 2),
             ],
         ),
-        (
-            "noleap-skip-feb29",
-            Clock(
+        ClockIterationCase(
+            case_id="noleap-skip-feb29",
+            clock=Clock(
                 start=datetime(2024, 2, 28, 0, 0, 0),
                 dt_seconds=86400.0,
                 steps=3,
                 year_type="noleap",
             ),
-            [
+            expected_times=[
                 DateTime365(2024, 2, 28, 0, 0, 0, 0, 59),
                 DateTime365(2024, 3, 1, 0, 0, 0, 0, 60),
                 DateTime365(2024, 3, 2, 0, 0, 0, 0, 61),
             ],
         ),
-        (
-            "noleap-gregorian-january",
-            Clock(
+        ClockIterationCase(
+            case_id="noleap-gregorian-january",
+            clock=Clock(
                 start=datetime(2025, 1, 30, 12, 0, 0),
                 dt_seconds=86400.0,
                 steps=2,
                 year_type="noleap",
             ),
-            [
+            expected_times=[
                 DateTime365(2025, 1, 30, 12, 0, 0, 0, 30),
                 DateTime365(2025, 1, 31, 12, 0, 0, 0, 31),
             ],
         ),
-        (
-            "leap-keeps-feb29",
-            Clock(
+        ClockIterationCase(
+            case_id="leap-keeps-feb29",
+            clock=Clock(
                 start=datetime(2024, 2, 29),
                 dt_seconds=86400.0,
                 steps=2,
                 year_type="leap",
             ),
-            [
+            expected_times=[
                 datetime(2024, 2, 29, 0, 0, 0),
                 datetime(2024, 3, 1, 0, 0, 0),
             ],
         ),
     ]
 
-    for _case_id, clock, expected_times in select_fast_cases(
+    for case in select_fast_cases(
         cases,
-        case_id=lambda case: case[0],
+        case_id=lambda case: case.case_id,
         min_cases=2,
     ):
-        values = list(clock.iter())
+        values = list(case.clock.iter())
         actual_times = [time for _, time, _ in values]
-        assert actual_times == expected_times
+        assert actual_times == case.expected_times
+
+
+def test_clock_rejects_invalid_year_type() -> None:
+    with pytest.raises(ValueError, match="year_type must be one of"):
+        Clock(
+            start=datetime(2025, 1, 1),
+            dt_seconds=3600.0,
+            steps=1,
+            year_type="gregorian",  # type: ignore[arg-type]
+        )
+
+
+def test_clock_rejects_non_positive_dt_seconds() -> None:
+    with pytest.raises(ValueError, match="dt_seconds must be positive"):
+        Clock(start=datetime(2025, 1, 1), dt_seconds=0.0, steps=1)
+
+    with pytest.raises(ValueError, match="dt_seconds must be positive"):
+        Clock(start=datetime(2025, 1, 1), dt_seconds=-1.0, steps=1)
+
+
+def test_clock_rejects_negative_steps() -> None:
+    with pytest.raises(ValueError, match="steps must be non-negative"):
+        Clock(start=datetime(2025, 1, 1), dt_seconds=3600.0, steps=-1)
+
+
+def test_clock_360_rejects_day_31_start() -> None:
+    with pytest.raises(ValueError, match="start day must be between 1 and 30"):
+        Clock(
+            start=datetime(2025, 1, 31),
+            dt_seconds=3600.0,
+            steps=1,
+            year_type="360",
+        )
 
 
 def test_clock_noleap_rejects_feb_29_start() -> None:
@@ -226,6 +293,23 @@ def test_clock_noleap_rejects_feb_29_start() -> None:
             steps=1,
             year_type="noleap",
         )
+
+
+def test_clock_360_rolls_microseconds_across_year_boundary() -> None:
+    clock = Clock(
+        start=datetime(2025, 12, 30, 23, 59, 59, 999999),
+        dt_seconds=0.000002,
+        steps=2,
+        year_type="360",
+    )
+
+    values = list(clock.iter())
+    actual_times = [time for _, time, _ in values]
+
+    assert actual_times == [
+        DateTime360(2025, 12, 30, 23, 59, 59, 999999, 360),
+        DateTime360(2026, 1, 1, 0, 0, 0, 1, 1),
+    ]
 
 
 def test_clock_noleap_100_year_daily_run_reaches_year_100() -> None:

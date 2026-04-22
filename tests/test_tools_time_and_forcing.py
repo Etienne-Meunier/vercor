@@ -11,6 +11,7 @@ import vercor.tools as tools_module
 
 from tests._tools_support import make_coupler
 from tests.assertions import assert_allclose_compact
+from tests.conftest import SelectFastCases
 from vercor.clock import DateTime360, DateTime365
 from vercor.exceptions import AssetError
 from vercor.tools import (
@@ -34,7 +35,7 @@ class TimeSliceCase:
 
 @pytest.mark.fast_always
 def test_get_field_time_slice_cases(
-    select_fast_cases,
+    select_fast_cases: SelectFastCases,
 ) -> None:
     cases = [
         TimeSliceCase(
@@ -176,6 +177,25 @@ def test_get_field_at_specific_time_uses_coupler_clock_start_when_time_is_none()
     assert_allclose_compact(out, 3.0)
 
 
+def test_get_field_at_specific_time_wraps_across_year_end() -> None:
+    coupler = make_coupler(year_in_seconds=12.0)
+    arr = np.zeros((2, 2, 12), dtype=float)
+    arr[..., 11] = 100.0
+    arr[..., 0] = 20.0
+
+    current_time = coupler.clock.start + timedelta(seconds=11.75)
+    out = get_field_at_specific_time("foo", {"foo": arr}, coupler, current_time)
+
+    assert_allclose_compact(out, 40.0)
+
+
+def test_datetime_to_seconds_in_year_for_datetime() -> None:
+    dt = datetime(2001, 2, 3, 4, 5, 6, 700000)
+    expected = 33 * 86400 + 4 * 3600 + 5 * 60 + 6 + 0.7
+
+    assert np.isclose(datetime_to_seconds_in_year(dt), expected)
+
+
 def test_datetime_to_seconds_in_year_for_model_datetime_with_arithmetic() -> None:
     base = DateTime360(2001, 1, 1, 0, 0, 0, 0, 1)
     shifted = base + timedelta(days=1, hours=2, minutes=3, seconds=4, microseconds=5)
@@ -200,9 +220,37 @@ def test_get_periodic_interval_wraps_with_time_beyond_cycle() -> None:
     assert np.isclose(f1 + f2, 1.0)
 
 
+def test_get_periodic_interval_exact_last_record_boundary_wraps_to_first() -> None:
+    (n1, f1), (n2, f2) = get_periodic_interval(
+        current_time=11.0,
+        cycle_length=12.0,
+        rec_spacing=1.0,
+        n_rec=12,
+    )
+
+    assert n1 == 11
+    assert n2 == 0
+    assert np.isclose(f1, 1.0)
+    assert np.isclose(f2, 0.0)
+
+
+def test_get_periodic_interval_exact_cycle_boundary_resets_to_first_record() -> None:
+    (n1, f1), (n2, f2) = get_periodic_interval(
+        current_time=12.0,
+        cycle_length=12.0,
+        rec_spacing=1.0,
+        n_rec=12,
+    )
+
+    assert n1 == 0
+    assert n2 == 1
+    assert np.isclose(f1, 1.0)
+    assert np.isclose(f2, 0.0)
+
+
 @pytest.mark.fast_always
-def test_is_leap_year_cases(select_fast_cases) -> None:
-    cases = [
+def test_is_leap_year_cases(select_fast_cases: SelectFastCases) -> None:
+    cases: list[tuple[str, int, bool]] = [
         ("divisible-by-400", 2000, True),
         ("century-not-leap", 1900, False),
         ("ordinary-leap", 2004, True),

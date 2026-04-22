@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 import hashlib
 import math
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 import jax
 import pytest
@@ -12,6 +12,17 @@ import pytest
 jax.config.update("jax_enable_x64", True)
 
 CaseT = TypeVar("CaseT")
+
+
+class SelectFastCases(Protocol):
+    def __call__(
+        self,
+        cases: Sequence[CaseT],
+        *,
+        case_id: Callable[[CaseT], str] = repr,
+        target_fraction: float = 0.1,
+        min_cases: int = 1,
+    ) -> list[CaseT]: ...
 
 
 def _stable_rank(key: str) -> int:
@@ -110,7 +121,7 @@ def fast_mode(request: pytest.FixtureRequest) -> bool:
 @pytest.fixture
 def select_fast_cases(
     request: pytest.FixtureRequest, fast_mode: bool
-) -> Callable[..., list[CaseT]]:
+) -> SelectFastCases:
     def _select(
         cases: Sequence[CaseT],
         *,

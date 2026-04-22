@@ -46,3 +46,35 @@
 ## Notes
 
 - The new `--fast` mode is deterministic and exercises every test file, but runtime is still import-bound, so the speedup is modest rather than dramatic.
+
+## Time/Clock Typing and Coverage
+
+- Cleared the remaining `mypy` failures in the time/calendar tests by:
+  - adding a reusable typed `SelectFastCases` fixture protocol in `tests/conftest.py`
+  - annotating the affected test functions in `tests/test_clock.py`, `tests/test_jax_gcm_output_frequency.py`, and `tests/test_tools_time_and_forcing.py`
+  - changing `vercor.tools.get_field_at_specific_time()` to accept a structural protocol instead of the concrete `Coupler` type, matching the runtime interface it actually uses
+- Increased bottom-up helper coverage for time-related code:
+  - `tests/test_clock.py`: invalid clock configuration, invalid `day_of_year`, 360-day start-day validation, and microsecond rollover across a year boundary
+  - `tests/test_tools_time_and_forcing.py`: Gregorian `datetime_to_seconds_in_year`, exact periodic interval boundaries, and year-end field interpolation wraparound
+  - `tests/test_jax_gcm_output_frequency.py`: non-string output frequency handling, case-insensitive frequencies, and an explicit `_is_period_end()` false case
+
+## Validation (2026-04-22)
+
+- `conda run -n scipy black vercor tests`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor tests`
+  - passed
+- `conda run -n scipy pytest tests/test_clock.py tests/test_jax_gcm_output_frequency.py tests/test_tools_time_and_forcing.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Failed Approaches / Environment Notes
+
+- `conda run -n scipy pytest tests/test_clock.py tests/test_jax_gcm_output_frequency.py tests/test_tools_time_and_forcing.py --cov=vercor.clock --cov=vercor.tools --cov=vercor.components.external.jax_gcm --cov-report=term-missing`
+  - aborted in this environment with `Abort trap: 6`
+  - do not use that command as the acceptance check for this task; rely on the green `black`/`flake8`/`mypy`/`pytest` validations above instead
