@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from tests.assertions import assert_allclose_compact
 from vercor.fluxes.bulk_formula_cesm import (
     new_flux_atmOcn,
     old_flux_atmOcn,
@@ -84,7 +85,7 @@ def test_compute_pressure_levels_matches_hybrid_definition() -> None:
 
     assert ph.shape == (2, 2, 3)
     for k in range(3):
-        assert np.allclose(ph[:, :, k], hya[k] + hyb[k] * sp)
+        assert_allclose_compact(ph[:, :, k], hya[k] + hyb[k] * sp)
 
 
 def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -> None:
@@ -116,8 +117,8 @@ def test_density_and_potential_temperature_match_closed_form() -> None:
     expected_rho = settings.mwdair / settings.rgas * pf / t
     expected_theta = t * (settings.p0 / pf) ** settings.cappa
 
-    assert np.allclose(rho, expected_rho)
-    assert np.allclose(theta, expected_theta)
+    assert_allclose_compact(rho, expected_rho)
+    assert_allclose_compact(theta, expected_theta)
 
 
 def test_new_flux_atmOcn_produces_finite_and_physically_consistent_signs() -> None:
@@ -186,7 +187,7 @@ def test_old_and_new_flux_atmOcn_agree_for_reference_state() -> None:
     )
 
     for old_arr, new_arr in zip(old_out, new_out):
-        assert np.allclose(old_arr, new_arr)
+        assert_allclose_compact(old_arr, new_arr)
 
 
 def test_new_flux_atmOcn_respects_mask_for_surface_exchange_outputs() -> None:

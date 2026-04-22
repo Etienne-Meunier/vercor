@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from tests.assertions import assert_array_equal_compact
 from vercor.grid import RectilinearGrid
 from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
@@ -57,8 +58,8 @@ def test_regridder_constructor_propagates_interpolator_options() -> None:
         assert interp.idw_k == 3
         assert np.isclose(interp.idw_eps, 1e-6)
         assert np.isclose(interp.fill_value, -99.0)
-        np.testing.assert_array_equal(interp.src_mask, src_mask)
-        np.testing.assert_array_equal(interp.tgt_mask, dst_mask)
+        assert_array_equal_compact(interp.src_mask, src_mask)
+        assert_array_equal_compact(interp.tgt_mask, dst_mask)
 
 
 def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> None:

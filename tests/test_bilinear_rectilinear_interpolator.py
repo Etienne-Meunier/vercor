@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from tests.assertions import assert_allclose_compact, assert_array_equal_compact
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
 
@@ -48,7 +49,7 @@ def test_scalar_bilinear_exact_on_2x2_cell() -> None:
     )
     out = interp.apply_scalar(src)
 
-    np.testing.assert_allclose(out, np.array([[7.75]]), rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out, np.array([[7.75]]), rtol=0.0, atol=1e-14)
 
 
 def test_scalar_nan_renorm_true_renormalizes_valid_corners() -> None:
@@ -69,7 +70,7 @@ def test_scalar_nan_renorm_true_renormalizes_valid_corners() -> None:
     out = interp.apply_scalar(src)
 
     # Equal corner weights (0.25 each); renorm over valid corners => (1+3+5)/3
-    np.testing.assert_allclose(out, np.array([[3.0]]), rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out, np.array([[3.0]]), rtol=0.0, atol=1e-14)
 
 
 def test_scalar_nan_renorm_false_falls_back_to_fill_when_corner_invalid() -> None:
@@ -89,7 +90,7 @@ def test_scalar_nan_renorm_false_falls_back_to_fill_when_corner_invalid() -> Non
     )
     out = interp.apply_scalar(src)
 
-    np.testing.assert_array_equal(out, np.array([[-999.0]]))
+    assert_array_equal_compact(out, np.array([[-999.0]]))
 
 
 def test_scalar_periodic_longitude_wrap_uses_dateline_cell() -> None:
@@ -103,9 +104,9 @@ def test_scalar_periodic_longitude_wrap_uses_dateline_cell() -> None:
     out_359 = interp_359.apply_scalar(src)
     out_minus1 = interp_minus1.apply_scalar(src)
 
-    np.testing.assert_allclose(out_359, out_minus1, rtol=0.0, atol=1e-14)
-    np.testing.assert_array_equal(interp_359.i0, np.array([[2]], dtype=np.int64))
-    np.testing.assert_array_equal(interp_359.i1, np.array([[0]], dtype=np.int64))
+    assert_allclose_compact(out_359, out_minus1, rtol=0.0, atol=1e-14)
+    assert_array_equal_compact(interp_359.i0, np.array([[2]], dtype=np.int64))
+    assert_array_equal_compact(interp_359.i1, np.array([[0]], dtype=np.int64))
 
 
 def test_scalar_descending_latitude_supported() -> None:
@@ -122,7 +123,7 @@ def test_scalar_descending_latitude_supported() -> None:
     )
     out = interp.apply_scalar(src)
 
-    np.testing.assert_allclose(out, np.array([[30.0]]), rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out, np.array([[30.0]]), rtol=0.0, atol=1e-14)
 
 
 def test_scalar_target_mask_applies_fill_value() -> None:
@@ -142,7 +143,7 @@ def test_scalar_target_mask_applies_fill_value() -> None:
     )
     out = interp.apply_scalar(src)
 
-    np.testing.assert_array_equal(out, np.array([[1.0, -7.0], [-7.0, 4.0]]))
+    assert_array_equal_compact(out, np.array([[1.0, -7.0], [-7.0, 4.0]]))
 
 
 def test_scalar_shape_mismatch_raises_value_error() -> None:
@@ -180,7 +181,7 @@ def test_scalar_extrapolation_nearest() -> None:
     )
     out = interp.apply_scalar(src)
 
-    np.testing.assert_array_equal(out, np.array([[11.0]]))
+    assert_array_equal_compact(out, np.array([[11.0]]))
 
 
 def test_scalar_extrapolation_idw_k2_symmetric_mean() -> None:
@@ -208,7 +209,7 @@ def test_scalar_extrapolation_idw_k2_symmetric_mean() -> None:
     )
     out = interp.apply_scalar(src)
 
-    np.testing.assert_allclose(out, np.array([[4.0]]), rtol=0.0, atol=1e-12)
+    assert_allclose_compact(out, np.array([[4.0]]), rtol=0.0, atol=1e-12)
 
 
 def test_scalar_invalid_extrapolation_mode_raises_when_used() -> None:
@@ -246,8 +247,8 @@ def test_vector_constant_field_preserved() -> None:
 
     u_t, v_t = interp.apply_vector(u_src, v_src)
 
-    np.testing.assert_allclose(u_t, u_src, rtol=0.0, atol=1e-14)
-    np.testing.assert_allclose(v_t, v_src, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(u_t, u_src, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(v_t, v_src, rtol=0.0, atol=1e-14)
 
 
 def test_vector_target_mask_applies_fill_value_to_both_components() -> None:
@@ -270,8 +271,8 @@ def test_vector_target_mask_applies_fill_value_to_both_components() -> None:
 
     u_t, v_t = interp.apply_vector(u_src, v_src)
 
-    np.testing.assert_array_equal(u_t, np.array([[1.0, -9.0], [-9.0, 4.0]]))
-    np.testing.assert_array_equal(v_t, np.array([[5.0, -9.0], [-9.0, 8.0]]))
+    assert_array_equal_compact(u_t, np.array([[1.0, -9.0], [-9.0, 4.0]]))
+    assert_array_equal_compact(v_t, np.array([[5.0, -9.0], [-9.0, 8.0]]))
 
 
 def test_vector_shape_mismatch_raises_value_error() -> None:
@@ -290,6 +291,7 @@ def test_vector_shape_mismatch_raises_value_error() -> None:
         interp.apply_vector(u_src, v_src)
 
 
+@pytest.mark.filterwarnings("ignore:invalid value encountered in divide:RuntimeWarning")
 def test_vector_extrapolation_nearest_for_invalid_bilinear_points() -> None:
     lon_src = np.array([0.0, 1.0, 2.0])
     lat_src = np.array([0.0, 1.0, 2.0])
@@ -315,5 +317,5 @@ def test_vector_extrapolation_nearest_for_invalid_bilinear_points() -> None:
 
     u_t, v_t = interp.apply_vector(u_src, v_src)
 
-    np.testing.assert_array_equal(u_t, np.array([[2.0]]))
-    np.testing.assert_array_equal(v_t, np.array([[-3.0]]))
+    assert_array_equal_compact(u_t, np.array([[2.0]]))
+    assert_array_equal_compact(v_t, np.array([[-3.0]]))

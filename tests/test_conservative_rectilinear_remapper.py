@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from tests.assertions import assert_allclose_compact
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
@@ -60,7 +61,7 @@ def test_constant_field_preserved_on_refinement_conservation_mode() -> None:
     src = np.full((2, 2), 7.0)
     out = remapper.apply_scalar(src)
 
-    np.testing.assert_allclose(out, np.full((4, 4), 7.0), rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out, np.full((4, 4), 7.0), rtol=0.0, atol=1e-14)
 
 
 def test_mass_conserved_between_source_and_destination() -> None:
@@ -80,7 +81,7 @@ def test_mass_conserved_between_source_and_destination() -> None:
 
     # Sparse-matrix assembly and trigonometric area terms accumulate tiny
     # floating-point error; enforce near-machine-precision agreement.
-    np.testing.assert_allclose(dst_mass, src_mass, rtol=1e-12, atol=1e-8)
+    assert_allclose_compact(dst_mass, src_mass, rtol=1e-12, atol=1e-8)
 
 
 def test_descending_lat_bounds_round_trip_orientation() -> None:
@@ -95,7 +96,7 @@ def test_descending_lat_bounds_round_trip_orientation() -> None:
     src = np.array([[10.0, 20.0], [30.0, 40.0]])
     out = remapper.apply_scalar(src)
 
-    np.testing.assert_allclose(out, src, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out, src, rtol=0.0, atol=1e-14)
 
 
 def test_periodic_longitude_overlap_maps_shifted_destination_cells() -> None:
@@ -110,11 +111,12 @@ def test_periodic_longitude_overlap_maps_shifted_destination_cells() -> None:
     src = np.array([[10.0, 20.0, 30.0]])
     out = remapper.apply_scalar(src)
 
-    np.testing.assert_allclose(
-        out, np.array([[30.0, 10.0, 20.0]]), rtol=0.0, atol=1e-14
-    )
+    assert_allclose_compact(out, np.array([[30.0, 10.0, 20.0]]), rtol=0.0, atol=1e-14)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Input has data type int64, but the output has been cast to float64\\.:FutureWarning"
+)
 def test_source_mask_with_fracarea_gives_nan_for_fully_masked_target_cell() -> None:
     src_mask = np.array([[True, False], [False, False]])
     remapper = _make_remapper(
@@ -130,9 +132,9 @@ def test_source_mask_with_fracarea_gives_nan_for_fully_masked_target_cell() -> N
     out = remapper.apply_scalar(src)
 
     assert np.isnan(out[0, 0])
-    np.testing.assert_allclose(out[0, 1], 2.0, rtol=0.0, atol=1e-14)
-    np.testing.assert_allclose(out[1, 0], 3.0, rtol=0.0, atol=1e-14)
-    np.testing.assert_allclose(out[1, 1], 4.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out[0, 1], 2.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out[1, 0], 3.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out[1, 1], 4.0, rtol=0.0, atol=1e-14)
 
 
 def test_nan_handling_differs_between_fracarea_and_conservation() -> None:
@@ -157,12 +159,10 @@ def test_nan_handling_differs_between_fracarea_and_conservation() -> None:
     out_cons = remap_cons.apply_scalar(src)
 
     assert np.isnan(out_frac[0, 0])
-    np.testing.assert_allclose(out_frac[0, 1:], np.array([2.0]), rtol=0.0, atol=1e-14)
-    np.testing.assert_allclose(
-        out_frac[1, :], np.array([3.0, 4.0]), rtol=0.0, atol=1e-14
-    )
+    assert_allclose_compact(out_frac[0, 1:], np.array([2.0]), rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out_frac[1, :], np.array([3.0, 4.0]), rtol=0.0, atol=1e-14)
 
-    np.testing.assert_allclose(out_cons[0, 0], 0.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out_cons[0, 0], 0.0, rtol=0.0, atol=1e-14)
 
 
 def test_get_src_areas_shape_and_positive() -> None:

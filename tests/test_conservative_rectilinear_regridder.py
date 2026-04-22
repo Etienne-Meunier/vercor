@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from tests.assertions import assert_allclose_compact, assert_array_equal_compact
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
@@ -59,12 +60,12 @@ def test_regridder_constructor_uses_provided_edges_when_available() -> None:
     assert interp is not None
 
     if isinstance(interp, ConservativeRectilinearRemapper):
-        np.testing.assert_array_equal(interp.src_lon_b, src_lon_edges)
-        np.testing.assert_array_equal(interp.src_lat_b, src_lat_edges)
-        np.testing.assert_array_equal(interp.dst_lon_b, dst_lon_edges)
-        np.testing.assert_array_equal(interp.dst_lat_b, dst_lat_edges)
+        assert_array_equal_compact(interp.src_lon_b, src_lon_edges)
+        assert_array_equal_compact(interp.src_lat_b, src_lat_edges)
+        assert_array_equal_compact(interp.dst_lon_b, dst_lon_edges)
+        assert_array_equal_compact(interp.dst_lat_b, dst_lat_edges)
         assert interp.normalize == "fracarea"
-        np.testing.assert_allclose(interp.radius, 10.0, rtol=0.0, atol=0.0)
+        assert_allclose_compact(interp.radius, 10.0, rtol=0.0, atol=0.0)
 
 
 def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> None:
@@ -142,6 +143,9 @@ def test_regridder_call_with_invalid_arg_count_raises_type_error() -> None:
         regridder(np.ones((2, 2)), np.ones((2, 2)), np.ones((2, 2)))
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Input has data type int64, but the output has been cast to float64\\.:FutureWarning"
+)
 def test_regridder_source_mask_excludes_masked_cells_in_fracarea_mode() -> None:
     src = _grid("src", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
     # Use a different destination grid so Regridder.__call__ does not short-circuit
@@ -165,9 +169,9 @@ def test_regridder_source_mask_excludes_masked_cells_in_fracarea_mode() -> None:
 
     assert out.shape == (4, 4)
     assert np.all(np.isnan(out[0:2, 0:2]))
-    np.testing.assert_allclose(out[0:2, 2:4], 2.0, rtol=0.0, atol=1e-14)
-    np.testing.assert_allclose(out[2:4, 0:2], 3.0, rtol=0.0, atol=1e-14)
-    np.testing.assert_allclose(out[2:4, 2:4], 4.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out[0:2, 2:4], 2.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out[2:4, 0:2], 3.0, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(out[2:4, 2:4], 4.0, rtol=0.0, atol=1e-14)
 
 
 def test_conservative_factory_returns_conservative_rectilinear_regridder() -> None:
