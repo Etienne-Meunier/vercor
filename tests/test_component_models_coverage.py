@@ -2,20 +2,25 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
 import pytest
 
+import vercor.components.data.era5_atmosphere as era5_atmosphere_module
 import vercor.components.data.era5_land as era5_land_module
 import vercor.components.data.era5_ocean as era5_ocean_module
 import vercor.components.data.erainterim_ocean as erainterim_ocean_module
+import vercor.components.data.jcm_land as jcm_land_module
 from tests._coverage_support import CoverageCouplerStub, make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_land import ERA5Land
 from vercor.components.data.era5_ocean import ERA5Ocean
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
+from vercor.components.data.jcm_land import JCMLand
 from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
@@ -237,3 +242,254 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
     assert np.all(binary_mask[:3, :] == 0.0)
     assert np.isnan(component.data["sea_surface_temperature"][0, 0, 0])
     assert np.isclose(component.data["sea_surface_temperature"][0, 3, 0], 283.15)
+
+
+def test_era5_atmosphere_constructor_initialize_and_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_level_path = Path("/tmp/era5_model_levels.nc")
+    surface_path = Path("/tmp/era5_surface.nc")
+
+    forcing: dict[str, NDArray] = {
+        "longitude": np.asarray([0.0, 180.0], dtype=float),
+        "latitude": np.asarray([45.0, 0.0, -45.0], dtype=float),
+        "hyai": np.asarray([0.0, 1.0, 2.0, 3.0, 4.0], dtype=float),
+        "hybi": np.asarray([10.0, 11.0, 12.0, 13.0, 14.0], dtype=float),
+        "hyam": np.asarray([20.0, 21.0, 22.0, 23.0], dtype=float),
+        "hybm": np.asarray([30.0, 31.0, 32.0, 33.0], dtype=float),
+        "lnsp": np.log(
+            np.arange(1, 1 + (2 * 3 * 1 * 12), dtype=float).reshape(2, 3, 1, 12)
+        ),
+        "q": np.arange(1, 1 + (2 * 3 * 3 * 12), dtype=float).reshape(2, 3, 3, 12)
+        / 1000.0,
+        "t": 250.0 + np.arange(2 * 3 * 3 * 12, dtype=float).reshape(2, 3, 3, 12),
+        "u": np.arange(1, 1 + (2 * 3 * 2 * 12), dtype=float).reshape(2, 3, 2, 12),
+        "v": -np.arange(1, 1 + (2 * 3 * 2 * 12), dtype=float).reshape(2, 3, 2, 12),
+        "msnswrf": np.full((2, 3, 12), 150.0, dtype=float),
+        "msdwlwrf": np.full((2, 3, 12), 75.0, dtype=float),
+    }
+
+    physics_calls: dict[str, list[Any]] = {
+        "pressure": [],
+        "height": [],
+        "density": [],
+        "theta": [],
+    }
+
+    def fake_get_forcing_data(file_type: str) -> Path:
+        if file_type == "era5_model_levels":
+            return model_level_path
+        if file_type == "era5_surface":
+            return surface_path
+        raise AssertionError(f"Unexpected forcing lookup: {file_type}")
+
+    def fake_read_forcing(
+        self: Any,
+        variable: str,
+        where: str,
+        flip_y: bool = False,
+    ) -> NDArray:
+        if where == "model_level":
+            assert variable in {
+                "longitude",
+                "latitude",
+                "hyai",
+                "hybi",
+                "hyam",
+                "hybm",
+                "lnsp",
+                "q",
+                "t",
+                "u",
+                "v",
+            }
+        else:
+            assert where == "surface"
+            assert variable in {"msnswrf", "msdwlwrf"}
+        _ = flip_y
+        return forcing[variable]
+
+    def fake_compute_pressure_levels(
+        surface_pressure: NDArray,
+        hya: NDArray,
+        hyb: NDArray,
+    ) -> NDArray:
+        physics_calls["pressure"].append(
+            (surface_pressure.copy(), hya.copy(), hyb.copy())
+        )
+        base = float(surface_pressure.mean())
+        nlev = hya.size
+        return np.stack(
+            [
+                np.full(surface_pressure.shape, base + float(level), dtype=float)
+                for level in range(nlev)
+            ],
+            axis=2,
+        )
+
+    def fake_get_altitudes_hybrid_sigma_levels(
+        settings: Any,
+        temperature_3d: NDArray,
+        specific_humidity_3d: NDArray,
+        pressure_h: NDArray,
+    ) -> NDArray:
+        physics_calls["height"].append(
+            (
+                settings,
+                temperature_3d.copy(),
+                specific_humidity_3d.copy(),
+                pressure_h.copy(),
+            )
+        )
+        height = np.zeros((2, 3, 2), dtype=float)
+        height[..., 1] = float(pressure_h.mean())
+        return height
+
+    def fake_compute_air_density(
+        settings: Any,
+        pressure_level: NDArray,
+        temperature: NDArray,
+    ) -> NDArray:
+        physics_calls["density"].append(
+            (settings, pressure_level.copy(), temperature.copy())
+        )
+        return np.asarray(pressure_level + temperature, dtype=float)
+
+    def fake_compute_potential_temperature(
+        settings: Any,
+        temperature: NDArray,
+        pressure_level: NDArray,
+    ) -> NDArray:
+        physics_calls["theta"].append(
+            (settings, temperature.copy(), pressure_level.copy())
+        )
+        return np.asarray(pressure_level - temperature, dtype=float)
+
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "get_forcing_data",
+        fake_get_forcing_data,
+    )
+    monkeypatch.setattr(ERA5Atmosphere, "_read_forcing", fake_read_forcing)
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "compute_pressure_levels",
+        fake_compute_pressure_levels,
+    )
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "get_altitudes_hybrid_sigma_levels",
+        fake_get_altitudes_hybrid_sigma_levels,
+    )
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "compute_air_density",
+        fake_compute_air_density,
+    )
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "compute_potential_temperature",
+        fake_compute_potential_temperature,
+    )
+
+    coupler = cast(Any, CoverageCouplerStub())
+    component = ERA5Atmosphere()
+
+    assert component.DATA_FILES == {
+        "model_level": str(model_level_path),
+        "surface": str(surface_path),
+    }
+    assert component.settings.apply_time_interpolation
+    assert_allclose_compact(component.grid.longitude, forcing["longitude"])
+    assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
+    assert_allclose_compact(component.data["hyai"], np.asarray([2.0, 3.0, 4.0]))
+    assert_allclose_compact(component.data["hybi"], np.asarray([12.0, 13.0, 14.0]))
+    assert_allclose_compact(component.data["hyam"], np.asarray([22.0, 23.0]))
+    assert_allclose_compact(component.data["hybm"], np.asarray([32.0, 33.0]))
+    assert component.data["surface_pressure"].shape == (2, 3, 12)
+    assert component.data["specific_humidity_3d"].shape == (2, 3, 2, 12)
+    assert component.data["temperature_3d"].shape == (2, 3, 2, 12)
+    assert component.data["u_velocity"].shape == (2, 3, 12)
+    assert component.data["v_velocity"].shape == (2, 3, 12)
+
+    component.initialize(coupler)
+
+    assert len(physics_calls["pressure"]) == 24
+    assert len(physics_calls["height"]) == 12
+    assert len(physics_calls["density"]) == 12
+    assert len(physics_calls["theta"]) == 12
+    assert component.data["model_level_height"].shape == (2, 3, 12)
+    assert component.data["density"].shape == (2, 3, 12)
+    assert component.data["potential_temperature"].shape == (2, 3, 12)
+    assert np.all(component.data["model_level_height"] > 0.0)
+
+    component.data["land_surface_temperature"] = np.asarray(
+        [[np.nan, 270.0, 271.0], [272.0, np.nan, 273.0]]
+    )
+    component.data["sea_surface_temperature"] = np.asarray(
+        [[274.0, np.nan, 275.0], [276.0, 277.0, np.nan]]
+    )
+
+    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+
+    expected_total = np.asarray(
+        [[274.0, 270.0, 546.0], [548.0, 277.0, 273.0]],
+        dtype=float,
+    )
+    assert_allclose_compact(component.data["total_surface_temperature"], expected_total)
+
+
+def test_jcm_land_constructor_converts_coords_and_preserves_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float)
+    recorded_inputs: dict[str, NDArray] = {}
+
+    def fake_create_lnd_mask_from_ocn(
+        atm_lat: NDArray,
+        atm_lon: NDArray,
+        ocn_grid: Any,
+    ) -> tuple[NDArray, NDArray]:
+        recorded_inputs["atm_lat"] = np.asarray(atm_lat)
+        recorded_inputs["atm_lon"] = np.asarray(atm_lon)
+        recorded_inputs["ocn_lon"] = np.asarray(ocn_grid.longitude)
+        return expected_mask, np.zeros_like(expected_mask)
+
+    monkeypatch.setattr(
+        jcm_land_module,
+        "create_lnd_mask_from_ocn",
+        fake_create_lnd_mask_from_ocn,
+    )
+
+    coords = SimpleNamespace(
+        horizontal=SimpleNamespace(
+            longitudes=np.deg2rad(np.asarray([0.0, 180.0], dtype=float)),
+            latitudes=np.deg2rad(np.asarray([-45.0, 45.0], dtype=float)),
+        )
+    )
+    forcing = SimpleNamespace(
+        stl_am=np.asarray([[280.0, 281.0], [282.0, 283.0]], dtype=float),
+        soilw_am=np.asarray([[0.1, 0.2], [0.3, 0.4]], dtype=float),
+    )
+    ocn_grid = make_test_grid(name="ocn")
+
+    component = JCMLand(
+        jcm_coords=cast(Any, coords),
+        jcm_forcing=cast(Any, forcing),
+        ocn_grid=ocn_grid,
+    )
+    coupler = cast(Any, CoverageCouplerStub())
+    component.initialize(coupler)
+    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+
+    assert component.settings.get_field_time_slice
+    assert_allclose_compact(recorded_inputs["atm_lon"], np.asarray([0.0, 180.0]))
+    assert_allclose_compact(recorded_inputs["atm_lat"], np.asarray([-45.0, 45.0]))
+    binary_mask = component.grid.binary_mask
+    assert binary_mask is not None
+    assert_allclose_compact(binary_mask, expected_mask)
+    assert_allclose_compact(
+        component.data["land_surface_temperature"],
+        forcing.stl_am.T,
+    )
+    assert_allclose_compact(component.data["soil_moisture"], forcing.soilw_am.T)

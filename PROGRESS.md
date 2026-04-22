@@ -135,3 +135,71 @@
 ## Notes / Gotchas
 
 - `ComponentForcingData._read_forcing()` currently routes a missing variable name through its `KeyError` handler, so the exception message refers to the `where` key even when the real issue is a missing variable in the file. The new tests document the current behavior without changing production code.
+
+## External/Data Coverage Expansion
+
+- Extended `tests/test_component_models_coverage.py` to cover the remaining in-scope data components:
+  - `vercor/components/data/era5_atmosphere.py`
+    - constructor defaults and file lookup
+    - flipped latitude handling and vertical-level slicing
+    - `initialize()` monthly pressure/height/density/potential-temperature wiring with patched physics helpers
+    - `step()` total surface temperature aggregation with `NaN` handling
+  - `vercor/components/data/jcm_land.py`
+    - radian-to-degree coordinate conversion
+    - land-mask wiring via patched `create_lnd_mask_from_ocn()`
+    - transposed forcing fields
+    - `get_field_time_slice` enabled
+    - no-op `initialize()` / `step()` execution
+- Added `tests/test_external_tools_coverage.py` for helper-heavy external code:
+  - `vercor/components/external/jax_gcm_tools.py`
+    - parameter mutation/default lookup helpers
+    - `compute_pressure_levels()` normal and validation branches
+    - both `generate_jcm_coords_forcing_topography_files()` path branches
+    - `mean_leaf()`, `unwrap_leading_dims()`, `stack_objects()`, and `concat_objects()`
+  - `vercor/components/external/veros_gcm.py`
+    - `compute_fluxes()` sign conventions and `dqfldt` masking
+    - non-jitted `copy_state()`, `pure()`, and `set_variable()`
+- Added `tests/test_external_components_coverage.py` for wrapper behavior without full model integration runs:
+  - `vercor/components/external/jax_gcm.py`
+    - `asfloat()`
+    - non-jitted `_generate_step_function()`
+    - `do_jcm_steps()`
+    - `initialize()` forcing selection, timestep guard, and optional spinup
+    - `step()` field mapping/output gating
+    - `_write_output()` NetCDF write and prediction-list reset
+  - `vercor/components/external/veros_gcm.py`
+    - `initialize()` timestep guard, spinup path, and SST extraction
+    - `step()` forcing-field dispatch for `restore_to_climatology=True/False`
+- No production code changes were required; the work stayed entirely in the test suite.
+- Coverage increased from `66%` to `73%` for `vercor` via `conda run -n scipy pytest tests/ --cov=vercor --cov-report=term-missing -q`.
+- Module-level gains from the coverage run:
+  - `vercor/components/data/era5_atmosphere.py`: `23%` -> `96%`
+  - `vercor/components/data/jcm_land.py`: `57%` -> `100%`
+  - `vercor/components/external/jax_gcm.py`: `39%` -> `88%`
+  - `vercor/components/external/jax_gcm_tools.py`: `53%` -> `100%`
+  - `vercor/components/external/veros_gcm.py`: `21%` -> `57%`
+
+## Validation (External/Data Coverage Expansion, 2026-04-22)
+
+- `conda run -n scipy pytest tests/test_component_models_coverage.py tests/test_external_tools_coverage.py tests/test_external_components_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+- `conda run -n scipy pytest tests/ --cov=vercor --cov-report=term-missing -q`
+  - passed
+
+## Scope Notes
+
+- Per task instructions, no coverage was added for:
+  - `vercor/components/data/camulator_land.py`
+  - `vercor/components/external/camulator.py`
+  - `vercor/components/external/camulator_state.py`
+  - `vercor/components/external/windpp.py`
