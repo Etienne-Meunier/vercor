@@ -36,6 +36,9 @@ pytest tests/ -v
 pytest tests/ -v -m "not slow"     # skip integration tests
 pytest tests/test_gradients.py -v  # gradient checks only
 
+# Do test coverage analysis
+pytest --cov=vercor tests/ -v
+
 # Commit changes to git only after full suite unit tests pass
 git add .
 
