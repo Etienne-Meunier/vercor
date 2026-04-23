@@ -243,6 +243,10 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     assert len(created_keys) == 6
     assert len(coupler._regridders) == 6
     assert any("already exists" in message for message in logger.warning_messages)
+    assert isinstance(coupler._binary_masks[("ATM", "OCN", "conservative")], jax.Array)
+    assert isinstance(
+        coupler._fractional_masks[("ATM", "OCN", "conservative")], jax.Array
+    )
     assert components["ATM"]._fields2import == [
         "temperature",
         "specific_humidity",

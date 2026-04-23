@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import hashlib
 from pathlib import Path
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 import vercor.tools as tools_module
@@ -130,6 +132,8 @@ def test_get_field_at_specific_time_weights_and_interpolation() -> None:
         n_rec=12,
     )
 
+    assert isinstance(n1, int)
+    assert isinstance(n2, int)
     assert n1 == 0
     assert n2 == 1
     assert np.isclose(f1 + f2, 1.0)
@@ -150,6 +154,20 @@ def test_get_field_at_specific_time_boundary_record() -> None:
         "foo", {"foo": arr}, coupler, current_time=current_time
     )
     assert_allclose_compact(out, 7.0)
+
+
+def test_get_field_at_specific_time_accepts_jax_backed_forcing_cube() -> None:
+    coupler = make_coupler(year_in_seconds=12.0)
+    arr = jnp.zeros((2, 3, 12), dtype=jnp.float64)
+    arr = arr.at[:, :, 0].set(jnp.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]]))
+
+    out = get_field_at_specific_time(
+        "foo", {"foo": arr}, coupler, current_time=coupler.clock.start
+    )
+
+    assert isinstance(out, jax.Array)
+    assert out.shape == (3, 2)
+    assert_allclose_compact(out, np.asarray(arr[:, :, 0]).swapaxes(-2, -1))
 
 
 def test_get_field_at_specific_time_axis_ordering() -> None:
@@ -215,6 +233,8 @@ def test_get_periodic_interval_wraps_with_time_beyond_cycle() -> None:
         n_rec=12,
     )
 
+    assert isinstance(n1, int)
+    assert isinstance(n2, int)
     assert n1 == 1
     assert n2 == 2
     assert np.isclose(f1 + f2, 1.0)

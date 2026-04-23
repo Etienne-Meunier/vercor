@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import jax
+import jax.numpy as jnp
 import matplotlib
 import numpy as np
 import pytest
@@ -33,11 +35,11 @@ def test_flatten_fields_and_append_unique() -> None:
 
 
 def test_grids_identical_detects_equal_and_unequal_grids() -> None:
-    lon = np.array([0.0, 1.0, 2.0])
-    lat = np.array([-1.0, 0.0])
+    lon = jnp.array([0.0, 1.0, 2.0])
+    lat = jnp.array([-1.0, 0.0])
     g0 = RectilinearGrid("g0", longitude=lon, latitude=lat)
-    g1 = RectilinearGrid("g1", longitude=lon.copy(), latitude=lat.copy())
-    g2 = RectilinearGrid("g2", longitude=np.array([0.0, 1.5, 2.0]), latitude=lat.copy())
+    g1 = RectilinearGrid("g1", longitude=lon + 0.0, latitude=lat + 0.0)
+    g2 = RectilinearGrid("g2", longitude=jnp.array([0.0, 1.5, 2.0]), latitude=lat + 0.0)
 
     assert grids_identical(g0, g1)
     assert not grids_identical(g0, g2)
@@ -75,7 +77,7 @@ def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
         latitude=np.array([0.0, 1.0]),
     )
     comp = DummyGridComponent(
-        grid=grid, fields={"foo": np.array([[1.0, np.nan], [3.0, 5.0]])}
+        grid=grid, fields={"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])}
     )
 
     assert np.isclose(safe_component_nanmean(comp, "foo"), 3.0)
@@ -142,9 +144,9 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     atm = DummyGridComponent(
         grid=atm_grid,
         fields={
-            "scalar": np.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
-            "u": np.ones((2, 3)),
-            "v": np.zeros((2, 3)),
+            "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
+            "u": jnp.ones((2, 3)),
+            "v": jnp.zeros((2, 3)),
         },
     )
     ocn = DummyGridComponent(
@@ -166,6 +168,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     )
 
     assert axs.shape == (2, 2)
+    assert isinstance(atm.get("scalar"), jax.Array)
     assert scalar_mappable is not None
     assert_allclose_compact(axs[0, 0].get_xlim(), axs[1, 0].get_xlim())
     assert_allclose_compact(axs[0, 1].get_xlim(), axs[1, 1].get_xlim())

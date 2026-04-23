@@ -718,3 +718,56 @@
 ## Notes / Failed Approaches (Slice 7A)
 
 - A first pass vectorized the ERA5 atmosphere monthly diagnostics with `jax.vmap`. That helper was numerically fine, but it broke the existing wrapper tests because they monkeypatch host-side physics helpers that call Python `float(...)` internally. The final implementation keeps the extracted one-month helper JAX-pure and `jax.jit`/`grad`-safe, while `initialize()` loops over months on the host and stacks the results.
+
+## Seventh JAX Translation Slice 7B: Core Runtime NumPy Cleanup
+
+- Cleaned the remaining in-scope runtime NumPy usage in the shared core while preserving the existing public APIs and explicit plotting / file-I/O NumPy boundaries:
+  - `vercor/tools.py`
+    - `safe_component_nanmean()` and `_safe_component_metric_mean()` now normalize through `jnp.asarray(...)` and compute NaN-aware reductions with `jax.numpy`
+    - `grids_identical()` now uses JAX-backed coordinate comparisons collapsed to Python `bool`
+    - `get_periodic_interval()` now computes host integer indices with pure scalar arithmetic instead of `np.array(..., dtype="int")`
+    - plotting helpers intentionally remain NumPy / Matplotlib boundaries
+  - `vercor/coupler.py`
+    - removed the top-level NumPy dependency
+    - default `_binary_masks` and `_fractional_masks` are now created as JAX arrays
+    - `_create_exchange_masks()` now passes runtime arrays directly into `check_remap_conservation()`
+    - `_validate_land_mask_consistency()` now compares masks with JAX-backed equality and mismatch counting
+  - `vercor/regridders/bilinear.py`
+    - removed the NumPy import used only for `np.nan`
+    - switched the default `fill_value` to `float("nan")`
+- Updated targeted tests:
+  - `tests/test_tools_components_and_plotting.py`
+    - JAX-backed coordinates for `grids_identical()`
+    - JAX-backed component field input for `safe_component_nanmean()`
+    - plotting path now consumes JAX-backed runtime fields while preserving the NumPy conversion boundary
+  - `tests/test_tools_time_and_forcing.py`
+    - added JAX-backed forcing-cube coverage for `get_field_at_specific_time()`
+    - locked `get_periodic_interval()` indices to host `int` values
+  - `tests/test_coupler_coverage.py`
+    - added assertions that untouched default mask pools remain JAX-backed after `initialize()`
+  - `tests/_tools_support.py`
+    - widened `DummyGridComponent` test storage from NumPy-only arrays to the shared `RuntimeArray` alias so JAX-backed test inputs stay type-clean
+- `DEPENDENCIES.md` did not require changes for this slice because no new module-level dependency edge was introduced.
+
+## Validation (Slice 7B Core Runtime NumPy Cleanup, 2026-04-23)
+
+- `conda run -n scipy pytest tests/test_tools_components_and_plotting.py tests/test_tools_time_and_forcing.py tests/test_coupler_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy pytest tests/test_tools_components_and_plotting.py tests/test_tools_time_and_forcing.py tests/test_coupler_coverage.py -q`
+  - passed
+  - rerun after `black` reformatted `vercor/tools.py` and `tests/test_tools_components_and_plotting.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 7B)
+
+- The first test-only pass fed JAX arrays into `DummyGridComponent`, but that helper was still typed as `dict[str, np.ndarray]`, so `mypy` rejected the updated coverage. The final version widens that test helper to the existing `RuntimeArray` alias instead of changing any production interface.

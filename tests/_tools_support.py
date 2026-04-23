@@ -8,6 +8,7 @@ import numpy as np
 from vercor.clock import Clock
 from vercor.grid import RectilinearGrid
 from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
 
 
 @dataclass
@@ -35,9 +36,9 @@ class DummyComponentB:
 @dataclass
 class DummyGridComponent:
     grid: RectilinearGrid
-    fields: dict[str, np.ndarray]
+    fields: dict[str, RuntimeArray]
 
-    def get(self, field_name: str) -> np.ndarray:
+    def get(self, field_name: str) -> RuntimeArray:
         if field_name not in self.fields:
             raise KeyError(field_name)
         return self.fields[field_name]

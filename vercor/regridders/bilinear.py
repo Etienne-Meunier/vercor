@@ -1,5 +1,3 @@
-import numpy as np
-
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 from vercor.regridders.base import Regridder
@@ -17,7 +15,7 @@ class BilinearRectilinearRegridder(Regridder):
         extrapolation_mode: str | None = None,  # 'nearest' | 'idw'
         idw_k: int = 8,
         idw_eps: float = 1e-12,
-        fill_value: float = np.nan,
+        fill_value: float = float("nan"),
     ) -> None:
 
         super().__init__(source_grid, destination_grid)

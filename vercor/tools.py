@@ -168,17 +168,17 @@ def _append_unique(target: list[str], exchange_items: list[str]) -> None:
 
 
 def safe_component_nanmean(component: Any, field_name: str) -> float:
-    """Return np.nanmean(component.get(field_name)) or NaN when unavailable."""
+    """Return a robust NaN-aware mean for a component field."""
 
     try:
-        return float(np.nanmean(component.get(field_name)))
+        return float(jnp.nanmean(jnp.asarray(component.get(field_name))))
     except Exception:
         return float("nan")
 
 
 def _safe_component_metric_mean(
     component: Any,
-    metric: str | Callable[[Any], NDArray | float],
+    metric: str | Callable[[Any], RuntimeArray | float],
 ) -> float:
     """Resolve a metric and return a robust mean value as float."""
 
@@ -186,14 +186,14 @@ def _safe_component_metric_mean(
         return safe_component_nanmean(component, metric)
 
     try:
-        return float(np.nanmean(metric(component)))
+        return float(jnp.nanmean(jnp.asarray(metric(component))))
     except Exception:
         return float("nan")
 
 
 def print_component_field_means_table(
     components: Mapping[str, Any],
-    fields: Sequence[tuple[str | Callable[[Any], NDArray | float], str]],
+    fields: Sequence[tuple[str | Callable[[Any], RuntimeArray | float], str]],
     component_order: Sequence[str] | None = None,
 ) -> None:
     """Print a means table for component fields with configurable column order.
@@ -333,8 +333,14 @@ def plot_component_scalar_vector_comparison(
 def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
     return (
         g0.shape == g1.shape
-        and np.allclose(g0.latitude, g1.latitude, atol=1e-15)
-        and np.allclose(g0.longitude, g1.longitude, atol=1e-15)
+        and bool(
+            jnp.allclose(jnp.asarray(g0.latitude), jnp.asarray(g1.latitude), atol=1e-15)
+        )
+        and bool(
+            jnp.allclose(
+                jnp.asarray(g0.longitude), jnp.asarray(g1.longitude), atol=1e-15
+            )
+        )
     )
 
 
@@ -361,7 +367,7 @@ def get_component(
 
 def get_periodic_interval(
     current_time: float, cycle_length: float, rec_spacing: float, n_rec: int
-) -> tuple[tuple[NDArray, NDArray], tuple[NDArray, NDArray]]:
+) -> tuple[tuple[int, float], tuple[int, float]]:
     """
     Ported from Veros: https://github.com/team-ocean/veros/blob/main/veros/tools/setup.py#L88
 
@@ -394,9 +400,8 @@ def get_periodic_interval(
 
     """
     current_time = current_time % cycle_length
-    # use np.array to compute integer indices for the time records
-    t_idx_1 = np.array(current_time // rec_spacing, dtype="int")
-    t_idx_2 = np.array((1 + t_idx_1) % n_rec, dtype="int")
+    t_idx_1 = int(current_time // rec_spacing)
+    t_idx_2 = (1 + t_idx_1) % n_rec
     weight_2 = (current_time - rec_spacing * t_idx_1) / rec_spacing
     weight_1 = 1.0 - weight_2
     return (t_idx_1, weight_1), (t_idx_2, weight_2)

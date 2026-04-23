@@ -5,7 +5,7 @@ from logging import Logger
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
+import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
 from vercor.components import Shared
@@ -219,11 +219,13 @@ class Coupler:
                     self.components[exchange.source].grid,
                     self.components[exchange.destination].grid,
                 )
-                self._binary_masks[key] = np.ones(
-                    self.components[exchange.destination].grid.shape
+                self._binary_masks[key] = jnp.ones(
+                    self.components[exchange.destination].grid.shape,
+                    dtype=jnp.float_,
                 )
-                self._fractional_masks[key] = np.ones(
-                    self.components[exchange.destination].grid.shape
+                self._fractional_masks[key] = jnp.ones(
+                    self.components[exchange.destination].grid.shape,
+                    dtype=jnp.float_,
                 )
             else:
                 self.logger.warning(
@@ -281,7 +283,7 @@ class Coupler:
 
         check_remap_conservation(
             regridder,
-            np.asarray(ocean_binary_mask),
+            ocean_binary_mask,
             self.ocn_fmask_on_atm_grid,
         )
 
@@ -293,15 +295,14 @@ class Coupler:
         land_component = get_component(self.components, "LND")
         lnd_mask_from_component = land_component.grid.binary_mask
         if lnd_mask_from_component is not None:
-            component_mask = np.asarray(lnd_mask_from_component)
+            component_mask = jnp.asarray(lnd_mask_from_component)
+            remapped_mask = jnp.asarray(self.lnd_bmask_on_atm_grid)
             if component_mask.shape != self.lnd_bmask_on_atm_grid.shape:
                 raise CouplerError(
                     "Land binary mask read from component does not match atmospheric grid shape"
                 )
-            if not np.array_equal(component_mask, self.lnd_bmask_on_atm_grid):
-                mismatch = np.count_nonzero(
-                    component_mask != self.lnd_bmask_on_atm_grid
-                )
+            if not bool(jnp.all(component_mask == remapped_mask)):
+                mismatch = int(jnp.count_nonzero(component_mask != remapped_mask))
                 raise CouplerError(
                     "Land binary mask created from remapped ocean mask does not match component-provided mask "
                     f"(mismatched points: {mismatch})"
