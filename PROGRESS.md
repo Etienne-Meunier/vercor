@@ -620,3 +620,55 @@
 
 - A first pass kept NumPy-only type annotations on the regridding mask helpers after switching their internal logic to JAX arrays; `mypy` rejected the new JAX-backed call sites. Widening those helper signatures to `RuntimeArray` resolved the issue without changing runtime behavior.
 - Full conservative remapper overlap assembly is still intentionally deferred. The current slice only translated validation/runtime application and mask plumbing because the overlap preprocessing is static setup code rather than the differentiable hot path.
+
+## Sixth JAX Translation Slice 6B: Conservative Overlap Assembly
+
+- Finished the remaining conservative-core translation work in `vercor/interpolators/conservative_remap_rectilinear.py` while keeping the public remapper and regridder call patterns unchanged.
+- Replaced the NumPy-based overlap/precompute assembly in `ConservativeRectilinearRemapper.__init__()` with JAX-first eager helpers:
+  - latitude standardization now uses JAX arrays and preserves the existing flipped-latitude behavior
+  - interval-overlap assembly now builds dense destination-by-source overlap matrices with broadcasted `jax.numpy` min/max arithmetic
+  - longitude periodic overlap now sums three shifted dense overlap matrices (`0`, `+360`, `-360`) before flattening, so duplicate shift contributions are merged without `np.unique` / `np.add.at`
+  - source-mask filtering now drops invalid triplets through JAX boolean/index operations before storing `dst_indices`, `src_indices`, and `overlap_weights`
+  - destination-area preparation is now JAX-native and still preserves the `np.inf`-equivalent zero-area sentinel behavior via `jnp.inf`
+- Kept the constructor eager and host-side on purpose; the slice removes NumPy from the precompute math without trying to JIT the constructor itself.
+- Cleaned the supporting wrapper in `vercor/regridders/conservative.py`:
+  - removed the unused runtime NumPy import
+  - switched the `fill_value` default literal from `np.nan` to `float("nan")`
+  - widened `source_mask` typing to `RuntimeArray` so mixed NumPy/JAX callers remain type-clean
+- Extended conservative tests to lock the new guarantees:
+  - `tests/test_conservative_rectilinear_remapper.py`
+    - JAX-backed constructor inputs for bounds and masks
+    - periodic duplicate-shift overlap merging
+    - eager masked-triplet dropping
+  - `tests/test_conservative_rectilinear_regridder.py`
+    - mixed NumPy/JAX edge arrays and JAX-backed `source_mask` through the public wrapper
+- `DEPENDENCIES.md` did not require changes for this slice because no new module-level dependency edge was introduced.
+
+## Validation (Slice 6B Conservative Overlap Assembly, 2026-04-23)
+
+- `conda run -n scipy pytest tests/test_conservative_rectilinear_remapper.py tests/test_conservative_rectilinear_regridder.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 6B)
+
+- A first implementation used Python `sum(...)` to accumulate the three longitude-shift overlap matrices. `mypy` inferred that expression as `Array | Literal[0]`, so the final version uses explicit staged JAX-array accumulation instead.
+- The first test pass also kept NumPy-only `NDArray` annotations on the conservative remapper/regridder constructor surfaces. `mypy` rejected the new JAX-backed test inputs until those annotations were widened to the shared `RuntimeArray` alias.
+
+## Next Remaining Migration Targets
+
+- Remaining NumPy-heavy production paths are now mostly outside the conservative-core hot path:
+  - data adapters and forcing preparation in `vercor/components/data/`
+  - explicit runtime-boundary cleanup still present in `vercor/coupler.py`
+  - non-core utility and plotting helpers in `vercor/tools.py`
+  - file/output boundaries in `vercor/components/base.py`, which should stay NumPy/xarray-backed unless there is a concrete reason to redesign them

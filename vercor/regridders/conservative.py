@@ -1,14 +1,12 @@
 from typing import Optional
 
-import numpy as np
-from numpy.typing import NDArray
-
 from vercor.grid import RectilinearGrid
 from vercor.regridders.helpers import centers_to_edges
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.regridders.base import Regridder
+from vercor.types import RuntimeArray
 
 
 class ConservativeRectilinearRegridder(Regridder):
@@ -16,9 +14,9 @@ class ConservativeRectilinearRegridder(Regridder):
         self,
         source_grid: RectilinearGrid,
         destination_grid: RectilinearGrid,
-        source_mask: Optional[NDArray] = None,
+        source_mask: Optional[RuntimeArray] = None,
         normalize: str = "conservation",  # 'conservation' | 'fracarea'
-        fill_value: float = np.nan,
+        fill_value: float = float("nan"),
         radius: float = 6371.0,
     ) -> None:
 

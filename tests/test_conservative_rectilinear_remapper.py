@@ -7,13 +7,14 @@ from tests.assertions import assert_allclose_compact
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
+from vercor.types import RuntimeArray
 
 
 def _make_remapper(
-    src_lon_edges: np.ndarray,
-    src_lat_edges: np.ndarray,
-    dst_lon_edges: np.ndarray,
-    dst_lat_edges: np.ndarray,
+    src_lon_edges: RuntimeArray,
+    src_lat_edges: RuntimeArray,
+    dst_lon_edges: RuntimeArray,
+    dst_lat_edges: RuntimeArray,
     **kwargs: object,
 ) -> ConservativeRectilinearRemapper:
     return ConservativeRectilinearRemapper(
@@ -87,6 +88,25 @@ def test_remapper_pytree_round_trip_preserves_precomputed_arrays() -> None:
     assert_allclose_compact(restored.dst_lat_b, remapper.dst_lat_b)
     assert_allclose_compact(restored.dst_areas, remapper.dst_areas)
     assert_allclose_compact(restored.fracarea_norm, remapper.fracarea_norm)
+
+
+def test_remapper_accepts_jax_backed_constructor_inputs() -> None:
+    remapper = _make_remapper(
+        src_lon_edges=jnp.asarray([0.0, 1.0, 2.0]),
+        src_lat_edges=jnp.asarray([0.0, 1.0, 2.0]),
+        dst_lon_edges=jnp.asarray([0.0, 0.5, 1.0, 1.5, 2.0]),
+        dst_lat_edges=jnp.asarray([0.0, 0.5, 1.0, 1.5, 2.0]),
+        src_mask=jnp.asarray([[False, True], [False, False]]),
+        normalize="fracarea",
+    )
+
+    assert remapper.src_lon_b.dtype == jnp.float64
+    assert remapper.src_lat_b.dtype == jnp.float64
+    assert remapper.dst_lon_b.dtype == jnp.float64
+    assert remapper.dst_lat_b.dtype == jnp.float64
+    assert remapper.dst_indices.dtype == jnp.int32
+    assert remapper.src_indices.dtype == jnp.int32
+    assert remapper.overlap_weights.dtype == jnp.float64
 
 
 def test_mass_conserved_between_source_and_destination() -> None:
@@ -181,6 +201,50 @@ def test_periodic_longitude_overlap_maps_shifted_destination_cells() -> None:
     out = remapper.apply_scalar(src)
 
     assert_allclose_compact(out, np.array([[30.0, 10.0, 20.0]]), rtol=0.0, atol=1e-14)
+
+
+def test_periodic_overlap_merges_duplicate_shift_contributions() -> None:
+    remapper = _make_remapper(
+        src_lon_edges=np.array([0.0, 180.0, 360.0]),
+        src_lat_edges=np.array([0.0, 1.0]),
+        dst_lon_edges=np.array([-30.0, 390.0]),
+        dst_lat_edges=np.array([0.0, 1.0]),
+        normalize="conservation",
+        radius=1.0,
+    )
+
+    lat_overlap = np.sin(np.deg2rad(1.0)) - np.sin(np.deg2rad(0.0))
+    expected_weight = lat_overlap * np.deg2rad(210.0)
+
+    assert remapper.dst_indices.shape == (2,)
+    assert_allclose_compact(remapper.dst_indices, np.array([0, 0]), rtol=0.0, atol=0.0)
+    assert_allclose_compact(remapper.src_indices, np.array([0, 1]), rtol=0.0, atol=0.0)
+    assert_allclose_compact(
+        remapper.overlap_weights,
+        np.array([expected_weight, expected_weight]),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
+def test_source_mask_drops_precomputed_triplets_eagerly() -> None:
+    remapper = _make_remapper(
+        src_lon_edges=jnp.asarray([0.0, 1.0, 2.0]),
+        src_lat_edges=jnp.asarray([0.0, 1.0, 2.0]),
+        dst_lon_edges=jnp.asarray([0.0, 1.0, 2.0]),
+        dst_lat_edges=jnp.asarray([0.0, 1.0, 2.0]),
+        src_mask=jnp.asarray([[True, False], [False, False]]),
+        normalize="conservation",
+    )
+
+    assert remapper.src_indices.shape == (3,)
+    assert remapper.dst_indices.shape == (3,)
+    assert_allclose_compact(
+        remapper.src_indices, np.array([1, 2, 3]), rtol=0.0, atol=0.0
+    )
+    assert_allclose_compact(
+        remapper.dst_indices, np.array([1, 2, 3]), rtol=0.0, atol=0.0
+    )
 
 
 @pytest.mark.filterwarnings(

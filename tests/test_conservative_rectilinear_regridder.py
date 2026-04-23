@@ -71,6 +71,33 @@ def test_regridder_constructor_uses_provided_edges_when_available() -> None:
         assert_allclose_compact(interp.radius, 10.0, rtol=0.0, atol=0.0)
 
 
+def test_regridder_constructor_accepts_mixed_numpy_and_jax_edges() -> None:
+    src = _grid(
+        "src",
+        np.array([0.5, 1.5]),
+        np.array([0.5, 1.5]),
+        jnp.asarray([0.0, 1.0, 2.0]),
+        np.array([0.0, 1.0, 2.0]),
+    )
+    dst = _grid(
+        "dst",
+        np.array([0.25, 0.75, 1.25, 1.75]),
+        np.array([0.25, 0.75, 1.25, 1.75]),
+        np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        jnp.asarray([0.0, 0.5, 1.0, 1.5, 2.0]),
+    )
+
+    regridder = ConservativeRectilinearRegridder(
+        src,
+        dst,
+        source_mask=jnp.asarray([[False, True], [False, False]]),
+    )
+
+    assert regridder.interpolator is not None
+    out = regridder(np.array([[1.0, 2.0], [3.0, 4.0]]))
+    assert np.shape(out) == dst.shape
+
+
 def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> None:
     src = _grid("src", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
     dst = _grid(
