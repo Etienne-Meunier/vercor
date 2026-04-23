@@ -378,3 +378,38 @@
 
 - Narrowing public signatures all the way to `jax.Array` broke `mypy` across the existing mixed NumPy/JAX call sites. The final version keeps the public interfaces NumPy-compatible while normalizing to JAX arrays internally.
 - The conservative remapper rewrite remains intentionally deferred because its SciPy sparse representation needs a separate JAX-native design pass.
+
+## Second JAX Translation Slice 2B: Conservative Remapping
+
+- Replaced the conservative remapper runtime path in `vercor/interpolators/conservative_remap_rectilinear.py`:
+  - removed the SciPy sparse dependency from runtime application
+  - precompute now builds eager overlap triplets `(dst_index, src_index, weight)` in Python
+  - scalar application now uses only `jax.numpy` gathers and indexed reductions
+  - `src_lon_b`, `src_lat_b`, `dst_lon_b`, `dst_lat_b`, `dst_areas`, normalization semantics, periodic longitude handling, descending-latitude handling, source masking, and NaN behavior were preserved
+  - `ConservativeRectilinearRemapper` is now registered as a JAX PyTree
+- Kept the public conservative wrapper API stable in `vercor/regridders/conservative.py`; no constructor or call signatures changed.
+- Extended conservative tests:
+  - `tests/test_conservative_rectilinear_remapper.py`
+    - PyTree round-trip coverage
+    - `jax.jit` execution coverage for `apply_scalar()`
+    - linearity + reverse-mode gradient smoke test with respect to the source field
+  - `tests/test_conservative_rectilinear_regridder.py`
+    - JAX-array input coverage through the public regridder call path
+
+## Validation (Slice 2B Conservative Remapping, 2026-04-23)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_conservative_rectilinear_remapper.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_conservative_rectilinear_regridder.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed

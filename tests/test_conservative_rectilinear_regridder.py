@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -81,8 +82,7 @@ def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> Non
 
     out = regridder(src_field)
 
-    assert isinstance(out, np.ndarray)
-    assert out.shape == dst.shape
+    assert np.shape(out) == dst.shape
 
 
 def test_regridder_vector_call_raises_runtime_error_from_remapper() -> None:
@@ -172,6 +172,21 @@ def test_regridder_source_mask_excludes_masked_cells_in_fracarea_mode() -> None:
     assert_allclose_compact(out[0:2, 2:4], 2.0, rtol=0.0, atol=1e-14)
     assert_allclose_compact(out[2:4, 0:2], 3.0, rtol=0.0, atol=1e-14)
     assert_allclose_compact(out[2:4, 2:4], 4.0, rtol=0.0, atol=1e-14)
+
+
+def test_regridder_accepts_jax_array_input() -> None:
+    src = _grid("src", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
+    dst = _grid(
+        "dst",
+        np.array([0.25, 0.75, 1.25, 1.75]),
+        np.array([0.25, 0.75, 1.25, 1.75]),
+    )
+
+    regridder = ConservativeRectilinearRegridder(src, dst)
+    out = regridder(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
+
+    assert np.shape(out) == dst.shape
+    assert np.all(np.isfinite(np.asarray(out)))
 
 
 def test_conservative_factory_returns_conservative_rectilinear_regridder() -> None:

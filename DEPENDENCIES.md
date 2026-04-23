@@ -8,8 +8,9 @@
 8. `vercor/grid.py` - JAX-friendly `RectilinearGrid` holder with eager validation and PyTree registration
 9. `vercor/regridders/helpers.py` - JAX-native rectilinear helper kernels built on (8)
 10. `vercor/interpolators/bilinear_rectilinear.py` - JAX-native bilinear scalar/vector interpolation and extrapolation built on (8, 9)
-11. Pending next slice: `vercor/interpolators/conservative_remap_rectilinear.py`
-12. Pending third slice: `vercor/components/slab/atmosphere.py`
-13. Pending third slice: `vercor/components/slab/ocean.py`
-14. Pending third slice: `vercor/components/slab/land.py`
-15. Pending third slice: `vercor/components/slab/seaice.py`
+11. `vercor/interpolators/conservative_remap_rectilinear.py` - JAX-native conservative scalar remapping runtime with eager overlap preprocessing built on (8, 9)
+12. `vercor/regridders/conservative.py` - conservative regridder wrapper over (11)
+13. Pending third slice: `vercor/components/slab/atmosphere.py`
+14. Pending third slice: `vercor/components/slab/ocean.py`
+15. Pending third slice: `vercor/components/slab/land.py`
+16. Pending third slice: `vercor/components/slab/seaice.py`

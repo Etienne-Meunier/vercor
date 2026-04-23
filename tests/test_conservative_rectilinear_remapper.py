@@ -1,3 +1,5 @@
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -64,6 +66,29 @@ def test_constant_field_preserved_on_refinement_conservation_mode() -> None:
     assert_allclose_compact(out, np.full((4, 4), 7.0), rtol=0.0, atol=1e-14)
 
 
+def test_remapper_pytree_round_trip_preserves_precomputed_arrays() -> None:
+    remapper = _make_remapper(
+        src_lon_edges=np.array([0.0, 1.0, 2.0]),
+        src_lat_edges=np.array([0.0, 1.0, 2.0]),
+        dst_lon_edges=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        dst_lat_edges=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        normalize="fracarea",
+    )
+
+    leaves, treedef = jax.tree_util.tree_flatten(remapper)
+    restored = jax.tree_util.tree_unflatten(treedef, leaves)
+
+    assert isinstance(restored, ConservativeRectilinearRemapper)
+    assert restored.normalize == "fracarea"
+    assert restored.radius == remapper.radius
+    assert_allclose_compact(restored.src_lon_b, remapper.src_lon_b)
+    assert_allclose_compact(restored.src_lat_b, remapper.src_lat_b)
+    assert_allclose_compact(restored.dst_lon_b, remapper.dst_lon_b)
+    assert_allclose_compact(restored.dst_lat_b, remapper.dst_lat_b)
+    assert_allclose_compact(restored.dst_areas, remapper.dst_areas)
+    assert_allclose_compact(restored.fracarea_norm, remapper.fracarea_norm)
+
+
 def test_mass_conserved_between_source_and_destination() -> None:
     remapper = _make_remapper(
         src_lon_edges=np.array([0.0, 1.0, 2.0]),
@@ -82,6 +107,30 @@ def test_mass_conserved_between_source_and_destination() -> None:
     # Sparse-matrix assembly and trigonometric area terms accumulate tiny
     # floating-point error; enforce near-machine-precision agreement.
     assert_allclose_compact(dst_mass, src_mass, rtol=1e-12, atol=1e-8)
+
+
+def test_apply_scalar_supports_jax_jit_linearity_and_gradients() -> None:
+    remapper = _make_remapper(
+        src_lon_edges=np.array([0.0, 1.0, 2.0]),
+        src_lat_edges=np.array([0.0, 1.0, 2.0]),
+        dst_lon_edges=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        dst_lat_edges=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        normalize="conservation",
+    )
+
+    src_a = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+    src_b = jnp.asarray([[0.5, 1.5], [2.5, 3.5]])
+    jitted_apply = jax.jit(remapper.apply_scalar)
+
+    out_a = jitted_apply(src_a)
+    out_b = jitted_apply(src_b)
+    out_sum = jitted_apply(src_a + src_b)
+
+    assert_allclose_compact(out_sum, out_a + out_b, rtol=1e-12, atol=1e-12)
+
+    gradient = jax.grad(lambda field: jnp.sum(jitted_apply(field)))(src_a)
+    assert gradient.shape == src_a.shape
+    assert np.all(np.isfinite(np.asarray(gradient)))
 
 
 def test_descending_lat_bounds_round_trip_orientation() -> None:
