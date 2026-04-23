@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+from tests.assertions import assert_allclose_compact
+from vercor.components.data.era5_atmosphere import (
+    _combine_surface_temperatures,
+    _compute_monthly_diagnostics,
+    _decode_surface_pressure,
+)
+from vercor.components.data.era5_ocean import (
+    _mask_sea_surface_temperature as _mask_era5_sea_surface_temperature,
+)
+from vercor.components.data.era5_ocean import (
+    _ocean_binary_mask_from_land_fraction,
+)
+from vercor.components.data.erainterim_ocean import (
+    _assemble_erainterim_field,
+    _assemble_erainterim_latitude,
+    _binary_ocean_mask_from_salinity,
+    _mask_sea_surface_temperature as _mask_erainterim_sea_surface_temperature,
+)
+from vercor.components.data.jcm_land import _coordinates_in_degrees
+from vercor.settings import VercorSettings
+
+
+def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
+    settings = VercorSettings()
+    lnsp = jnp.log(jnp.asarray([[100000.0, 100500.0], [101000.0, 101500.0]]))
+    hyai = jnp.asarray([1000.0, 2000.0, 3000.0])
+    hybi = jnp.asarray([0.10, 0.20, 0.30])
+    hyam = jnp.asarray([1500.0, 2500.0])
+    hybm = jnp.asarray([0.15, 0.25])
+    temperature_3d = jnp.asarray(
+        [
+            [[280.0, 282.0], [284.0, 286.0]],
+            [[288.0, 290.0], [292.0, 294.0]],
+        ]
+    )
+    specific_humidity_3d = jnp.full((2, 2, 2), 0.002)
+    temperature = temperature_3d[..., 0]
+
+    surface_pressure = jax.jit(_decode_surface_pressure)(lnsp)
+    (
+        model_level_height,
+        density,
+        potential_temperature,
+    ) = jax.jit(
+        lambda sp, t3d, q3d, t: _compute_monthly_diagnostics(
+            settings,
+            sp,
+            hyai,
+            hybi,
+            hyam,
+            hybm,
+            t3d,
+            q3d,
+            t,
+        )
+    )(
+        surface_pressure,
+        temperature_3d,
+        specific_humidity_3d,
+        temperature,
+    )
+    combined_surface_temperature = jax.jit(_combine_surface_temperatures)(
+        jnp.asarray([[jnp.nan, 270.0], [271.0, jnp.nan]]),
+        jnp.asarray([[272.0, jnp.nan], [273.0, 274.0]]),
+    )
+
+    assert_allclose_compact(surface_pressure, np.exp(np.asarray(lnsp)))
+    assert model_level_height.shape == (2, 2)
+    assert density.shape == (2, 2)
+    assert potential_temperature.shape == (2, 2)
+    assert np.all(np.isfinite(np.asarray(model_level_height)))
+    assert np.all(np.isfinite(np.asarray(density)))
+    assert np.all(np.isfinite(np.asarray(potential_temperature)))
+    assert_allclose_compact(
+        combined_surface_temperature,
+        np.asarray([[272.0, 270.0], [544.0, 274.0]]),
+    )
+
+    density_gradient = jax.grad(
+        lambda sp: jnp.sum(
+            _compute_monthly_diagnostics(
+                settings,
+                sp,
+                hyai,
+                hybi,
+                hyam,
+                hybm,
+                temperature_3d,
+                specific_humidity_3d,
+                temperature,
+            )[1]
+        )
+    )(surface_pressure)
+    assert np.all(np.isfinite(np.asarray(density_gradient)))
+
+
+def test_ocean_mask_helpers_accept_jax_arrays() -> None:
+    land_fraction = jnp.asarray([[1.0, 0.4], [0.0, 1.0]])
+    sea_surface_temperature = jnp.asarray(
+        [
+            [[280.0, 281.0], [282.0, 283.0]],
+            [[284.0, 285.0], [286.0, 287.0]],
+        ]
+    )
+
+    binary_mask = jax.jit(_ocean_binary_mask_from_land_fraction)(land_fraction)
+    masked_sst = jax.jit(_mask_era5_sea_surface_temperature)(
+        sea_surface_temperature,
+        binary_mask,
+    )
+
+    assert isinstance(binary_mask, jax.Array)
+    assert isinstance(masked_sst, jax.Array)
+    assert_allclose_compact(binary_mask, np.asarray([[0.0, 0.0], [1.0, 0.0]]))
+    assert np.isnan(np.asarray(masked_sst)[0, 0, 0])
+    assert np.isclose(np.asarray(masked_sst)[0, 1, 0], 282.0)
+
+
+def test_erainterim_helpers_prepare_jax_backed_grid_and_masked_fields() -> None:
+    latitude_template = jnp.arange(-90.0, 94.0, 4.0)
+    latitude_core = jnp.asarray([-78.0, -74.0])
+    core_field = jnp.ones((2, 2, 12))
+
+    latitude = _assemble_erainterim_latitude(
+        latitude_core,
+        latitude_template,
+        3,
+        5,
+    )
+    salinity = _assemble_erainterim_field(core_field, 46, 3, 5)
+    binary_mask = _binary_ocean_mask_from_salinity(salinity)
+    sea_surface_temperature = _mask_erainterim_sea_surface_temperature(
+        _assemble_erainterim_field(core_field, 46, 3, 5, offset=273.15),
+        binary_mask,
+    )
+
+    assert isinstance(latitude, jax.Array)
+    assert isinstance(binary_mask, jax.Array)
+    assert isinstance(sea_surface_temperature, jax.Array)
+    assert latitude.shape == (46,)
+    assert binary_mask.shape == (46, 2)
+    assert sea_surface_temperature.shape == (2, 46, 12)
+    assert_allclose_compact(latitude[3:5], np.asarray([-78.0, -74.0]))
+    assert np.all(np.asarray(binary_mask[3:5, :]) == 1.0)
+    assert np.all(np.asarray(binary_mask[:3, :]) == 0.0)
+    assert np.isnan(np.asarray(sea_surface_temperature)[0, 0, 0])
+    assert np.isclose(np.asarray(sea_surface_temperature)[0, 3, 0], 274.15)
+
+
+def test_jcm_land_coordinate_helper_supports_jit() -> None:
+    longitude_radians = jnp.deg2rad(jnp.asarray([0.0, 180.0]))
+    latitude_radians = jnp.deg2rad(jnp.asarray([-45.0, 45.0]))
+
+    longitude_degrees, latitude_degrees = jax.jit(_coordinates_in_degrees)(
+        longitude_radians,
+        latitude_radians,
+    )
+
+    assert isinstance(longitude_degrees, jax.Array)
+    assert isinstance(latitude_degrees, jax.Array)
+    assert_allclose_compact(longitude_degrees, np.asarray([0.0, 180.0]))
+    assert_allclose_compact(latitude_degrees, np.asarray([-45.0, 45.0]))

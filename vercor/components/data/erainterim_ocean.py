@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-import numpy as np
-from numpy.typing import NDArray
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from vercor.clock import CustomDateTime
 from vercor.components import Component, ComponentForcingData
@@ -12,6 +13,64 @@ from vercor.tools import get_forcing_data
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def _assemble_erainterim_latitude(
+    latitude_core: ArrayLike,
+    full_latitude: ArrayLike,
+    latitude_start: int,
+    latitude_stop: int,
+) -> jax.Array:
+    """Insert the ERA-Interim latitude band into the full global latitude vector."""
+    return (
+        jnp.asarray(full_latitude)
+        .at[latitude_start:latitude_stop]
+        .set(jnp.asarray(latitude_core))
+    )
+
+
+def _assemble_erainterim_field(
+    core_field: ArrayLike,
+    full_latitude_size: int,
+    latitude_start: int,
+    latitude_stop: int,
+    longitude_roll: int = 0,
+    offset: float = 0.0,
+) -> jax.Array:
+    """Embed a `(nlon, nlat_core, time)` field into the full global ocean grid."""
+    core_field_array = jnp.asarray(core_field) + offset
+    full_field = jnp.zeros(
+        (
+            int(core_field_array.shape[0]),
+            full_latitude_size,
+            int(core_field_array.shape[2]),
+        ),
+        dtype=core_field_array.dtype,
+    )
+    full_field = full_field.at[:, latitude_start:latitude_stop, :].set(core_field_array)
+    if longitude_roll != 0:
+        return jnp.roll(full_field, longitude_roll, axis=0)
+    return full_field
+
+
+def _binary_ocean_mask_from_salinity(salinity: ArrayLike) -> jax.Array:
+    """Create a binary ocean mask from a full-grid salinity field."""
+    return jnp.where(jnp.asarray(salinity) > 0.0, 1.0, 0.0)[..., 0].T
+
+
+def _mask_sea_surface_temperature(
+    sea_surface_temperature: ArrayLike,
+    binary_mask: ArrayLike,
+) -> jax.Array:
+    """Apply the binary ocean mask to a `(nlon, nlat, time)` SST field."""
+    return (
+        jnp.asarray(sea_surface_temperature)
+        * jnp.where(
+            jnp.asarray(binary_mask) > 0.0,
+            1.0,
+            jnp.nan,
+        ).T[..., jnp.newaxis]
+    )
 
 
 class ERAInterimOcean(Component, ComponentForcingData):
@@ -44,22 +103,31 @@ class ERAInterimOcean(Component, ComponentForcingData):
             "model_level": str(model_level_file),
         }
 
-        longitude = self._read_forcing("xt", where="model_level")
-        grid_step = longitude[1] - longitude[0]
+        longitude = jnp.asarray(self._read_forcing("xt", where="model_level"))
+        grid_step = float(longitude[1] - longitude[0])
         yt_bndry = 89.5 if grid_step == 1 else 90.0
-        latitude_slice = slice(10, -10) if grid_step == 1 else slice(3, -3)
+        latitude_start = 10 if grid_step == 1 else 3
+        full_latitude = jnp.arange(-yt_bndry, yt_bndry + grid_step, grid_step)
+        latitude_stop = int(full_latitude.size) - latitude_start
+        longitude_roll = 90 if grid_step == 1 else 0
 
         # To cover the whole globe with 1 or 4 degree resolution
-        latitude: NDArray = np.arange(-yt_bndry, yt_bndry + grid_step, grid_step)
-        sss: NDArray = np.zeros((longitude.size, latitude.size, 12))
-        sst: NDArray = np.zeros((longitude.size, latitude.size, 12))
-
-        latitude[latitude_slice] = self._read_forcing("yt", where="model_level")
+        latitude = _assemble_erainterim_latitude(
+            self._read_forcing("yt", where="model_level"),
+            full_latitude,
+            latitude_start,
+            latitude_stop,
+        )
         longitude = longitude - 90.0 if grid_step == 1 else longitude
 
-        sss[:, latitude_slice, :] = self._read_forcing("sss", where="model_level")
-        sss = np.roll(sss, 90, axis=0) if grid_step == 1 else sss
-        binary_mask = np.where(sss > 0.0, 1.0, 0.0)[..., 0].T
+        sss = _assemble_erainterim_field(
+            self._read_forcing("sss", where="model_level"),
+            int(full_latitude.size),
+            latitude_start,
+            latitude_stop,
+            longitude_roll=longitude_roll,
+        )
+        binary_mask = _binary_ocean_mask_from_salinity(sss)
 
         self.grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
@@ -72,11 +140,17 @@ class ERAInterimOcean(Component, ComponentForcingData):
 
         self.settings.apply_time_interpolation = True
 
-        sst[:, latitude_slice, :] = (
-            self._read_forcing("sst", where="model_level") + 273.15
+        sst = _mask_sea_surface_temperature(
+            _assemble_erainterim_field(
+                self._read_forcing("sst", where="model_level"),
+                int(full_latitude.size),
+                latitude_start,
+                latitude_stop,
+                longitude_roll=longitude_roll,
+                offset=273.15,
+            ),
+            binary_mask,
         )
-        sst = np.roll(sst, 90, axis=0) if grid_step == 1 else sst
-        sst *= np.where(binary_mask > 0.0, 1.0, np.nan).T[..., np.newaxis]
 
         # Units: [K]
         self.data["sea_surface_temperature"] = sst

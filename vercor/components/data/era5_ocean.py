@@ -2,7 +2,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-import numpy as np
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from vercor.clock import CustomDateTime
 from vercor.components import Component, ComponentForcingData
@@ -11,6 +13,27 @@ from vercor.tools import get_forcing_data
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def _ocean_binary_mask_from_land_fraction(land_fraction: ArrayLike) -> jax.Array:
+    """Convert a fractional land mask into a binary ocean mask."""
+    land_fraction_array = jnp.asarray(land_fraction)
+    return 1.0 - jnp.where(land_fraction_array > 0.0, 1.0, 0.0)
+
+
+def _mask_sea_surface_temperature(
+    sea_surface_temperature: ArrayLike,
+    binary_mask: ArrayLike,
+) -> jax.Array:
+    """Apply the binary ocean mask to a `(nlon, nlat, time)` SST field."""
+    return (
+        jnp.asarray(sea_surface_temperature)
+        * jnp.where(
+            jnp.asarray(binary_mask) > 0.0,
+            1.0,
+            jnp.nan,
+        ).T[..., jnp.newaxis]
+    )
 
 
 class ERA5Ocean(Component, ComponentForcingData):
@@ -41,11 +64,12 @@ class ERA5Ocean(Component, ComponentForcingData):
             "surface": str(surface_file),
         }
 
-        longitude = self._read_forcing("longitude", where="surface")
-        latitude = self._read_forcing("latitude", where="surface")[::-1]
-        fraction_mask = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
-        fraction_mask = np.where(fraction_mask > 0.0, 1.0, 0.0)
-        binary_mask = 1 - fraction_mask
+        longitude = jnp.asarray(self._read_forcing("longitude", where="surface"))
+        latitude = jnp.asarray(self._read_forcing("latitude", where="surface"))[::-1]
+        land_fraction = jnp.asarray(
+            self._read_forcing("lsm", where="surface", flip_y=True)
+        ).T[0, ::]
+        binary_mask = _ocean_binary_mask_from_land_fraction(land_fraction)
 
         self.grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
@@ -59,12 +83,10 @@ class ERA5Ocean(Component, ComponentForcingData):
         self.settings.apply_time_interpolation = True
 
         # Units: [K]
-        self.data["sea_surface_temperature"] = self._read_forcing(
-            "sst", where="surface", flip_y=True
+        self.data["sea_surface_temperature"] = _mask_sea_surface_temperature(
+            jnp.asarray(self._read_forcing("sst", where="surface", flip_y=True)),
+            binary_mask,
         )
-        self.data["sea_surface_temperature"] *= np.where(
-            binary_mask > 0.0, 1.0, np.nan
-        ).T[..., np.newaxis]
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

@@ -14,3 +14,7 @@
 14. `vercor/components/slab/ocean.py` - slab ocean wrapper over pure JAX SST tendency kernel built on (8)
 15. `vercor/components/slab/land.py` - slab land wrapper over pure JAX soil-moisture update kernel built on (8)
 16. `vercor/components/slab/seaice.py` - slab sea-ice wrapper over pure JAX ice-fraction diagnostic kernel built on (8)
+17. `vercor/components/data/era5_atmosphere.py` - ERA5 atmospheric forcing adapter with JAX-backed pressure/diagnostic helpers built on (2, 8)
+18. `vercor/components/data/era5_ocean.py` - ERA5 ocean forcing adapter with JAX-backed mask and SST application built on (8)
+19. `vercor/components/data/erainterim_ocean.py` - ERA-Interim ocean forcing adapter with JAX-backed global field assembly built on (8)
+20. `vercor/components/data/jcm_land.py` - JCM land forcing adapter with JAX-backed coordinate conversion and runtime storage built on (8)

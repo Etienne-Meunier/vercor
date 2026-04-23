@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.forcing import ForcingData
@@ -13,6 +15,17 @@ from vercor.tools import create_lnd_mask_from_ocn
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def _coordinates_in_degrees(
+    longitude_radians: ArrayLike,
+    latitude_radians: ArrayLike,
+) -> tuple[jax.Array, jax.Array]:
+    """Convert JCM coordinates from radians to degrees on the JAX runtime path."""
+    return (
+        jnp.rad2deg(jnp.asarray(longitude_radians)),
+        jnp.rad2deg(jnp.asarray(latitude_radians)),
+    )
 
 
 class JCMLand(Component):
@@ -37,8 +50,10 @@ class JCMLand(Component):
                 grid: RectilinearGrid
         """
 
-        longitude = np.rad2deg(jcm_coords.horizontal.longitudes)
-        latitude = np.rad2deg(jcm_coords.horizontal.latitudes)
+        longitude, latitude = _coordinates_in_degrees(
+            jcm_coords.horizontal.longitudes,
+            jcm_coords.horizontal.latitudes,
+        )
         lnd_bmask, _ = create_lnd_mask_from_ocn(
             atm_lat=latitude,
             atm_lon=longitude,
@@ -57,9 +72,9 @@ class JCMLand(Component):
         self.settings.get_field_time_slice = True
 
         # Units: [K]
-        self.data["land_surface_temperature"] = jcm_forcing.stl_am.T
+        self.data["land_surface_temperature"] = jnp.asarray(jcm_forcing.stl_am.T)
         # Units: [???]
-        self.data["soil_moisture"] = jcm_forcing.soilw_am.T
+        self.data["soil_moisture"] = jnp.asarray(jcm_forcing.soilw_am.T)
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import jax
 import numpy as np
 from numpy.typing import NDArray
 import pytest
@@ -186,6 +187,8 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
 
     assert component.DATA_FILES["surface"] == str(fake_path)
     assert component.settings.apply_time_interpolation
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(component.grid.latitude, np.asarray([-10.0, 10.0]))
     expected_mask = np.asarray([[0.0, 1.0], [0.0, 0.0]])
     binary_mask = component.grid.binary_mask
@@ -237,6 +240,8 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
 
     assert component.DATA_FILES["model_level"] == str(fake_path)
     assert component.settings.apply_time_interpolation
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert component.grid.shape == (46, 2)
     binary_mask = component.grid.binary_mask
     assert binary_mask is not None
@@ -402,6 +407,8 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         "surface": str(surface_path),
     }
     assert component.settings.apply_time_interpolation
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.data["surface_pressure"], jax.Array)
     assert_allclose_compact(component.grid.longitude, forcing["longitude"])
     assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
     assert_allclose_compact(component.data["hyai"], np.asarray([2.0, 3.0, 4.0]))
@@ -485,6 +492,8 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
     component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.settings.get_field_time_slice
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(recorded_inputs["atm_lon"], np.asarray([0.0, 180.0]))
     assert_allclose_compact(recorded_inputs["atm_lat"], np.asarray([-45.0, 45.0]))
     binary_mask = component.grid.binary_mask

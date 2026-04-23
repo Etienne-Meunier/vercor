@@ -672,3 +672,49 @@
   - explicit runtime-boundary cleanup still present in `vercor/coupler.py`
   - non-core utility and plotting helpers in `vercor/tools.py`
   - file/output boundaries in `vercor/components/base.py`, which should stay NumPy/xarray-backed unless there is a concrete reason to redesign them
+
+## Seventh JAX Translation Slice 7A: JAX-First Data Adapters
+
+- Translated the remaining in-scope data adapters to keep runtime arrays JAX-backed while preserving the existing public component APIs and NumPy/xarray file boundaries:
+  - `vercor/components/data/era5_atmosphere.py`
+    - forcing reads are normalized to `jnp.asarray(...)` at the component boundary
+    - added private pure helpers for surface-pressure decoding, one-month diagnostic assembly, and total surface-temperature combination
+    - `initialize()` now stacks per-month diagnostic outputs from the JAX helper back into runtime storage
+  - `vercor/components/data/era5_ocean.py`
+    - added private JAX helpers for ocean-mask derivation from land fraction and masked SST application
+    - longitude/latitude, binary mask, and stored SST now stay JAX-backed in memory
+  - `vercor/components/data/erainterim_ocean.py`
+    - added private JAX helpers for global latitude assembly, full-grid field staging, binary-mask derivation, and masked SST application
+    - the existing 1 degree vs 4 degree padding, longitude shift, and Celsius-to-Kelvin behavior were preserved
+  - `vercor/components/data/jcm_land.py`
+    - added a private JAX coordinate-conversion helper using `jnp.rad2deg`
+    - stored land temperature and soil moisture now remain JAX-backed in memory
+- Added a dedicated helper test module:
+  - `tests/test_data_component_kernels.py`
+    - `jax.jit` coverage for ERA5 atmosphere pressure/diagnostic helpers and JCM coordinate conversion
+    - reverse-mode gradient smoke test for the ERA5 atmosphere diagnostic helper
+    - JAX-array input/output checks for ERA5 ocean and ERA-Interim ocean helper paths
+- Updated `tests/test_component_models_coverage.py` only at the wrapper level:
+  - constructors, masks, and shapes remain unchanged
+  - translated components now explicitly preserve JAX-backed runtime arrays
+- Updated `DEPENDENCIES.md` to include the translated data-adapter layer.
+
+## Validation (Slice 7A JAX-First Data Adapters, 2026-04-23)
+
+- `conda run -n scipy pytest tests/test_component_models_coverage.py tests/test_data_component_kernels.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 7A)
+
+- A first pass vectorized the ERA5 atmosphere monthly diagnostics with `jax.vmap`. That helper was numerically fine, but it broke the existing wrapper tests because they monkeypatch host-side physics helpers that call Python `float(...)` internally. The final implementation keeps the extracted one-month helper JAX-pure and `jax.jit`/`grad`-safe, while `initialize()` loops over months on the host and stacks the results.
