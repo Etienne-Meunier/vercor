@@ -446,25 +446,3 @@ def write_shared_to_netcdf(
         data_vars=data_vars,
         coords={"latitude": lat, "longitude": lon},
     ).to_netcdf(filename)
-
-
-if __name__ == "__main__":
-    shared = Shared()
-    if not shared.is_empty:
-        print("Shared is not empty initially, something is wrong!")
-
-    t_model = datetime(2025, 11, 14, 12, 0, 0)
-    shared.temperature = (np.array([[1.0, 2.0], [3.0, 4.0]]), t_model, "ocean")
-    shared.humidity = (np.array([[0.5, 0.6], [0.7, 0.8]]), t_model, "atmosphere")
-    shared.temperature.data += 10.0
-
-    if shared.is_empty:
-        print("Shared is not empty!")
-
-    print(shared)
-
-    temp_array = shared.temperature
-    print(temp_array)
-    print("Temperature data:\n", temp_array.data)
-    print("Temperature timestamp:", temp_array.timestamp)
-    print("Temperature component name:", temp_array.component_name)
