@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -65,14 +65,13 @@ class Atmosphere(Component):
         grid_shape = self.grid.shape
         zeros = jnp.zeros(grid_shape, dtype=jnp.float64)
 
-        self.data["temperature_2m"] = cast(
-            Any,
-            jnp.full(grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float64),
+        self.data["temperature_2m"] = jnp.full(
+            grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float64
         )
-        self.data["sensible_heat_flux"] = cast(Any, zeros)
-        self.data["latent_heat_flux"] = cast(Any, zeros)
-        self.data["u_velocity_10m"] = cast(Any, zeros)
-        self.data["v_velocity_10m"] = cast(Any, zeros)
+        self.data["sensible_heat_flux"] = zeros
+        self.data["latent_heat_flux"] = zeros
+        self.data["u_velocity_10m"] = zeros
+        self.data["v_velocity_10m"] = zeros
 
     def step(
         self,
@@ -95,8 +94,8 @@ class Atmosphere(Component):
             self.grid.latitude, self.grid.longitude
         )
 
-        self.data["u_velocity_10m"] = cast(Any, u_velocity_10m)
-        self.data["v_velocity_10m"] = cast(Any, v_velocity_10m)
-        self.data["sensible_heat_flux"] = cast(Any, sensible_heat_flux)
-        self.data["latent_heat_flux"] = cast(Any, latent_heat_flux)
-        self.data["temperature_2m"] = cast(Any, updated_temperature_2m)
+        self.data["u_velocity_10m"] = u_velocity_10m
+        self.data["v_velocity_10m"] = v_velocity_10m
+        self.data["sensible_heat_flux"] = sensible_heat_flux
+        self.data["latent_heat_flux"] = latent_heat_flux
+        self.data["temperature_2m"] = updated_temperature_2m

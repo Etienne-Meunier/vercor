@@ -345,13 +345,12 @@ class JAXGCM(Component):
 
         grid_shape = self.grid.shape
 
-        zeros = cast(Any, jnp.zeros(grid_shape, dtype=jnp.float_))
+        zeros = jnp.zeros(grid_shape, dtype=jnp.float_)
         self.data["specific_humidity"] = zeros
         self.data["net_shortwave_radiation_flux"] = zeros
         self.data["downward_longwave_radiation_flux"] = zeros
-        self.data["sea_surface_temperature"] = cast(
-            Any,
-            jnp.full(grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float_),
+        self.data["sea_surface_temperature"] = jnp.full(
+            grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float_
         )
         self.data["land_surface_temperature"] = zeros
         self.data["u_velocity"] = zeros

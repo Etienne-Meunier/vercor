@@ -1,4 +1,7 @@
-from typing import TYPE_CHECKING, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, TypeAlias, Union
+
+import jax
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from vercor.components import (
@@ -23,3 +26,4 @@ AtmosphereType: TypeAlias = Union[
     "Atmosphere", "ERA5Atmosphere", "JAXGCM", "CAMulatorGCM"
 ]
 AllComponentsType: TypeAlias = Union[OceanType, LandType, AtmosphereType, "SeaIce"]
+RuntimeArray: TypeAlias = NDArray[Any] | jax.Array

@@ -6,6 +6,8 @@ import sys
 from types import SimpleNamespace
 from typing import Any, cast
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -411,7 +413,7 @@ def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> No
     timestamp = coupler.clock.start
 
     source.outgoing_fields["temperature"] = (
-        np.full((2, 2), 5.0),
+        jnp.full((2, 2), 5.0),
         timestamp,
         "OCN",
     )
@@ -444,7 +446,7 @@ def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> No
         Any,
         {
             ("OCN", "ATM", "bilinear"): RecordingRegridder(
-                scalar_result=np.asarray([[2.0, 4.0], [6.0, 8.0]])
+                scalar_result=jnp.asarray([[2.0, 4.0], [6.0, 8.0]])
             ),
             ("OCN", "ATM", "conservative"): RecordingRegridder(
                 vector_result=(
@@ -465,6 +467,7 @@ def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> No
         destination.incoming_fields.temperature.data,
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
+    assert isinstance(destination.incoming_fields.temperature.data, jax.Array)
     assert_allclose_compact(
         destination.incoming_fields.u_velocity.data,
         np.full((2, 2), 9.0),
@@ -472,6 +475,47 @@ def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> No
     assert_allclose_compact(
         destination.incoming_fields.v_velocity.data,
         np.full((2, 2), -9.0),
+    )
+
+
+def test_interpolate_and_dispatch_fields_accepts_mixed_numpy_and_jax_arrays() -> None:
+    coupler = make_coupler()
+    source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
+    destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
+    timestamp = coupler.clock.start
+
+    source.outgoing_fields["temperature"] = (
+        np.full((2, 2), 5.0),
+        timestamp,
+        "OCN",
+    )
+
+    exchange = Exchange(
+        source="OCN",
+        destination="ATM",
+        field_names=["temperature"],
+        regridder_factory=bilinear,
+    )
+    coupler.components = cast(Any, {"OCN": source, "ATM": destination})
+    coupler.exchanges = [exchange]
+    coupler._regridders = cast(
+        Any,
+        {
+            ("OCN", "ATM", "bilinear"): RecordingRegridder(
+                scalar_result=jnp.asarray([[2.0, 4.0], [6.0, 8.0]])
+            )
+        },
+    )
+    coupler._fractional_masks = {
+        ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
+    }
+
+    coupler.interpolate_and_dispatch_fields(cast(Any, destination), timestamp)
+
+    assert isinstance(destination.incoming_fields.temperature.data, jax.Array)
+    assert_allclose_compact(
+        destination.incoming_fields.temperature.data,
+        np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
 
 

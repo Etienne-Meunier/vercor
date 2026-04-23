@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import h5netcdf
 import numpy as np
 import xarray as xr
-from numpy.typing import NDArray
+from numpy.typing import DTypeLike, NDArray
 
 from vercor.clock import ModelDateTime, CustomDateTime
 from vercor.exceptions import ComponentError
@@ -15,6 +15,7 @@ from vercor.grid import RectilinearGrid
 from vercor.settings import ComponentSettings
 from vercor.tools import get_field_at_specific_time, get_field_time_slice
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -24,11 +25,11 @@ if TYPE_CHECKING:
 class TimedNamedArray:
     """Container class for a field (array), its timestamp, and its component name."""
 
-    data: NDArray
+    data: RuntimeArray
     timestamp: datetime | ModelDateTime
     component_name: str
 
-    def __array__(self, dtype: Optional[NDArray] = None) -> NDArray:
+    def __array__(self, dtype: Optional[DTypeLike] = None) -> NDArray[Any]:
         """Let NumPy see this as an array transparently."""
         return np.asarray(self.data, dtype=dtype)
 
@@ -78,7 +79,6 @@ class Shared:
                 "When assigning a field, provide a tuple (data, timestamp, component name)"
             )
 
-        data = np.asarray(data)
         self._fields[name] = TimedNamedArray(
             data=data,
             timestamp=timestamp,
@@ -129,7 +129,7 @@ class Shared:
         """Return a list of all field names in the Shared object."""
         return list(self._fields.keys())
 
-    def fields(self) -> dict[str, NDArray]:
+    def fields(self) -> dict[str, RuntimeArray]:
         """Return a dictionary of all fields' data arrays."""
         return {k: v.data for k, v in self._fields.items()}
 
@@ -148,7 +148,7 @@ class Component(abc.ABC):
     grid: RectilinearGrid
     incoming_fields: Shared = field(default_factory=Shared)
     outgoing_fields: Shared = field(default_factory=Shared)
-    data: dict[str, NDArray] = field(default_factory=dict)
+    data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: ComponentSettings = field(default_factory=ComponentSettings)
     _fields2import: list[str] = field(default_factory=list)
     _fields2export: list[str] = field(default_factory=list)
@@ -306,7 +306,7 @@ class Component(abc.ABC):
                     f"Replace field name '{fld}' with one of the supported names: {VALID_EXCHANGE_FIELD_NAMES}"
                 )
 
-    def get(self, field_name: str) -> NDArray:
+    def get(self, field_name: str) -> RuntimeArray:
         """
         Returns the data array of the specified field from either
         incoming_fields or outgoing_fields.
@@ -379,7 +379,9 @@ class ComponentForcingData:
     def __init__(self) -> None:
         self.DATA_FILES: dict[str, str] = {}
 
-    def _read_forcing(self, variable: str, where: str, flip_y: bool = False) -> NDArray:
+    def _read_forcing(
+        self, variable: str, where: str, flip_y: bool = False
+    ) -> NDArray[Any]:
         """Read a variable from the specified forcing file.
 
         Arguments:
@@ -427,13 +429,13 @@ def write_shared_to_netcdf(
         filename: path to the output netCDF file
     """
 
-    lat = xr.DataArray(grid.latitude, dims=("nlat",), name="latitude")
-    lon = xr.DataArray(grid.longitude, dims=("nlon",), name="longitude")
+    lat = xr.DataArray(np.asarray(grid.latitude), dims=("nlat",), name="latitude")
+    lon = xr.DataArray(np.asarray(grid.longitude), dims=("nlon",), name="longitude")
 
     data_vars = {}
     for name, tna in shared._fields.items():
         data_vars[name] = xr.DataArray(
-            data=tna.data,
+            data=np.asarray(tna.data),
             dims=("nlat", "nlon"),
             coords={"latitude": lat, "longitude": lon},
             attrs={

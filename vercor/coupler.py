@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
 from vercor.clock import Clock, ModelDateTime
 from vercor.components import Shared
@@ -32,7 +31,7 @@ from vercor.tools import (
     check_remap_conservation,
     compute_ocn_lnd_masks_on_atm_grid,
 )
-from vercor.types import AllComponentsType
+from vercor.types import AllComponentsType, RuntimeArray
 
 
 def setup_logger() -> Logger:
@@ -60,16 +59,20 @@ class Coupler:
     ] = field(default_factory=dict)
     exchanges: list[Exchange] = field(default_factory=list)
     settings: VercorSettings = field(default_factory=VercorSettings)
-    ocn_bmask_on_atm_grid: NDArray = field(init=False)
-    lnd_bmask_on_atm_grid: NDArray = field(init=False)
-    ocn_fmask_on_atm_grid: NDArray = field(init=False)
-    lnd_fmask_on_atm_grid: NDArray = field(init=False)
+    ocn_bmask_on_atm_grid: RuntimeArray = field(init=False)
+    lnd_bmask_on_atm_grid: RuntimeArray = field(init=False)
+    ocn_fmask_on_atm_grid: RuntimeArray = field(init=False)
+    lnd_fmask_on_atm_grid: RuntimeArray = field(init=False)
     _regridders: dict[
         tuple[str, str, str],
         BilinearRectilinearRegridder | ConservativeRectilinearRegridder,
     ] = field(default_factory=dict)
-    _binary_masks: dict[tuple[str, str, str], NDArray] = field(default_factory=dict)
-    _fractional_masks: dict[tuple[str, str, str], NDArray] = field(default_factory=dict)
+    _binary_masks: dict[tuple[str, str, str], RuntimeArray] = field(
+        default_factory=dict
+    )
+    _fractional_masks: dict[tuple[str, str, str], RuntimeArray] = field(
+        default_factory=dict
+    )
 
     """
     Main coupler class to manage components and exchanges between them.
@@ -88,11 +91,11 @@ class Coupler:
         _regridders: mapping of (source component name, destination component name)
                 to Regridder instance (a pool of all available regridders)
         _binary_masks: mapping of (source component name, destination component name)
-                to a binary mask NDArray. This mask is used during regridding of fields
+                to a binary mask array. This mask is used during regridding of fields
                 to ensure that only valid (e.g., ocean or land) points are considered
                 during the regridding process.
         _fractional_masks: mapping of (source component name, destination component name)
-                to a fractional mask NDArray. This mask is applied during field exchanges
+                to a fractional mask array. This mask is applied during field exchanges
                 after regridding to ensure that only the appropriate portion from source
                 grid cells of the forcing or boundary conditions is transferred to
                 destination grid cells, reflecting the partial coverage of source grid cells
@@ -400,7 +403,7 @@ class Coupler:
                             f"Field {field_name} not present in source fields"
                         )
                     source_field_data = getattr(source_fields, field_name).data
-                    scalar = np.asarray(regrid(source_field_data)) * fractional_mask
+                    scalar = regrid(source_field_data) * fractional_mask
 
                     setattr(
                         destination_fields,

@@ -527,3 +527,43 @@
 ## Notes / Failed Approaches (Slice 4A)
 
 - `Component.data` is still typed as `dict[str, NDArray]`, so directly assigning `jax.Array` values in `JAXGCM.initialize()` triggered `mypy` assignment errors. The final implementation keeps the JAX runtime values and uses narrow `cast(Any, ...)` annotations at initialization to satisfy the current shared component typing without widening that interface in this slice.
+
+## Fifth JAX Translation Slice 5A: Shared Core Array Boundary
+
+- Refactored the shared component storage layer so JAX arrays can move through the runtime core without being eagerly coerced to NumPy:
+  - added `RuntimeArray` in `vercor/types.py` for mixed NumPy/JAX in-memory field storage
+  - widened `TimedNamedArray.data`, `Shared.fields()`, `Component.data`, and `Component.get()` in `vercor/components/base.py`
+  - removed the eager `np.asarray(...)` coercion in `Shared._assign_field()` so JAX-backed fields stay JAX-backed in runtime storage
+  - kept explicit NumPy conversion at file/output boundaries in `TimedNamedArray.__array__()`, `ComponentForcingData._read_forcing()`, and `write_shared_to_netcdf()`
+- Refactored the coupler dispatch boundary in `vercor/coupler.py`:
+  - widened in-memory mask annotations to `RuntimeArray`
+  - removed the unconditional `np.asarray(...)` cast around scalar regridder outputs in `interpolate_and_dispatch_fields()`
+  - kept land/ocean mask creation and validation NumPy-backed where the existing helper logic depends on NumPy comparison semantics
+- Cleaned up translated JAX component slices that no longer needed shared-storage casts:
+  - removed now-unnecessary `cast(Any, ...)` assignments in `vercor/components/slab/atmosphere.py`, `vercor/components/slab/ocean.py`, `vercor/components/slab/land.py`, `vercor/components/slab/seaice.py`, and the JAX-backed field seeding path in `vercor/components/external/jax_gcm.py`
+- Widened the time-slice helper signatures in `vercor/tools.py` to accept mixed runtime arrays so `Component.send_fields()` remains type-clean after the shared-core change.
+- Extended coverage to lock the new runtime guarantees:
+  - `tests/test_component_base_coverage.py` now verifies `Shared`, `receive_fields()`, `send_fields()`, and `get()` preserve JAX-backed arrays end to end while the netCDF writer still succeeds at the NumPy/xarray boundary
+  - `tests/test_coupler_coverage.py` now verifies scalar exchange dispatch preserves JAX regridder outputs after masking and accepts mixed NumPy/JAX field flow
+  - `tests/_coverage_support.py` now accepts mixed runtime arrays in the recording regridder scaffolding
+- `DEPENDENCIES.md` did not require changes for this slice because the new runtime-array alias did not introduce a new module-level dependency edge.
+
+## Validation (Slice 5A Shared Core Array Boundary, 2026-04-23)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_external_components_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 5A)
+
+- No production redesign of mask-generation helpers was needed in this slice. Keeping those helpers NumPy-backed avoided broad churn in conservation/mask validation code while still removing the unnecessary runtime coercions from shared storage and scalar dispatch.

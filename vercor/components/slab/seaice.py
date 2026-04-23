@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -32,9 +32,7 @@ class SeaIce(Component):
         super().__init__(name, grid)
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.data["ice_fraction"] = cast(
-            Any, jnp.zeros(self.grid.shape, dtype=jnp.float64)
-        )
+        self.data["ice_fraction"] = jnp.zeros(self.grid.shape, dtype=jnp.float64)
 
     def step(
         self,
@@ -46,4 +44,4 @@ class SeaIce(Component):
         if sst is None:
             return
 
-        self.data["ice_fraction"] = cast(Any, _diagnose_ice_fraction(sst))
+        self.data["ice_fraction"] = _diagnose_ice_fraction(sst)

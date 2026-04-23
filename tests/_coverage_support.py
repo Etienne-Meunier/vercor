@@ -12,6 +12,7 @@ from vercor.clock import Clock, ModelDateTime
 from vercor.components.base import Component, Shared
 from vercor.grid import RectilinearGrid
 from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
 
 
 def make_test_grid(
@@ -77,14 +78,16 @@ class RecordingRegridder:
     def __init__(
         self,
         *,
-        scalar_result: NDArray | None = None,
-        vector_result: tuple[NDArray, NDArray] | None = None,
+        scalar_result: RuntimeArray | None = None,
+        vector_result: tuple[RuntimeArray, RuntimeArray] | None = None,
     ) -> None:
         self.scalar_result = scalar_result
         self.vector_result = vector_result
         self.calls: list[tuple[NDArray, ...]] = []
 
-    def __call__(self, *args: NDArray) -> NDArray | tuple[NDArray, NDArray]:
+    def __call__(
+        self, *args: RuntimeArray
+    ) -> RuntimeArray | tuple[RuntimeArray, RuntimeArray]:
         self.calls.append(tuple(np.asarray(arg) for arg in args))
         if len(args) == 1:
             if self.scalar_result is not None:

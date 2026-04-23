@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -34,11 +34,9 @@ class Land(Component):
         super().__init__(name, grid)
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.data["soil_moisture"] = cast(
-            Any, jnp.full(self.grid.shape, 0.3, dtype=jnp.float64)
-        )
-        self.data["land_surface_temperature"] = cast(
-            Any, jnp.full(self.grid.shape, 288.15, dtype=jnp.float64)
+        self.data["soil_moisture"] = jnp.full(self.grid.shape, 0.3, dtype=jnp.float64)
+        self.data["land_surface_temperature"] = jnp.full(
+            self.grid.shape, 288.15, dtype=jnp.float64
         )
 
     def step(
@@ -50,11 +48,8 @@ class Land(Component):
         latent_heat_flux = self.data["latent_heat_flux"]
         soil_moisture = self.data["soil_moisture"]
 
-        self.data["soil_moisture"] = cast(
-            Any,
-            _update_soil_moisture(
-                soil_moisture,
-                latent_heat_flux if latent_heat_flux is not None else 0.0,
-                float(dt.total_seconds()),
-            ),
+        self.data["soil_moisture"] = _update_soil_moisture(
+            soil_moisture,
+            latent_heat_flux if latent_heat_flux is not None else 0.0,
+            float(dt.total_seconds()),
         )

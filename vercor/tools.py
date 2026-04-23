@@ -23,7 +23,7 @@ from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.regridders.helpers import compute_land_mask
-from vercor.types import AllComponentsType
+from vercor.types import AllComponentsType, RuntimeArray
 
 VERCOR_ASSETS_BASE_URL = (
     os.environ.get("VERCOR_ASSETS_BASE_URL")
@@ -463,10 +463,10 @@ def _custom_360_day_to_gregorian_day_of_year(
 
 def get_field_time_slice(
     field_name: str,
-    data: Mapping[str, NDArray],
+    data: Mapping[str, RuntimeArray],
     time: datetime | ModelDateTime,
     no_leap: bool = True,
-) -> NDArray:
+) -> RuntimeArray:
     """Retrieve a field from a component data storage dictionary at a specific time index
     without applying time interpolation. The time index is determined based on the day of the year,
     with an option to ignore leap days (Feb 29) for leap years.
@@ -498,17 +498,17 @@ def get_field_time_slice(
 
     time_index = tm_yday - 1
 
-    out: NDArray = data[field_name][time_index, ...]
+    out: RuntimeArray = data[field_name][time_index, ...]
 
     return out
 
 
 def get_field_at_specific_time(
     field_name: str,
-    data: Mapping[str, NDArray],
+    data: Mapping[str, RuntimeArray],
     coupler: SupportsFieldTimeLookup,
     current_time: Optional[datetime | ModelDateTime] = None,
-) -> NDArray:
+) -> RuntimeArray:
     """Retrieve a field from a component data storage dictionary at a specific time,
     applying time interpolation if necessary.
 
@@ -537,7 +537,7 @@ def get_field_at_specific_time(
     arr = data[field_name]
 
     # Use swapaxes to have (lat, lon) ordering
-    out: NDArray = (f1 * arr[..., n1] + f2 * arr[..., n2]).swapaxes(-2, -1)
+    out: RuntimeArray = (f1 * arr[..., n1] + f2 * arr[..., n2]).swapaxes(-2, -1)
 
     return out
 

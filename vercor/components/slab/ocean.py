@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -58,13 +58,10 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.data["sea_surface_temperature"] = cast(
-            Any,
-            jnp.full(
-                self.grid.shape,
-                _REFERENCE_SEA_SURFACE_TEMPERATURE,
-                dtype=jnp.float64,
-            ),
+        self.data["sea_surface_temperature"] = jnp.full(
+            self.grid.shape,
+            _REFERENCE_SEA_SURFACE_TEMPERATURE,
+            dtype=jnp.float64,
         )
 
     def step(
@@ -91,17 +88,14 @@ class Ocean(Component):
             else jnp.asarray(LHF, dtype=jnp.float64)
         )
 
-        self.data["sea_surface_temperature"] = cast(
-            Any,
-            _advance_sea_surface_temperature(
-                sst_array,
-                sensible_heat_flux,
-                latent_heat_flux,
-                float(dt.total_seconds()),
-                self.rho,
-                self.cp,
-                self.H,
-                self.lambda_relax,
-                _REFERENCE_SEA_SURFACE_TEMPERATURE,
-            ),
+        self.data["sea_surface_temperature"] = _advance_sea_surface_temperature(
+            sst_array,
+            sensible_heat_flux,
+            latent_heat_flux,
+            float(dt.total_seconds()),
+            self.rho,
+            self.cp,
+            self.H,
+            self.lambda_relax,
+            _REFERENCE_SEA_SURFACE_TEMPERATURE,
         )

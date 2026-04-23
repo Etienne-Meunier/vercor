@@ -4,8 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
 import pytest
 import xarray as xr
 
@@ -19,6 +20,7 @@ from vercor.components.base import (
     write_shared_to_netcdf,
 )
 from vercor.exceptions import ComponentError
+from vercor.types import RuntimeArray
 
 
 @pytest.mark.fast_always
@@ -37,7 +39,7 @@ def test_timed_named_array_and_shared_accessors(
     assert shared.is_empty
     shared.temperature = (data, timestamp, "ATM")
     shared["humidity"] = TimedNamedArray(
-        data=np.asarray([[0.5, 0.6], [0.7, 0.8]]),
+        data=jnp.asarray([[0.5, 0.6], [0.7, 0.8]]),
         timestamp=timestamp,
         component_name="OCN",
     )
@@ -49,6 +51,7 @@ def test_timed_named_array_and_shared_accessors(
     assert "temperature(ATM)" in str(shared)
     assert "humidity=" in repr(shared)
     assert shared.temperature.component_name == "ATM"
+    assert isinstance(shared.humidity.data, jax.Array)
 
     assert shared["missing"] is None
     assert "has no item 'missing'" in capsys.readouterr().out
@@ -79,24 +82,27 @@ def test_component_get_import_receive_merge_and_finalize(
     timestamp = coupler.clock.start
 
     incoming = Shared()
-    incoming["temperature"] = (np.ones(grid.shape), timestamp, "OCN")
+    incoming["temperature"] = (jnp.ones(grid.shape), timestamp, "OCN")
     component.import_fields(incoming)
     component._fields2import = ["temperature"]
     component.receive_fields(timestamp)
 
     assert_allclose_compact(component.get("temperature"), np.ones(grid.shape))
+    assert isinstance(component.get("temperature"), jax.Array)
 
-    component.data["specific_humidity"] = np.full(grid.shape, 0.5)
+    component.data["specific_humidity"] = jnp.full(grid.shape, 0.5)
     assert_allclose_compact(
         component.get("specific_humidity"), np.full(grid.shape, 0.5)
     )
+    assert isinstance(component.get("specific_humidity"), jax.Array)
 
     component.outgoing_fields["latent_heat_flux"] = (
-        np.full(grid.shape, 2.0),
+        jnp.full(grid.shape, 2.0),
         timestamp,
         "ATM",
     )
     assert_allclose_compact(component.get("latent_heat_flux"), np.full(grid.shape, 2.0))
+    assert isinstance(component.get("latent_heat_flux"), jax.Array)
 
     merged = component.merge_incoming_outgoing_fields()
     assert set(merged.field_names) == {"temperature", "latent_heat_flux"}
@@ -166,33 +172,34 @@ def test_send_fields_uses_expected_data_source(
     coupler = CoverageCouplerStub()
     timestamp = coupler.clock.start
     component._fields2export = ["temperature"]
-    component.data["temperature"] = np.full(grid.shape, 1.0)
+    component.data["temperature"] = jnp.full(grid.shape, 1.0)
 
     component.send_fields(timestamp, cast(Any, coupler))
     assert_allclose_compact(
         component.outgoing_fields.temperature.data,
         np.full(grid.shape, 1.0),
     )
+    assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
     def fake_interpolate(
         field_name: str,
-        data: dict[str, NDArray],
+        data: dict[str, RuntimeArray],
         coupler_like: Any,
         current_time: datetime | None = None,
-    ) -> NDArray:
+    ) -> RuntimeArray:
         assert field_name == "temperature"
         assert current_time is None
-        return np.full(grid.shape, 2.0)
+        return jnp.full(grid.shape, 2.0)
 
     def fake_time_slice(
         field_name: str,
-        data: dict[str, NDArray],
+        data: dict[str, RuntimeArray],
         time: datetime,
         no_leap: bool = True,
-    ) -> NDArray:
+    ) -> RuntimeArray:
         assert field_name == "temperature"
         assert no_leap
-        return np.full(grid.shape, 3.0)
+        return jnp.full(grid.shape, 3.0)
 
     monkeypatch.setattr(base_module, "get_field_at_specific_time", fake_interpolate)
     monkeypatch.setattr(base_module, "get_field_time_slice", fake_time_slice)
@@ -204,6 +211,7 @@ def test_send_fields_uses_expected_data_source(
         component.outgoing_fields.temperature.data,
         np.full(grid.shape, 2.0),
     )
+    assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
     component.settings.apply_time_interpolation = False
     component.settings.get_field_time_slice = True
@@ -212,6 +220,7 @@ def test_send_fields_uses_expected_data_source(
         component.outgoing_fields.temperature.data,
         np.full(grid.shape, 3.0),
     )
+    assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
 
 def test_component_forcing_data_read_and_write_round_trip(tmp_path: Path) -> None:
