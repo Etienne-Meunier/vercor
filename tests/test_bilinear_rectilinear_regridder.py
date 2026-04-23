@@ -1,3 +1,5 @@
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -10,9 +12,9 @@ from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpo
 
 def _make_grid(
     name: str,
-    lon: np.ndarray,
-    lat: np.ndarray,
-    mask: np.ndarray | None = None,
+    lon: Any,
+    lat: Any,
+    mask: Any | None = None,
 ) -> RectilinearGrid:
     return RectilinearGrid(name=name, longitude=lon, latitude=lat, binary_mask=mask)
 
@@ -137,6 +139,20 @@ def test_regridder_identical_grid_scalar_short_circuit_returns_input_object() ->
     regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
 
     src = np.arange(6.0).reshape(2, 3)
+    out = regridder(src)
+
+    assert out is src
+
+
+def test_regridder_identical_grid_scalar_short_circuit_with_jax_backed_coords() -> None:
+    lon = jnp.asarray([0.0, 1.0, 2.0])
+    lat = jnp.asarray([0.0, 1.0])
+    src_grid = _make_grid("src", lon, lat)
+    dst_grid = _make_grid("dst", lon, lat)
+
+    regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
+    src = jnp.arange(6.0).reshape(2, 3)
+
     out = regridder(src)
 
     assert out is src

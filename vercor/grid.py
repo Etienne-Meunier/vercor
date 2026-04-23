@@ -6,7 +6,10 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-import numpy as np
+
+
+def _is_strictly_increasing(values: jax.Array) -> bool:
+    return bool(jnp.all(jnp.diff(values) > 0.0))
 
 
 @dataclass(frozen=True)
@@ -70,10 +73,9 @@ class RectilinearGrid(Grid):
                 "RectilinearGrid expects both longitude and latitude coordinates to be 1D arrays."
             )
 
-        longitude_np = np.asarray(longitude_array)
-        latitude_np = np.asarray(latitude_array)
         if not (
-            np.all(np.diff(longitude_np) > 0.0) and np.all(np.diff(latitude_np) > 0.0)
+            _is_strictly_increasing(longitude_array)
+            and _is_strictly_increasing(latitude_array)
         ):
             raise ValueError("longitude and latitude must be strictly monotonic.")
 

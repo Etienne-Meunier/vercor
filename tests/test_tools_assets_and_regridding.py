@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import importlib
 from io import BytesIO
 import hashlib
 from pathlib import Path
 from typing import Any, Literal, cast
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 import vercor.tools as tools_module
@@ -18,7 +21,11 @@ from vercor.tools import (
     check_remap_conservation,
     check_total_lnd_ocn_mask_sum,
     compute_ocn_lnd_masks_on_atm_grid,
+    create_lnd_mask_from_ocn,
 )
+from vercor.grid import RectilinearGrid
+
+conservative_module = importlib.import_module("vercor.regridders.conservative")
 
 
 def test_asset_base_url_normalizes_and_handles_empty(
@@ -151,10 +158,10 @@ def test_ensure_forcing_asset_raises_and_deletes_on_md5_mismatch(
 
 def test_compute_ocn_lnd_masks_on_atm_grid_clips_and_builds_binary_land_mask() -> None:
     class DummyRegridder:
-        def __call__(self, _arr: np.ndarray) -> np.ndarray:
-            return np.array([[1.2, -0.2], [0.4, 0.0]])
+        def __call__(self, _arr: np.ndarray) -> jax.Array:
+            return jnp.asarray([[1.2, -0.2], [0.4, 0.0]])
 
-    ocean_binary_mask = np.array([[1.0, 0.0], [1.0, 0.0]])
+    ocean_binary_mask = jnp.asarray([[1.0, 0.0], [1.0, 0.0]])
     ocn_fmask, lnd_fmask, lnd_bmask = compute_ocn_lnd_masks_on_atm_grid(
         ocean_binary_mask,
         cast(Any, DummyRegridder()),
@@ -166,12 +173,12 @@ def test_compute_ocn_lnd_masks_on_atm_grid_clips_and_builds_binary_land_mask() -
 
 
 def test_check_total_lnd_ocn_mask_sum_success_and_failure() -> None:
-    lnd_good = np.array([[0.3, 1.0], [0.0, 0.8]])
-    ocn_good = np.array([[0.7, 0.0], [1.0, 0.2]])
+    lnd_good = jnp.asarray([[0.3, 1.0], [0.0, 0.8]])
+    ocn_good = jnp.asarray([[0.7, 0.0], [1.0, 0.2]])
     check_total_lnd_ocn_mask_sum(lnd_good, ocn_good)
 
-    lnd_bad = np.array([[0.3, 1.0], [0.0, 0.8]])
-    ocn_bad = np.array([[0.7, 0.0], [1.0, 0.0]])
+    lnd_bad = jnp.asarray([[0.3, 1.0], [0.0, 0.8]])
+    ocn_bad = jnp.asarray([[0.7, 0.0], [1.0, 0.0]])
     with pytest.raises(RegridderError, match="must sum to approx. 1"):
         check_total_lnd_ocn_mask_sum(lnd_bad, ocn_bad)
 
@@ -230,3 +237,40 @@ def test_check_remap_conservation_handles_skip_and_mismatch(
             np.ones((2, 2)),
             np.ones((2, 2)),
         )
+
+
+def test_create_lnd_mask_from_ocn_accepts_jax_backed_masks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyRegridder:
+        def __init__(
+            self, source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+        ):
+            self.source_grid = source_grid
+            self.destination_grid = destination_grid
+            self.interpolator = None
+
+        def __call__(self, _field: jax.Array) -> jax.Array:
+            return jnp.asarray([[0.8, 0.1], [0.0, 0.6]])
+
+    monkeypatch.setattr(
+        conservative_module,
+        "ConservativeRectilinearRegridder",
+        DummyRegridder,
+    )
+
+    ocn_grid = RectilinearGrid(
+        name="OCN",
+        longitude=jnp.asarray([0.0, 1.0]),
+        latitude=jnp.asarray([0.0, 1.0]),
+        binary_mask=jnp.asarray([[1.0, 0.0], [1.0, 0.0]]),
+    )
+
+    lnd_bmask, lnd_fmask = create_lnd_mask_from_ocn(
+        atm_lat=jnp.asarray([0.0, 1.0]),
+        atm_lon=jnp.asarray([0.0, 1.0]),
+        ocn_grid=ocn_grid,
+    )
+
+    assert_array_equal_compact(lnd_bmask, np.asarray([[1, 1], [1, 1]]))
+    assert_allclose_compact(lnd_fmask, np.asarray([[0.2, 0.9], [1.0, 0.4]]))

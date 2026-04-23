@@ -6,6 +6,7 @@ import shutil
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 from urllib.request import urlopen
 
+import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
 
@@ -543,8 +544,8 @@ def get_field_at_specific_time(
 
 
 def compute_ocn_lnd_masks_on_atm_grid(
-    ocean_binary_mask: NDArray, regridder: ConservativeRectilinearRegridder
-) -> tuple[NDArray, NDArray, NDArray]:
+    ocean_binary_mask: RuntimeArray, regridder: ConservativeRectilinearRegridder
+) -> tuple[RuntimeArray, RuntimeArray, RuntimeArray]:
     """Compute ocean and land fractional & binary masks on the atmospheric grid by conservative remapping
 
     Arguments:
@@ -557,11 +558,14 @@ def compute_ocn_lnd_masks_on_atm_grid(
         lnd_bmask_on_atm_grid: binary land mask on atmospheric grid (1 for land, 0 for ocean)
     """
 
-    ocean_bmask = np.asarray(ocean_binary_mask)
+    ocean_bmask = jnp.asarray(ocean_binary_mask)
     # Conservative remapping of binary mask to atmospheric grid
     # results to fractional mask on atmosphere grid
-    ocn_fmask_on_atm_grid = np.asarray(regridder(ocean_bmask))
-    ocn_fmask_on_atm_grid = np.clip(ocn_fmask_on_atm_grid, 0.0, 1.0)
+    ocn_fmask_on_atm_grid = jnp.clip(
+        jnp.asarray(regridder(ocean_bmask)),
+        0.0,
+        1.0,
+    )
     lnd_fmask_on_atm_grid = 1.0 - ocn_fmask_on_atm_grid
     # This lnd_bmask... is needed to double-check that the land model mask from random land component
     # is consistent with the land mask after remapping ocean mask to atmosphere grid
@@ -571,7 +575,7 @@ def compute_ocn_lnd_masks_on_atm_grid(
 
 
 def check_total_lnd_ocn_mask_sum(
-    lnd_fmask_on_atm_grid: NDArray, ocn_fmask_on_atm_grid: NDArray
+    lnd_fmask_on_atm_grid: RuntimeArray, ocn_fmask_on_atm_grid: RuntimeArray
 ) -> None:
     """Check that the fractional land and ocean masks on the atmospheric grid sum to approximately 1 everywhere.
 
@@ -579,12 +583,11 @@ def check_total_lnd_ocn_mask_sum(
         lnd_fmask_on_atm_grid: fractional land mask on atmospheric grid (values between 0 and 1)
         ocn_fmask_on_atm_grid: fractional ocean mask on atmospheric grid (values between 0 and 1)
     """
-
-    fmask_sum = lnd_fmask_on_atm_grid + ocn_fmask_on_atm_grid
-    min_fsum = fmask_sum.min()
-    max_fsum = fmask_sum.max()
-    if not (
-        np.isclose(min_fsum, 1.0, atol=1e-3) and np.isclose(max_fsum, 1.0, atol=1e-3)
+    fmask_sum = jnp.asarray(lnd_fmask_on_atm_grid) + jnp.asarray(ocn_fmask_on_atm_grid)
+    min_fsum = float(jnp.min(fmask_sum))
+    max_fsum = float(jnp.max(fmask_sum))
+    if not bool(
+        jnp.isclose(min_fsum, 1.0, atol=1e-3) & jnp.isclose(max_fsum, 1.0, atol=1e-3)
     ):
         raise RegridderError(
             "Fractional land and ocean masks on atmospheric grid must sum to approx. 1 everywhere "
@@ -594,8 +597,8 @@ def check_total_lnd_ocn_mask_sum(
 
 def check_remap_conservation(
     regridder: ConservativeRectilinearRegridder,
-    ocean_binary_mask_on_ocn_grid: NDArray,
-    ocn_fmask_on_atm_grid: NDArray,
+    ocean_binary_mask_on_ocn_grid: RuntimeArray,
+    ocn_fmask_on_atm_grid: RuntimeArray,
 ) -> None:
     """Check that the conservative regridding of the ocean binary mask from ocean grid
     to atmospheric grid conserves total mass (ocean area).
@@ -614,7 +617,7 @@ def check_remap_conservation(
     ):
         src_lat = regridder.interpolator.src_lat_b
         dst_lat = regridder.interpolator.dst_lat_b
-        if src_lat[-1] != dst_lat[-1] or src_lat[0] != dst_lat[0]:
+        if bool((src_lat[-1] != dst_lat[-1]) | (src_lat[0] != dst_lat[0])):
             do_not_check_mass = True
             print(
                 "Skipping mass conservation check for regridding ocean mask to atmospheric grid "
@@ -628,8 +631,8 @@ def check_remap_conservation(
             ocn_fmask_on_atm_grid
         )
 
-        if not do_not_check_mass and not np.isclose(
-            src_total_mass, dst_total_mass, atol=1e-6
+        if not do_not_check_mass and not bool(
+            jnp.isclose(src_total_mass, dst_total_mass, atol=1e-6)
         ):
             raise RegridderError(
                 "Regridding ocean binary mask to atmospheric grid does not conserve total mass "
@@ -638,8 +641,8 @@ def check_remap_conservation(
 
 
 def create_lnd_mask_from_ocn(
-    atm_lat: NDArray, atm_lon: NDArray, ocn_grid: RectilinearGrid
-) -> tuple[NDArray, NDArray]:
+    atm_lat: RuntimeArray, atm_lon: RuntimeArray, ocn_grid: RectilinearGrid
+) -> tuple[RuntimeArray, RuntimeArray]:
     """Create a new land mask from Ocean & JCM geometry object."""
 
     from vercor.regridders.conservative import ConservativeRectilinearRegridder
@@ -655,7 +658,7 @@ def create_lnd_mask_from_ocn(
         atmosphere_grid,
     )
 
-    ocean_binary_mask = np.asarray(ocn_grid.binary_mask)
+    ocean_binary_mask = jnp.asarray(ocn_grid.binary_mask)
 
     (
         ocn_fmask_on_atm_grid,

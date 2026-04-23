@@ -318,13 +318,13 @@ class ConservativeRectilinearRemapper:
     def apply_scalar(self, field: Any) -> jax.Array:
         """Apply conservative remapping to a scalar field."""
 
+        field_array = jnp.asarray(field, dtype=jnp.float64)
         expected_shape = (self.n_src_lat, self.n_src_lon)
-        if np.shape(field) != expected_shape:
+        if field_array.shape != expected_shape:
             raise ValueError(
-                f"Shape mismatch: {np.shape(field)} vs grid {expected_shape}"
+                f"Shape mismatch: {field_array.shape} vs grid {expected_shape}"
             )
 
-        field_array = jnp.asarray(field, dtype=jnp.float64)
         if self._s_lat_flip:
             field_array = field_array[::-1, :]
 
@@ -363,16 +363,14 @@ class ConservativeRectilinearRemapper:
     def get_src_total_mass(self, field_on_src: Any) -> float:
         """Calculate total mass on source grid given field values."""
 
-        result = jnp.nansum(
-            jnp.asarray(field_on_src, dtype=jnp.float64) * self.get_src_areas()
-        )
+        field_array = jnp.asarray(field_on_src, dtype=jnp.float64)
+        result = jnp.nansum(field_array * self.get_src_areas())
         return float(result)
 
     def get_dst_total_mass(self, field_on_dst: Any) -> float:
         """Calculate total mass on destination grid given field values."""
 
         clean_areas = jnp.where(jnp.isinf(self.dst_areas), 0.0, self.dst_areas)
-        result = jnp.nansum(
-            jnp.asarray(field_on_dst, dtype=jnp.float64).reshape(-1) * clean_areas
-        )
+        field_array = jnp.asarray(field_on_dst, dtype=jnp.float64)
+        result = jnp.nansum(field_array.reshape(-1) * clean_areas)
         return float(result)

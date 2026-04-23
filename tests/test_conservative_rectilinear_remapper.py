@@ -109,6 +109,26 @@ def test_mass_conserved_between_source_and_destination() -> None:
     assert_allclose_compact(dst_mass, src_mass, rtol=1e-12, atol=1e-8)
 
 
+def test_mass_helpers_accept_jax_arrays() -> None:
+    remapper = _make_remapper(
+        src_lon_edges=np.array([0.0, 1.0, 2.0]),
+        src_lat_edges=np.array([0.0, 1.0, 2.0]),
+        dst_lon_edges=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        dst_lat_edges=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+        normalize="conservation",
+    )
+
+    src = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+    dst = remapper.apply_scalar(src)
+
+    assert_allclose_compact(
+        remapper.get_dst_total_mass(dst),
+        remapper.get_src_total_mass(src),
+        rtol=1e-12,
+        atol=1e-8,
+    )
+
+
 def test_apply_scalar_supports_jax_jit_linearity_and_gradients() -> None:
     remapper = _make_remapper(
         src_lon_edges=np.array([0.0, 1.0, 2.0]),

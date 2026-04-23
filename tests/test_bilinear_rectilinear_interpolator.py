@@ -1,6 +1,7 @@
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -9,10 +10,10 @@ from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpo
 
 
 def _scalar_interp(
-    lon_src: np.ndarray,
-    lat_src: np.ndarray,
-    lon_tgt: np.ndarray,
-    lat_tgt: np.ndarray,
+    lon_src: Any,
+    lat_src: Any,
+    lon_tgt: Any,
+    lat_tgt: Any,
     **kwargs: object,
 ) -> BilinearRectilinearInterpolator:
     return BilinearRectilinearInterpolator(
@@ -36,6 +37,20 @@ def test_init_rejects_non_monotonic_latitude() -> None:
     lat_src = np.array([0.0, 2.0, 1.0])
     with pytest.raises(ValueError, match="lat_src must be strictly monotonic"):
         _scalar_interp(lon_src, lat_src, np.array([0.5]), np.array([0.5]))
+
+
+def test_init_accepts_jax_arrays_and_tracks_source_orientation() -> None:
+    interp = _scalar_interp(
+        jnp.asarray([2.0, 1.0, 0.0]),
+        jnp.asarray([10.0, 0.0]),
+        jnp.asarray([0.5, 1.5]),
+        jnp.asarray([2.5]),
+        periodic_longitude=False,
+    )
+
+    assert interp._lon_flipped is True
+    assert interp.lat_descending is True
+    assert_array_equal_compact(interp.lon_src_deg, np.array([0.0, 1.0, 2.0]))
 
 
 def test_scalar_bilinear_exact_on_2x2_cell() -> None:

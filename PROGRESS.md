@@ -567,3 +567,56 @@
 ## Notes / Failed Approaches (Slice 5A)
 
 - No production redesign of mask-generation helpers was needed in this slice. Keeping those helpers NumPy-backed avoided broad churn in conservation/mask validation code while still removing the unnecessary runtime coercions from shared storage and scalar dispatch.
+
+## Sixth JAX Translation Slice 6A: JAX-First Rectilinear Regridding
+
+- Refactored the reusable rectilinear regridding core to remove the remaining NumPy-only validation and mask-plumbing paths while preserving public APIs and numerical behavior:
+  - `vercor/grid.py`
+    - replaced eager monotonicity validation with JAX-backed checks while keeping strict ascending-coordinate requirements and existing error text
+  - `vercor/regridders/base.py`
+    - replaced NumPy identical-grid detection with JAX-backed coordinate equality collapsed to a Python `bool`
+  - `vercor/interpolators/bilinear_rectilinear.py`
+    - removed NumPy from constructor monotonicity/orientation checks
+    - switched the default `fill_value` to a Python `NaN` literal instead of `np.nan`
+    - kept the existing JAX runtime interpolation/extrapolation path unchanged
+  - `vercor/interpolators/conservative_remap_rectilinear.py`
+    - cleaned up `apply_scalar()` shape validation and the source/destination mass helpers to use JAX-backed arrays end to end
+    - intentionally left the eager overlap/precompute assembly in `__init__` host-side for now
+  - `vercor/tools.py`
+    - moved ocean/land mask construction, land/ocean mask-sum checks, conservation checks, and land-mask creation to JAX-first internal array handling
+    - widened those helper signatures to accept `RuntimeArray` so NumPy and JAX callers remain type-clean
+- Extended tests around the translated regridding core:
+  - `tests/test_helpers_coverage.py`
+    - JAX-backed `RectilinearGrid` construction and mask preservation
+  - `tests/test_bilinear_rectilinear_interpolator.py`
+    - JAX-array constructor inputs and longitude/latitude orientation flags
+  - `tests/test_bilinear_rectilinear_regridder.py`
+    - identical-grid scalar short-circuit with JAX-backed coordinates and JAX field input
+  - `tests/test_conservative_rectilinear_regridder.py`
+    - identical-grid scalar short-circuit with JAX-backed coordinates and JAX field input
+  - `tests/test_conservative_rectilinear_remapper.py`
+    - mass-helper coverage with JAX-array inputs
+  - `tests/test_tools_assets_and_regridding.py`
+    - JAX-backed inputs/outputs for mask clipping, mask-sum validation, and `create_lnd_mask_from_ocn()`
+- `DEPENDENCIES.md` did not require changes for this slice because no new module-level dependency edge was introduced.
+
+## Validation (Slice 6A JAX-First Rectilinear Regridding, 2026-04-23)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_helpers_coverage.py tests/test_bilinear_rectilinear_interpolator.py tests/test_bilinear_rectilinear_regridder.py tests/test_conservative_rectilinear_remapper.py tests/test_conservative_rectilinear_regridder.py tests/test_tools_assets_and_regridding.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 6A)
+
+- A first pass kept NumPy-only type annotations on the regridding mask helpers after switching their internal logic to JAX arrays; `mypy` rejected the new JAX-backed call sites. Widening those helper signatures to `RuntimeArray` resolved the issue without changing runtime behavior.
+- Full conservative remapper overlap assembly is still intentionally deferred. The current slice only translated validation/runtime application and mask plumbing because the overlap preprocessing is static setup code rather than the differentiable hot path.

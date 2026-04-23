@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -55,6 +56,18 @@ def test_grid_and_rectilinear_grid_validations_and_reprs() -> None:
             longitude=np.asarray([0.0, 10.0, 5.0]),
             latitude=np.asarray([-10.0, 10.0]),
         )
+
+    jax_rectilinear = RectilinearGrid(
+        name="jax-rect",
+        longitude=jnp.asarray([0.0, 120.0, 240.0]),
+        latitude=jnp.asarray([-45.0, 45.0]),
+        binary_mask=jnp.asarray([[1, 1, 0], [1, 0, 1]]),
+    )
+    assert jax_rectilinear.shape == (2, 3)
+    assert_allclose_compact(
+        jax_rectilinear.binary_mask,
+        np.asarray([[1, 1, 0], [1, 0, 1]]),
+    )
 
 
 def test_rectilinear_grid_pytree_round_trip_preserves_arrays() -> None:

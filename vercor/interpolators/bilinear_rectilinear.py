@@ -4,7 +4,6 @@ from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax import Array, lax
 
 
@@ -50,6 +49,14 @@ def _great_circle_distance_rad(
     return 2.0 * jnp.arctan2(jnp.sqrt(a), jnp.sqrt(1.0 - a))
 
 
+def _all_positive(values: Array) -> bool:
+    return bool(jnp.all(values > 0.0))
+
+
+def _all_negative(values: Array) -> bool:
+    return bool(jnp.all(values < 0.0))
+
+
 @jax.tree_util.register_pytree_node_class
 class BilinearRectilinearInterpolator:
     """
@@ -77,7 +84,7 @@ class BilinearRectilinearInterpolator:
         extrapolation_mode: str | None = None,
         idw_k: int = 8,
         idw_eps: float = 1e-12,
-        fill_value: float = np.nan,
+        fill_value: float = float("nan"),
     ):
         self.periodic = bool(periodic_longitude)
         self.nan_renorm = bool(nan_renorm)
@@ -91,23 +98,23 @@ class BilinearRectilinearInterpolator:
         if lon_src_deg.ndim != 1 or lat_src_deg.ndim != 1:
             raise AssertionError("lon_src, lat_src must be 1-D")
 
-        lon_src_np = np.asarray(lon_src_deg)
-        lat_src_np = np.asarray(lat_src_deg)
-        lon_diff = np.diff(lon_src_np)
-        lat_diff = np.diff(lat_src_np)
+        lon_diff = jnp.diff(lon_src_deg)
+        lat_diff = jnp.diff(lat_src_deg)
 
-        if not (np.all(lon_diff > 0.0) or np.all(lon_diff < 0.0)):
+        lon_ascending = _all_positive(lon_diff)
+        lon_descending = _all_negative(lon_diff)
+        if not (lon_ascending or lon_descending):
             raise ValueError(
                 "lon_src must be strictly monotonic (ascending or descending)."
             )
-        if np.all(lon_diff < 0.0):
+        if lon_descending:
             lon_src_deg = jnp.flip(lon_src_deg)
             self._lon_flipped = True
         else:
             self._lon_flipped = False
 
-        self.lat_ascending = bool(np.all(lat_diff > 0.0))
-        self.lat_descending = bool(np.all(lat_diff < 0.0))
+        self.lat_ascending = _all_positive(lat_diff)
+        self.lat_descending = _all_negative(lat_diff)
         if not (self.lat_ascending or self.lat_descending):
             raise ValueError(
                 "lat_src must be strictly monotonic (ascending or descending)."

@@ -1,3 +1,5 @@
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -15,10 +17,10 @@ from vercor.regridders.conservative import (
 
 def _grid(
     name: str,
-    lon: np.ndarray,
-    lat: np.ndarray,
-    lon_edges: np.ndarray | None = None,
-    lat_edges: np.ndarray | None = None,
+    lon: Any,
+    lat: Any,
+    lon_edges: Any | None = None,
+    lat_edges: Any | None = None,
 ) -> RectilinearGrid:
     return RectilinearGrid(
         name=name,
@@ -125,6 +127,20 @@ def test_regridder_identical_grid_scalar_short_circuit_returns_input_object() ->
 
     regridder = ConservativeRectilinearRegridder(src, dst)
     src_field = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+    out = regridder(src_field)
+
+    assert out is src_field
+
+
+def test_regridder_identical_grid_scalar_short_circuit_with_jax_backed_coords() -> None:
+    lon = jnp.asarray([0.5, 1.5])
+    lat = jnp.asarray([0.5, 1.5])
+    src = _grid("src", lon, lat)
+    dst = _grid("dst", lon, lat)
+
+    regridder = ConservativeRectilinearRegridder(src, dst)
+    src_field = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
 
     out = regridder(src_field)
 

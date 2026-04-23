@@ -1,6 +1,6 @@
 from typing import Any, Callable, Tuple, Union, cast
 
-import numpy as np
+import jax.numpy as jnp
 
 from vercor.exceptions import RegridderError
 from vercor.grid import RectilinearGrid
@@ -29,9 +29,13 @@ class Regridder:
 
         shape_condition = source.shape == destination.shape
 
-        coord_condition = np.array_equal(
-            source.latitude, destination.latitude
-        ) and np.array_equal(source.longitude, destination.longitude)
+        if not shape_condition:
+            return False
+
+        coord_condition = bool(
+            jnp.all(jnp.equal(source.latitude, destination.latitude))
+            & jnp.all(jnp.equal(source.longitude, destination.longitude))
+        )
 
         return shape_condition and coord_condition
 
