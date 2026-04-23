@@ -1,6 +1,9 @@
-from typing import Optional
-import numpy as np
-from numpy.typing import NDArray
+from __future__ import annotations
+
+from typing import Any, cast
+
+from jax import Array, lax
+import jax.numpy as jnp
 
 from vercor.grid import RectilinearGrid
 
@@ -13,7 +16,7 @@ def make_rectilinear_grid(
     longitude_end: float,
     latitude_start: float,
     latitude_end: float,
-    mask: Optional[NDArray] = None,
+    mask: Any | None = None,
 ) -> RectilinearGrid:
     """
     Helper to build rectilinear grid with equally spaced coordinates.
@@ -32,15 +35,15 @@ def make_rectilinear_grid(
         RectilinearGrid instance
     """
 
-    longitude = np.linspace(longitude_start, longitude_end, nlon, dtype=float)
-    latitude = np.linspace(latitude_start, latitude_end, nlat, dtype=float)
+    longitude = jnp.linspace(longitude_start, longitude_end, nlon, dtype=float)
+    latitude = jnp.linspace(latitude_start, latitude_end, nlat, dtype=float)
 
     return RectilinearGrid(
         name=name, longitude=longitude, latitude=latitude, binary_mask=mask
     )
 
 
-def centers_to_edges(centers: NDArray, grid_type: str) -> NDArray:
+def centers_to_edges(centers: Any, grid_type: str) -> Any:
     """
     Convert grid centers to grid boundaries (edges).
     Smartly handles clamping:
@@ -55,11 +58,11 @@ def centers_to_edges(centers: NDArray, grid_type: str) -> NDArray:
     Returns:
         1D array of grid cell edges
     """
-    centers = np.asarray(centers, dtype=np.float64)
+    centers = jnp.asarray(centers, dtype=jnp.float64)
 
-    if len(centers) < 2:
+    if centers.size < 2:
         half_width = 0.5
-        return np.array([centers[0] - half_width, centers[0] + half_width])
+        return jnp.stack((centers[0] - half_width, centers[0] + half_width))
 
     inner_edges = 0.5 * (centers[:-1] + centers[1:])
     d_start = inner_edges[0] - centers[0]
@@ -68,28 +71,37 @@ def centers_to_edges(centers: NDArray, grid_type: str) -> NDArray:
     edge_start = centers[0] - d_start
     edge_end = centers[-1] + d_end
 
-    edges: NDArray = np.concatenate(([edge_start], inner_edges, [edge_end]))
+    edges = jnp.concatenate(
+        (jnp.asarray([edge_start]), inner_edges, jnp.asarray([edge_end]))
+    )
 
     if grid_type == "lat":
-        # Latitude must strictly be within physical poles
-        edges = np.clip(edges, -90.0, 90.0)
+        edges = jnp.clip(edges, -90.0, 90.0)
     elif grid_type == "lon":
-        # Check total span
         span = edges[-1] - edges[0]
 
-        # Only clamp if the grid defines REDUNDANT coverage (e.g. 0 to 360 centers -> 370 span)
-        # If span is ~360, it's a periodic grid; we keep the 'overhanging' edges
-        # (e.g. -182.5) so they can wrap around to 177.5 in the overlap check.
-        if span > 360.0 + 1e-10:
-            if np.min(edges) < -5.0:
-                edges = np.clip(edges, -180.0, 180.0)
-            else:
-                edges = np.clip(edges, 0.0, 360.0)
+        def clamp_lon(overhanging_edges: Array) -> Array:
+            return cast(
+                Array,
+                lax.cond(
+                    jnp.min(overhanging_edges) < -5.0,
+                    lambda value: jnp.clip(value, -180.0, 180.0),
+                    lambda value: jnp.clip(value, 0.0, 360.0),
+                    overhanging_edges,
+                ),
+            )
 
-    return edges
+        edges = lax.cond(
+            span > 360.0 + 1e-10,
+            clamp_lon,
+            lambda value: value,
+            edges,
+        )
+
+    return cast(Any, edges)
 
 
-def compute_land_mask(ocean_fractional_mask: NDArray) -> NDArray:
+def compute_land_mask(ocean_fractional_mask: Any) -> Any:
     """Compute land binary mask from ocean fractional mask with thresholding.
     The ocean_fractional_mask array is conservatively remapped from ocean grid to atmospheric/land grid.
 
@@ -103,13 +115,11 @@ def compute_land_mask(ocean_fractional_mask: NDArray) -> NDArray:
         Adapted from CESM CPL7 source code
     """
 
-    FMINVAL = 0.001
-    FMAXVAL = 1.0
+    fminval = 0.001
+    fmaxval = 1.0
 
-    land_binary_mask = 1.0 - ocean_fractional_mask
-    land_binary_mask = np.where(land_binary_mask > FMAXVAL, 1.0, land_binary_mask)
-    land_binary_mask = np.where(land_binary_mask < FMINVAL, 0.0, land_binary_mask)
+    land_binary_mask = 1.0 - jnp.asarray(ocean_fractional_mask)
+    land_binary_mask = jnp.where(land_binary_mask > fmaxval, 1.0, land_binary_mask)
+    land_binary_mask = jnp.where(land_binary_mask < fminval, 0.0, land_binary_mask)
 
-    land_binary_mask = np.where(land_binary_mask != 0.0, 1, 0)
-
-    return land_binary_mask
+    return cast(Any, jnp.where(land_binary_mask != 0.0, 1, 0))

@@ -1,19 +1,25 @@
+from __future__ import annotations
+
 import abc
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
 
 
-@dataclass
+@dataclass(frozen=True)
 class Grid(abc.ABC):
     name: str
-    binary_mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
+    binary_mask: Any | None = None  # values of 1 for active, 0 for inactive
 
     def __post_init__(self) -> None:
-        if self.binary_mask is not None and self.binary_mask.ndim != 2:
-            raise ValueError("Mask must be a 2D array.")
+        if self.binary_mask is not None:
+            mask = jnp.asarray(self.binary_mask)
+            if mask.ndim != 2:
+                raise ValueError("Mask must be a 2D array.")
+            object.__setattr__(self, "binary_mask", mask)
 
     @property
     @abc.abstractmethod
@@ -32,32 +38,78 @@ class Grid(abc.ABC):
         return f"{self.__class__.__name__}(name={self.name}, shape={self.shape})"
 
 
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True, init=False, repr=False, kw_only=True)
 class RectilinearGrid(Grid):
+    longitude: Any
+    latitude: Any
+    longitude_edges: Any | None
+    latitude_edges: Any | None
+
     def __init__(
         self,
         name: str,
-        longitude: NDArray,
-        latitude: NDArray,
-        longitude_edges: Optional[NDArray] = None,
-        latitude_edges: Optional[NDArray] = None,
-        binary_mask: Optional[NDArray] = None,
+        longitude: Any,
+        latitude: Any,
+        longitude_edges: Any | None = None,
+        latitude_edges: Any | None = None,
+        binary_mask: Any | None = None,
     ) -> None:
-        super().__init__(name=name, binary_mask=binary_mask)
-        self.longitude = longitude
-        self.latitude = latitude
-        self.longitude_edges = longitude_edges
-        self.latitude_edges = latitude_edges
+        longitude_array = jnp.asarray(longitude)
+        latitude_array = jnp.asarray(latitude)
+        longitude_edges_array = (
+            None if longitude_edges is None else jnp.asarray(longitude_edges)
+        )
+        latitude_edges_array = (
+            None if latitude_edges is None else jnp.asarray(latitude_edges)
+        )
+        binary_mask_array = None if binary_mask is None else jnp.asarray(binary_mask)
 
-        if self.longitude.ndim != 1 or self.latitude.ndim != 1:
+        if longitude_array.ndim != 1 or latitude_array.ndim != 1:
             raise ValueError(
                 "RectilinearGrid expects both longitude and latitude coordinates to be 1D arrays."
             )
+
+        longitude_np = np.asarray(longitude_array)
+        latitude_np = np.asarray(latitude_array)
         if not (
-            np.all(np.diff(self.longitude) > 0) and np.all(np.diff(self.latitude) > 0)
+            np.all(np.diff(longitude_np) > 0.0) and np.all(np.diff(latitude_np) > 0.0)
         ):
-            # Monotonic increasing required for built-in regridders.
             raise ValueError("longitude and latitude must be strictly monotonic.")
+
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "binary_mask", binary_mask_array)
+        Grid.__post_init__(self)
+        object.__setattr__(self, "longitude", longitude_array)
+        object.__setattr__(self, "latitude", latitude_array)
+        object.__setattr__(self, "longitude_edges", longitude_edges_array)
+        object.__setattr__(self, "latitude_edges", latitude_edges_array)
 
     @property
     def shape(self) -> tuple[int, int]:
-        return (self.latitude.size, self.longitude.size)  # (nlat, nlon), row-major
+        return (int(self.latitude.size), int(self.longitude.size))
+
+    def tree_flatten(self) -> tuple[tuple[Any, ...], tuple[str]]:
+        children = (
+            self.longitude,
+            self.latitude,
+            self.longitude_edges,
+            self.latitude_edges,
+            self.binary_mask,
+        )
+        return children, (self.name,)
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: tuple[str], children: tuple[Any, ...]
+    ) -> "RectilinearGrid":
+        name = aux_data[0]
+        longitude, latitude, longitude_edges, latitude_edges, binary_mask = children
+        obj = object.__new__(cls)
+        object.__setattr__(obj, "name", name)
+        object.__setattr__(obj, "binary_mask", binary_mask)
+        object.__setattr__(obj, "longitude", longitude)
+        object.__setattr__(obj, "latitude", latitude)
+        object.__setattr__(obj, "longitude_edges", longitude_edges)
+        object.__setattr__(obj, "latitude_edges", latitude_edges)
+        return obj

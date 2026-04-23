@@ -1,3 +1,6 @@
+from typing import Any
+
+import jax
 import numpy as np
 import pytest
 
@@ -319,3 +322,71 @@ def test_vector_extrapolation_nearest_for_invalid_bilinear_points() -> None:
 
     assert_array_equal_compact(u_t, np.array([[2.0]]))
     assert_array_equal_compact(v_t, np.array([[-3.0]]))
+
+
+def test_interpolator_pytree_round_trip_preserves_jittable_state() -> None:
+    interp = _scalar_interp(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 1.0]),
+        np.array([0.25, 0.75]),
+        np.array([0.25, 0.75]),
+        periodic_longitude=False,
+        src_mask=np.array([[True, False], [True, True]]),
+        tgt_mask=np.array([[True, False], [False, True]]),
+        extrapolation_mode="nearest",
+    )
+
+    leaves, treedef = jax.tree_util.tree_flatten(interp)
+    restored = jax.tree_util.tree_unflatten(treedef, leaves)
+
+    src = np.array([[1.0, 2.0], [3.0, 4.0]])
+    assert isinstance(restored, BilinearRectilinearInterpolator)
+    assert_allclose_compact(restored.apply_scalar(src), interp.apply_scalar(src))
+    assert_array_equal_compact(restored.i0, interp.i0)
+    assert_array_equal_compact(restored.i1, interp.i1)
+
+
+def test_scalar_apply_supports_jax_jit() -> None:
+    interp = _scalar_interp(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 1.0]),
+        np.array([0.25]),
+        np.array([0.75]),
+        periodic_longitude=False,
+    )
+    src = np.array([[5.0, 7.0], [8.0, 10.0]])
+
+    out = jax.jit(interp.apply_scalar)(src)
+
+    assert_allclose_compact(out, np.array([[7.75]]), rtol=0.0, atol=1e-14)
+
+
+def test_vector_apply_supports_jax_jit() -> None:
+    lon_src = np.array([0.0, 90.0])
+    lat_src = np.array([-45.0, 45.0])
+    interp = _scalar_interp(lon_src, lat_src, lon_src, lat_src, periodic_longitude=True)
+
+    u_src = np.full((2, 2), 2.0)
+    v_src = np.full((2, 2), -1.0)
+
+    u_t, v_t = jax.jit(interp.apply_vector)(u_src, v_src)
+
+    assert_allclose_compact(u_t, u_src, rtol=0.0, atol=1e-14)
+    assert_allclose_compact(v_t, v_src, rtol=0.0, atol=1e-14)
+
+
+def test_scalar_interpolation_supports_gradients_wrt_source_field() -> None:
+    interp = _scalar_interp(
+        np.array([0.0, 1.0]),
+        np.array([0.0, 1.0]),
+        np.array([0.25]),
+        np.array([0.75]),
+        periodic_longitude=False,
+    )
+
+    def interpolated_value(src: jax.Array) -> Any:
+        return interp.apply_scalar(src)[0, 0]
+
+    grad = jax.grad(interpolated_value)(np.array([[5.0, 7.0], [8.0, 10.0]]))
+
+    assert_allclose_compact(grad, np.array([[0.1875, 0.0625], [0.5625, 0.1875]]))

@@ -5,9 +5,9 @@
 5. `vercor/components/external/jax_gcm.py` - JCM adapter boundary that stores translated kernel outputs
 6. `vercor/components/external/veros_gcm.py` - Veros adapter boundary that converts translated flux outputs back to NumPy for Veros state updates
 7. `vercor/components/external/camulator.py` - CAMulator adapter boundary that converts translated thermodynamic outputs back to NumPy / Torch-facing storage
-8. Pending next slice: `vercor/grid.py`
-9. Pending next slice: `vercor/regridders/helpers.py`
-10. Pending next slice: `vercor/interpolators/bilinear_rectilinear.py`
+8. `vercor/grid.py` - JAX-friendly `RectilinearGrid` holder with eager validation and PyTree registration
+9. `vercor/regridders/helpers.py` - JAX-native rectilinear helper kernels built on (8)
+10. `vercor/interpolators/bilinear_rectilinear.py` - JAX-native bilinear scalar/vector interpolation and extrapolation built on (8, 9)
 11. Pending next slice: `vercor/interpolators/conservative_remap_rectilinear.py`
 12. Pending third slice: `vercor/components/slab/atmosphere.py`
 13. Pending third slice: `vercor/components/slab/ocean.py`

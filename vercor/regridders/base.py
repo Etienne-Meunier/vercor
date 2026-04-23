@@ -1,7 +1,6 @@
-from typing import Any, Callable, Tuple, Union
+from typing import Any, Callable, Tuple, Union, cast
 
 import numpy as np
-from numpy.typing import NDArray
 
 from vercor.exceptions import RegridderError
 from vercor.grid import RectilinearGrid
@@ -47,22 +46,22 @@ class Regridder:
         if len(args) not in (1, 2):
             raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
 
-    def _apply_scalar(self, args: NDArray) -> NDArray:
+    def _apply_scalar(self, args: Any) -> Any:
         """A wrapper to call scalar interpolation."""
         assert self.interpolator is not None
-        result: NDArray = self.interpolator.apply_scalar(args)
+        result = self.interpolator.apply_scalar(args)
         return result
 
-    def _apply_vector(self, v0: NDArray, v1: NDArray) -> Tuple[NDArray, NDArray]:
+    def _apply_vector(self, v0: Any, v1: Any) -> tuple[Any, Any]:
         """A wrapper to call vector interpolation."""
         assert self.interpolator is not None
-        result: Tuple[NDArray, NDArray] = self.interpolator.apply_vector(v0, v1)
-        return result
+        result = self.interpolator.apply_vector(v0, v1)
+        return cast(tuple[Any, Any], result)
 
     def __call__(
         self,
-        *args: NDArray,
-    ) -> Union[NDArray, Tuple[NDArray, NDArray]]:
+        *args: Any,
+    ) -> Any:
         """
         Supported calls:
           - apply(scalar_src) -> scalar interpolation
@@ -76,7 +75,7 @@ class Regridder:
         if self.has_identical_grids:
             return args if len(args) == 2 else args[0]
 
-        handlers: dict[int, Callable[..., NDArray | Tuple[NDArray, NDArray]]] = {
+        handlers: dict[int, Callable[..., Any]] = {
             1: self._apply_scalar,
             2: self._apply_vector,
         }

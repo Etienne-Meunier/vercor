@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -73,7 +74,20 @@ def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> Non
     src = np.arange(9.0).reshape(3, 3)
     out = regridder(src)
 
-    assert isinstance(out, np.ndarray)
+    assert out.shape == dst_grid.shape
+
+
+def test_regridder_scalar_accepts_jax_array_input() -> None:
+    src_grid = _make_grid("src", np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
+    dst_grid = _make_grid("dst", np.array([0.0, 2.0]), np.array([0.0, 2.0]))
+
+    regridder = BilinearRectilinearRegridder(
+        src_grid, dst_grid, periodic_longitude=False
+    )
+
+    src = jnp.arange(9.0).reshape(3, 3)
+    out = regridder(src)
+
     assert out.shape == dst_grid.shape
 
 

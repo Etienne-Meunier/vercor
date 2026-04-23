@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+import jax
 import numpy as np
 import pytest
 
@@ -13,7 +14,7 @@ from vercor.regridders.helpers import centers_to_edges, compute_land_mask
 from vercor.run_sequence import RunSequence
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExampleGrid(Grid):
     longitude_size: int = 3
     latitude_size: int = 2
@@ -56,6 +57,28 @@ def test_grid_and_rectilinear_grid_validations_and_reprs() -> None:
         )
 
 
+def test_rectilinear_grid_pytree_round_trip_preserves_arrays() -> None:
+    grid = RectilinearGrid(
+        name="rect",
+        longitude=np.asarray([0.0, 120.0, 240.0]),
+        latitude=np.asarray([-45.0, 45.0]),
+        longitude_edges=np.asarray([-60.0, 60.0, 180.0, 300.0]),
+        latitude_edges=np.asarray([-90.0, 0.0, 90.0]),
+        binary_mask=np.asarray([[1, 0, 1], [1, 1, 0]]),
+    )
+
+    leaves, treedef = jax.tree_util.tree_flatten(grid)
+    restored = jax.tree_util.tree_unflatten(treedef, leaves)
+
+    assert isinstance(restored, RectilinearGrid)
+    assert restored.name == "rect"
+    assert_allclose_compact(restored.longitude, grid.longitude)
+    assert_allclose_compact(restored.latitude, grid.latitude)
+    assert_allclose_compact(restored.longitude_edges, grid.longitude_edges)
+    assert_allclose_compact(restored.latitude_edges, grid.latitude_edges)
+    assert_allclose_compact(restored.binary_mask, grid.binary_mask)
+
+
 def test_centers_to_edges_and_compute_land_mask_edge_cases() -> None:
     assert_allclose_compact(
         centers_to_edges(np.asarray([7.0]), "lon"), np.asarray([6.5, 7.5])
@@ -78,6 +101,17 @@ def test_centers_to_edges_and_compute_land_mask_edge_cases() -> None:
     assert clamped_edges[-1] == 180.0
 
     land_mask = compute_land_mask(np.asarray([[-0.5, 0.9995], [0.7, 1.0]]))
+    assert_allclose_compact(land_mask, np.asarray([[1, 0], [1, 0]]))
+
+
+def test_helper_kernels_support_jax_jit() -> None:
+    jitted_edges = jax.jit(centers_to_edges, static_argnames=("grid_type",))
+    jitted_mask = jax.jit(compute_land_mask)
+
+    lon_edges = jitted_edges(np.asarray([0.0, 90.0, 180.0, 270.0]), "lon")
+    land_mask = jitted_mask(np.asarray([[-0.5, 0.9995], [0.7, 1.0]]))
+
+    assert_allclose_compact(lon_edges, np.asarray([-45.0, 45.0, 135.0, 225.0, 315.0]))
     assert_allclose_compact(land_mask, np.asarray([[1, 0], [1, 0]]))
 
 

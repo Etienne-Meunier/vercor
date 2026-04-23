@@ -323,3 +323,58 @@
   - `vercor/components/external/camulator.py`
   - `vercor/components/external/camulator_state.py`
   - `vercor/components/external/windpp.py`
+
+## Second JAX Translation Slice 2A: Grid and Bilinear Regridding
+
+- Completed the bilinear-first second translation slice without changing the public construction patterns used by components, examples, or tests.
+- Translated `vercor/grid.py` to JAX-friendly grid holders:
+  - `RectilinearGrid` now stores JAX arrays internally
+  - eager validation for mask dimensionality and strict coordinate monotonicity is preserved
+  - the legacy compact `__repr__` / `__str__` behavior is preserved
+  - `RectilinearGrid` is now registered as a JAX PyTree
+- Translated `vercor/regridders/helpers.py` to JAX-native helper kernels:
+  - `make_rectilinear_grid()`
+  - `centers_to_edges()`
+  - `compute_land_mask()`
+  - longitude clamping vs periodic-overhang behavior is preserved under `jax.jit`
+- Rewrote `vercor/interpolators/bilinear_rectilinear.py` as a JAX-native interpolator:
+  - all geometry helpers now use `jax.numpy`
+  - scalar and vector apply paths are `jax.jit`-safe
+  - extrapolation now uses JAX array operations instead of Python loops
+  - periodic longitude, descending latitude, NaN renormalization, nearest / IDW fallback, and vector rotation behavior remain covered by the existing tests
+  - the interpolator is registered as a JAX PyTree
+- Kept the public regridder API stable:
+  - `vercor/regridders/base.py` still dispatches scalar vs vector calls the same way
+  - `vercor/regridders/bilinear.py` required no behavioral change
+  - the conservative SciPy-backed remapper remains pending for the next slice
+
+## Tests Added / Updated (Slice 2A)
+
+- Extended `tests/test_helpers_coverage.py` with:
+  - `RectilinearGrid` PyTree round-trip coverage
+  - `jax.jit` coverage for `centers_to_edges()` and `compute_land_mask()`
+- Extended `tests/test_bilinear_rectilinear_interpolator.py` with:
+  - interpolator PyTree round-trip coverage
+  - `jax.jit` coverage for scalar and vector interpolation
+  - a gradient smoke test for scalar interpolation with respect to source field values
+- Extended `tests/test_bilinear_rectilinear_regridder.py` so the bilinear regridder is exercised with JAX array input
+
+## Validation (Slice 2A, 2026-04-23)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_helpers_coverage.py tests/test_bilinear_rectilinear_interpolator.py tests/test_bilinear_rectilinear_regridder.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Failed Approaches / Notes (Slice 2A)
+
+- Narrowing public signatures all the way to `jax.Array` broke `mypy` across the existing mixed NumPy/JAX call sites. The final version keeps the public interfaces NumPy-compatible while normalizing to JAX arrays internally.
+- The conservative remapper rewrite remains intentionally deferred because its SciPy sparse representation needs a separate JAX-native design pass.
