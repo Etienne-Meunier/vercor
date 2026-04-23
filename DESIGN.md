@@ -12,7 +12,7 @@ A fully differentiable coupler in JAX for different Earth system models written 
   coupled models parameters, via JAX reverse-mode AD.
 - **No global arrays or mutable state**: all data is passed explicitly via function arguments and return values.
 - **Accelerated**: pure functions are JIT-compiled with `jax.jit` decorator, 
-single device parallelism via `jax.vmap` where applicable, use jax.lax.scan for iterative methods/solvers, 
+single device parallelism via `jax.vmap` where applicable, use `jax.lax.scan` for iterative methods/solvers, 
 use `jax.lax.fori_loop`, `jax.numpy.where` and  `jax.lax.cond` etc. to avoid Python control flow.
 - **Modularity**: clean, modular code structure for easy maintenance and extension.
 - **Documentation**: comprehensive docstrings and usage examples.
