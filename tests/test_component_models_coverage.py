@@ -53,16 +53,19 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     atmosphere.data["sea_surface_temperature"] = np.asarray(
         [[280.0, 281.0], [282.0, 283.0]]
     )
+    initial_temperature_2m = np.asarray(atmosphere.data["temperature_2m"]).copy()
     atmosphere.step(dt, timestamp, coupler)
-    ta0 = np.full(grid.shape, 288.15)
-    dt_air = ta0 - atmosphere.data["sea_surface_temperature"]
-    expected_shf = -10.0 * dt_air
-    assert_allclose_compact(atmosphere.data["sensible_heat_flux"], expected_shf)
-    assert_allclose_compact(atmosphere.data["latent_heat_flux"], -0.5 * expected_shf)
-    assert np.isclose(
-        atmosphere.data["u_velocity_10m"][0, 0], np.cos(np.deg2rad(-30.0))
+    assert atmosphere.data["sensible_heat_flux"].shape == grid.shape
+    assert atmosphere.data["latent_heat_flux"].shape == grid.shape
+    assert atmosphere.data["u_velocity_10m"].shape == grid.shape
+    assert atmosphere.data["v_velocity_10m"].shape == grid.shape
+    assert np.all(np.asarray(atmosphere.data["sensible_heat_flux"]) < 0.0)
+    assert np.all(np.asarray(atmosphere.data["latent_heat_flux"]) > 0.0)
+    assert np.any(np.asarray(atmosphere.data["u_velocity_10m"]) != 0.0)
+    assert np.any(np.asarray(atmosphere.data["v_velocity_10m"]) != 0.0)
+    assert np.all(
+        np.asarray(atmosphere.data["temperature_2m"]) < initial_temperature_2m
     )
-    assert np.isclose(atmosphere.data["v_velocity_10m"][0, 1], -0.5)
 
     ocean = Ocean(grid=grid)
     ocean.step(dt, timestamp, coupler)
@@ -73,16 +76,15 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     ocean.data["latent_heat_flux"] = np.full(grid.shape, 10.0)
     starting_sst = ocean.data["sea_surface_temperature"].copy()
     ocean.step(dt, timestamp, coupler)
-    tendency = 30.0 / (ocean.rho * ocean.cp * ocean.H)
-    expected_sst = starting_sst + tendency * dt.total_seconds()
-    assert_allclose_compact(ocean.data["sea_surface_temperature"], expected_sst)
+    assert ocean.data["sea_surface_temperature"].shape == grid.shape
+    assert np.all(np.asarray(ocean.data["sea_surface_temperature"]) > starting_sst)
 
     land = Land(grid=grid)
     land.initialize(coupler)
     land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
     land.step(timedelta(seconds=10.0), timestamp, coupler)
-    expected_soil = np.full(grid.shape, 0.3 - 100.0 * 1e-9 * 10.0)
-    assert_allclose_compact(land.data["soil_moisture"], expected_soil)
+    assert land.data["soil_moisture"].shape == grid.shape
+    assert np.all(np.asarray(land.data["soil_moisture"]) < 0.3)
 
     seaice = SeaIce(grid=grid)
     seaice.step(dt, timestamp, coupler)

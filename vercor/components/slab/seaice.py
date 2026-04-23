@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
+import jax
+import jax.numpy as jnp
 
 from vercor.clock import CustomDateTime
 from vercor.components import Component
@@ -9,6 +10,16 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+@jax.jit
+def _diagnose_ice_fraction(sea_surface_temperature: object) -> jax.Array:
+    sea_surface_temperature_array = jnp.asarray(
+        sea_surface_temperature, dtype=jnp.float64
+    )
+    freezing_temperature = 273.15 - 1.8
+    x = (freezing_temperature - sea_surface_temperature_array) / 2.0
+    return 1.0 / (1.0 + jnp.exp(-x))
 
 
 class SeaIce(Component):
@@ -21,7 +32,9 @@ class SeaIce(Component):
         super().__init__(name, grid)
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.data["ice_fraction"] = np.zeros(self.grid.shape)
+        self.data["ice_fraction"] = cast(
+            Any, jnp.zeros(self.grid.shape, dtype=jnp.float64)
+        )
 
     def step(
         self,
@@ -33,9 +46,4 @@ class SeaIce(Component):
         if sst is None:
             return
 
-        Tfreeze = 273.15 - 1.8
-        # Smooth step: more ice when colder than freezing
-        x = (Tfreeze - sst) / 2.0
-        ice = 1.0 / (1.0 + np.exp(-x))
-
-        self.data["ice_fraction"] = ice
+        self.data["ice_fraction"] = cast(Any, _diagnose_ice_fraction(sst))

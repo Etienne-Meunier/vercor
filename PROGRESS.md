@@ -413,3 +413,45 @@
   - passed
 - `conda run -n scipy pytest tests/ -q`
   - passed
+
+## Third JAX Translation Slice 3A: Slab Pure Kernels
+
+- Translated the slab component compute paths to JAX while keeping the current component wrapper API unchanged:
+  - `vercor/components/slab/atmosphere.py`
+    - extracted pure JAX helpers for default SST, bulk-flux update, and 10 m wind construction
+    - `initialize()` now seeds fields with `jnp.full` / `jnp.zeros`
+    - `step()` now computes through JAX kernels and writes the results back to `self.data`
+  - `vercor/components/slab/ocean.py`
+    - extracted a pure JAX SST update kernel from sensible + latent heat fluxes, restoring, and `dt_seconds`
+    - `initialize()` now seeds SST with `jnp.full`
+  - `vercor/components/slab/land.py`
+    - extracted a pure JAX soil-moisture update kernel using `jnp.clip`
+    - `initialize()` now seeds soil moisture and land temperature with `jnp.full`
+  - `vercor/components/slab/seaice.py`
+    - extracted a pure JAX logistic ice-fraction diagnostic using `jnp.exp`
+    - `initialize()` now seeds ice fraction with `jnp.zeros`
+- Added dedicated slab-kernel tests in `tests/test_slab_kernels.py`:
+  - `jax.jit` coverage for every new pure kernel
+  - gradient smoke tests for atmosphere, ocean, land, and sea-ice kernels
+  - edge cases for default SST, clipping, and cold-versus-warm sea-ice response
+- Trimmed the slab portion of `tests/test_component_models_coverage.py` so it remains focused on wrapper-level initialization and dispatch behavior rather than duplicating all kernel math checks.
+
+## Validation (Slice 3A Slab Kernels, 2026-04-23)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_slab_kernels.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_component_models_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_slab_kernels.py tests/test_component_models_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed

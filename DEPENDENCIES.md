@@ -10,7 +10,7 @@
 10. `vercor/interpolators/bilinear_rectilinear.py` - JAX-native bilinear scalar/vector interpolation and extrapolation built on (8, 9)
 11. `vercor/interpolators/conservative_remap_rectilinear.py` - JAX-native conservative scalar remapping runtime with eager overlap preprocessing built on (8, 9)
 12. `vercor/regridders/conservative.py` - conservative regridder wrapper over (11)
-13. Pending third slice: `vercor/components/slab/atmosphere.py`
-14. Pending third slice: `vercor/components/slab/ocean.py`
-15. Pending third slice: `vercor/components/slab/land.py`
-16. Pending third slice: `vercor/components/slab/seaice.py`
+13. `vercor/components/slab/atmosphere.py` - slab atmosphere wrapper over pure JAX bulk-flux, default-SST, and wind kernels built on (8)
+14. `vercor/components/slab/ocean.py` - slab ocean wrapper over pure JAX SST tendency kernel built on (8)
+15. `vercor/components/slab/land.py` - slab land wrapper over pure JAX soil-moisture update kernel built on (8)
+16. `vercor/components/slab/seaice.py` - slab sea-ice wrapper over pure JAX ice-fraction diagnostic kernel built on (8)

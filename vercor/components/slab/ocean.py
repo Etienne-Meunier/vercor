@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-import numpy as np
+import jax
+import jax.numpy as jnp
 
 from vercor.clock import CustomDateTime
 from vercor.components import Component
@@ -9,6 +10,33 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+_REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
+
+
+@jax.jit
+def _advance_sea_surface_temperature(
+    sea_surface_temperature: object,
+    sensible_heat_flux: object,
+    latent_heat_flux: object,
+    dt_seconds: float,
+    rho: float,
+    cp: float,
+    mixed_layer_depth: float,
+    lambda_relax: float,
+    reference_temperature: float,
+) -> jax.Array:
+    sea_surface_temperature_array = jnp.asarray(
+        sea_surface_temperature, dtype=jnp.float64
+    )
+    sensible_heat_flux_array = jnp.asarray(sensible_heat_flux, dtype=jnp.float64)
+    latent_heat_flux_array = jnp.asarray(latent_heat_flux, dtype=jnp.float64)
+    qnet = sensible_heat_flux_array + latent_heat_flux_array
+    tendency = qnet / (rho * cp * mixed_layer_depth) + lambda_relax * (
+        sea_surface_temperature_array - reference_temperature
+    )
+    return sea_surface_temperature_array + tendency * dt_seconds
 
 
 class Ocean(Component):
@@ -30,7 +58,14 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, coupler: "Coupler") -> None:
-        self.data["sea_surface_temperature"] = 273.15 + 15.0 * np.ones(self.grid.shape)
+        self.data["sea_surface_temperature"] = cast(
+            Any,
+            jnp.full(
+                self.grid.shape,
+                _REFERENCE_SEA_SURFACE_TEMPERATURE,
+                dtype=jnp.float64,
+            ),
+        )
 
     def step(
         self,
@@ -42,13 +77,31 @@ class Ocean(Component):
         if sst is None:
             return
 
+        sst_array = jnp.asarray(sst, dtype=jnp.float64)
         SHF = self.data.get("sensible_heat_flux", None)
         LHF = self.data.get("latent_heat_flux", None)
-        Qnet = np.zeros_like(sst)
-        if SHF is not None:
-            Qnet += SHF
-        if LHF is not None:
-            Qnet += LHF
-        T0 = 273.15 + 15.0
-        dTdt = Qnet / (self.rho * self.cp * self.H) + self.lambda_relax * (sst - T0)
-        self.data["sea_surface_temperature"] = sst + dTdt * dt.total_seconds()
+        sensible_heat_flux = (
+            jnp.zeros_like(sst_array)
+            if SHF is None
+            else jnp.asarray(SHF, dtype=jnp.float64)
+        )
+        latent_heat_flux = (
+            jnp.zeros_like(sst_array)
+            if LHF is None
+            else jnp.asarray(LHF, dtype=jnp.float64)
+        )
+
+        self.data["sea_surface_temperature"] = cast(
+            Any,
+            _advance_sea_surface_temperature(
+                sst_array,
+                sensible_heat_flux,
+                latent_heat_flux,
+                float(dt.total_seconds()),
+                self.rho,
+                self.cp,
+                self.H,
+                self.lambda_relax,
+                _REFERENCE_SEA_SURFACE_TEMPERATURE,
+            ),
+        )
