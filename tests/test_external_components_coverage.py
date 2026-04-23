@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -43,6 +44,63 @@ class _FakeForcing:
         return self
 
 
+class _NullContext:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> Literal[False]:
+        _ = exc_type, exc, tb
+        return False
+
+
+class _FakeSettings(dict[str, Any]):
+    def __init__(self, metadata: dict[str, Any], values: dict[str, Any]) -> None:
+        super().__init__(values)
+        object.__setattr__(self, "__metadata__", metadata)
+
+    def unlock(self) -> _NullContext:
+        return _NullContext()
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "__metadata__":
+            object.__setattr__(self, name, value)
+        else:
+            self[name] = value
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+class _FakeVariableStore(SimpleNamespace):
+    def unlock(self) -> _NullContext:
+        return _NullContext()
+
+
+class _ConstructedVerosState:
+    def __init__(
+        self,
+        var_meta: dict[str, Any],
+        settings_meta: dict[str, Any],
+        dimensions: dict[str, Any],
+        plugin_interfaces: dict[str, Any] | None = None,
+    ) -> None:
+        self._var_meta = var_meta
+        self._dimensions = dimensions
+        self._plugin_interfaces = plugin_interfaces
+        self.settings = _FakeSettings(settings_meta, {})
+        self._variables: dict[str, Any] = {}
+        self.timers: dict[str, Any] = {}
+        self.profile_timers: dict[str, Any] = {}
+
+
 def _make_coupler(
     *,
     dt_seconds: float,
@@ -61,6 +119,19 @@ def _make_fake_veros_state(surface_temperature: float = 10.0) -> Any:
     temp = np.full((8, 8, 1, 1), surface_temperature, dtype=float)
     variables = SimpleNamespace(temp=temp, tau=0)
     return SimpleNamespace(variables=variables)
+
+
+def _make_flux_ready_veros_state() -> Any:
+    tau = 0
+    return SimpleNamespace(
+        variables=SimpleNamespace(
+            tau=tau,
+            u=np.arange(36.0).reshape(6, 6, 1, 1),
+            v=np.arange(36.0, 72.0).reshape(6, 6, 1, 1),
+            temp=np.full((6, 6, 1, 1), 7.0, dtype=float),
+            maskT=np.ones((6, 6, 1), dtype=float),
+        )
+    )
 
 
 def test_asfloat_converts_tree_leaves_to_float_dtype() -> None:
@@ -439,6 +510,219 @@ def test_jax_gcm_write_output_persists_mean_dataset(tmp_path: Path) -> None:
         assert actual["temperature"].shape == (1, 1, 1, 1, 1, 1)
         assert np.isclose(float(actual["temperature"].values.squeeze()), 0.5)
     assert component._predictions_list == []
+
+
+def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component = veros_gcm_module.VerosGCM.__new__(veros_gcm_module.VerosGCM)
+    component._veros_state = _make_flux_ready_veros_state()
+    component.data = {
+        "model_level_height": np.full((2, 2), 100.0),
+        "u_velocity": np.full((2, 2), 2.0),
+        "v_velocity": np.full((2, 2), 3.0),
+        "potential_temperature": np.full((2, 2), 280.0),
+        "specific_humidity": np.full((2, 2), 0.01),
+        "density": np.full((2, 2), 1.2),
+        "temperature": np.full((2, 2), 281.0),
+        "net_shortwave_radiation_flux": np.full((2, 2), 10.0),
+        "downward_longwave_radiation_flux": np.full((2, 2), 20.0),
+    }
+
+    captured: dict[str, np.ndarray] = {}
+
+    def fake_new_flux_atm_ocn(
+        settings: VercorSettings,
+        mask: np.ndarray,
+        model_level_height: np.ndarray,
+        u_velocity: np.ndarray,
+        v_velocity: np.ndarray,
+        potential_temperature: np.ndarray,
+        specific_humidity: np.ndarray,
+        density: np.ndarray,
+        temperature: np.ndarray,
+        u_tgrid: np.ndarray,
+        v_tgrid: np.ndarray,
+        surface_temperature: np.ndarray,
+    ) -> tuple[np.ndarray, ...]:
+        _ = (
+            settings,
+            model_level_height,
+            u_velocity,
+            v_velocity,
+            potential_temperature,
+            specific_humidity,
+            density,
+            temperature,
+        )
+        captured["mask"] = mask
+        captured["u_tgrid"] = u_tgrid
+        captured["v_tgrid"] = v_tgrid
+        captured["surface_temperature"] = surface_temperature
+        return (
+            np.full((2, 2), -1.0),
+            np.full((2, 2), -2.0),
+            np.full((2, 2), -3.0),
+            np.full((2, 2), 4.0),
+            np.full((2, 2), 5.0),
+            np.full((2, 2), 6.0),
+            np.full((2, 2), 7.0),
+            np.full((2, 2), 8.0),
+            np.full((2, 2), 9.0),
+            np.full((2, 2), 10.0),
+            np.full((2, 2), 11.0),
+            np.full((2, 2), 12.0),
+            np.asarray([[-1e10, -1e11], [0.5, -2.0]]),
+        )
+
+    monkeypatch.setattr(veros_gcm_module, "new_flux_atmOcn", fake_new_flux_atm_ocn)
+
+    taux, tauy, qnet, qnec = veros_gcm_module.compute_fluxes(
+        component, VercorSettings()
+    )
+
+    assert_allclose_compact(captured["mask"], np.ones((2, 2)))
+    assert captured["u_tgrid"].shape == (2, 2)
+    assert captured["v_tgrid"].shape == (2, 2)
+    assert_allclose_compact(captured["surface_temperature"], np.full((2, 2), 280.15))
+    assert_allclose_compact(taux, np.full((2, 2), 5.0))
+    assert_allclose_compact(tauy, np.full((2, 2), 6.0))
+    assert_allclose_compact(qnet, np.full((2, 2), 24.0))
+    assert_allclose_compact(qnec, np.asarray([[0.0, 0.0], [-0.5, 2.0]]))
+
+
+def test_custom_global_four_degree_set_diagnostics_populates_outputs() -> None:
+    state = SimpleNamespace(
+        settings=SimpleNamespace(dt_tracer=1200.0),
+        diagnostics={
+            "snapshot": SimpleNamespace(output_frequency=None),
+            "overturning": SimpleNamespace(
+                output_frequency=None, sampling_frequency=None
+            ),
+            "energy": SimpleNamespace(output_frequency=None, sampling_frequency=None),
+            "averages": SimpleNamespace(
+                output_variables=None,
+                output_frequency=None,
+                sampling_frequency=None,
+            ),
+        },
+    )
+
+    component = object.__new__(veros_gcm_module.CustomGlobalFourDegree)
+    routine = veros_gcm_module.CustomGlobalFourDegree.set_diagnostics.func.__self__
+    routine.function(component, state)
+
+    assert state.diagnostics["snapshot"].output_frequency == 365 * 86400.0
+    assert state.diagnostics["overturning"].sampling_frequency == 1200.0
+    assert state.diagnostics["energy"].sampling_frequency == 86400
+    assert state.diagnostics["averages"].output_frequency == 365 * 86400.0
+    assert state.diagnostics["averages"].sampling_frequency == 86400
+    assert state.diagnostics["averages"].output_variables == [
+        "temp",
+        "salt",
+        "u",
+        "v",
+        "w",
+        "surface_taux",
+        "surface_tauy",
+        "psi",
+        "qnet",
+        "qnec",
+    ]
+
+
+def test_veros_copy_state_jitted_path_deep_copies_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(veros_gcm_module, "VerosState", _ConstructedVerosState)
+
+    state = SimpleNamespace(
+        _dimensions={"xt": [1, 2]},
+        settings=_FakeSettings({"meta": {"precision": "x64"}}, {"dt_tracer": 600.0}),
+        _plugin_interfaces={"plugins": ["tracer"]},
+        _var_meta={"temp": {"units": "K"}},
+        _variables={"temp": [1.0, 2.0]},
+        timers={"step": [1.0]},
+        profile_timers={"profile": [2.0]},
+    )
+
+    copied = veros_gcm_module.copy_state(state, jitted=True)
+
+    assert copied is not state
+    assert copied._dimensions == state._dimensions
+    assert copied._dimensions is not state._dimensions
+    assert copied._plugin_interfaces == state._plugin_interfaces
+    assert copied._plugin_interfaces is not state._plugin_interfaces
+    assert copied._var_meta == state._var_meta
+    assert copied._var_meta is not state._var_meta
+    assert copied._variables == state._variables
+    assert copied._variables is not state._variables
+    assert copied.timers == state.timers
+    assert copied.timers is not state.timers
+    assert copied.profile_timers == state.profile_timers
+    assert copied.profile_timers is not state.profile_timers
+    assert copied.settings["dt_tracer"] == 600.0
+    assert copied.settings.__metadata__ == state.settings.__metadata__
+    assert copied.settings.__metadata__ is not state.settings.__metadata__
+
+
+def test_veros_pure_runs_step_on_copied_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_state = SimpleNamespace(counter=1)
+    copied_state = SimpleNamespace(counter=1)
+
+    def fake_copy_state(state: Any, jitted: bool = True) -> Any:
+        assert state is original_state
+        assert jitted is False
+        return copied_state
+
+    monkeypatch.setattr(veros_gcm_module, "copy_state", fake_copy_state)
+
+    def fake_step(state: Any) -> None:
+        state.counter += 1
+
+    result = veros_gcm_module.pure(original_state, jitted=False, step=fake_step)
+
+    assert result is copied_state
+    assert copied_state.counter == 2
+    assert original_state.counter == 1
+
+
+def test_veros_set_variable_updates_only_interior_cells(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    variables = _FakeVariableStore(temp=np.zeros((8, 8, 1), dtype=float))
+    state = SimpleNamespace(variables=variables)
+
+    monkeypatch.setattr(
+        veros_gcm_module, "copy_state", lambda tree, jitted=True: deepcopy(tree)
+    )
+
+    class _AtIndexer:
+        def __getitem__(self, item: Any) -> Any:
+            return item
+
+    def fake_update(array: np.ndarray, index: Any, value: np.ndarray) -> np.ndarray:
+        updated = np.array(array, copy=True)
+        updated[index] = value
+        return updated
+
+    monkeypatch.setattr(veros_gcm_module, "at", _AtIndexer())
+    monkeypatch.setattr(veros_gcm_module, "update", fake_update)
+
+    updated = veros_gcm_module.set_variable(
+        state,
+        "temp",
+        np.full((4, 4, 1), 9.0),
+        jitted=False,
+    )
+
+    assert_allclose_compact(
+        updated.variables.temp[2:-2, 2:-2, :], np.full((4, 4, 1), 9.0)
+    )
+    assert np.count_nonzero(updated.variables.temp[:2, :, :]) == 0
+    assert np.count_nonzero(updated.variables.temp[-2:, :, :]) == 0
+    assert np.count_nonzero(updated.variables.temp[:, :2, :]) == 0
+    assert np.count_nonzero(updated.variables.temp[:, -2:, :]) == 0
 
 
 def test_veros_initialize_validates_timestep_multiple() -> None:

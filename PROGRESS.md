@@ -203,3 +203,67 @@
   - `vercor/components/external/camulator.py`
   - `vercor/components/external/camulator_state.py`
   - `vercor/components/external/windpp.py`
+
+# 2026-04-23
+
+## Coupler / Veros / Clock Coverage Expansion
+
+- Extended `tests/test_coupler_coverage.py` to cover the remaining in-scope coupler control flow:
+  - `initialize()` happy path with `ATM`, `OCN`, `LND`, and `ICE`
+  - duplicate regridder creation warning path
+  - `enable_x64_computations` override with patched `jax.config.update()`
+  - `_create_exchange_masks()` failure branches for mismatched land/atmosphere grids and missing ocean masks
+  - `finalize()`, `__str__`, `__repr__`, and `run()` happy path ordering
+- Extended `tests/test_external_components_coverage.py` to cover more unit-testable `vercor/components/external/veros_gcm.py` helpers:
+  - `compute_fluxes()` `qnec` zeroing branch for sentinel `dqfldt`
+  - `CustomGlobalFourDegree.set_diagnostics()` via the undecorated Veros routine function
+  - `copy_state()` jitted deep-copy path
+  - `pure()` copy-before-mutate behavior
+  - `set_variable()` interior update path
+- Extended `tests/test_clock.py` for uncovered calendar helpers:
+  - `isoformat()` and `timetuple()`
+  - missing `day_of_year` validation in `timetuple()`
+  - invalid `day_of_year` handling in `_month_day_from_day_of_year()`
+  - negative ordinal overflow in `_from_ordinal_microseconds()`
+  - `Clock.days_per_year` and `Clock.fixed_30_day_months` properties
+- No production code changes were required; the work stayed in tests only.
+
+## Coverage Outcome
+
+- Overall `vercor` coverage increased from `73%` to `76%` via `conda run -n scipy pytest tests/ --cov=vercor --cov-report=term-missing -q`.
+- Module-level gains from the coverage run:
+  - `vercor/coupler.py`: `67%` -> `95%`
+  - `vercor/components/external/veros_gcm.py`: `57%` -> `73%`
+  - `vercor/clock.py`: `81%` -> `86%`
+  - `vercor/components/base.py`: `85%` -> `86%`
+- The main remaining misses in `vercor/components/external/veros_gcm.py` are the heavy Veros kernel/setup regions (`set_forcing_kernel()` and `__init__()`), which are intentionally not exercised as real integrations in these unit tests.
+
+## Validation (2026-04-23)
+
+- `conda run -n scipy pytest tests/test_external_components_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_coupler_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_clock.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+- `conda run -n scipy pytest tests/ --cov=vercor --cov-report=term-missing -q`
+  - passed
+
+## Notes / Failed Approaches
+
+- `CustomGlobalFourDegree.set_diagnostics()` is wrapped by Veros runtime validation, so calling it directly in a unit test raises a `TypeError` unless the argument is a real `VerosState`. The test now calls the underlying routine function instead of going through the runtime wrapper.
+- Per task instructions, no coverage work was added for:
+  - `vercor/components/data/camulator_land.py`
+  - `vercor/components/external/camulator.py`
+  - `vercor/components/external/camulator_state.py`
+  - `vercor/components/external/windpp.py`

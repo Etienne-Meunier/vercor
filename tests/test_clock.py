@@ -150,6 +150,37 @@ def test_model_datetime_subtract_model_datetime_returns_timedelta() -> None:
     assert diff == timedelta(days=1, hours=1, minutes=2, seconds=3, microseconds=400000)
 
 
+def test_model_datetime_isoformat_and_timetuple() -> None:
+    model_time = DateTime360(2025, 2, 3, 4, 5, 6, 123456, 33)
+
+    assert model_time.isoformat() == "2025-02-03T04:05:06.123456"
+
+    time_tuple = model_time.timetuple()
+    assert time_tuple.tm_year == 2025
+    assert time_tuple.tm_mon == 2
+    assert time_tuple.tm_mday == 3
+    assert time_tuple.tm_hour == 4
+    assert time_tuple.tm_min == 5
+    assert time_tuple.tm_sec == 6
+    assert time_tuple.tm_yday == 33
+    assert time_tuple.tm_isdst == -1
+
+
+def test_model_datetime_timetuple_requires_day_of_year() -> None:
+    broken = object.__new__(DateTime365)
+    object.__setattr__(broken, "year", 2025)
+    object.__setattr__(broken, "month", 1)
+    object.__setattr__(broken, "day", 2)
+    object.__setattr__(broken, "hour", 3)
+    object.__setattr__(broken, "minute", 4)
+    object.__setattr__(broken, "second", 5)
+    object.__setattr__(broken, "microsecond", 6)
+    object.__setattr__(broken, "day_of_year", None)
+
+    with pytest.raises(ValueError, match="day_of_year is not initialized"):
+        broken.timetuple()
+
+
 def test_model_datetime_comparisons() -> None:
     t0 = DateTime365(2025, 1, 1, 0, 0, 0, 0, 1)
     t1 = DateTime365(2025, 1, 1, 0, 0, 1, 0, 1)
@@ -181,6 +212,17 @@ def test_model_datetime_day_of_year_must_match_calendar_date() -> None:
 
     with pytest.raises(ValueError, match="day_of_year is inconsistent"):
         DateTime360(2025, 2, 1, 0, 0, 0, 0, 60)
+
+
+def test_model_datetime_private_day_and_ordinal_validation() -> None:
+    with pytest.raises(ValueError, match="invalid day_of_year=366"):
+        DateTime365._month_day_from_day_of_year(366)
+
+    with pytest.raises(ValueError, match="invalid day_of_year=361"):
+        DateTime360._month_day_from_day_of_year(361)
+
+    with pytest.raises(OverflowError, match="date value out of range"):
+        DateTime360(1, 1, 1, 0, 0, 0, 0, 1)._from_ordinal_microseconds(-1)
 
 
 @pytest.mark.fast_always
@@ -325,3 +367,27 @@ def test_clock_noleap_100_year_daily_run_reaches_year_100() -> None:
 
     assert isinstance(last_time, DateTime365)
     assert last_time.year - 2000 + 1 == 100
+
+
+@pytest.mark.parametrize(
+    ("year_type", "expected_days_per_year", "expected_fixed_30_day_months"),
+    [
+        ("leap", None, False),
+        ("noleap", 365, False),
+        ("360", 360, True),
+    ],
+)
+def test_clock_calendar_properties(
+    year_type: str,
+    expected_days_per_year: int | None,
+    expected_fixed_30_day_months: bool,
+) -> None:
+    clock = Clock(
+        start=datetime(2025, 1, 1),
+        dt_seconds=3600.0,
+        steps=1,
+        year_type=year_type,  # type: ignore[arg-type]
+    )
+
+    assert clock.days_per_year == expected_days_per_year
+    assert clock.fixed_30_day_months is expected_fixed_30_day_months
