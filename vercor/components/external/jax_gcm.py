@@ -35,10 +35,6 @@ from vercor.components.external.jax_gcm_tools import (
     get_altitudes_sigma_levels,
     compute_pressure_levels,
 )
-from vercor.fluxes.utilities import (
-    compute_air_density,
-    compute_potential_temperature,
-)
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
@@ -55,6 +51,147 @@ except ImportError:
 
 def asfloat(tree: Any) -> Any:
     return jax.tree_util.tree_map(lambda arr: arr.astype(jnp.float_), tree)
+
+
+_REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
+_COLD_SURFACE_TEMPERATURE_THRESHOLD = 250.0
+
+
+@jax.jit
+def _cleanup_surface_temperature_fields(
+    land_surface_temperature: object,
+    sea_surface_temperature: object,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    land_surface_temperature_array = jnp.nan_to_num(
+        jnp.asarray(land_surface_temperature, dtype=jnp.float_)
+    )
+    sea_surface_temperature_array = jnp.nan_to_num(
+        jnp.asarray(sea_surface_temperature, dtype=jnp.float_)
+    )
+    total_surface_temperature = (
+        land_surface_temperature_array + sea_surface_temperature_array
+    )
+    cold_surface_cells = total_surface_temperature < _COLD_SURFACE_TEMPERATURE_THRESHOLD
+    return (
+        land_surface_temperature_array,
+        sea_surface_temperature_array,
+        total_surface_temperature,
+        cold_surface_cells,
+    )
+
+
+@jax.jit
+def _prepare_surface_temperature_forcing(
+    total_surface_temperature: object,
+    land_fraction_mask: object,
+) -> tuple[jax.Array, jax.Array]:
+    total_surface_temperature_array = jnp.asarray(
+        total_surface_temperature, dtype=jnp.float_
+    )
+    land_fraction_mask_array = jnp.asarray(land_fraction_mask, dtype=jnp.float_)
+
+    land_surface_temperature = (
+        total_surface_temperature_array * land_fraction_mask_array
+    )
+    sea_surface_temperature = total_surface_temperature_array * (
+        1.0 - land_fraction_mask_array
+    )
+
+    land_surface_temperature = jnp.where(
+        land_surface_temperature == 0.0,
+        _REFERENCE_SURFACE_TEMPERATURE,
+        land_surface_temperature,
+    )
+    sea_surface_temperature = jnp.where(
+        sea_surface_temperature == 0.0,
+        _REFERENCE_SURFACE_TEMPERATURE,
+        sea_surface_temperature,
+    )
+
+    return land_surface_temperature, sea_surface_temperature
+
+
+@jax.jit
+def _map_jcm_output_fields(
+    latvap: float,
+    reference_pressure: float,
+    sigma_levels: object,
+    mwdair: float,
+    rgas: float,
+    potential_temperature_reference_pressure: float,
+    cappa: float,
+    surface_sensible_heat_flux: object,
+    surface_evaporation: object,
+    downward_longwave_radiation_flux: object,
+    net_shortwave_radiation_flux: object,
+    normalized_surface_pressure: object,
+    u_wind: object,
+    v_wind: object,
+    temperature: object,
+    specific_humidity: object,
+) -> dict[str, jax.Array]:
+    u_velocity = jnp.asarray(u_wind, dtype=jnp.float_)[-1, :, :].T
+    v_velocity = jnp.asarray(v_wind, dtype=jnp.float_)[-1, :, :].T
+    temperature_2m = jnp.asarray(temperature, dtype=jnp.float_)[-1, :, :].T
+    specific_humidity_2m = (
+        jnp.asarray(specific_humidity, dtype=jnp.float_)[-1, :, :].T / 1000.0
+    )
+
+    sensible_heat_flux = -jnp.sum(
+        jnp.asarray(surface_sensible_heat_flux, dtype=jnp.float_), axis=2
+    ).T
+    latent_heat_flux = -jnp.sum(
+        jnp.asarray(surface_evaporation, dtype=jnp.float_) / 1e3 * latvap,
+        axis=2,
+    ).T
+    net_shortwave_radiation_flux_2m = jnp.asarray(
+        net_shortwave_radiation_flux, dtype=jnp.float_
+    ).T
+    downward_longwave_radiation_flux_2m = jnp.asarray(
+        downward_longwave_radiation_flux, dtype=jnp.float_
+    ).T
+
+    pressure = compute_pressure_levels(
+        jnp.asarray(reference_pressure, dtype=jnp.float_),
+        jnp.asarray(0.0, dtype=jnp.float_),
+        jnp.asarray(sigma_levels, dtype=jnp.float_),
+        jnp.asarray(normalized_surface_pressure, dtype=jnp.float_).T,
+    )
+
+    density = (
+        jnp.asarray(mwdair, dtype=jnp.float_)
+        / jnp.asarray(rgas, dtype=jnp.float_)
+        * pressure[-1, ...]
+        / temperature_2m
+    )
+    potential_temperature = temperature_2m * (
+        jnp.asarray(potential_temperature_reference_pressure, dtype=jnp.float_)
+        / pressure[-1, ...]
+    ) ** jnp.asarray(cappa, dtype=jnp.float_)
+
+    model_level_height = get_altitudes_sigma_levels(
+        jnp.asarray(temperature, dtype=jnp.float_).transpose((0, 2, 1))[::-1, :, :],
+        pressure[::-1, :, :],
+        jnp.asarray(specific_humidity, dtype=jnp.float_).transpose((0, 2, 1))[
+            ::-1, :, :
+        ]
+        / 1000.0,
+    )[1, :, :]
+
+    return {
+        "u_velocity": u_velocity,
+        "v_velocity": v_velocity,
+        "temperature": temperature_2m,
+        "specific_humidity": specific_humidity_2m,
+        "sensible_heat_flux": sensible_heat_flux,
+        "latent_heat_flux": latent_heat_flux,
+        "net_shortwave_radiation_flux": net_shortwave_radiation_flux_2m,
+        "downward_longwave_radiation_flux": downward_longwave_radiation_flux_2m,
+        "pressure": pressure,
+        "density": density,
+        "potential_temperature": potential_temperature,
+        "model_level_height": model_level_height,
+    }
 
 
 @tree_math.struct
@@ -208,20 +345,23 @@ class JAXGCM(Component):
 
         grid_shape = self.grid.shape
 
-        zeros = np.zeros(grid_shape)
-        self.data["specific_humidity"] = zeros.copy()
-        self.data["net_shortwave_radiation_flux"] = zeros.copy()
-        self.data["downward_longwave_radiation_flux"] = zeros.copy()
-        self.data["sea_surface_temperature"] = zeros.copy() + 273.15 + 15.0
-        self.data["land_surface_temperature"] = zeros.copy()
-        self.data["u_velocity"] = zeros.copy()
-        self.data["v_velocity"] = zeros.copy()
-        self.data["temperature"] = zeros.copy()
-        self.data["potential_temperature"] = zeros.copy()
-        self.data["density"] = zeros.copy()
-        self.data["latent_heat_flux"] = zeros.copy()
-        self.data["sensible_heat_flux"] = zeros.copy()
-        self.data["model_level_height"] = zeros.copy()
+        zeros = cast(Any, jnp.zeros(grid_shape, dtype=jnp.float_))
+        self.data["specific_humidity"] = zeros
+        self.data["net_shortwave_radiation_flux"] = zeros
+        self.data["downward_longwave_radiation_flux"] = zeros
+        self.data["sea_surface_temperature"] = cast(
+            Any,
+            jnp.full(grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float_),
+        )
+        self.data["land_surface_temperature"] = zeros
+        self.data["u_velocity"] = zeros
+        self.data["v_velocity"] = zeros
+        self.data["temperature"] = zeros
+        self.data["potential_temperature"] = zeros
+        self.data["density"] = zeros
+        self.data["latent_heat_flux"] = zeros
+        self.data["sensible_heat_flux"] = zeros
+        self.data["model_level_height"] = zeros
 
         self._predictions_list = []
 
@@ -250,113 +390,62 @@ class JAXGCM(Component):
             )
         )
 
-        self.data["sea_surface_temperature"] = np.asarray(
-            jnp.nan_to_num(jnp.asarray(self.data["sea_surface_temperature"]), nan=0.0)
-        )
-        self.data["land_surface_temperature"] = np.asarray(
-            jnp.nan_to_num(jnp.asarray(self.data["land_surface_temperature"]), nan=0.0)
+        (
+            land_surface_temperature,
+            sea_surface_temperature,
+            total_surface_temperature,
+            cold_surface_cells,
+        ) = _cleanup_surface_temperature_fields(
+            self.data["land_surface_temperature"],
+            self.data["sea_surface_temperature"],
         )
 
-        # Units: [K]
-        self.data["total_surface_temperature"] = (
-            self.data["land_surface_temperature"] + self.data["sea_surface_temperature"]
-        )
+        self.data["land_surface_temperature"] = land_surface_temperature
+        self.data["sea_surface_temperature"] = sea_surface_temperature
+        self.data["total_surface_temperature"] = total_surface_temperature
 
         logger.info(
             " Number of cells with (SST + SKT) less than 250.0 K: {}".format(
-                int(np.sum(self.data["total_surface_temperature"] < 250.0))
+                int(jnp.sum(cold_surface_cells))
             ),
         )
 
-        land_surface_temperature = (
-            self.data["total_surface_temperature"]
-            * self.model.terrain.fmask.transpose()
-        )
-        sea_surface_temperature = self.data["total_surface_temperature"] * (
-            1.0 - self.model.terrain.fmask.transpose()
-        )
-
-        # Replace zero values with a default temperature (e.g., 288.15 K)
-        # to avoid issues in JCM
-        mask_zero_land_surface_temperature = land_surface_temperature == 0.0
-        mask_zero_sea_surface_temperature = sea_surface_temperature == 0.0
-
-        land_surface_temperature = jnp.where(
-            mask_zero_land_surface_temperature, 288.15, land_surface_temperature
-        )
-        sea_surface_temperature = jnp.where(
-            mask_zero_sea_surface_temperature, 288.15, sea_surface_temperature
+        land_surface_temperature_forcing, sea_surface_temperature_forcing = (
+            _prepare_surface_temperature_forcing(
+                total_surface_temperature,
+                jnp.asarray(self.model.terrain.fmask, dtype=jnp.float_).T,
+            )
         )
 
         self.forcing = self.forcing.copy(
-            stl_am=jnp.asarray(land_surface_temperature).transpose(),
-            sea_surface_temperature=jnp.asarray(sea_surface_temperature).transpose(),
+            stl_am=np.asarray(land_surface_temperature_forcing).transpose(),
+            sea_surface_temperature=np.asarray(
+                sea_surface_temperature_forcing
+            ).transpose(),
         )
 
         p, d = self.do_jcm_steps()
 
-        # !!! All the heat and freshwater fluxes are positive upward !!!
-        # Units: [m/s]
-        self.data["u_velocity"] = np.array(d.u_wind[-1, :, :]).transpose()
-        # Units: [m/s]
-        self.data["v_velocity"] = np.array(d.v_wind[-1, :, :]).transpose()
-        # Units: [K]
-        self.data["temperature"] = np.array(d.temperature[-1, :, :]).transpose()
-        # Units: [kg/kg] (converted from g/kg)
-        self.data["specific_humidity"] = (
-            np.array(d.specific_humidity[-1, :, :]).transpose() / 1000.0
+        mapped_fields = _map_jcm_output_fields(
+            settings.latvap,
+            p0,
+            self.sigma_levels,
+            settings.mwdair,
+            settings.rgas,
+            settings.p0,
+            settings.cappa,
+            p.surface_flux.shf,
+            p.surface_flux.evap,
+            p.surface_flux.rlds,
+            p.shortwave_rad.rsns,
+            d.normalized_surface_pressure,
+            d.u_wind,
+            d.v_wind,
+            d.temperature,
+            d.specific_humidity,
         )
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        # Turn negative to upward fluxes and positive to downward fluxes
-        # to comply with ERA5 & Veros conventions
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        # Units: [W/m²]
-        self.data["sensible_heat_flux"] = -(
-            np.array(p.surface_flux.shf).sum(axis=2).transpose()
-        )
-        # Units: [W/m²]
-        self.data["latent_heat_flux"] = -(
-            np.array(p.surface_flux.evap / 1e3 * settings.latvap)
-            .sum(axis=2)
-            .transpose()
-        )
-        # Units: [W/m²]
-        self.data["net_shortwave_radiation_flux"] = np.array(
-            p.shortwave_rad.rsns
-        ).transpose()
-        # Units: [W/m²]
-        self.data["downward_longwave_radiation_flux"] = np.array(
-            p.surface_flux.rlds
-        ).transpose()
-        # Units: [Pa]
-        self.data["pressure"] = np.asarray(
-            compute_pressure_levels(
-                jnp.asarray(p0),
-                jnp.asarray(0.0),
-                self.sigma_levels,
-                d.normalized_surface_pressure[:, :].transpose(),
-            )
-        )
-        # Units: [kg/m³]
-        self.data["density"] = np.asarray(
-            compute_air_density(
-                settings, self.data["pressure"][-1, ...], self.data["temperature"]
-            )
-        )
-        # Units: [K]
-        self.data["potential_temperature"] = np.asarray(
-            compute_potential_temperature(
-                settings, self.data["temperature"], self.data["pressure"][-1, ...]
-            )
-        )
-        # Units: [m]
-        self.data["model_level_height"] = np.asarray(
-            get_altitudes_sigma_levels(
-                d.temperature.transpose((0, 2, 1))[::-1, :, :],
-                jnp.asarray(self.data["pressure"][::-1, :, :]),
-                d.specific_humidity.transpose((0, 2, 1))[::-1, :, :] / 1000.0,
-            )[1, :, :]
-        )
+
+        self.data.update(mapped_fields)
 
         if self._should_write_output(time=time, dt=dt):
             date_time = time.strftime("%Y-%m-%d")

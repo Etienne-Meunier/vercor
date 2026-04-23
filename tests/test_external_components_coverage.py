@@ -148,6 +148,170 @@ def test_asfloat_converts_tree_leaves_to_float_dtype() -> None:
     assert_allclose_compact(converted["a"], np.asarray([1.0, 2.0]))
 
 
+def test_cleanup_surface_temperature_fields_supports_jit_and_gradients() -> None:
+    land_surface_temperature = jnp.asarray([[270.0, jnp.nan], [260.0, 240.0]])
+    sea_surface_temperature = jnp.asarray([[jnp.nan, 281.0], [2.0, 3.0]])
+
+    (
+        clean_land_surface_temperature,
+        clean_sea_surface_temperature,
+        total_surface_temperature,
+        cold_surface_cells,
+    ) = jax.jit(jax_gcm_module._cleanup_surface_temperature_fields)(
+        land_surface_temperature,
+        sea_surface_temperature,
+    )
+
+    assert_allclose_compact(
+        clean_land_surface_temperature,
+        np.asarray([[270.0, 0.0], [260.0, 240.0]]),
+    )
+    assert_allclose_compact(
+        clean_sea_surface_temperature,
+        np.asarray([[0.0, 281.0], [2.0, 3.0]]),
+    )
+    assert_allclose_compact(
+        total_surface_temperature,
+        np.asarray([[270.0, 281.0], [262.0, 243.0]]),
+    )
+    assert_allclose_compact(
+        cold_surface_cells,
+        np.asarray([[False, False], [False, True]]),
+    )
+
+    gradient = jax.grad(
+        lambda land: jnp.sum(
+            jax_gcm_module._cleanup_surface_temperature_fields(
+                land,
+                jnp.asarray([[1.0, 2.0], [3.0, 4.0]]),
+            )[2]
+        )
+    )(jnp.asarray([[270.0, 271.0], [272.0, 273.0]]))
+    assert_allclose_compact(gradient, np.ones((2, 2)))
+
+
+def test_prepare_surface_temperature_forcing_supports_jit_and_fill_value() -> None:
+    total_surface_temperature = jnp.asarray([[270.0, 281.0], [282.0, 567.0]])
+    land_fraction_mask = jnp.asarray([[1.0, 0.0], [0.0, 1.0]])
+
+    land_surface_temperature, sea_surface_temperature = jax.jit(
+        jax_gcm_module._prepare_surface_temperature_forcing
+    )(total_surface_temperature, land_fraction_mask)
+
+    assert_allclose_compact(
+        land_surface_temperature,
+        np.asarray([[270.0, 288.15], [288.15, 567.0]]),
+    )
+    assert_allclose_compact(
+        sea_surface_temperature,
+        np.asarray([[288.15, 281.0], [282.0, 288.15]]),
+    )
+
+
+def test_map_jcm_output_fields_supports_jit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        jax_gcm_module,
+        "compute_pressure_levels",
+        lambda reference_pressure, top_pressure, sigma_levels, normalized_surface_pressure: jnp.asarray(
+            [
+                jnp.full((2, 2), 90000.0),
+                jnp.full((2, 2), 80000.0),
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        jax_gcm_module,
+        "get_altitudes_sigma_levels",
+        lambda temperature, pressure, specific_humidity: jnp.asarray(
+            [
+                jnp.full((2, 2), 50.0),
+                jnp.full((2, 2), 150.0),
+            ]
+        ),
+    )
+
+    mapped_fields = jax.jit(jax_gcm_module._map_jcm_output_fields)(
+        2.5e6,
+        1.0e5,
+        jnp.asarray([0.2, 1.0]),
+        28.966,
+        8314.47,
+        1.0e5,
+        0.286,
+        jnp.full((2, 2, 2), 5.0),
+        jnp.full((2, 2, 2), 2.0),
+        jnp.full((2, 2), 40.0),
+        jnp.full((2, 2), 30.0),
+        jnp.asarray([[0.9, 1.0], [1.1, 1.2]]),
+        jnp.asarray(
+            [
+                [[1.0, 2.0], [3.0, 4.0]],
+                [[5.0, 6.0], [7.0, 8.0]],
+            ]
+        ),
+        jnp.asarray(
+            [
+                [[2.0, 3.0], [4.0, 5.0]],
+                [[6.0, 7.0], [8.0, 9.0]],
+            ]
+        ),
+        jnp.asarray(
+            [
+                [[280.0, 281.0], [282.0, 283.0]],
+                [[284.0, 285.0], [286.0, 287.0]],
+            ]
+        ),
+        jnp.asarray(
+            [
+                [[10.0, 20.0], [30.0, 40.0]],
+                [[50.0, 60.0], [70.0, 80.0]],
+            ]
+        ),
+    )
+
+    assert_allclose_compact(
+        mapped_fields["u_velocity"], np.asarray([[5.0, 7.0], [6.0, 8.0]])
+    )
+    assert_allclose_compact(
+        mapped_fields["v_velocity"], np.asarray([[6.0, 8.0], [7.0, 9.0]])
+    )
+    assert_allclose_compact(
+        mapped_fields["temperature"], np.asarray([[284.0, 286.0], [285.0, 287.0]])
+    )
+    assert_allclose_compact(
+        mapped_fields["specific_humidity"],
+        np.asarray([[0.05, 0.07], [0.06, 0.08]]),
+    )
+    assert_allclose_compact(mapped_fields["sensible_heat_flux"], np.full((2, 2), -10.0))
+    assert_allclose_compact(
+        mapped_fields["latent_heat_flux"],
+        np.full((2, 2), -10000.0),
+    )
+    assert_allclose_compact(
+        mapped_fields["pressure"],
+        np.asarray(
+            [
+                np.full((2, 2), 90000.0),
+                np.full((2, 2), 80000.0),
+            ]
+        ),
+    )
+    assert_allclose_compact(
+        mapped_fields["density"],
+        28.966
+        / 8314.47
+        * np.full((2, 2), 80000.0)
+        / np.asarray([[284.0, 286.0], [285.0, 287.0]]),
+    )
+    assert_allclose_compact(
+        mapped_fields["potential_temperature"],
+        np.asarray([[284.0, 286.0], [285.0, 287.0]]) * (100000.0 / 80000.0) ** 0.286,
+    )
+    assert_allclose_compact(mapped_fields["model_level_height"], np.full((2, 2), 150.0))
+
+
 def test_generate_step_function_non_jitted_averages_predictions() -> None:
     component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
     component.save_interval = timedelta(days=2)
@@ -410,7 +574,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     monkeypatch.setattr(
         jax_gcm_module,
         "compute_pressure_levels",
-        lambda reference_pressure, top_pressure, sigma_levels, normalized_surface_pressure: np.asarray(
+        lambda reference_pressure, top_pressure, sigma_levels, normalized_surface_pressure: jnp.asarray(
             [
                 np.full((2, 2), 90000.0),
                 np.full((2, 2), 80000.0),
@@ -419,18 +583,8 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     monkeypatch.setattr(
         jax_gcm_module,
-        "compute_air_density",
-        lambda settings, pressure, temperature: np.full((2, 2), 1.5),
-    )
-    monkeypatch.setattr(
-        jax_gcm_module,
-        "compute_potential_temperature",
-        lambda settings, temperature, pressure: np.full((2, 2), 300.0),
-    )
-    monkeypatch.setattr(
-        jax_gcm_module,
         "get_altitudes_sigma_levels",
-        lambda temperature, pressure, specific_humidity: np.asarray(
+        lambda temperature, pressure, specific_humidity: jnp.asarray(
             [
                 np.full((2, 2), 50.0),
                 np.full((2, 2), 150.0),
@@ -459,6 +613,10 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         np.asarray([[288.15, 282.0], [281.0, 288.15]]),
     )
     assert_allclose_compact(
+        component.data["total_surface_temperature"],
+        np.asarray([[270.0, 281.0], [282.0, 567.0]]),
+    )
+    assert_allclose_compact(
         component.data["u_velocity"], np.asarray([[5.0, 7.0], [6.0, 8.0]])
     )
     assert_allclose_compact(
@@ -477,6 +635,27 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     assert_allclose_compact(
         component.data["latent_heat_flux"],
         np.full((2, 2), -2.0 / 1e3 * coupler.settings.latvap * 2.0),
+    )
+    assert_allclose_compact(
+        component.data["pressure"],
+        np.asarray(
+            [
+                np.full((2, 2), 90000.0),
+                np.full((2, 2), 80000.0),
+            ]
+        ),
+    )
+    assert_allclose_compact(
+        component.data["density"],
+        coupler.settings.mwdair
+        / coupler.settings.rgas
+        * np.full((2, 2), 80000.0)
+        / np.asarray([[284.0, 286.0], [285.0, 287.0]]),
+    )
+    assert_allclose_compact(
+        component.data["potential_temperature"],
+        np.asarray([[284.0, 286.0], [285.0, 287.0]])
+        * (coupler.settings.p0 / 80000.0) ** coupler.settings.cappa,
     )
     assert_allclose_compact(
         component.data["model_level_height"], np.full((2, 2), 150.0)

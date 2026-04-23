@@ -489,3 +489,41 @@
 ## Notes / Failed Approaches (Slice 3B)
 
 - The numeric helper layer is now explicitly `jax.jit`-safe, but the full Veros runtime object model is still intentionally kept outside `jax.jit`; forcing the entire `pure()` / model-step boundary into JIT would require a broader redesign of how Veros state objects are represented.
+
+## Fourth JAX Translation Slice 4A: JAXGCM Adapter Boundary
+
+- Refactored `vercor/components/external/jax_gcm.py` so the JCM adapter now keeps its internal preprocessing and output mapping in JAX-native helpers while preserving the public wrapper API:
+  - added `_cleanup_surface_temperature_fields()` as a private `jax.jit` helper for `NaN` cleanup, total surface temperature assembly, and cold-cell diagnostics
+  - added `_prepare_surface_temperature_forcing()` as a private `jax.jit` helper for land/ocean masking and `288.15 K` zero-cell fallback before the JCM forcing boundary
+  - added `_map_jcm_output_fields()` as a private `jax.jit` helper for transpose conventions, humidity conversion, flux sign handling, pressure assembly, density / potential-temperature diagnostics, and sigma-level height mapping
+  - kept NumPy conversion only at the external forcing boundary passed into `self.forcing.copy(...)`
+- Updated `JAXGCM.initialize()` to seed translated runtime fields with `jnp.zeros` / `jnp.full` instead of NumPy arrays.
+- Kept `JAXGCM.step()` thin:
+  - incoming land / sea surface temperatures are normalized once through the new helper
+  - forcing fields are prepared through the new helper and converted to NumPy only when handed back to JCM
+  - mapped JCM outputs are written back to `self.data` directly from the jitted helper output
+- Extended `tests/test_external_components_coverage.py` with:
+  - direct `jax.jit` coverage for all three new private helpers
+  - a gradient smoke test for `_cleanup_surface_temperature_fields()`
+  - wrapper-level regression assertions for total surface temperature assembly, forcing masking / fallback, transpose conventions, flux signs, humidity scaling, pressure/density/potential-temperature wiring, and output gating
+- `DEPENDENCIES.md` did not require changes for this slice because no new module-level dependency edge was introduced.
+
+## Validation (Slice 4A JAXGCM Adapter Boundary, 2026-04-23)
+
+- `conda run -n scipy pytest tests/test_external_components_coverage.py tests/test_jax_gcm_output_frequency.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 4A)
+
+- `Component.data` is still typed as `dict[str, NDArray]`, so directly assigning `jax.Array` values in `JAXGCM.initialize()` triggered `mypy` assignment errors. The final implementation keeps the JAX runtime values and uses narrow `cast(Any, ...)` annotations at initialization to satisfy the current shared component typing without widening that interface in this slice.
