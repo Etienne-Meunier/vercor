@@ -218,6 +218,62 @@
   - `compute_fluxes()` `qnec` zeroing branch for sentinel `dqfldt`
   - `CustomGlobalFourDegree.set_diagnostics()` via the undecorated Veros routine function
   - `copy_state()` jitted deep-copy path
+
+## First JAX Translation Slice: Flux Kernels
+
+- Completed the first incremental NumPy-to-JAX translation slice without changing the public `Coupler` / `Component` API.
+- Translated `vercor/fluxes/utilities.py` to JAX-native array math:
+  - inputs are coerced with `jnp.asarray`
+  - NumPy-only ops were replaced with `jax.numpy`
+  - the ECMWF hybrid-level altitude helper now uses JAX-safe padding instead of `np.insert`
+- Rewrote `vercor/fluxes/bulk_formula_cesm.py` as JAX-native kernels:
+  - `old_flux_atmOcn()`
+  - `new_flux_atmOcn()`
+  - `shr_flux_atmIce()`
+  - shared stability / exchange-coefficient logic was factored into internal helpers to keep the two ocean schemes numerically aligned
+- Made `new_flux_atmOcn()` compatible with `jax.jit` and reverse-mode AD by replacing the dynamic `lax.while_loop` attempt with a fixed two-step `lax.fori_loop` using masked carry updates.
+- Tightened direct boundary adapters so JAX kernels run internally and NumPy conversion happens only where the external runtimes need it:
+  - `vercor/components/external/veros_gcm.py`
+  - `vercor/components/external/camulator.py`
+  - `vercor/components/external/jax_gcm.py`
+
+## Tests Added / Updated
+
+- Extended `tests/test_fluxes_utilities.py` with:
+  - `jax.jit` coverage for the translated utility kernels
+  - `jax.jit` coverage for `new_flux_atmOcn()` and `shr_flux_atmIce()`
+  - a finite-difference gradient smoke test for `new_flux_atmOcn()` sensible heat with respect to sea-surface temperature
+- Extended `tests/test_external_tools_coverage.py` so `vercor/components/external/jax_gcm_tools.compute_pressure_levels()` is exercised under `jax.jit`.
+
+## Validation (Flux Translation Slice, 2026-04-23)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_component_models_coverage.py tests/test_external_components_coverage.py tests/test_external_tools_coverage.py tests/test_fluxes_utilities.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Failed Approaches / Notes
+
+- An initial `lax.while_loop` implementation for `new_flux_atmOcn()` was `jax.jit`-compatible but failed reverse-mode AD with:
+  - `ValueError: Reverse-mode differentiation does not work for lax.while_loop ...`
+- The final implementation uses a static two-iteration `lax.fori_loop`, which matches the current convergence limit and keeps gradients available.
+
+## Next Translation Targets
+
+- Second slice still pending:
+  - `vercor/grid.py`
+  - `vercor/regridders/helpers.py`
+  - bilinear / conservative interpolation math
+- Third slice still pending:
+  - slab component pure kernels in `vercor/components/slab/`
   - `pure()` copy-before-mutate behavior
   - `set_variable()` interior update path
 - Extended `tests/test_clock.py` for uncovered calendar helpers:

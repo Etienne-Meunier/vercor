@@ -479,17 +479,21 @@ class CAMulatorGCM(Component):
         )  # pi(k) = Ai(k) P0 + Bi(k) PS
 
         # Units: [m]
-        data["model_level_height"] = get_altitudes_hybrid_sigma_levels(
-            settings,
-            data["temperature_3d"].T,
-            data["specific_humidity_3d"].T,
-            p_int[...].T,
-        )[..., 0].T
+        data["model_level_height"] = np.asarray(
+            get_altitudes_hybrid_sigma_levels(
+                settings,
+                data["temperature_3d"].T,
+                data["specific_humidity_3d"].T,
+                p_int[...].T,
+            )[..., 0].T
+        )
         # Units: [kg/m³]
-        data["density"] = compute_air_density(
-            settings, p_mid[-1, :, :], data["temperature"][:, :]
+        data["density"] = np.asarray(
+            compute_air_density(settings, p_mid[-1, :, :], data["temperature"][:, :])
         )
         # Units: [K]
-        data["potential_temperature"] = compute_potential_temperature(
-            settings, data["temperature"][:, :], p_mid[-1, :, :]
+        data["potential_temperature"] = np.asarray(
+            compute_potential_temperature(
+                settings, data["temperature"][:, :], p_mid[-1, :, :]
+            )
         )

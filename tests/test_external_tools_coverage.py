@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -69,6 +70,15 @@ def test_compute_pressure_levels_handles_valid_and_invalid_inputs() -> None:
         ]
     )
     assert_allclose_compact(pressure, expected)
+    assert_allclose_compact(
+        jax.jit(jax_gcm_tools_module.compute_pressure_levels)(
+            reference_pressure=jnp.asarray(100000.0),
+            top_pressure=jnp.asarray(10000.0),
+            sigma_levels=jnp.asarray([0.0, 0.5, 1.0]),
+            normalized_surface_pressure=jnp.asarray([[0.8, 1.0], [1.2, 0.6]]),
+        ),
+        expected,
+    )
 
     with pytest.raises(ValueError, match="top_pressure must be a scalar array"):
         jax_gcm_tools_module.compute_pressure_levels(

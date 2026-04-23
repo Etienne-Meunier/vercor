@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from typing import TYPE_CHECKING, Any, Callable
+import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
 from datetime import datetime, timedelta
@@ -186,9 +187,9 @@ def compute_fluxes(
         + senf
         + latf
     )
-    qnec = -np.where(dqfldt <= -1e10, 0.0, dqfldt)
+    qnec = -jnp.where(dqfldt <= -1e10, 0.0, dqfldt)
 
-    return (taux, tauy, qnet, qnec)
+    return tuple(np.asarray(arr) for arr in (taux, tauy, qnet, qnec))  # type: ignore[return-value]
 
 
 def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:

@@ -1,23 +1,25 @@
-from typing import Any
-import numpy as np
-from numpy.typing import NDArray
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from vercor.settings import VercorSettings
 
 
-def qsat(tk: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
+def _as_jax_array(value: ArrayLike) -> jax.Array:
+    return jnp.asarray(value, dtype=jnp.float_)
+
+
+def qsat(tk: ArrayLike) -> jax.Array:
     """The saturation humidity of air (kg/m^3)
 
     Argument:
         tk (:obj:`ndarray`): temperature (K)
     """
-    result: NDArray[np.floating[Any]] = 640380.0 / np.exp(5107.4 / tk)
-    return result
+    tk_array = _as_jax_array(tk)
+    return 640380.0 / jnp.exp(5107.4 / tk_array)
 
 
-def qsat_august_eqn(
-    ps: NDArray[np.floating[Any]], tk: NDArray[np.floating[Any]]
-) -> NDArray[np.floating[Any]]:
+def qsat_august_eqn(ps: ArrayLike, tk: ArrayLike) -> jax.Array:
     """Saturated specific humidity (kg/kg)
 
     Arguments:
@@ -33,17 +35,16 @@ def qsat_august_eqn(
         using a three-year climatology of ECMWF analyses,
         Journal of Marine Systems, 6, p. 363-380.
     """
-    result: NDArray[np.floating[Any]] = (
-        0.622 / ps * 10 ** (9.4051 - 2353.0 / tk) * 133.322
-    )
-    return result
+    ps_array = _as_jax_array(ps)
+    tk_array = _as_jax_array(tk)
+    return 0.622 / ps_array * 10 ** (9.4051 - 2353.0 / tk_array) * 133.322
 
 
 def compute_pressure_levels(
-    sp: NDArray[np.floating[Any]],
-    hya: NDArray[np.floating[Any]],
-    hyb: NDArray[np.floating[Any]],
-) -> NDArray[np.floating[Any]]:
+    sp: ArrayLike,
+    hya: ArrayLike,
+    hyb: ArrayLike,
+) -> jax.Array:
     """Compute pressure levels
 
     Arguments:
@@ -54,20 +55,21 @@ def compute_pressure_levels(
     Return:
         :obj:`ndarray`
     """
-
-    result: NDArray[np.floating[Any]] = (
-        hya[np.newaxis, np.newaxis, :]
-        + hyb[np.newaxis, np.newaxis, :] * sp[:, :, np.newaxis]
+    sp_array = _as_jax_array(sp)
+    hya_array = _as_jax_array(hya)
+    hyb_array = _as_jax_array(hyb)
+    return (
+        hya_array[jnp.newaxis, jnp.newaxis, :]
+        + hyb_array[jnp.newaxis, jnp.newaxis, :] * sp_array[:, :, jnp.newaxis]
     )
-    return result
 
 
 def get_altitudes_hybrid_sigma_levels(
     settings: VercorSettings,
-    t: NDArray[np.floating[Any]],
-    q: NDArray[np.floating[Any]],
-    ph: NDArray[np.floating[Any]],
-) -> NDArray[np.floating[Any]]:
+    t: ArrayLike,
+    q: ArrayLike,
+    ph: ArrayLike,
+) -> jax.Array:
     """Computes the altitudes at ECMWF Integrated Forecasting System
     (ECMWF-IFS) model half- and full-levels (for 137 levels model reanalysis: L137)
 
@@ -88,26 +90,32 @@ def get_altitudes_hybrid_sigma_levels(
     """
 
     # virtual temperature (K)
-    tv = t[...] * (1.0 + settings.zvir * q[...])
+    t_array = _as_jax_array(t)
+    q_array = _as_jax_array(q)
+    ph_array = _as_jax_array(ph)
+
+    tv = t_array * (1.0 + settings.zvir * q_array)
 
     # dlog_p[0] = np.log(ph[:, :, 1:] / 0.1)
     # alpha[0] = np.log(2)
-    dlog_p = np.log(ph[:, :, 1:] / ph[:, :, :-1])
-    alpha = 1.0 - ((ph[:, :, :-1] / (ph[:, :, 1:] - ph[:, :, :-1])) * dlog_p)
+    dlog_p = jnp.log(ph_array[:, :, 1:] / ph_array[:, :, :-1])
+    alpha = 1.0 - (
+        (ph_array[:, :, :-1] / (ph_array[:, :, 1:] - ph_array[:, :, :-1])) * dlog_p
+    )
     tv *= settings.rdair
 
     # zh is the geopotential of 'half-levels'
     # integrate zh to next half level
-    increment = np.flip(tv * dlog_p, axis=2)
-    zh = np.cumsum(increment, axis=2)
+    increment = jnp.flip(tv * dlog_p, axis=2)
+    zh = jnp.cumsum(increment, axis=2)
 
     # zf is the geopotential of this full level
     # integrate from previous (lower) half-level zh to the
     # full level
-    increment_zh = np.insert(zh, 0, 0, axis=2)
-    zf = np.flip(tv * alpha, axis=2) + increment_zh[:, :, :-1]
+    increment_zh = jnp.pad(zh, ((0, 0), (0, 0), (1, 0)))
+    zf = jnp.flip(tv * alpha, axis=2) + increment_zh[:, :, :-1]
 
-    alt: NDArray[np.floating[Any]] = (
+    alt = (
         settings.earth_radius
         * zf
         / settings.gravity
@@ -117,59 +125,58 @@ def get_altitudes_hybrid_sigma_levels(
     return alt[:, :, :]
 
 
-def cdn(umps: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
+def cdn(umps: ArrayLike) -> jax.Array:
     """Neutral drag coeff at 10m
 
     Argument:
         umps (:obj:`ndarray`): wind speed (m/s)
     """
-    return 0.0027 / umps + 0.000142 + 0.0000764 * umps
+    umps_array = _as_jax_array(umps)
+    return 0.0027 / umps_array + 0.000142 + 0.0000764 * umps_array
 
 
-def psimhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
+def psimhu(xd: ArrayLike) -> jax.Array:
     """Unstable part of psimh
 
     Argument:
         xd (:obj:`ndarray`): model level height devided by Obukhov length
     """
 
-    result: NDArray[np.floating[Any]] = (
-        np.log((1.0 + xd * (2.0 + xd)) * (1.0 + xd * xd) / 8.0)
-        - 2.0 * np.arctan(xd)
+    xd_array = _as_jax_array(xd)
+    return (
+        jnp.log((1.0 + xd_array * (2.0 + xd_array)) * (1.0 + xd_array * xd_array) / 8.0)
+        - 2.0 * jnp.arctan(xd_array)
         + 1.571
     )
 
-    return result
 
-
-def psixhu(xd: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
+def psixhu(xd: ArrayLike) -> jax.Array:
     """Unstable part of psimx
 
     Argument:
         xd (:obj:`ndarray`): model level height devided by Obukhov length
     """
-    return 2.0 * np.log((1.0 + xd * xd) / 2.0)
+    xd_array = _as_jax_array(xd)
+    return 2.0 * jnp.log((1.0 + xd_array * xd_array) / 2.0)
 
 
 def compute_air_density(
     settings: VercorSettings,
-    pf: NDArray[np.floating[Any]],
-    t: NDArray[np.floating[Any]],
-) -> NDArray[np.floating[Any]]:
+    pf: ArrayLike,
+    t: ArrayLike,
+) -> jax.Array:
     """Air density (kg/m^3)"""
-    result: NDArray[np.floating[Any]] = (
-        settings.mwdair / settings.rgas * pf[...] / t[...]
-    )
-    return result
+    pf_array = _as_jax_array(pf)
+    t_array = _as_jax_array(t)
+    return settings.mwdair / settings.rgas * pf_array / t_array
 
 
 def compute_potential_temperature(
     settings: VercorSettings,
-    tbot: NDArray[np.floating[Any]],
-    pf: NDArray[np.floating[Any]],
-) -> NDArray[np.floating[Any]]:
+    tbot: ArrayLike,
+    pf: ArrayLike,
+) -> jax.Array:
     """Potential temperature (K)"""
-    result: NDArray[np.floating[Any]] = (
-        tbot[...] * (settings.p0 / pf[...]) ** settings.cappa
-    )
-    return result
+    tbot_array = _as_jax_array(tbot)
+    pf_array = _as_jax_array(pf)
+    return tbot_array * (settings.p0 / pf_array) ** settings.cappa

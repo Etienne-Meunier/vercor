@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from tests.assertions import assert_allclose_compact
@@ -38,6 +42,14 @@ def _ocean_state(shape: tuple[int, int] = (3, 4)) -> dict[str, np.ndarray]:
         "vs": np.zeros(shape),
         "ts": np.full(shape, 300.0),
     }
+
+
+def _finite_difference_scalar_grad(
+    fn: Callable[[float], jax.Array], x: float, eps: float = 1e-3
+) -> float:
+    upper = float(fn(x + eps))
+    lower = float(fn(x - eps))
+    return (upper - lower) / (2.0 * eps)
 
 
 def test_qsat_is_positive_and_increases_with_temperature() -> None:
@@ -119,6 +131,66 @@ def test_density_and_potential_temperature_match_closed_form() -> None:
 
     assert_allclose_compact(rho, expected_rho)
     assert_allclose_compact(theta, expected_theta)
+
+
+def test_flux_utility_kernels_support_jit() -> None:
+    settings = VercorSettings()
+    tk = jnp.asarray([260.0, 280.0, 300.0])
+    ps = jnp.full(3, 101_325.0)
+    sp = jnp.asarray([[100_000.0, 95_000.0], [101_000.0, 99_000.0]])
+    hya = jnp.asarray([100.0, 1_000.0, 5_000.0])
+    hyb = jnp.asarray([0.0, 0.2, 0.8])
+    t = jnp.full((2, 2, 4), 260.0)
+    q = jnp.full((2, 2, 4), 0.004)
+    ph = jax.jit(compute_pressure_levels)(
+        sp,
+        jnp.asarray([100.0, 1_000.0, 5_000.0, 10_000.0, 20_000.0]),
+        jnp.asarray([0.0, 0.1, 0.3, 0.5, 0.8]),
+    )
+
+    assert_allclose_compact(jax.jit(qsat)(tk), qsat(tk))
+    assert_allclose_compact(jax.jit(qsat_august_eqn)(ps, tk), qsat_august_eqn(ps, tk))
+    assert_allclose_compact(
+        jax.jit(compute_pressure_levels)(sp, hya, hyb),
+        compute_pressure_levels(sp, hya, hyb),
+    )
+    assert_allclose_compact(
+        jax.jit(
+            lambda temp, humid, pressure: get_altitudes_hybrid_sigma_levels(
+                settings, temp, humid, pressure
+            )
+        )(t, q, ph),
+        get_altitudes_hybrid_sigma_levels(settings, t, q, ph),
+    )
+    assert_allclose_compact(
+        jax.jit(cdn)(jnp.asarray([2.0, 8.0, 15.0])), cdn(jnp.asarray([2.0, 8.0, 15.0]))
+    )
+    assert_allclose_compact(
+        jax.jit(psimhu)(jnp.asarray([1.0, 2.0, 4.0])),
+        psimhu(jnp.asarray([1.0, 2.0, 4.0])),
+    )
+    assert_allclose_compact(
+        jax.jit(psixhu)(jnp.asarray([1.0, 2.0, 4.0])),
+        psixhu(jnp.asarray([1.0, 2.0, 4.0])),
+    )
+    assert_allclose_compact(
+        jax.jit(lambda pf, temp: compute_air_density(settings, pf, temp))(
+            jnp.asarray([[100_000.0, 90_000.0]]),
+            jnp.asarray([[300.0, 280.0]]),
+        ),
+        compute_air_density(
+            settings, np.array([[100_000.0, 90_000.0]]), np.array([[300.0, 280.0]])
+        ),
+    )
+    assert_allclose_compact(
+        jax.jit(lambda temp, pf: compute_potential_temperature(settings, temp, pf))(
+            jnp.asarray([[300.0, 280.0]]),
+            jnp.asarray([[100_000.0, 90_000.0]]),
+        ),
+        compute_potential_temperature(
+            settings, np.array([[300.0, 280.0]]), np.array([[100_000.0, 90_000.0]])
+        ),
+    )
 
 
 def test_new_flux_atmOcn_produces_finite_and_physically_consistent_signs() -> None:
@@ -213,6 +285,89 @@ def test_new_flux_atmOcn_respects_mask_for_surface_exchange_outputs() -> None:
     # qref is not fully masked by the current implementation.
     for arr in (out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[8]):
         assert np.all(arr[state["mask"] == 0.0] == 0.0)
+
+
+def test_flux_kernels_support_jit_and_gradients() -> None:
+    settings = VercorSettings()
+    state = _ocean_state(shape=(1, 1))
+    mask = state["mask"]
+    zbot = state["zbot"]
+    ubot = state["ubot"]
+    vbot = state["vbot"]
+    thbot = state["thbot"]
+    qbot = state["qbot"]
+    rbot = state["rbot"]
+    tbot = state["tbot"]
+    us = state["us"]
+    vs = state["vs"]
+
+    jitted_ocean_flux = jax.jit(
+        lambda ts: new_flux_atmOcn(
+            settings,
+            mask,
+            zbot,
+            ubot,
+            vbot,
+            thbot,
+            qbot,
+            rbot,
+            tbot,
+            us,
+            vs,
+            ts,
+        )
+    )
+    jitted_ice_flux = jax.jit(
+        lambda ts: shr_flux_atmIce(
+            settings,
+            mask,
+            zbot,
+            ubot,
+            vbot,
+            thbot,
+            qbot,
+            rbot,
+            tbot,
+            ts,
+        )
+    )
+
+    ts = jnp.asarray([[300.0]])
+    eager_ocean = new_flux_atmOcn(
+        settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, us, vs, ts
+    )
+    eager_ice = shr_flux_atmIce(
+        settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, ts
+    )
+
+    for eager_arr, jitted_arr in zip(eager_ocean, jitted_ocean_flux(ts)):
+        assert_allclose_compact(jitted_arr, eager_arr)
+    for eager_arr, jitted_arr in zip(eager_ice, jitted_ice_flux(ts)):
+        assert_allclose_compact(jitted_arr, eager_arr)
+
+    def scalar_sensible_heat(ts_scalar: float) -> jax.Array:
+        ts_array = jnp.full((1, 1), ts_scalar)
+        return jnp.sum(
+            new_flux_atmOcn(
+                settings,
+                mask,
+                zbot,
+                ubot,
+                vbot,
+                thbot,
+                qbot,
+                rbot,
+                tbot,
+                us,
+                vs,
+                ts_array,
+            )[0]
+        )
+
+    grad_value = float(jax.grad(scalar_sensible_heat)(300.0))
+    finite_diff = _finite_difference_scalar_grad(scalar_sensible_heat, 300.0)
+    assert np.isfinite(grad_value)
+    assert np.isclose(grad_value, finite_diff, rtol=2e-2, atol=1e-3)
 
 
 def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:

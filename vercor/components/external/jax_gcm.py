@@ -250,11 +250,11 @@ class JAXGCM(Component):
             )
         )
 
-        self.data["sea_surface_temperature"] = np.nan_to_num(
-            self.data["sea_surface_temperature"], nan=0.0
+        self.data["sea_surface_temperature"] = np.asarray(
+            jnp.nan_to_num(jnp.asarray(self.data["sea_surface_temperature"]), nan=0.0)
         )
-        self.data["land_surface_temperature"] = np.nan_to_num(
-            self.data["land_surface_temperature"], nan=0.0
+        self.data["land_surface_temperature"] = np.asarray(
+            jnp.nan_to_num(jnp.asarray(self.data["land_surface_temperature"]), nan=0.0)
         )
 
         # Units: [K]
@@ -281,10 +281,10 @@ class JAXGCM(Component):
         mask_zero_land_surface_temperature = land_surface_temperature == 0.0
         mask_zero_sea_surface_temperature = sea_surface_temperature == 0.0
 
-        land_surface_temperature = np.where(
+        land_surface_temperature = jnp.where(
             mask_zero_land_surface_temperature, 288.15, land_surface_temperature
         )
-        sea_surface_temperature = np.where(
+        sea_surface_temperature = jnp.where(
             mask_zero_sea_surface_temperature, 288.15, sea_surface_temperature
         )
 
@@ -329,7 +329,7 @@ class JAXGCM(Component):
             p.surface_flux.rlds
         ).transpose()
         # Units: [Pa]
-        self.data["pressure"] = np.array(
+        self.data["pressure"] = np.asarray(
             compute_pressure_levels(
                 jnp.asarray(p0),
                 jnp.asarray(0.0),
@@ -338,21 +338,25 @@ class JAXGCM(Component):
             )
         )
         # Units: [kg/m³]
-        self.data["density"] = compute_air_density(
-            settings, self.data["pressure"][-1, ...], self.data["temperature"]
+        self.data["density"] = np.asarray(
+            compute_air_density(
+                settings, self.data["pressure"][-1, ...], self.data["temperature"]
+            )
         )
         # Units: [K]
-        self.data["potential_temperature"] = compute_potential_temperature(
-            settings, self.data["temperature"], self.data["pressure"][-1, ...]
+        self.data["potential_temperature"] = np.asarray(
+            compute_potential_temperature(
+                settings, self.data["temperature"], self.data["pressure"][-1, ...]
+            )
         )
         # Units: [m]
-        self.data["model_level_height"] = np.array(
+        self.data["model_level_height"] = np.asarray(
             get_altitudes_sigma_levels(
                 d.temperature.transpose((0, 2, 1))[::-1, :, :],
                 jnp.asarray(self.data["pressure"][::-1, :, :]),
                 d.specific_humidity.transpose((0, 2, 1))[::-1, :, :] / 1000.0,
-            )
-        )[1, :, :]
+            )[1, :, :]
+        )
 
         if self._should_write_output(time=time, dt=dt):
             date_time = time.strftime("%Y-%m-%d")
