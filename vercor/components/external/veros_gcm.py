@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from typing import TYPE_CHECKING, Any, Callable
+import jax
 import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
@@ -133,6 +134,41 @@ class CustomGlobalFourDegree(GlobalFourDegreeSetup):
         state.diagnostics["averages"].sampling_frequency = 86400
 
 
+@jax.jit
+def _update_veros_interior(
+    array: object,
+    interior_value: object,
+) -> jax.Array:
+    array_jax = jnp.asarray(array, dtype=jnp.float64)
+    interior_value_jax = jnp.asarray(interior_value, dtype=jnp.float64)
+    return array_jax.at[2:-2, 2:-2, ...].set(interior_value_jax)
+
+
+@jax.jit
+def _prepare_surface_forcing_fields(
+    taux: object,
+    tauy: object,
+    qnet: object,
+    qnec: object,
+    restore_to_climatology: object,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    restore_to_climatology_jax = jnp.asarray(restore_to_climatology, dtype=bool)
+
+    def _prepare(field: object) -> jax.Array:
+        field_jax = jnp.asarray(field, dtype=jnp.float64)
+        return jnp.nan_to_num(field_jax.T[..., jnp.newaxis])
+
+    taux_prepared = _prepare(taux)
+    tauy_prepared = _prepare(tauy)
+    qnet_prepared = _prepare(qnet)
+    qnec_prepared = _prepare(qnec)
+    qnec_prepared = jnp.where(
+        restore_to_climatology_jax, qnec_prepared, jnp.zeros_like(qnec_prepared)
+    )
+
+    return taux_prepared, tauy_prepared, qnet_prepared, qnec_prepared
+
+
 def compute_fluxes(
     component_state: "VerosGCM", settings: VercorSettings
 ) -> tuple[NDArray, NDArray, NDArray, NDArray]:
@@ -142,10 +178,16 @@ def compute_fluxes(
 
     # u & v have Arakawa-C grid staggering in Veros
     # require additional interpolation
-    u_tgrid = 0.5 * (vs.u[1:, 2:-2, -1, vs.tau] + vs.u[:-1, 2:-2, -1, vs.tau])
-    v_tgrid = 0.5 * (vs.v[2:-2, 1:, -1, vs.tau] + vs.v[2:-2, :-1, -1, vs.tau])
+    u_tgrid = 0.5 * (
+        jnp.asarray(vs.u[1:, 2:-2, -1, vs.tau], dtype=jnp.float64)
+        + jnp.asarray(vs.u[:-1, 2:-2, -1, vs.tau], dtype=jnp.float64)
+    )
+    v_tgrid = 0.5 * (
+        jnp.asarray(vs.v[2:-2, 1:, -1, vs.tau], dtype=jnp.float64)
+        + jnp.asarray(vs.v[2:-2, :-1, -1, vs.tau], dtype=jnp.float64)
+    )
 
-    temp = vs.temp[2:-2, 2:-2, -1, vs.tau].T + 273.15
+    temp = jnp.asarray(vs.temp[2:-2, 2:-2, -1, vs.tau], dtype=jnp.float64).T + 273.15
 
     (
         senf,
@@ -163,14 +205,14 @@ def compute_fluxes(
         dqfldt,
     ) = new_flux_atmOcn(
         settings,
-        np.array(vs.maskT[2:-2, 2:-2, -1].T),
-        cs.data["model_level_height"],
-        cs.data["u_velocity"],
-        cs.data["v_velocity"],
-        cs.data["potential_temperature"],
-        cs.data["specific_humidity"],
-        cs.data["density"],
-        cs.data["temperature"],
+        jnp.asarray(vs.maskT[2:-2, 2:-2, -1], dtype=jnp.float64).T,
+        jnp.asarray(cs.data["model_level_height"], dtype=jnp.float64),
+        jnp.asarray(cs.data["u_velocity"], dtype=jnp.float64),
+        jnp.asarray(cs.data["v_velocity"], dtype=jnp.float64),
+        jnp.asarray(cs.data["potential_temperature"], dtype=jnp.float64),
+        jnp.asarray(cs.data["specific_humidity"], dtype=jnp.float64),
+        jnp.asarray(cs.data["density"], dtype=jnp.float64),
+        jnp.asarray(cs.data["temperature"], dtype=jnp.float64),
         u_tgrid[1:-2, :].T,
         v_tgrid[:, 1:-2].T,
         temp,
@@ -181,8 +223,8 @@ def compute_fluxes(
     # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
 
     qnet = (
-        cs.data["net_shortwave_radiation_flux"]
-        + cs.data["downward_longwave_radiation_flux"]
+        jnp.asarray(cs.data["net_shortwave_radiation_flux"], dtype=jnp.float64)
+        + jnp.asarray(cs.data["downward_longwave_radiation_flux"], dtype=jnp.float64)
         + lwup
         + senf
         + latf
@@ -221,7 +263,7 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
 
 def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
     """
-    Convert the state function into a "pure step" copying the input state
+    Convert an in-place Veros step into a copy-before-mutate boundary helper.
     """
     n_state = copy_state(state, jitted=jitted)
     # This is a function that modifies state object inplace
@@ -233,14 +275,13 @@ def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
 def set_variable(
     state: VerosState, variable_name: str, variable_value: NDArray, jitted: bool = True
 ) -> VerosState:
-
     n_state = copy_state(state, jitted=jitted)
     vs = n_state.variables
 
     with n_state.variables.unlock():
         var = getattr(vs, variable_name)
-        var = update(var, at[2:-2, 2:-2, ...], variable_value)
-        setattr(vs, variable_name, var)
+        updated_var = _update_veros_interior(var, variable_value)
+        setattr(vs, variable_name, np.asarray(updated_var))
 
     return n_state
 
@@ -330,20 +371,20 @@ class VerosGCM(Component):
         time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-
         taux, tauy, qnet, qnec = compute_fluxes(self, coupler.settings)
+        forcing_fields = _prepare_surface_forcing_fields(
+            taux, tauy, qnet, qnec, self.restore_to_climatology
+        )
 
-        if not self.restore_to_climatology:
-            qnec = np.zeros_like(qnet)
-
-        for variable_name, variable_value in {
-            "taux": np.nan_to_num(taux.T[..., np.newaxis]),
-            "tauy": np.nan_to_num(tauy.T[..., np.newaxis]),
-            "qnet": np.nan_to_num(qnet.T[..., np.newaxis]),
-            "qnec": np.nan_to_num(qnec.T[..., np.newaxis]),
-        }.items():
+        for variable_name, variable_value in zip(
+            ("taux", "tauy", "qnet", "qnec"),
+            forcing_fields,
+        ):
             self._veros_state = set_variable(
-                self._veros_state, variable_name, variable_value, jitted=self.jitted
+                self._veros_state,
+                variable_name,
+                np.asarray(variable_value),
+                jitted=self.jitted,
             )
 
         for i in range(self.model_substeps):

@@ -455,3 +455,37 @@
   - passed
 - `conda run -n scipy pytest tests/ -q`
   - passed
+
+## Third JAX Translation Slice 3B: Veros Helper Boundary
+
+- Refactored the remaining Veros boundary helper math in `vercor/components/external/veros_gcm.py` without changing public component APIs:
+  - added `_update_veros_interior()` as a private JAX helper for fixed `2:-2, 2:-2, ...` halo-preserving interior replacement
+  - added `_prepare_surface_forcing_fields()` as a private JAX helper for transpose, singleton-axis expansion, `NaN` cleanup, and `qnec` gating by `restore_to_climatology`
+  - kept `pure()` as the copy-before-mutate boundary helper for Veros runtime objects and clarified that scope in the docstring
+  - narrowed `set_variable()` into a thin state adapter that copies the state, calls the JAX interior-update helper, and writes NumPy arrays back to the Veros state object
+- Audited `compute_fluxes()` so the boundary math now stays JAX-native through masking, velocity interpolation, temperature assembly, and `qnet` / `qnec` construction until the final NumPy conversion required by the Veros adapter boundary.
+- Extended `tests/test_external_components_coverage.py` with direct helper coverage:
+  - `jax.jit` coverage and a gradient smoke test for `_update_veros_interior()`
+  - helper coverage for `_prepare_surface_forcing_fields()` shape/orientation, `NaN` cleanup, and `restore_to_climatology=False` `qnec` zeroing
+  - wrapper-level `VerosGCM.step()` coverage that confirms cleaned forcing payloads are what reach `set_variable()`
+- `DEPENDENCIES.md` did not require changes for this slice because no new module-level dependency edge was introduced.
+
+## Validation (Slice 3B Veros Helper Boundary, 2026-04-23)
+
+- `conda run -n scipy pytest tests/test_external_components_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 3B)
+
+- The numeric helper layer is now explicitly `jax.jit`-safe, but the full Veros runtime object model is still intentionally kept outside `jax.jit`; forcing the entire `pure()` / model-step boundary into JIT would require a broader redesign of how Veros state objects are represented.

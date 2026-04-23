@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -687,6 +688,54 @@ def test_veros_pure_runs_step_on_copied_state(monkeypatch: pytest.MonkeyPatch) -
     assert original_state.counter == 1
 
 
+def test_veros_update_veros_interior_supports_jit_and_gradients() -> None:
+    array = jnp.zeros((8, 8, 1), dtype=jnp.float64)
+    interior = jnp.arange(16.0, dtype=jnp.float64).reshape(4, 4, 1)
+
+    updated = jax.jit(veros_gcm_module._update_veros_interior)(array, interior)
+
+    assert_allclose_compact(updated[2:-2, 2:-2, :], interior)
+    assert np.count_nonzero(np.asarray(updated[:2, :, :])) == 0
+    assert np.count_nonzero(np.asarray(updated[-2:, :, :])) == 0
+    assert np.count_nonzero(np.asarray(updated[:, :2, :])) == 0
+    assert np.count_nonzero(np.asarray(updated[:, -2:, :])) == 0
+
+    gradient = jax.grad(
+        lambda payload: jnp.sum(veros_gcm_module._update_veros_interior(array, payload))
+    )(interior)
+    assert_allclose_compact(gradient, np.ones((4, 4, 1)))
+
+
+def test_veros_prepare_surface_forcing_fields_shapes_nan_cleanup_and_qnec_gate() -> (
+    None
+):
+    taux = jnp.asarray([[1.0, jnp.nan], [3.0, 4.0]])
+    tauy = jnp.asarray([[5.0, 6.0], [7.0, 8.0]])
+    qnet = jnp.asarray([[9.0, 10.0], [11.0, jnp.nan]])
+    qnec = jnp.asarray([[12.0, 13.0], [14.0, 15.0]])
+
+    prepared = jax.jit(veros_gcm_module._prepare_surface_forcing_fields)(
+        taux, tauy, qnet, qnec, False
+    )
+    taux_out, tauy_out, qnet_out, qnec_out = prepared
+
+    assert taux_out.shape == (2, 2, 1)
+    assert tauy_out.shape == (2, 2, 1)
+    assert qnet_out.shape == (2, 2, 1)
+    assert qnec_out.shape == (2, 2, 1)
+    assert_allclose_compact(taux_out, np.asarray([[[1.0], [3.0]], [[0.0], [4.0]]]))
+    assert_allclose_compact(qnet_out, np.asarray([[[9.0], [11.0]], [[10.0], [0.0]]]))
+    assert_allclose_compact(qnec_out, np.zeros((2, 2, 1)))
+
+    restored = veros_gcm_module._prepare_surface_forcing_fields(
+        taux, tauy, qnet, qnec, True
+    )[3]
+    assert_allclose_compact(
+        restored,
+        np.asarray([[[12.0], [14.0]], [[13.0], [15.0]]]),
+    )
+
+
 def test_veros_set_variable_updates_only_interior_cells(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -696,18 +745,6 @@ def test_veros_set_variable_updates_only_interior_cells(
     monkeypatch.setattr(
         veros_gcm_module, "copy_state", lambda tree, jitted=True: deepcopy(tree)
     )
-
-    class _AtIndexer:
-        def __getitem__(self, item: Any) -> Any:
-            return item
-
-    def fake_update(array: np.ndarray, index: Any, value: np.ndarray) -> np.ndarray:
-        updated = np.array(array, copy=True)
-        updated[index] = value
-        return updated
-
-    monkeypatch.setattr(veros_gcm_module, "at", _AtIndexer())
-    monkeypatch.setattr(veros_gcm_module, "update", fake_update)
 
     updated = veros_gcm_module.set_variable(
         state,
@@ -818,4 +855,54 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     assert_allclose_compact(
         component.data["sea_surface_temperature"],
         np.full((4, 4), 288.15),
+    )
+
+
+def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component = veros_gcm_module.VerosGCM.__new__(veros_gcm_module.VerosGCM)
+    component.restore_to_climatology = True
+    component.model_substeps = 0
+    component.jitted = False
+    component._veros_state = _make_fake_veros_state(surface_temperature=12.0)
+    component.data = {}
+
+    set_calls: list[tuple[str, np.ndarray]] = []
+
+    def fake_set_variable(
+        state: Any, variable_name: str, variable_value: np.ndarray, jitted: bool = True
+    ) -> Any:
+        _ = jitted
+        set_calls.append((variable_name, np.asarray(variable_value)))
+        return state
+
+    monkeypatch.setattr(
+        veros_gcm_module,
+        "compute_fluxes",
+        lambda component_state, settings: (
+            np.asarray([[1.0, np.nan], [3.0, 4.0]]),
+            np.asarray([[5.0, 6.0], [np.nan, 8.0]]),
+            np.asarray([[9.0, 10.0], [11.0, np.nan]]),
+            np.asarray([[12.0, 13.0], [14.0, np.nan]]),
+        ),
+    )
+    monkeypatch.setattr(veros_gcm_module, "set_variable", fake_set_variable)
+    component._step_function = lambda state: state
+
+    coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
+    component.step(timedelta(seconds=20.0), datetime(2000, 1, 1), coupler)
+
+    assert [name for name, _ in set_calls] == ["taux", "tauy", "qnet", "qnec"]
+    assert_allclose_compact(
+        set_calls[0][1], np.asarray([[[1.0], [3.0]], [[0.0], [4.0]]])
+    )
+    assert_allclose_compact(
+        set_calls[1][1], np.asarray([[[5.0], [0.0]], [[6.0], [8.0]]])
+    )
+    assert_allclose_compact(
+        set_calls[2][1], np.asarray([[[9.0], [11.0]], [[10.0], [0.0]]])
+    )
+    assert_allclose_compact(
+        set_calls[3][1], np.asarray([[[12.0], [14.0]], [[13.0], [0.0]]])
     )
