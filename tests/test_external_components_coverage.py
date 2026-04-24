@@ -653,6 +653,8 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     component.step(timedelta(days=1), datetime(2000, 1, 2), coupler)
 
     forcing_call = component.forcing.copy_calls[-1]
+    assert isinstance(forcing_call["stl_am"], np.ndarray)
+    assert isinstance(forcing_call["sea_surface_temperature"], np.ndarray)
     assert_allclose_compact(
         forcing_call["stl_am"],
         np.asarray([[270.0, 288.15], [288.15, 567.0]]),
@@ -1003,10 +1005,11 @@ def test_veros_set_variable_updates_only_interior_cells(
     updated = veros_gcm_module.set_variable(
         state,
         "temp",
-        np.full((4, 4, 1), 9.0),
+        jnp.full((4, 4, 1), 9.0),
         jitted=False,
     )
 
+    assert isinstance(updated.variables.temp, np.ndarray)
     assert_allclose_compact(
         updated.variables.temp[2:-2, 2:-2, :], np.full((4, 4, 1), 9.0)
     )
@@ -1113,9 +1116,10 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     set_calls: list[tuple[str, np.ndarray]] = []
 
     def fake_set_variable(
-        state: Any, variable_name: str, variable_value: np.ndarray, jitted: bool = True
+        state: Any, variable_name: str, variable_value: Any, jitted: bool = True
     ) -> Any:
         _ = jitted
+        assert isinstance(variable_value, jax.Array)
         set_calls.append((variable_name, np.asarray(variable_value)))
         return state
 
@@ -1165,9 +1169,10 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     set_calls: list[tuple[str, np.ndarray]] = []
 
     def fake_set_variable(
-        state: Any, variable_name: str, variable_value: np.ndarray, jitted: bool = True
+        state: Any, variable_name: str, variable_value: Any, jitted: bool = True
     ) -> Any:
         _ = jitted
+        assert isinstance(variable_value, jax.Array)
         set_calls.append((variable_name, np.asarray(variable_value)))
         return state
 

@@ -13,7 +13,7 @@ Key improvements:
 
 import os
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 from pathlib import Path
 
 import jax
@@ -25,7 +25,6 @@ from vercor.components.external.camulator_state import (
 )
 
 from datetime import datetime, timedelta
-import numpy as np
 import xarray as xr
 
 # ---------- #
@@ -41,6 +40,8 @@ except ModuleNotFoundError:
 from vercor.clock import ModelDateTime
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
+from vercor.tools import _runtime_array_to_host
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -121,21 +122,15 @@ def _prepare_camulator_sst_input(
     ]
 
 
-def _jax_array_to_host(array: object) -> Any:
-    """Transfer a JAX-compatible array to the host for external runtimes."""
-
-    return jax.device_get(jnp.asarray(array))
-
-
 def _torch_tensor_from_jax_array(
-    array: object,
+    array: RuntimeArray,
     device: str,
     *,
     pin_memory: bool = False,
 ) -> torch.Tensor:
     """Transfer a JAX-compatible array through an explicit host-to-Torch boundary."""
 
-    tensor = torch.as_tensor(np.asarray(_jax_array_to_host(array)).copy())
+    tensor = torch.as_tensor(_runtime_array_to_host(array).copy())
     if pin_memory and device != "cpu" and torch.cuda.is_available():
         tensor = tensor.pin_memory()
     return tensor.to(device, non_blocking=True)
@@ -635,23 +630,33 @@ class CAMulatorGCM(Component):
             settings.cappa,
             settings.stefBoltz,
             self.P0,
-            np.asarray(self.hyai.cpu()).squeeze(),
-            np.asarray(self.hybi.cpu()).squeeze(),
-            np.asarray(self.hyam.cpu()).squeeze(),
-            np.asarray(self.hybm.cpu()).squeeze(),
-            np.asarray(self.accessor_output.get_state_var(prediction_out, "U").cpu()),
-            np.asarray(self.accessor_output.get_state_var(prediction_out, "V").cpu()),
-            np.asarray(self.accessor_output.get_state_var(prediction_out, "TS").cpu()),
-            np.asarray(self.accessor_output.get_state_var(prediction_out, "T").cpu()),
-            np.asarray(
-                self.accessor_output.get_state_var(prediction_out, "Qtot").cpu()
+            _runtime_array_to_host(self.hyai.cpu().numpy()).squeeze(),
+            _runtime_array_to_host(self.hybi.cpu().numpy()).squeeze(),
+            _runtime_array_to_host(self.hyam.cpu().numpy()).squeeze(),
+            _runtime_array_to_host(self.hybm.cpu().numpy()).squeeze(),
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "U").cpu().numpy()
             ),
-            np.asarray(
-                self.accessor_output.get_state_var(prediction_out, "FSNS").cpu()
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "V").cpu().numpy()
             ),
-            np.asarray(
-                self.accessor_output.get_state_var(prediction_out, "FLNS").cpu()
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "TS").cpu().numpy()
             ),
-            np.asarray(self.accessor_output.get_state_var(prediction_out, "PS").cpu()),
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "T").cpu().numpy()
+            ),
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "Qtot").cpu().numpy()
+            ),
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "FSNS").cpu().numpy()
+            ),
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "FLNS").cpu().numpy()
+            ),
+            _runtime_array_to_host(
+                self.accessor_output.get_state_var(prediction_out, "PS").cpu().numpy()
+            ),
         )
         data.update(mapped_fields)

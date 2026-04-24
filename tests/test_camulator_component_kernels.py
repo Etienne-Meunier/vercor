@@ -21,6 +21,7 @@ from vercor.components.external.camulator import (
     _prepare_camulator_sst_input,
     _map_camulator_prediction_arrays,
     _prepare_camulator_surface_forcing,
+    _torch_tensor_from_jax_array,
 )
 from vercor.grid import RectilinearGrid
 from vercor.settings import VercorSettings
@@ -109,6 +110,17 @@ def test_prepare_camulator_sst_input_supports_jit_and_shape() -> None:
 
     assert prepared.shape == (1, 1, 1, 2, 2)
     assert_allclose_compact(prepared[0, 0, 0], np.asarray(surface_temperature))
+
+
+def test_torch_tensor_from_jax_array_uses_copied_host_boundary() -> None:
+    source = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+
+    tensor = _torch_tensor_from_jax_array(source, "cpu")
+    tensor[0, 0] = 99.0
+
+    assert isinstance(tensor, torch.Tensor)
+    assert tensor.device.type == "cpu"
+    assert_allclose_compact(np.asarray(source), np.asarray([[1.0, 2.0], [3.0, 4.0]]))
 
 
 def test_prepare_static_forcing_tensor_preserves_order_and_shape() -> None:

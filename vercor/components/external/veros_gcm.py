@@ -3,8 +3,6 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Callable
 import jax
 import jax.numpy as jnp
-import numpy as np
-from numpy.typing import NDArray
 from datetime import datetime, timedelta
 
 from vercor.clock import ModelDateTime
@@ -20,6 +18,8 @@ from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
 from vercor.settings import VercorSettings
+from vercor.tools import _runtime_array_to_host
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -288,7 +288,10 @@ def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
 
 
 def set_variable(
-    state: VerosState, variable_name: str, variable_value: NDArray, jitted: bool = True
+    state: VerosState,
+    variable_name: str,
+    variable_value: RuntimeArray,
+    jitted: bool = True,
 ) -> VerosState:
     n_state = copy_state(state, jitted=jitted)
     vs = n_state.variables
@@ -296,7 +299,7 @@ def set_variable(
     with n_state.variables.unlock():
         var = getattr(vs, variable_name)
         updated_var = _update_veros_interior(var, variable_value)
-        setattr(vs, variable_name, np.asarray(updated_var))
+        setattr(vs, variable_name, _runtime_array_to_host(updated_var))
 
     return n_state
 
@@ -399,7 +402,7 @@ class VerosGCM(Component):
             self._veros_state = set_variable(
                 self._veros_state,
                 variable_name,
-                np.asarray(variable_value),
+                variable_value,
                 jitted=self.jitted,
             )
 

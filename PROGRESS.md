@@ -995,3 +995,48 @@
 ## Notes / Failed Approaches (Slice 10A)
 
 - No failed implementation approaches. The slice only moves NumPy conversion to explicit host-only boundaries and keeps VerCOR runtime data JAX-backed.
+
+## Tenth JAX Translation Slice 10B: External Host Transfer Centralization
+
+- Centralized the remaining external-adapter host transfers on `vercor.tools._runtime_array_to_host()` while preserving explicit third-party runtime boundaries:
+  - `vercor/components/external/jax_gcm.py`
+    - replaced direct `np.asarray(...).transpose()` forcing handoffs with shared host transfers and `.T`
+    - removed the now-unused NumPy import from the adapter
+  - `vercor/components/external/veros_gcm.py`
+    - widened `set_variable()` to accept mixed `RuntimeArray` inputs
+    - moved the JAX-to-host conversion inside the Veros mutable-state boundary
+    - stopped converting prepared forcing fields to NumPy before calling `set_variable()`
+  - `vercor/components/external/camulator.py`
+    - removed the adapter-local JAX-to-host helper
+    - reused the shared host-transfer helper for Torch tensor staging and CAMulator output mapping inputs
+    - removed the now-unused NumPy import from the adapter
+- Extended focused boundary tests:
+  - `tests/test_external_components_coverage.py`
+    - asserts JAXGCM forcing copy receives host NumPy arrays with the existing transpose convention
+    - asserts Veros `set_variable()` accepts JAX-backed inputs and stores host arrays at the mutation boundary
+    - asserts `VerosGCM.step()` passes JAX-backed prepared forcing fields into `set_variable()`
+  - `tests/test_camulator_component_kernels.py`
+    - asserts CAMulator Torch staging copies host data so mutating the tensor does not mutate the JAX source
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 10B External Host Transfer Centralization, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q`
+  - passed after Black reformatted `vercor/components/external/camulator.py`
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 10B)
+
+- No failed implementation approaches. The slice keeps NumPy, xarray, Torch, Matplotlib, and Veros object mutation as explicit host-only boundaries.

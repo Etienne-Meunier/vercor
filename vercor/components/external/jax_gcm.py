@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, Optional, Literal, cast
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import tree_math
 import xarray as xr
 
@@ -35,6 +34,7 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.grid import RectilinearGrid
+from vercor.tools import _runtime_array_to_host
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -417,10 +417,10 @@ class JAXGCM(Component):
         )
 
         self.forcing = self.forcing.copy(
-            stl_am=np.asarray(land_surface_temperature_forcing).transpose(),
-            sea_surface_temperature=np.asarray(
+            stl_am=_runtime_array_to_host(land_surface_temperature_forcing).T,
+            sea_surface_temperature=_runtime_array_to_host(
                 sea_surface_temperature_forcing
-            ).transpose(),
+            ).T,
         )
 
         p, d = self.do_jcm_steps()
