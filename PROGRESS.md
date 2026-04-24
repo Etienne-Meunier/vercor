@@ -891,3 +891,35 @@
   - passed
 - `conda run -n scipy pytest tests/ -q`
   - passed
+
+## Ninth JAX Translation Slice 9B: Veros Boundary Cleanup
+
+- Tightened the Veros adapter boundary in `vercor/components/external/veros_gcm.py` without changing the public component API:
+  - `compute_fluxes()` now returns JAX arrays and keeps VerCOR-side flux math JAX-backed until the Veros state mutation boundary
+  - added `_extract_surface_temperature()` as a private jitted helper for the repeated Veros SST readout and Celsius-to-Kelvin conversion
+  - `VerosGCM.initialize()` and `VerosGCM.step()` now use the shared helper for JAX-backed SST storage
+  - NumPy conversion remains explicit at `set_variable()` / Veros mutable-state handoff
+- Extended `tests/test_external_components_coverage.py` with:
+  - assertions that `compute_fluxes()` returns JAX-backed arrays while preserving existing sign and `qnec` masking behavior
+  - `jax.jit` and reverse-mode gradient coverage for `_extract_surface_temperature()`
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 9B Veros Boundary Cleanup, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_external_components_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 9B)
+
+- No failed implementation approaches. The slice kept Veros object mutation host-side and only moved the VerCOR-side flux/SST handoff later in the boundary.

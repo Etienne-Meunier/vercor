@@ -169,9 +169,19 @@ def _prepare_surface_forcing_fields(
     return taux_prepared, tauy_prepared, qnet_prepared, qnec_prepared
 
 
+@jax.jit
+def _extract_surface_temperature(
+    temperature: object,
+    tau: object,
+) -> jax.Array:
+    temperature_array = jnp.asarray(temperature, dtype=jnp.float64)
+    tau_index = jnp.asarray(tau, dtype=jnp.int32)
+    return temperature_array[2:-2, 2:-2, -1, tau_index].T + 273.15
+
+
 def compute_fluxes(
     component_state: "VerosGCM", settings: VercorSettings
-) -> tuple[NDArray, NDArray, NDArray, NDArray]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
 
     cs = component_state
     vs = cs._veros_state.variables
@@ -231,7 +241,12 @@ def compute_fluxes(
     )
     qnec = -jnp.where(dqfldt <= -1e10, 0.0, dqfldt)
 
-    return tuple(np.asarray(arr) for arr in (taux, tauy, qnet, qnec))  # type: ignore[return-value]
+    return (
+        jnp.asarray(taux, dtype=jnp.float64),
+        jnp.asarray(tauy, dtype=jnp.float64),
+        jnp.asarray(qnet, dtype=jnp.float64),
+        jnp.asarray(qnec, dtype=jnp.float64),
+    )
 
 
 def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
@@ -361,15 +376,9 @@ class VerosGCM(Component):
                 coupler.logger.info(f" Step {i+1} / {self.spinup_steps}")
                 self._veros_state = self._step_function(self._veros_state)
 
-        # Units: [K]
-        self.data["sea_surface_temperature"] = (
-            jnp.asarray(
-                self._veros_state.variables.temp[
-                    2:-2, 2:-2, -1, self._veros_state.variables.tau
-                ].T,
-                dtype=jnp.float64,
-            )
-            + 273.15
+        self.data["sea_surface_temperature"] = _extract_surface_temperature(
+            self._veros_state.variables.temp,
+            self._veros_state.variables.tau,
         )
 
     def step(
@@ -398,13 +407,7 @@ class VerosGCM(Component):
             coupler.logger.info(f" Veros sub-step {i+1} / {self.model_substeps}")
             self._veros_state = self._step_function(self._veros_state)
 
-        # Units: [K]
-        self.data["sea_surface_temperature"] = (
-            jnp.asarray(
-                self._veros_state.variables.temp[
-                    2:-2, 2:-2, -1, self._veros_state.variables.tau
-                ].T,
-                dtype=jnp.float64,
-            )
-            + 273.15
+        self.data["sea_surface_temperature"] = _extract_surface_temperature(
+            self._veros_state.variables.temp,
+            self._veros_state.variables.tau,
         )

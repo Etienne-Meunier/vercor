@@ -810,6 +810,10 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
         component, VercorSettings()
     )
 
+    assert isinstance(taux, jax.Array)
+    assert isinstance(tauy, jax.Array)
+    assert isinstance(qnet, jax.Array)
+    assert isinstance(qnec, jax.Array)
     assert_allclose_compact(captured["mask"], np.ones((2, 2)))
     assert captured["u_tgrid"].shape == (2, 2)
     assert captured["v_tgrid"].shape == (2, 2)
@@ -932,6 +936,28 @@ def test_veros_update_veros_interior_supports_jit_and_gradients() -> None:
         lambda payload: jnp.sum(veros_gcm_module._update_veros_interior(array, payload))
     )(interior)
     assert_allclose_compact(gradient, np.ones((4, 4, 1)))
+
+
+def test_veros_extract_surface_temperature_supports_jit_and_gradients() -> None:
+    temperature = jnp.arange(8 * 8 * 2 * 2.0, dtype=jnp.float64).reshape(8, 8, 2, 2)
+
+    surface_temperature = jax.jit(veros_gcm_module._extract_surface_temperature)(
+        temperature, 1
+    )
+
+    assert_allclose_compact(
+        surface_temperature,
+        np.asarray(temperature[2:-2, 2:-2, -1, 1].T) + 273.15,
+    )
+
+    gradient = jax.grad(
+        lambda payload: jnp.sum(
+            veros_gcm_module._extract_surface_temperature(payload, 0)
+        )
+    )(temperature)
+    expected_gradient = np.zeros((8, 8, 2, 2), dtype=float)
+    expected_gradient[2:-2, 2:-2, -1, 0] = 1.0
+    assert_allclose_compact(gradient, expected_gradient)
 
 
 def test_veros_prepare_surface_forcing_fields_shapes_nan_cleanup_and_qnec_gate() -> (
