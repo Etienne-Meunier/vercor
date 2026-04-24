@@ -15,7 +15,6 @@ Key Classes:
 import os
 import yaml
 import torch
-import numpy as np
 import xarray as xr
 from typing import Any, Optional, Literal
 import logging
@@ -54,6 +53,25 @@ except ImportError:
     logging.warning("WindPP not available - wind artifact filtering disabled")
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_static_forcing_tensor(
+    forcing_ds: xr.Dataset,
+    static_variables: list[str],
+    device: Any,
+) -> torch.Tensor:
+    """Prepare static CAMulator forcing through an explicit xarray/Torch boundary."""
+
+    static_values = forcing_ds[static_variables].to_array(dim="static_variable").values
+    return (
+        torch.as_tensor(static_values)
+        .unsqueeze(0)
+        .unsqueeze(2)
+        .to(
+            device,
+            non_blocking=True,
+        )
+    )
 
 
 # ============================================================================
@@ -911,12 +929,7 @@ def initialize_camulator(
     # Load static forcing (topography, land-sea mask, etc.)
     print("Loading static forcing...")
     sf_vars = conf["data"]["static_variables"]
-    static_arr = np.stack([forcing_ds[s].values for s in sf_vars], axis=0)
-    static_forcing = (
-        (torch.from_numpy(static_arr).unsqueeze(0))
-        .unsqueeze(2)
-        .to(current_device, non_blocking=True)
-    )
+    static_forcing = _prepare_static_forcing_tensor(forcing_ds, sf_vars, current_device)
     print(f"Static forcing shape: {static_forcing.shape}")
 
     # Load metadata and coordinates

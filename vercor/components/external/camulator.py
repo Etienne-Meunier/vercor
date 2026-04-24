@@ -13,7 +13,7 @@ Key improvements:
 
 import os
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from pathlib import Path
 
 import jax
@@ -99,6 +99,46 @@ def _prepare_camulator_surface_forcing(
     ) / jnp.nanstd(total_surface_temperature)
 
     return total_surface_temperature, rescaled_total_surface_temperature
+
+
+@jax.jit
+def _prepare_camulator_dynamic_forcing_chunk(
+    dynamic_forcing_values: object,
+) -> jax.Array:
+    """Convert xarray forcing values to CAMulator's time-major layout."""
+
+    return jnp.asarray(dynamic_forcing_values, dtype=jnp.float_).transpose((1, 0, 2, 3))
+
+
+@jax.jit
+def _prepare_camulator_sst_input(
+    rescaled_total_surface_temperature: object,
+) -> jax.Array:
+    """Expand a rescaled SST field to CAMulator's input tensor layout."""
+
+    return jnp.asarray(rescaled_total_surface_temperature, dtype=jnp.float_)[
+        jnp.newaxis, jnp.newaxis, jnp.newaxis, ...
+    ]
+
+
+def _jax_array_to_host(array: object) -> Any:
+    """Transfer a JAX-compatible array to the host for external runtimes."""
+
+    return jax.device_get(jnp.asarray(array))
+
+
+def _torch_tensor_from_jax_array(
+    array: object,
+    device: str,
+    *,
+    pin_memory: bool = False,
+) -> torch.Tensor:
+    """Transfer a JAX-compatible array through an explicit host-to-Torch boundary."""
+
+    tensor = torch.as_tensor(np.asarray(_jax_array_to_host(array)).copy())
+    if pin_memory and device != "cpu" and torch.cuda.is_available():
+        tensor = tensor.pin_memory()
+    return tensor.to(device, non_blocking=True)
 
 
 @jax.jit
@@ -455,13 +495,14 @@ class CAMulatorGCM(Component):
         ds_slice = self.dynamic_ds.isel(time=slice(block_start, block_end)).load()
         ds_slice_times = ds_slice["time"].values
 
-        # Stack forcing variables into tensor [time, vars, lat, lon]
-        arr_list = [ds_slice[var].values for var in self.dynamic_ds.data_vars]
-        arr = np.stack(arr_list, axis=1)
-
-        # Transfer to GPU once per chunk
-        cpu_tensor = torch.from_numpy(arr).unsqueeze(2).pin_memory()
-        gpu_forcing_chunk = cpu_tensor.to(self.device, non_blocking=True)
+        dynamic_forcing_chunk = _prepare_camulator_dynamic_forcing_chunk(
+            ds_slice.to_array(dim="dynamic_variable").values
+        )
+        gpu_forcing_chunk = _torch_tensor_from_jax_array(
+            dynamic_forcing_chunk[:, :, jnp.newaxis, :, :],
+            self.device,
+            pin_memory=True,
+        )
 
         # Step through each time in the chunk
         for t in range(gpu_forcing_chunk.shape[0]):
@@ -524,11 +565,9 @@ class CAMulatorGCM(Component):
             self.accessor_input.set_state_var(
                 model_input,
                 "SST",
-                torch.tensor(
-                    np.asarray(rescaled_total_ts)[
-                        np.newaxis, np.newaxis, np.newaxis, ...
-                    ]
-                ).to(self.device),
+                _torch_tensor_from_jax_array(
+                    _prepare_camulator_sst_input(rescaled_total_ts), self.device
+                ),
             )
 
             # Run model

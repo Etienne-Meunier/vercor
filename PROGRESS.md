@@ -923,3 +923,37 @@
 ## Notes / Failed Approaches (Slice 9B)
 
 - No failed implementation approaches. The slice kept Veros object mutation host-side and only moved the VerCOR-side flux/SST handoff later in the boundary.
+
+## Ninth JAX Translation Slice 9C: CAMulator Forcing Boundary Cleanup
+
+- Tightened the remaining CAMulator forcing-input boundary while preserving Torch, xarray, CREDIT, and NetCDF as explicit external runtime boundaries:
+  - added JAX helpers in `vercor/components/external/camulator.py` for dynamic forcing layout conversion and CAMulator SST input expansion
+  - added a single explicit JAX-to-host-to-Torch transfer helper for CAMulator step inputs
+  - replaced inline dynamic forcing `np.stack(...)` and inline SST `torch.tensor(np.asarray(...))` staging in `CAMulatorGCM.step()`
+  - replaced static forcing `np.stack(...)` in `vercor/components/external/camulator_state.py` with xarray `to_array(...)` staging before the Torch boundary
+- Extended `tests/test_camulator_component_kernels.py` with:
+  - `jax.jit` coverage for dynamic forcing layout conversion and SST input expansion
+  - static forcing order/shape coverage through the xarray/Torch helper
+  - lightweight patched `CAMulatorGCM.step()` coverage confirming dynamic forcing shape, SST tensor shape, and JAX-backed total surface temperature storage
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 9C CAMulator Forcing Boundary Cleanup, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_camulator_component_kernels.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 9C)
+
+- The first helper implementation used `torch.as_tensor()` directly on a JAX host transfer, which produced a read-only NumPy-array warning from Torch. The final helper copies the host array before constructing the Torch tensor.
+- The first `mypy` pass rejected fake test accessors assigned to `CAMulatorGCM` attributes; the final test casts the manually constructed component to `Any` because this is intentionally patched wrapper coverage rather than normal construction.

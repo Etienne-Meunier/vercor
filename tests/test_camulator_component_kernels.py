@@ -2,19 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import torch
 import xarray as xr
 
 import vercor.components.data.camulator_land as camulator_land_module
 import vercor.components.external.camulator as camulator_module
+import vercor.components.external.camulator_state as camulator_state_module
 from tests.assertions import assert_allclose_compact
 from vercor.components.external.camulator import (
     CAMulatorGCM,
     _initialize_camulator_runtime_fields,
+    _prepare_camulator_dynamic_forcing_chunk,
+    _prepare_camulator_sst_input,
     _map_camulator_prediction_arrays,
     _prepare_camulator_surface_forcing,
 )
@@ -87,6 +91,49 @@ def test_prepare_camulator_surface_forcing_supports_jit_and_gradients() -> None:
     )(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
     assert gradient.shape == sea_surface_temperature.shape
     assert np.all(np.isfinite(np.asarray(gradient)))
+
+
+def test_prepare_camulator_dynamic_forcing_chunk_supports_jit_and_ordering() -> None:
+    values = jnp.arange(2 * 3 * 2 * 2, dtype=jnp.float32).reshape(2, 3, 2, 2)
+
+    prepared = jax.jit(_prepare_camulator_dynamic_forcing_chunk)(values)
+
+    assert prepared.shape == (3, 2, 2, 2)
+    assert_allclose_compact(prepared, np.asarray(values).transpose((1, 0, 2, 3)))
+
+
+def test_prepare_camulator_sst_input_supports_jit_and_shape() -> None:
+    surface_temperature = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+
+    prepared = jax.jit(_prepare_camulator_sst_input)(surface_temperature)
+
+    assert prepared.shape == (1, 1, 1, 2, 2)
+    assert_allclose_compact(prepared[0, 0, 0], np.asarray(surface_temperature))
+
+
+def test_prepare_static_forcing_tensor_preserves_order_and_shape() -> None:
+    forcing_ds = xr.Dataset(
+        data_vars={
+            "TOPO": (("lat", "lon"), np.asarray([[1.0, 2.0], [3.0, 4.0]])),
+            "LAND": (("lat", "lon"), np.asarray([[5.0, 6.0], [7.0, 8.0]])),
+        }
+    )
+
+    static_forcing = camulator_state_module._prepare_static_forcing_tensor(
+        forcing_ds, ["LAND", "TOPO"], "cpu"
+    )
+
+    assert isinstance(static_forcing, torch.Tensor)
+    assert static_forcing.shape == (1, 2, 1, 2, 2)
+    assert_allclose_compact(
+        static_forcing[0, :, 0],
+        np.asarray(
+            [
+                [[5.0, 6.0], [7.0, 8.0]],
+                [[1.0, 2.0], [3.0, 4.0]],
+            ]
+        ),
+    )
 
 
 def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions() -> (
@@ -267,3 +314,152 @@ def test_camulator_land_stores_jax_runtime_arrays(
         component.data["land_surface_temperature"],
         np.asarray([[281.0, 282.0], [283.0, 284.0]]),
     )
+
+
+def test_camulator_step_uses_jax_prepared_forcing_boundaries(
+    monkeypatch: Any,
+) -> None:
+    start = datetime(2000, 1, 1, 0, 0, 0)
+    dynamic_ds = xr.Dataset(
+        data_vars={
+            "F1": (
+                ("time", "lat", "lon"),
+                np.asarray(
+                    [
+                        [[1.0, 2.0], [3.0, 4.0]],
+                        [[5.0, 6.0], [7.0, 8.0]],
+                    ]
+                ),
+            ),
+            "F2": (
+                ("time", "lat", "lon"),
+                np.asarray(
+                    [
+                        [[10.0, 20.0], [30.0, 40.0]],
+                        [[50.0, 60.0], [70.0, 80.0]],
+                    ]
+                ),
+            ),
+        },
+        coords={"time": [start, datetime(2000, 1, 1, 6, 0, 0)]},
+    )
+    captured: dict[str, torch.Tensor] = {}
+
+    class _StateManager:
+        def build_input_with_forcing(
+            self,
+            state: torch.Tensor,
+            dynamic_forcing: torch.Tensor,
+            static_forcing: torch.Tensor,
+        ) -> torch.Tensor:
+            _ = static_forcing
+            captured["dynamic_forcing"] = dynamic_forcing.detach().cpu()
+            return state
+
+        def shift_state_forward(
+            self, state: torch.Tensor, prediction: torch.Tensor
+        ) -> torch.Tensor:
+            _ = prediction
+            return state
+
+    class _Model:
+        def __call__(self, model_input: torch.Tensor) -> torch.Tensor:
+            return model_input + 1.0
+
+    class _StepAccessor:
+        def set_state_var(
+            self, state: torch.Tensor, variable_name: str, value: torch.Tensor
+        ) -> None:
+            _ = state
+            assert variable_name == "SST"
+            captured["sst"] = value.detach().cpu()
+
+    class _OutputAccessor:
+        def get_state_var(
+            self, state: torch.Tensor, variable_name: str
+        ) -> torch.Tensor:
+            _ = state, variable_name
+            return torch.ones((1, 2, 2, 2), dtype=torch.float32)
+
+    component = cast(Any, CAMulatorGCM.__new__(CAMulatorGCM))
+    component.start_ix = 0
+    component.timestep_counter = 1
+    component.model_substeps = 1
+    component.dynamic_ds = dynamic_ds
+    component.device = "cpu"
+    component.stepper = SimpleNamespace(
+        state_manager=_StateManager(),
+        model=_Model(),
+        _apply_postprocessing=lambda prediction, model_input: prediction,
+    )
+    component.static_forcing = torch.zeros((1, 1, 1, 2, 2))
+    component.state = torch.zeros((1, 1, 1, 2, 2))
+    component.LANDM_COSLAT = jnp.asarray([[0.0, 1.0], [0.5, 0.0]])
+    component.data = {
+        "sea_surface_temperature": jnp.asarray([[1.0, 2.0], [3.0, 4.0]]),
+        "land_surface_temperature": jnp.asarray([[10.0, 20.0], [30.0, 40.0]]),
+    }
+    component.accessor_input = _StepAccessor()
+    component.accessor_output = _OutputAccessor()
+    component.latlons = SimpleNamespace(
+        latitude=SimpleNamespace(values=np.asarray([0.0, 1.0])),
+        longitude=SimpleNamespace(values=np.asarray([0.0, 1.0])),
+    )
+    component.conf = {}
+    component.init_str = "2000-01-01T00Z"
+    component.lead_time_periods = 6
+    component.forecast_hour = 1
+    component.metadata = {}
+    component.state_transformer = SimpleNamespace(
+        inverse_transform=lambda prediction: prediction
+    )
+    component.P0 = 100000.0
+    component.hyai = torch.ones((1, 2, 1, 1))
+    component.hybi = torch.ones((1, 2, 1, 1))
+    component.hyam = torch.ones((1, 2, 1, 1))
+    component.hybm = torch.ones((1, 2, 1, 1))
+
+    monkeypatch.setattr(
+        camulator_module,
+        "make_xarray",
+        lambda prediction, utc_datetime, latitude, longitude, conf: (
+            xr.Dataset(),
+            xr.Dataset(),
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        camulator_module,
+        "save_netcdf_increment",
+        lambda upper_air, single_level, init_str, forecast_hour, metadata, conf: None,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        camulator_module,
+        "_map_camulator_prediction_arrays",
+        lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
+    )
+
+    component.step(
+        dt=datetime(2000, 1, 1, 6, 0, 0) - start,
+        time=start,
+        coupler=SimpleNamespace(settings=VercorSettings(), logger=_RecordingLogger()),
+    )
+
+    assert captured["dynamic_forcing"].shape == (1, 2, 1, 2, 2)
+    assert_allclose_compact(
+        captured["dynamic_forcing"][0, :, 0],
+        np.asarray(
+            [
+                [[5.0, 6.0], [7.0, 8.0]],
+                [[50.0, 60.0], [70.0, 80.0]],
+            ]
+        ),
+    )
+    assert captured["sst"].shape == (1, 1, 1, 2, 2)
+    assert isinstance(component.data["total_surface_temperature"], jax.Array)
+    assert_allclose_compact(
+        component.data["total_surface_temperature"],
+        np.asarray([[11.0, 283.0], [33.0, 44.0]]),
+    )
+    assert_allclose_compact(component.data["temperature"], np.full((2, 2), 9.0))
