@@ -137,8 +137,12 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
 
     assert component.DATA_FILES["surface"] == str(fake_path)
     assert component.settings.apply_time_interpolation
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.grid.latitude, jax.Array)
+    assert isinstance(component.data["land_surface_temperature"], jax.Array)
     binary_mask = component.grid.binary_mask
     assert binary_mask is not None
+    assert isinstance(binary_mask, jax.Array)
     assert_allclose_compact(binary_mask, forcing["mask"].T)
     assert_allclose_compact(component.data["land_surface_temperature"], forcing["skt"])
 

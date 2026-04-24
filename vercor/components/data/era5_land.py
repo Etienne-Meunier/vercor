@@ -2,6 +2,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
+
 from vercor.clock import CustomDateTime
 from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
@@ -9,6 +13,21 @@ from vercor.tools import get_forcing_data
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def _prepare_era5_land_runtime_fields(
+    longitude: ArrayLike,
+    latitude: ArrayLike,
+    binary_mask: ArrayLike,
+    land_surface_temperature: ArrayLike,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Normalize ERA5 land forcing arrays for JAX-backed runtime storage."""
+    return (
+        jnp.asarray(longitude),
+        jnp.asarray(latitude),
+        jnp.asarray(binary_mask).T,
+        jnp.asarray(land_surface_temperature),
+    )
 
 
 class ERA5Land(Component, ComponentForcingData):
@@ -39,9 +58,17 @@ class ERA5Land(Component, ComponentForcingData):
             "surface": str(surface_file),
         }
 
-        longitude = self._read_forcing("lon", where="surface")
-        latitude = self._read_forcing("lat", where="surface")
-        binary_mask = self._read_forcing("mask", where="surface").T
+        (
+            longitude,
+            latitude,
+            binary_mask,
+            land_surface_temperature,
+        ) = _prepare_era5_land_runtime_fields(
+            self._read_forcing("lon", where="surface"),
+            self._read_forcing("lat", where="surface"),
+            self._read_forcing("mask", where="surface"),
+            self._read_forcing("skt", where="surface"),
+        )
         self.grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
@@ -54,9 +81,7 @@ class ERA5Land(Component, ComponentForcingData):
         self.settings.apply_time_interpolation = True
 
         # Units: [K]
-        self.data["land_surface_temperature"] = self._read_forcing(
-            "skt", where="surface"
-        )
+        self.data["land_surface_temperature"] = land_surface_temperature
 
     def initialize(self, coupler: "Coupler") -> None:
         pass

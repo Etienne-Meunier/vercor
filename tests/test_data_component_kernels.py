@@ -10,6 +10,7 @@ from vercor.components.data.era5_atmosphere import (
     _compute_monthly_diagnostics,
     _decode_surface_pressure,
 )
+from vercor.components.data.era5_land import _prepare_era5_land_runtime_fields
 from vercor.components.data.era5_ocean import (
     _mask_sea_surface_temperature as _mask_era5_sea_surface_temperature,
 )
@@ -98,6 +99,51 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
         )
     )(surface_pressure)
     assert np.all(np.isfinite(np.asarray(density_gradient)))
+
+
+def test_era5_land_helper_supports_jit_and_gradients() -> None:
+    longitude = jnp.asarray([0.0, 120.0, 240.0])
+    latitude = jnp.asarray([-30.0, 30.0])
+    binary_mask = jnp.asarray([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+    land_surface_temperature = jnp.asarray([[[280.0]], [[281.0]], [[282.0]]])
+
+    (
+        prepared_longitude,
+        prepared_latitude,
+        prepared_binary_mask,
+        prepared_land_surface_temperature,
+    ) = jax.jit(_prepare_era5_land_runtime_fields)(
+        longitude,
+        latitude,
+        binary_mask,
+        land_surface_temperature,
+    )
+
+    assert isinstance(prepared_longitude, jax.Array)
+    assert isinstance(prepared_latitude, jax.Array)
+    assert isinstance(prepared_binary_mask, jax.Array)
+    assert isinstance(prepared_land_surface_temperature, jax.Array)
+    assert_allclose_compact(prepared_longitude, np.asarray([0.0, 120.0, 240.0]))
+    assert_allclose_compact(prepared_latitude, np.asarray([-30.0, 30.0]))
+    assert_allclose_compact(prepared_binary_mask, np.asarray(binary_mask).T)
+    assert_allclose_compact(
+        prepared_land_surface_temperature,
+        np.asarray([[[280.0]], [[281.0]], [[282.0]]]),
+    )
+
+    gradient = jax.grad(
+        lambda temperature: jnp.sum(
+            _prepare_era5_land_runtime_fields(
+                longitude,
+                latitude,
+                binary_mask,
+                temperature,
+            )[3]
+        )
+    )(land_surface_temperature)
+    assert_allclose_compact(
+        gradient, np.ones_like(np.asarray(land_surface_temperature))
+    )
 
 
 def test_ocean_mask_helpers_accept_jax_arrays() -> None:

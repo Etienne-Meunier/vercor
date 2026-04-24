@@ -834,3 +834,40 @@
 ## Notes / Failed Approaches (Slice 10B)
 
 - No failed implementation approaches. The slice keeps NumPy, xarray, Torch, Matplotlib, and Veros object mutation as explicit host-only boundaries.
+
+## Eleventh JAX Translation Slice 11A: ERA5 Land Adapter
+
+- Translated the ERA5 land forcing adapter runtime path while preserving the public component API and explicit h5netcdf/NumPy file-read boundary:
+  - `vercor/components/data/era5_land.py`
+    - added `_prepare_era5_land_runtime_fields()` for JAX-backed longitude, latitude, transposed land mask, and land surface temperature storage
+    - `ERA5Land.__init__()` now normalizes forcing arrays through that helper before constructing the grid and storing `land_surface_temperature`
+    - `initialize()` and `step()` remain no-op dataset-adapter hooks
+- Extended focused coverage:
+  - `tests/test_data_component_kernels.py`
+    - `jax.jit` coverage for the ERA5 land runtime-field helper
+    - reverse-mode gradient smoke coverage for land surface temperature passthrough
+  - `tests/test_component_models_coverage.py`
+    - constructor coverage now asserts ERA5 land grid coordinates, binary mask, and runtime temperature storage are JAX-backed
+- Updated `DEPENDENCIES.md` to include the ERA5 land forcing adapter layer.
+
+## Validation (Slice 11A ERA5 Land Adapter, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_data_component_kernels.py tests/test_component_models_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy pytest tests/test_data_component_kernels.py tests/test_component_models_coverage.py -q`
+  - passed after Black reformatted `tests/test_data_component_kernels.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 11A)
+
+- No failed implementation approaches. The slice keeps forcing file reads host-side and only normalizes the in-memory VerCOR runtime fields to JAX arrays.
