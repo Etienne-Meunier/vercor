@@ -11,7 +11,8 @@ from jcm.forcing import ForcingData
 from jcm.terrain import TerrainData
 from jcm.physics.speedy.speedy_coords import get_speedy_coords
 from jcm.physics.speedy.params import Parameters
-from numpy.typing import NDArray
+
+from vercor.types import RuntimeArray
 
 
 def change_jcm_parameter_values(
@@ -40,11 +41,11 @@ def get_default_parameter_values(
 
 
 def compute_pressure_levels(
-    reference_pressure: jnp.ndarray,
-    top_pressure: jnp.ndarray,
-    sigma_levels: NDArray | jnp.ndarray,
-    normalized_surface_pressure: jnp.ndarray,
-) -> jnp.ndarray:
+    reference_pressure: RuntimeArray | float,
+    top_pressure: RuntimeArray | float,
+    sigma_levels: RuntimeArray,
+    normalized_surface_pressure: RuntimeArray,
+) -> jax.Array:
     """
     Compute pressure levels from sigma levels and top pressure.
 
@@ -82,15 +83,15 @@ def compute_pressure_levels(
 
 
 def get_altitudes_sigma_levels(
-    temperature: jnp.ndarray,
-    pressure: jnp.ndarray,
-    specific_humidity: jnp.ndarray,
+    temperature: RuntimeArray,
+    pressure: RuntimeArray,
+    specific_humidity: RuntimeArray,
     *,
-    z0: float | jnp.ndarray = 0.0,
+    z0: RuntimeArray | float = 0.0,
     g: float = 9.80665,
     Rd: float = 287.05,
     Rv: float = 461.5,
-) -> jnp.ndarray:
+) -> jax.Array:
     """
     Compute geometric altitude z(p) on pressure levels using the Hypsometric Equation.
 

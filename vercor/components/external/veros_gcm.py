@@ -327,7 +327,11 @@ class VerosGCM(Component):
         self.dt_tracer = getattr(self._veros_state.settings, "dt_tracer")
         self.spinup_steps = int(self.spinup_time.total_seconds() // self.dt_tracer)
 
-        mask = np.where(self._veros_state.variables.maskT[:, :, -1] > 0.0, 1.0, 0.0)
+        mask = jnp.where(
+            jnp.asarray(self._veros_state.variables.maskT[:, :, -1]) > 0.0,
+            1.0,
+            0.0,
+        )
 
         grid = RectilinearGrid(
             name=name,
@@ -359,9 +363,12 @@ class VerosGCM(Component):
 
         # Units: [K]
         self.data["sea_surface_temperature"] = (
-            self._veros_state.variables.temp[
-                2:-2, 2:-2, -1, self._veros_state.variables.tau
-            ].T
+            jnp.asarray(
+                self._veros_state.variables.temp[
+                    2:-2, 2:-2, -1, self._veros_state.variables.tau
+                ].T,
+                dtype=jnp.float64,
+            )
             + 273.15
         )
 
@@ -393,8 +400,11 @@ class VerosGCM(Component):
 
         # Units: [K]
         self.data["sea_surface_temperature"] = (
-            self._veros_state.variables.temp[
-                2:-2, 2:-2, -1, self._veros_state.variables.tau
-            ].T
+            jnp.asarray(
+                self._veros_state.variables.temp[
+                    2:-2, 2:-2, -1, self._veros_state.variables.tau
+                ].T,
+                dtype=jnp.float64,
+            )
             + 273.15
         )

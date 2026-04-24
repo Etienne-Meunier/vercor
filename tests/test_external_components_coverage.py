@@ -386,6 +386,54 @@ def test_do_jcm_steps_updates_state_and_appends_predictions(
     assert dynamics == "dynamics-mean"
 
 
+def test_jax_gcm_constructor_builds_jax_backed_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hgrid = SimpleNamespace(
+        longitudes=jnp.deg2rad(jnp.asarray([0.0, 180.0])),
+        latitudes=jnp.deg2rad(jnp.asarray([-45.0, 0.0, 45.0])),
+    )
+    coords = SimpleNamespace(
+        horizontal=hgrid,
+        vertical=SimpleNamespace(centers=jnp.asarray([0.2, 1.0])),
+    )
+    terrain = SimpleNamespace(fmask=np.zeros((2, 3), dtype=float))
+
+    class _FakeModel:
+        def __init__(
+            self,
+            coords: Any,
+            time_step: float,
+            terrain: Any,
+            physics: Any,
+        ) -> None:
+            _ = time_step, physics
+            self.coords = coords
+            self.terrain = terrain
+
+    monkeypatch.setattr(
+        jax_gcm_module.Parameters,
+        "default",
+        staticmethod(lambda: SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        jax_gcm_module,
+        "SpeedyPhysics",
+        lambda parameters: SimpleNamespace(parameters=parameters),
+    )
+    monkeypatch.setattr(jax_gcm_module, "Model", _FakeModel)
+
+    component = jax_gcm_module.JAXGCM(coords=coords, terrain=terrain)
+
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.grid.latitude, jax.Array)
+    assert isinstance(component.grid.binary_mask, jax.Array)
+    assert isinstance(component.sigma_levels, jax.Array)
+    assert_allclose_compact(component.grid.longitude, np.asarray([0.0, 180.0]))
+    assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
+    assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
+
+
 def test_jax_gcm_initialize_validates_timestep_multiple() -> None:
     component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
     component.spinup_time = timedelta(hours=6)
@@ -458,6 +506,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     assert component.forcing == "provided-forcing"
     assert component._predictions_list == []
     assert spinup_calls["count"] == 2
+    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert component.data["sea_surface_temperature"].shape == component.grid.shape
 
 
@@ -971,10 +1020,49 @@ def test_veros_initialize_can_spin_up_and_extract_surface_temperature() -> None:
 
     assert component.model_substeps == 2
     assert step_calls["count"] == 2
+    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
         component.data["sea_surface_temperature"],
         np.full((4, 4), 283.15),
     )
+
+
+def test_veros_constructor_builds_jax_backed_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mask = np.ones((8, 8, 1), dtype=float)
+    mask[2, 3, 0] = 0.0
+    state = SimpleNamespace(
+        settings=SimpleNamespace(dt_tracer=600.0),
+        variables=SimpleNamespace(xt=np.arange(8.0), yt=np.arange(8.0), maskT=mask),
+    )
+
+    class _FakeGlobalFourDegree:
+        def __init__(self, override: dict[str, Any]) -> None:
+            self.override = override
+            self.state = state
+            self.step = lambda veros_state: None
+
+        def setup(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        veros_gcm_module, "CustomGlobalFourDegree", _FakeGlobalFourDegree
+    )
+    monkeypatch.setattr(veros_gcm_module, "copy_state", lambda tree, jitted=True: tree)
+
+    component = veros_gcm_module.VerosGCM(
+        custom_parameters={"dt_tracer": 600.0},
+        jitted=False,
+    )
+
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.grid.latitude, jax.Array)
+    assert isinstance(component.grid.binary_mask, jax.Array)
+    assert component.grid.binary_mask.shape == (4, 4)
+    expected_mask = np.ones((4, 4))
+    expected_mask[1, 0] = 0.0
+    assert_allclose_compact(component.grid.binary_mask, expected_mask)
 
 
 @pytest.mark.parametrize(
@@ -1035,6 +1123,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         component.data["sea_surface_temperature"],
         np.full((4, 4), 288.15),
     )
+    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
 
 
 def test_veros_step_nan_cleans_forcing_fields_before_set_variable(

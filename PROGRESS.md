@@ -849,3 +849,45 @@
 ## Notes / Failed Approaches (Slice 8B)
 
 - The first `mypy` pass after adding the helper reported `examples/jax_array_helpers.py` twice, as both `jax_array_helpers` and `examples.jax_array_helpers`. Adding `examples/__init__.py` made `examples` an explicit package and resolved the duplicate-module error.
+
+## Ninth JAX Translation Slice 9A: External Adapter Boundary Cleanup
+
+- Tightened the remaining in-scope external adapter construction and initialization boundaries while preserving explicit third-party runtime transfers:
+  - `vercor/components/external/jax_gcm.py`
+    - JCM grid longitude/latitude and interpolation mask construction now use `jax.numpy`
+    - `sigma_levels` storage now uses the shared mixed `RuntimeArray` alias instead of a NumPy-only annotation
+    - NumPy conversion remains only at the JCM forcing/output boundary
+  - `vercor/components/external/veros_gcm.py`
+    - Veros grid mask derivation now uses JAX-backed array logic
+    - initialized and refreshed sea-surface temperature storage is now explicitly JAX-backed
+    - NumPy conversion remains at the Veros state mutation boundary
+  - `vercor/components/external/camulator.py`
+    - CAMulator static component mask construction now enters VerCOR as a JAX array
+    - Torch, xarray, and NetCDF host boundaries remain unchanged
+  - `vercor/components/external/jax_gcm_tools.py`
+    - public helper annotations were widened from NumPy-only arrays to the shared `RuntimeArray` alias
+- Extended targeted coverage:
+  - `tests/test_external_components_coverage.py`
+    - lightweight JAXGCM constructor coverage for JAX-backed grid and sigma-level storage
+    - Veros constructor and runtime SST storage coverage for JAX-backed arrays
+  - `tests/test_camulator_component_kernels.py`
+    - lightweight CAMulatorGCM constructor coverage for JAX-backed static masks
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 9A External Adapter Boundary Cleanup, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py tests/test_external_tools_coverage.py -q`
+  - passed
+- `conda run -n scipy mypy vercor/components/external/jax_gcm.py vercor/components/external/veros_gcm.py vercor/components/external/camulator.py vercor/components/external/jax_gcm_tools.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed

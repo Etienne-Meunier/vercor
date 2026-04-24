@@ -10,8 +10,10 @@ import numpy as np
 import xarray as xr
 
 import vercor.components.data.camulator_land as camulator_land_module
+import vercor.components.external.camulator as camulator_module
 from tests.assertions import assert_allclose_compact
 from vercor.components.external.camulator import (
+    CAMulatorGCM,
     _initialize_camulator_runtime_fields,
     _map_camulator_prediction_arrays,
     _prepare_camulator_surface_forcing,
@@ -159,6 +161,41 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     assert np.all(np.isfinite(np.asarray(mapped_fields["model_level_height"])))
     assert np.all(np.isfinite(np.asarray(mapped_fields["density"])))
     assert np.all(np.isfinite(np.asarray(mapped_fields["potential_temperature"])))
+
+
+def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
+    latlons = SimpleNamespace(
+        longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
+        latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
+    )
+    monkeypatch.setattr(
+        camulator_module,
+        "initialize_camulator",
+        lambda **kwargs: {
+            "conf": {
+                "data": {
+                    "dynamic_forcing_variables": ["U"],
+                    "lead_time_periods": 6,
+                },
+                "predict": {"timesteps_fast_climate": 1},
+            },
+            "stepper": SimpleNamespace(),
+            "forcing_dataset": xr.Dataset(),
+            "static_forcing": object(),
+            "initial_state": object(),
+            "latlons": latlons,
+            "metadata": {},
+            "device": "cpu",
+            "state_transformer": object(),
+        },
+    )
+
+    component = CAMulatorGCM(config_path="dummy.yaml", device="cpu")
+
+    assert isinstance(component.grid.longitude, jax.Array)
+    assert isinstance(component.grid.latitude, jax.Array)
+    assert isinstance(component.grid.binary_mask, jax.Array)
+    assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
 
 
 def test_camulator_land_stores_jax_runtime_arrays(

@@ -344,11 +344,12 @@ class CAMulatorGCM(Component):
             name=name,
             longitude=self.latlons.longitude.values,
             latitude=self.latlons.latitude.values,
-            binary_mask=np.ones(
+            binary_mask=jnp.ones(
                 (
                     self.latlons.latitude.values.shape[0],
                     self.latlons.longitude.values.shape[0],
                 ),
+                dtype=jnp.float_,
             ),
         )
 

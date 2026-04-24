@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Optional, Literal, cast
 import jax
 import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
 import tree_math
 import xarray as xr
 
@@ -36,6 +35,7 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.grid import RectilinearGrid
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
@@ -254,14 +254,14 @@ class JAXGCM(Component):
         hgrid = self.model.coords.horizontal
         grid = RectilinearGrid(
             name=name,
-            longitude=np.rad2deg(hgrid.longitudes),
-            latitude=np.rad2deg(hgrid.latitudes),
-            binary_mask=np.ones_like(
-                self.model.terrain.fmask
+            longitude=jnp.rad2deg(jnp.asarray(hgrid.longitudes)),
+            latitude=jnp.rad2deg(jnp.asarray(hgrid.latitudes)),
+            binary_mask=jnp.ones_like(
+                jnp.asarray(self.model.terrain.fmask)
             ).transpose(),  # This is used for interpolation, which all points are valid
         )
 
-        self.sigma_levels: NDArray = self.model.coords.vertical.centers
+        self.sigma_levels: RuntimeArray = self.model.coords.vertical.centers
 
         super().__init__(name, grid)
 
