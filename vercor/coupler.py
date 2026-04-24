@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -26,6 +26,8 @@ from vercor.runtime import (
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
+    JAXGCMRuntimePayload,
+    create_component_runtime_payload,
     dispatch_component_exchanges,
     exchange_key_name,
     is_supported_differentiable_component,
@@ -337,6 +339,31 @@ class Coupler:
             zeros = jnp.zeros(component.grid.shape, dtype=jnp.float_)
             if component.__class__.__name__ == "ERA5Atmosphere":
                 data.setdefault("total_surface_temperature", zeros)
+            if self._is_jax_gcm_component(component):
+                jax_gcm_component = cast(Any, component)
+                data.setdefault("total_surface_temperature", zeros)
+                for field_name in (
+                    "u_velocity",
+                    "v_velocity",
+                    "temperature",
+                    "specific_humidity",
+                    "sensible_heat_flux",
+                    "latent_heat_flux",
+                    "net_shortwave_radiation_flux",
+                    "downward_longwave_radiation_flux",
+                    "density",
+                    "potential_temperature",
+                    "model_level_height",
+                ):
+                    data.setdefault(field_name, zeros)
+                sigma_levels = jnp.asarray(jax_gcm_component.sigma_levels)
+                data.setdefault(
+                    "pressure",
+                    jnp.zeros(
+                        (sigma_levels.shape[0], *component.grid.shape),
+                        dtype=jnp.float_,
+                    ),
+                )
             for field_name in component._fields2import:
                 incoming.setdefault(field_name, zeros)
                 data.setdefault(field_name, zeros)
@@ -351,6 +378,7 @@ class Coupler:
             outgoing=RuntimeFieldStore.from_mapping(outgoing),
             fields_to_import=tuple(component._fields2import),
             fields_to_export=tuple(component._fields2export),
+            runtime_payload=create_component_runtime_payload(component),
         )
 
     def _runtime_state_from_components(
@@ -396,6 +424,23 @@ class Coupler:
                 "Differentiable runtime "
                 f"{store_description} field '{field_name}' for component '{component_name}' "
                 f"has shape {field_shape}, expected {expected_shape}"
+            )
+
+    def _is_jax_gcm_component(self, component: AllComponentsType) -> bool:
+        return (
+            component.__class__.__module__,
+            component.__class__.__name__,
+        ) == ("vercor.components.external.jax_gcm", "JAXGCM")
+
+    def _validate_jax_gcm_runtime_payload(
+        self,
+        component_name: str,
+        component_state: RuntimeComponentState,
+    ) -> None:
+        if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
+            raise ComponentError(
+                "Differentiable JAXGCM runtime requires an initialized immutable "
+                f"runtime payload for component '{component_name}'"
             )
 
     def _runtime_step_info_from_times(
@@ -508,10 +553,12 @@ class Coupler:
             if not is_supported_differentiable_component(component):
                 raise ComponentError(
                     "Differentiable runtime currently supports VerCOR slab components "
-                    "and pure data-forcing components only "
+                    "pure data-forcing components, and JAXGCM "
                     f"(got {component.__class__.__name__} for component '{cname}')"
                 )
             component_state = runtime_state.get_component_state(cname)
+            if self._is_jax_gcm_component(component):
+                self._validate_jax_gcm_runtime_payload(cname, component_state)
             if (
                 component.__class__.__name__ == "ERA5Atmosphere"
                 and "total_surface_temperature" not in component_state.data.field_names
@@ -799,6 +846,7 @@ class Coupler:
                     self.components[cname],
                     component_state,
                     self.clock.dt_seconds,
+                    self.settings,
                 )
                 component_state = send_component_fields(
                     component_state,

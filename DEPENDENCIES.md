@@ -21,3 +21,4 @@
 21. `vercor/components/data/jcm_land.py` - JCM land forcing adapter with JAX-backed coordinate conversion and runtime storage built on (8)
 22. `vercor/components/data/camulator_land.py` - CAMulator land forcing adapter with JAX-backed runtime temperature storage built on (7, 8, 9)
 23. `vercor/runtime.py` - differentiable immutable runtime state, pure exchange dispatch, slab component stepping, and pure data-forcing replay built on (8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21)
+24. `vercor/runtime.py` JAXGCM payload path - immutable JCM state/forcing runtime integration built on (5, 23)

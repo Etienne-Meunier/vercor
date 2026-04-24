@@ -7,6 +7,7 @@ import numpy as np
 from tests.assertions import assert_allclose_compact
 from vercor.settings import ComponentSettings
 from vercor.runtime import (
+    JAXGCMRuntimePayload,
     RuntimeComponentState,
     RuntimeCouplerState,
     RuntimeFieldStore,
@@ -95,6 +96,40 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     assert_allclose_compact(
         updated.get_component_state("ATM").data.get("temperature"),
         np.full((2, 2), 3.0),
+    )
+
+
+def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
+    payload = JAXGCMRuntimePayload(
+        jcm_state={"metadata": jnp.asarray(1.0)},
+        forcing={"surface_temperature": jnp.asarray([[2.0, 3.0]])},
+    )
+    component = RuntimeComponentState(
+        name="ATM",
+        data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((1, 2))}),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+        fields_to_import=(),
+        fields_to_export=(),
+        runtime_payload=payload,
+    )
+
+    def update(value: RuntimeComponentState) -> RuntimeComponentState:
+        runtime_payload = value.runtime_payload
+        assert isinstance(runtime_payload, JAXGCMRuntimePayload)
+        return value.with_runtime_payload(
+            JAXGCMRuntimePayload(
+                jcm_state={"metadata": runtime_payload.jcm_state["metadata"] + 1.0},
+                forcing=runtime_payload.forcing,
+            )
+        )
+
+    updated = jax.jit(update)(component)
+
+    assert isinstance(updated.runtime_payload, JAXGCMRuntimePayload)
+    assert_allclose_compact(
+        updated.runtime_payload.jcm_state["metadata"],
+        np.asarray(2.0),
     )
 
 

@@ -1213,3 +1213,51 @@
 ## Notes / Failed Approaches (Slice 14C)
 
 - No failed implementation approaches. This slice was test-first calendar hardening, and the existing differentiable forcing metadata path passed unchanged.
+
+## Fifteenth JAX Translation Slice 15A: JAXGCM Pure Runtime Integration
+
+- Extended the immutable differentiable runtime so initialized JAXGCM components can participate in `run_differentiable()` without mutating the public wrapper object:
+  - added optional runtime payload support to `RuntimeComponentState`
+  - added `JAXGCMRuntimePayload` for immutable JCM state and forcing carry data
+  - added JAXGCM support detection and preflight payload validation
+  - added a pure JAXGCM runtime step that prepares surface-temperature forcing, calls the existing JCM step function, maps JCM outputs back into runtime fields, and skips prediction history / file output
+- Preserved explicit host/runtime boundaries:
+  - CAMulator and Veros remain rejected by `run_differentiable()`
+  - JAXGCM imperative `step()` still owns host transfers and output writing outside the pure runtime path
+- Pre-seeded JAXGCM runtime output fields, including 3D pressure from sigma-level count, so `jax.lax.scan` carries a stable PyTree structure.
+- Updated `DEPENDENCIES.md` with the JAXGCM runtime payload dependency edge.
+
+## Tests Added / Updated (Slice 15A)
+
+- Extended `tests/test_runtime_state.py` with optional payload PyTree and `jax.jit` coverage.
+- Extended `tests/test_differentiable_coupler_runtime.py` with lightweight patched JAXGCM runtime coverage:
+  - `jax.jit` execution through `run_differentiable()`
+  - reverse-mode gradient flow from sea-surface temperature into JAXGCM output fields
+  - wrapper state/forcing immutability assertions
+  - missing-initialization and missing-payload validation
+  - explicit Veros boundary rejection coverage
+- Hardened `tests/test_external_components_coverage.py` by clearing the `_map_jcm_output_fields` JIT cache after monkeypatching its helper globals.
+
+## Validation (Slice 15A, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_differentiable_coupler_runtime.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_external_components_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 15A)
+
+- The first JAXGCM runtime test failed because `component.settings` is the component time-selection settings, not the coupler physical constants used by JAXGCM output mapping. The runtime step now receives `Coupler.settings` explicitly.
+- The first JAXGCM scan attempt added output fields inside the scan body, changing the carry PyTree structure. The coupler now pre-seeds all JAXGCM runtime output fields before scanning.
+- Running JAXGCM runtime tests before external coverage exposed a cached `jax.jit` monkeypatch hazard in `_map_jcm_output_fields`; the affected test now clears the JIT cache after monkeypatching.

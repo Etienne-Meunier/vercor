@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import jax
 import jax.numpy as jnp
@@ -640,6 +640,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
             ]
         ),
     )
+    cast(Any, jax_gcm_module._map_jcm_output_fields).clear_cache()
     monkeypatch.setattr(component, "_should_write_output", lambda time, dt: True)
     monkeypatch.setattr(
         component,

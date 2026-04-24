@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -18,6 +18,8 @@ from vercor.components.data.era5_land import ERA5Land
 from vercor.components.data.era5_ocean import ERA5Ocean
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.components.data.jcm_land import JCMLand
+from vercor.components.external.jax_gcm import JAXGCM, JCMState
+from vercor.components.external.veros_gcm import VerosGCM
 from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
@@ -49,6 +51,48 @@ def _identity_factory(*args: Any, **kwargs: Any) -> _IdentityRegridder:
     return _IdentityRegridder()
 
 
+class _FakeJCMForcing(NamedTuple):
+    stl_am: jax.Array
+    sea_surface_temperature: jax.Array
+
+    def copy(self, **kwargs: Any) -> "_FakeJCMForcing":
+        return _FakeJCMForcing(
+            stl_am=kwargs.get("stl_am", self.stl_am),
+            sea_surface_temperature=kwargs.get(
+                "sea_surface_temperature",
+                self.sea_surface_temperature,
+            ),
+        )
+
+
+class _FakeSurfaceFlux(NamedTuple):
+    shf: jax.Array
+    evap: jax.Array
+    rlds: jax.Array
+
+
+class _FakeShortwaveRad(NamedTuple):
+    rsns: jax.Array
+
+
+class _FakePhysicsPrediction(NamedTuple):
+    surface_flux: _FakeSurfaceFlux
+    shortwave_rad: _FakeShortwaveRad
+
+
+class _FakeDynamicsPrediction(NamedTuple):
+    normalized_surface_pressure: jax.Array
+    u_wind: jax.Array
+    v_wind: jax.Array
+    temperature: jax.Array
+    specific_humidity: jax.Array
+
+
+class _FakePrediction(NamedTuple):
+    physics: _FakePhysicsPrediction
+    dynamics: _FakeDynamicsPrediction
+
+
 def _make_data_component(
     component_type: type[Any],
     *,
@@ -68,6 +112,107 @@ def _make_data_component(
     component.settings = settings or ComponentSettings()
     component._fields2import = list(imports)
     component._fields2export = list(exports)
+    return component
+
+
+def _fake_jcm_step(
+    state: JCMState,
+    forcing: _FakeJCMForcing,
+) -> tuple[JCMState, _FakePrediction]:
+    surface_temperature = forcing.stl_am + forcing.sea_surface_temperature
+    temperature = jnp.stack(
+        (surface_temperature + 1.0, surface_temperature + 2.0),
+        axis=0,
+    )
+    humidity = jnp.stack(
+        (
+            jnp.full_like(surface_temperature, 10.0),
+            jnp.full_like(surface_temperature, 20.0),
+        ),
+        axis=0,
+    )
+    wind_base = jnp.stack(
+        (
+            jnp.ones_like(surface_temperature),
+            jnp.ones_like(surface_temperature) * 2.0,
+        ),
+        axis=0,
+    )
+    surface_flux = jnp.stack(
+        (
+            surface_temperature,
+            surface_temperature * 0.5,
+        ),
+        axis=-1,
+    )
+    prediction = _FakePrediction(
+        physics=_FakePhysicsPrediction(
+            surface_flux=_FakeSurfaceFlux(
+                shf=surface_flux[jnp.newaxis, ...],
+                evap=(surface_flux * 0.1)[jnp.newaxis, ...],
+                rlds=(surface_temperature + 3.0)[jnp.newaxis, ...],
+            ),
+            shortwave_rad=_FakeShortwaveRad(
+                rsns=(surface_temperature + 4.0)[jnp.newaxis, ...],
+            ),
+        ),
+        dynamics=_FakeDynamicsPrediction(
+            normalized_surface_pressure=jnp.ones_like(surface_temperature)[
+                jnp.newaxis, ...
+            ],
+            u_wind=wind_base[jnp.newaxis, ...],
+            v_wind=(wind_base + 1.0)[jnp.newaxis, ...],
+            temperature=temperature[jnp.newaxis, ...],
+            specific_humidity=humidity[jnp.newaxis, ...],
+        ),
+    )
+    updated_state = JCMState(
+        prog=state.prog,
+        phydata=state.phydata,
+        metadata=state.metadata + jnp.sum(surface_temperature),
+    )
+    return updated_state, prediction
+
+
+def _make_jax_gcm_component(grid: RectilinearGrid) -> JAXGCM:
+    component = JAXGCM.__new__(JAXGCM)
+    component_any = cast(Any, component)
+    component.name = "ATM"
+    component.grid = grid
+    component.incoming_fields = Shared()
+    component.outgoing_fields = Shared()
+    component.settings = ComponentSettings()
+    component.data = {
+        "sea_surface_temperature": jnp.full(grid.shape, 281.0, dtype=jnp.float64),
+        "land_surface_temperature": jnp.full(grid.shape, 3.0, dtype=jnp.float64),
+    }
+    component._fields2import = []
+    component._fields2export = ["temperature", "sensible_heat_flux"]
+    component_any.model = type(
+        "_FakeJCMModel",
+        (),
+        {
+            "terrain": type(
+                "_FakeTerrain",
+                (),
+                {"fmask": jnp.full((grid.shape[1], grid.shape[0]), 0.5)},
+            )()
+        },
+    )()
+    component_any.sigma_levels = jnp.asarray([0.2, 1.0], dtype=jnp.float64)
+    component_any._state = JCMState(
+        prog={"marker": jnp.asarray(0.0)},
+        phydata={},
+        metadata=jnp.asarray(0.0),
+    )
+    component_any.forcing = _FakeJCMForcing(
+        stl_am=jnp.zeros((grid.shape[1], grid.shape[0]), dtype=jnp.float64),
+        sea_surface_temperature=jnp.zeros(
+            (grid.shape[1], grid.shape[0]),
+            dtype=jnp.float64,
+        ),
+    )
+    component_any._step_function = _fake_jcm_step
     return component
 
 
@@ -1106,6 +1251,77 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     assert_allclose_compact(gradient[:, :, 1:11], np.zeros((2, 2, 10)))
 
 
+def test_jax_gcm_runs_inside_differentiable_runtime_under_jit_and_grad() -> None:
+    grid = make_test_grid(name="jcm-runtime")
+    component = _make_jax_gcm_component(grid)
+    original_state = component._state
+    original_forcing = component.forcing
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": component}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    initial_state = coupler.create_differentiable_state()
+    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+        initial_state
+    )
+    atmosphere_state = final_state.get_component_state("ATM")
+    temperature = atmosphere_state.data.get("temperature")
+    sensible_heat_flux = atmosphere_state.data.get("sensible_heat_flux")
+
+    assert component._state is original_state
+    assert component.forcing is original_forcing
+    assert temperature.shape == grid.shape
+    assert sensible_heat_flux.shape == grid.shape
+    assert isinstance(temperature, jax.Array)
+    assert isinstance(sensible_heat_flux, jax.Array)
+    assert np.all(np.isfinite(np.asarray(temperature)))
+    assert np.all(np.isfinite(np.asarray(sensible_heat_flux)))
+    assert atmosphere_state.runtime_payload is not None
+
+    def loss(sea_surface_temperature: jax.Array) -> jax.Array:
+        atmosphere = initial_state.get_component_state("ATM")
+        state = initial_state.set_component_state(
+            atmosphere.with_data(
+                atmosphere.data.set(
+                    "sea_surface_temperature",
+                    sea_surface_temperature,
+                )
+            )
+        )
+        result = coupler.run_differentiable(state)
+        return jnp.sum(result.get_component_state("ATM").data.get("temperature"))
+
+    gradient = jax.grad(loss)(jnp.full(grid.shape, 281.0, dtype=jnp.float64))
+    assert gradient.shape == grid.shape
+    assert np.all(np.isfinite(np.asarray(gradient)))
+    assert np.any(np.asarray(gradient) != 0.0)
+
+
+def test_jax_gcm_runtime_requires_initialized_payload() -> None:
+    grid = make_test_grid(name="jcm-uninitialized")
+    component = _make_jax_gcm_component(grid)
+    del component._state
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": component}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    with pytest.raises(ComponentError, match="component initialization"):
+        coupler.run_differentiable()
+
+    component = _make_jax_gcm_component(grid)
+    coupler.components = {"ATM": component}
+    state = coupler.create_differentiable_state()
+    atmosphere = state.get_component_state("ATM").with_runtime_payload(None)
+    state = state.set_component_state(atmosphere)
+
+    with pytest.raises(ComponentError, match="runtime payload"):
+        coupler.run_differentiable(state)
+
+
 def test_run_differentiable_validates_missing_run_sequence() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
@@ -1123,7 +1339,7 @@ def test_run_differentiable_rejects_non_slab_components() -> None:
     coupler.components = {"ATM": cast(Any, DummyComponent("ATM", grid))}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    with pytest.raises(ComponentError, match="pure data-forcing components only"):
+    with pytest.raises(ComponentError, match="JAXGCM"):
         coupler.run_differentiable()
 
 
@@ -1141,7 +1357,25 @@ def test_run_differentiable_rejects_camulator_land_boundary() -> None:
     coupler.components = {"LND": cast(Any, camulator_land)}
     coupler.run_sequence = RunSequence(order=["LND"])
 
-    with pytest.raises(ComponentError, match="pure data-forcing components only"):
+    with pytest.raises(ComponentError, match="JAXGCM"):
+        coupler.run_differentiable()
+
+
+def test_run_differentiable_rejects_veros_boundary() -> None:
+    grid = make_test_grid(name="veros")
+    veros = _make_data_component(
+        VerosGCM,
+        name="OCN",
+        grid=grid,
+        data={"sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64)},
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"OCN": cast(Any, veros)}
+    coupler.run_sequence = RunSequence(order=["OCN"])
+
+    with pytest.raises(ComponentError, match="JAXGCM"):
         coupler.run_differentiable()
 
 

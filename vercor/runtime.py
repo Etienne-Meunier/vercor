@@ -17,10 +17,11 @@ from vercor.components.slab.ocean import (
     _advance_sea_surface_temperature,
 )
 from vercor.components.slab.seaice import _diagnose_ice_fraction
-from vercor.exceptions import ExchangerError
+from vercor.exceptions import ComponentError, ExchangerError
 from vercor.exchange import Exchange
 from vercor.types import RuntimeArray
 
+_SUPPORTED_JAX_GCM_COMPONENT = ("vercor.components.external.jax_gcm", "JAXGCM")
 _SUPPORTED_DATA_COMPONENTS = {
     ("vercor.components.data.era5_atmosphere", "ERA5Atmosphere"),
     ("vercor.components.data.era5_ocean", "ERA5Ocean"),
@@ -39,7 +40,11 @@ def exchange_key_name(source: str, destination: str, interpolation_type: str) ->
 def is_supported_differentiable_component(component: Any) -> bool:
     """Return whether ``component`` can run in the pure differentiable runtime."""
 
-    return _is_slab_component(component) or _is_supported_data_component(component)
+    return (
+        _is_slab_component(component)
+        or _is_supported_data_component(component)
+        or _is_supported_jax_gcm_component(component)
+    )
 
 
 def _is_slab_component(component: Any) -> bool:
@@ -52,6 +57,13 @@ def _is_supported_data_component(component: Any) -> bool:
         component.__class__.__module__,
         component.__class__.__name__,
     ) in _SUPPORTED_DATA_COMPONENTS
+
+
+def _is_supported_jax_gcm_component(component: Any) -> bool:
+    return (
+        component.__class__.__module__,
+        component.__class__.__name__,
+    ) == _SUPPORTED_JAX_GCM_COMPONENT
 
 
 @jax.tree_util.register_pytree_node_class
@@ -195,6 +207,50 @@ class RuntimeFieldStore:
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
+class JAXGCMRuntimePayload:
+    """Immutable JAXGCM model state carried by the differentiable runtime."""
+
+    jcm_state: Any
+    forcing: Any
+
+    def tree_flatten(self) -> tuple[tuple[Any, Any], None]:
+        return (self.jcm_state, self.forcing), None
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: None, children: tuple[Any, Any]
+    ) -> "JAXGCMRuntimePayload":
+        _ = aux_data
+        jcm_state, forcing = children
+        return cls(jcm_state=jcm_state, forcing=forcing)
+
+
+def create_component_runtime_payload(component: Any) -> Any | None:
+    """Return the immutable runtime payload required by ``component`` if any."""
+
+    if not _is_supported_jax_gcm_component(component):
+        return None
+
+    missing = [
+        name
+        for name in ("_state", "forcing", "_step_function")
+        if not hasattr(component, name)
+    ]
+    if missing:
+        missing_names = ", ".join(missing)
+        raise ComponentError(
+            "Differentiable JAXGCM runtime requires component initialization before "
+            f"state creation; missing {missing_names}"
+        )
+
+    return JAXGCMRuntimePayload(
+        jcm_state=component._state,
+        forcing=component.forcing,
+    )
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
 class RuntimeComponentState:
     """Immutable differentiable state for one component."""
 
@@ -204,14 +260,15 @@ class RuntimeComponentState:
     outgoing: RuntimeFieldStore
     fields_to_import: tuple[str, ...]
     fields_to_export: tuple[str, ...]
+    runtime_payload: Any | None = None
 
     def tree_flatten(
         self,
     ) -> tuple[
-        tuple[RuntimeFieldStore, RuntimeFieldStore, RuntimeFieldStore],
+        tuple[RuntimeFieldStore, RuntimeFieldStore, RuntimeFieldStore, Any | None],
         tuple[str, tuple[str, ...], tuple[str, ...]],
     ]:
-        children = (self.data, self.incoming, self.outgoing)
+        children = (self.data, self.incoming, self.outgoing, self.runtime_payload)
         aux_data = (self.name, self.fields_to_import, self.fields_to_export)
         return children, aux_data
 
@@ -219,10 +276,15 @@ class RuntimeComponentState:
     def tree_unflatten(
         cls,
         aux_data: tuple[str, tuple[str, ...], tuple[str, ...]],
-        children: tuple[RuntimeFieldStore, RuntimeFieldStore, RuntimeFieldStore],
+        children: tuple[
+            RuntimeFieldStore,
+            RuntimeFieldStore,
+            RuntimeFieldStore,
+            Any | None,
+        ],
     ) -> "RuntimeComponentState":
         name, fields_to_import, fields_to_export = aux_data
-        data, incoming, outgoing = children
+        data, incoming, outgoing, runtime_payload = children
         return cls(
             name=name,
             data=data,
@@ -230,6 +292,7 @@ class RuntimeComponentState:
             outgoing=outgoing,
             fields_to_import=fields_to_import,
             fields_to_export=fields_to_export,
+            runtime_payload=runtime_payload,
         )
 
     def with_data(self, data: RuntimeFieldStore) -> "RuntimeComponentState":
@@ -242,6 +305,7 @@ class RuntimeComponentState:
             outgoing=self.outgoing,
             fields_to_import=self.fields_to_import,
             fields_to_export=self.fields_to_export,
+            runtime_payload=self.runtime_payload,
         )
 
     def with_incoming(self, incoming: RuntimeFieldStore) -> "RuntimeComponentState":
@@ -254,6 +318,7 @@ class RuntimeComponentState:
             outgoing=self.outgoing,
             fields_to_import=self.fields_to_import,
             fields_to_export=self.fields_to_export,
+            runtime_payload=self.runtime_payload,
         )
 
     def with_outgoing(self, outgoing: RuntimeFieldStore) -> "RuntimeComponentState":
@@ -266,6 +331,22 @@ class RuntimeComponentState:
             outgoing=outgoing,
             fields_to_import=self.fields_to_import,
             fields_to_export=self.fields_to_export,
+            runtime_payload=self.runtime_payload,
+        )
+
+    def with_runtime_payload(
+        self, runtime_payload: Any | None
+    ) -> "RuntimeComponentState":
+        """Return this component state with replaced runtime payload."""
+
+        return RuntimeComponentState(
+            name=self.name,
+            data=self.data,
+            incoming=self.incoming,
+            outgoing=self.outgoing,
+            fields_to_import=self.fields_to_import,
+            fields_to_export=self.fields_to_export,
+            runtime_payload=runtime_payload,
         )
 
 
@@ -470,10 +551,88 @@ def _step_data_component_state(
     return component_state
 
 
+def _step_jax_gcm_component_state(
+    component: Any,
+    component_state: RuntimeComponentState,
+    runtime_settings: Any,
+) -> RuntimeComponentState:
+    """Return a stepped immutable JAXGCM component state."""
+
+    from jcm.constants import p0
+    from vercor.components.external.jax_gcm import (
+        _cleanup_surface_temperature_fields,
+        _map_jcm_output_fields,
+        _prepare_surface_temperature_forcing,
+        mean_leaf,
+        stack_objects,
+        unwrap_leading_dims,
+    )
+
+    payload = component_state.runtime_payload
+    if not isinstance(payload, JAXGCMRuntimePayload):
+        raise NotImplementedError("JAXGCM runtime payload is not initialized")
+
+    data = component_state.data
+    (
+        land_surface_temperature,
+        sea_surface_temperature,
+        total_surface_temperature,
+        _,
+    ) = _cleanup_surface_temperature_fields(
+        data.get("land_surface_temperature"),
+        data.get("sea_surface_temperature"),
+    )
+
+    land_surface_temperature_forcing, sea_surface_temperature_forcing = (
+        _prepare_surface_temperature_forcing(
+            total_surface_temperature,
+            jnp.asarray(component.model.terrain.fmask, dtype=jnp.float_).T,
+        )
+    )
+    forcing = payload.forcing.copy(
+        stl_am=land_surface_temperature_forcing.T,
+        sea_surface_temperature=sea_surface_temperature_forcing.T,
+    )
+    jcm_state, prediction = component._step_function(payload.jcm_state, forcing)
+    averaged_prediction = mean_leaf(
+        unwrap_leading_dims(stack_objects([prediction])), axis=0
+    )
+
+    mapped_fields = _map_jcm_output_fields(
+        runtime_settings.latvap,
+        p0,
+        component.sigma_levels,
+        runtime_settings.mwdair,
+        runtime_settings.rgas,
+        runtime_settings.p0,
+        runtime_settings.cappa,
+        averaged_prediction.physics.surface_flux.shf,
+        averaged_prediction.physics.surface_flux.evap,
+        averaged_prediction.physics.surface_flux.rlds,
+        averaged_prediction.physics.shortwave_rad.rsns,
+        averaged_prediction.dynamics.normalized_surface_pressure,
+        averaged_prediction.dynamics.u_wind,
+        averaged_prediction.dynamics.v_wind,
+        averaged_prediction.dynamics.temperature,
+        averaged_prediction.dynamics.specific_humidity,
+    )
+
+    data = data.set("land_surface_temperature", land_surface_temperature)
+    data = data.set("sea_surface_temperature", sea_surface_temperature)
+    data = data.set("total_surface_temperature", total_surface_temperature)
+    for field_name, field_value in mapped_fields.items():
+        data = data.set(field_name, field_value)
+
+    return component_state.with_data(data).with_runtime_payload(
+        JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=forcing)
+    )
+
+
 def step_component_state(
     component: Any,
     component_state: RuntimeComponentState,
     dt_seconds: float,
+    runtime_settings: Any | None = None,
 ) -> RuntimeComponentState:
     """Return a stepped component state on the differentiable runtime path.
 
@@ -486,10 +645,19 @@ def step_component_state(
     if _is_supported_data_component(component):
         return _step_data_component_state(component, component_state)
 
+    if _is_supported_jax_gcm_component(component):
+        if runtime_settings is None:
+            raise NotImplementedError("JAXGCM runtime settings are not initialized")
+        return _step_jax_gcm_component_state(
+            component,
+            component_state,
+            runtime_settings,
+        )
+
     if not _is_slab_component(component):
         raise NotImplementedError(
             "Differentiable runtime currently supports VerCOR slab components "
-            "and pure data-forcing components only"
+            "pure data-forcing components, and JAXGCM"
         )
 
     data = component_state.data
