@@ -953,3 +953,37 @@
 ## Notes / Failed Approaches (Slice 12A)
 
 - No failed implementation approaches. The slice only adds named JAX helper boundaries around existing land-adapter behavior and leaves host-only NumPy boundaries explicit.
+
+## Twelfth JAX Translation Slice 12B: Migration Completion Audit
+
+- Tightened the production NumPy-boundary audit now that the NumPy-to-JAX migration phase is reduced to explicit host-only boundaries:
+  - `tests/test_production_numpy_boundaries.py`
+    - removed the stale CAMulator-state allowance from the direct NumPy boundary set
+    - changed the assertion from subset matching to exact matching so new direct production NumPy imports fail immediately
+    - preserved `veros.core.operators.numpy as npx` as a Veros backend boundary rather than a direct NumPy dependency
+- Confirmed the remaining direct NumPy imports are intentionally limited to:
+  - `vercor/components/base.py`
+  - `vercor/tools.py`
+  - `vercor/types.py`
+- No public component, coupler, exchange, regridder, or runtime-array APIs changed.
+- `DEPENDENCIES.md` did not require changes because this slice only tightens migration audit coverage.
+
+## Validation (Slice 12B Migration Completion Audit, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_production_numpy_boundaries.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 12B)
+
+- No failed implementation approaches. The slice intentionally keeps NumPy, xarray, Matplotlib, file output, and Veros backend integration as explicit host-only boundaries.

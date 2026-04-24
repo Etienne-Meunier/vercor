@@ -8,7 +8,6 @@ VERCOR_ROOT = PROJECT_ROOT / "vercor"
 
 ALLOWED_NUMPY_BOUNDARIES = {
     "vercor/components/base.py",
-    "vercor/components/external/camulator_state.py",
     "vercor/tools.py",
     "vercor/types.py",
 }
@@ -26,11 +25,11 @@ def _imports_numpy(path: Path) -> bool:
     return False
 
 
-def test_numpy_imports_are_limited_to_explicit_host_boundaries() -> None:
+def test_numpy_imports_match_explicit_host_boundaries() -> None:
     numpy_imports = {
         path.relative_to(PROJECT_ROOT).as_posix()
         for path in VERCOR_ROOT.rglob("*.py")
         if _imports_numpy(path)
     }
 
-    assert numpy_imports <= ALLOWED_NUMPY_BOUNDARIES
+    assert numpy_imports == ALLOWED_NUMPY_BOUNDARIES
