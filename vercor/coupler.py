@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -25,17 +25,22 @@ from vercor.runtime import (
     RuntimeComponentState,
     RuntimeCouplerState,
     RuntimeFieldStore,
+    RuntimeStepInfo,
     dispatch_component_exchanges,
     exchange_key_name,
+    is_supported_differentiable_component,
     receive_component_fields,
     send_component_fields,
-    step_slab_component_state,
+    step_component_state,
 )
 from vercor.settings import VercorSettings
 from vercor.tools import (
     check_total_lnd_ocn_mask_sum,
+    datetime_to_seconds_in_year,
+    get_periodic_interval,
     get_component,
     grids_identical,
+    is_leap_year,
     _append_unique,
     _flatten_fields,
     check_remap_conservation,
@@ -330,6 +335,8 @@ class Coupler:
 
         if prefill_missing:
             zeros = jnp.zeros(component.grid.shape, dtype=jnp.float_)
+            if component.__class__.__name__ == "ERA5Atmosphere":
+                data.setdefault("total_surface_temperature", zeros)
             for field_name in component._fields2import:
                 incoming.setdefault(field_name, zeros)
                 data.setdefault(field_name, zeros)
@@ -391,6 +398,87 @@ class Coupler:
                 f"has shape {field_shape}, expected {expected_shape}"
             )
 
+    def _runtime_step_info_from_times(
+        self,
+        times: list[datetime | ModelDateTime],
+    ) -> RuntimeStepInfo:
+        monthly_index_left: list[int] = []
+        monthly_index_right: list[int] = []
+        monthly_weight_left: list[float] = []
+        monthly_weight_right: list[float] = []
+        daily_index: list[int] = []
+
+        for time in times:
+            total_seconds = datetime_to_seconds_in_year(time)
+            (n1, f1), (n2, f2) = get_periodic_interval(
+                current_time=total_seconds,
+                cycle_length=self.settings.year_in_seconds,
+                rec_spacing=self.settings.year_in_seconds / 12.0,
+                n_rec=12,
+            )
+            monthly_index_left.append(n1)
+            monthly_index_right.append(n2)
+            monthly_weight_left.append(f1)
+            monthly_weight_right.append(f2)
+            daily_index.append(self._runtime_daily_index(time))
+
+        return RuntimeStepInfo.from_sequences(
+            monthly_index_left,
+            monthly_index_right,
+            monthly_weight_left,
+            monthly_weight_right,
+            daily_index,
+        )
+
+    def _runtime_daily_index(self, time: datetime | ModelDateTime) -> int:
+        if self.clock.year_type == "360":
+            month_lengths = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+            month_length = month_lengths[time.month - 1]
+            mapped_day = ((time.day - 1) * (month_length - 1)) // 29 + 1
+            day_of_year = sum(month_lengths[: time.month - 1]) + mapped_day
+        elif self.clock.year_type == "noleap":
+            model_day_of_year = getattr(time, "day_of_year", None)
+            if model_day_of_year is None:
+                raise ValueError("ModelDateTime.day_of_year is not initialized")
+            day_of_year = model_day_of_year
+        else:
+            day_of_year = time.timetuple().tm_yday
+            if is_leap_year(time.year) and day_of_year > 59:
+                day_of_year -= 1
+
+        return day_of_year - 1
+
+    def _build_differentiable_step_info(self) -> RuntimeStepInfo:
+        times = [time for _, time, _ in self.clock.iter()]
+        return self._runtime_step_info_from_times(times)
+
+    def _initial_differentiable_step_info(self) -> RuntimeStepInfo:
+        clock_iter = self.clock.iter()
+        try:
+            _, first_time, _ = next(clock_iter)
+        except StopIteration:
+            first_time = self.clock.start
+        batched_step_info = self._runtime_step_info_from_times([first_time])
+        return cast(
+            RuntimeStepInfo,
+            jax.tree_util.tree_map(lambda value: value[0], batched_step_info),
+        )
+
+    def _prime_differentiable_runtime_outgoing(
+        self,
+        runtime_state: RuntimeCouplerState,
+    ) -> RuntimeCouplerState:
+        step_info = self._initial_differentiable_step_info()
+        for cname in self.run_sequence:
+            component_state = runtime_state.get_component_state(cname)
+            component_state = send_component_fields(
+                component_state,
+                self.components[cname],
+                step_info,
+            )
+            runtime_state = runtime_state.set_component_state(component_state)
+        return runtime_state
+
     def _validate_differentiable_runtime(
         self, runtime_state: RuntimeCouplerState
     ) -> None:
@@ -417,13 +505,21 @@ class Coupler:
                 )
 
             component = self.components[cname]
-            module_name = component.__class__.__module__
-            if not module_name.startswith("vercor.components.slab."):
+            if not is_supported_differentiable_component(component):
                 raise ComponentError(
-                    "Differentiable runtime currently supports VerCOR slab components only "
+                    "Differentiable runtime currently supports VerCOR slab components "
+                    "and pure data-forcing components only "
                     f"(got {component.__class__.__name__} for component '{cname}')"
                 )
             component_state = runtime_state.get_component_state(cname)
+            if (
+                component.__class__.__name__ == "ERA5Atmosphere"
+                and "total_surface_temperature" not in component_state.data.field_names
+            ):
+                raise CouplerError(
+                    "Differentiable runtime missing data field "
+                    f"'total_surface_temperature' for component '{cname}'"
+                )
             for field_name in component_state.fields_to_export:
                 self._validate_runtime_store_field(
                     cname,
@@ -432,14 +528,15 @@ class Coupler:
                     "exported source",
                     component.grid.shape,
                 )
-            for field_name in component_state.data.field_names:
-                self._validate_runtime_store_field(
-                    cname,
-                    component_state.data,
-                    field_name,
-                    "data",
-                    component.grid.shape,
-                )
+            if component.__class__.__module__.startswith("vercor.components.slab."):
+                for field_name in component_state.data.field_names:
+                    self._validate_runtime_store_field(
+                        cname,
+                        component_state.data,
+                        field_name,
+                        "data",
+                        component.grid.shape,
+                    )
             for field_name in component_state.incoming.field_names:
                 self._validate_runtime_store_field(
                     cname,
@@ -500,6 +597,8 @@ class Coupler:
         runtime_state = self._runtime_state_from_components(
             prefill_missing=prefill_missing
         )
+        if hasattr(self, "run_sequence"):
+            runtime_state = self._prime_differentiable_runtime_outgoing(runtime_state)
         self._validate_differentiable_runtime(runtime_state)
         return runtime_state
 
@@ -668,11 +767,12 @@ class Coupler:
     def run_differentiable(
         self, initial_state: RuntimeCouplerState | None = None
     ) -> RuntimeCouplerState:
-        """Run the pure JAX slab-runtime path and return the final state.
+        """Run the pure JAX differentiable runtime path and return the final state.
 
         Existing public component and coupler APIs remain imperative. This entrypoint
-        provides a differentiable state path for VerCOR-owned slab components while
-        external model adapters stay explicit host/runtime boundaries.
+        provides a differentiable state path for VerCOR-owned slab and pure
+        data-forcing components while external model adapters stay explicit
+        host/runtime boundaries.
         """
 
         runtime_state = (
@@ -681,9 +781,10 @@ class Coupler:
             else initial_state
         )
         self._validate_differentiable_runtime(runtime_state)
+        step_infos = self._build_differentiable_step_info()
 
         def step_all_components(
-            state: RuntimeCouplerState, _: None
+            state: RuntimeCouplerState, step_info: RuntimeStepInfo
         ) -> tuple[RuntimeCouplerState, None]:
             for cname in self.run_sequence:
                 state = dispatch_component_exchanges(
@@ -694,19 +795,23 @@ class Coupler:
                 )
                 component_state = state.get_component_state(cname)
                 component_state = receive_component_fields(component_state)
-                component_state = step_slab_component_state(
+                component_state = step_component_state(
                     self.components[cname],
                     component_state,
                     self.clock.dt_seconds,
                 )
-                component_state = send_component_fields(component_state)
+                component_state = send_component_fields(
+                    component_state,
+                    self.components[cname],
+                    step_info,
+                )
                 state = state.set_component_state(component_state)
             return state, None
 
         final_state, _ = jax.lax.scan(
             step_all_components,
             runtime_state,
-            None,
+            step_infos,
             length=self.clock.steps,
         )
         return final_state

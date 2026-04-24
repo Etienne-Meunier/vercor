@@ -1107,3 +1107,49 @@
 ## Notes / Failed Approaches (Slice 13C)
 
 - The first mixed-grid test used ocean and atmosphere center coordinates whose inferred latitude bounds did not match, so initialization correctly failed the land-mask consistency check. The final test uses explicit matching cell bounds with different grid resolutions.
+
+## Fourteenth JAX Translation Slice 14A: Data-Forcing Differentiable Runtime
+
+- Extended the pure differentiable runtime beyond slab-only couplers while preserving the existing `run_differentiable(initial_state=None)` and `create_differentiable_state(prefill_missing=True)` APIs:
+  - added `RuntimeStepInfo` as a JAX PyTree containing precomputed monthly interpolation indices/weights and daily time-slice indices
+  - `Coupler.run_differentiable()` now scans over precomputed step metadata instead of deriving forcing times inside the traced body
+  - runtime field sending now supports direct 2D fields, monthly interpolated forcing cubes, and daily time-sliced forcing arrays
+  - differentiable component validation now accepts VerCOR slab components plus pure data-forcing adapters (`ERA5Atmosphere`, `ERA5Ocean`, `ERA5Land`, `ERAInterimOcean`, and `JCMLand`)
+  - external runtime boundaries, including CAMulator-backed land forcing, remain rejected with a clear preflight error
+- Added a pure data-component runtime step for `ERA5Atmosphere`:
+  - combines imported land and sea surface temperatures into `total_surface_temperature`
+  - keeps other supported data-forcing components as no-op steps whose runtime behavior is forcing replay through `send_component_fields()`
+- Relaxed differentiable-runtime data-store validation so time cubes and auxiliary arrays can live in component data, while incoming/outgoing exchange fields are still required to match their component grid shape.
+- Updated `DEPENDENCIES.md` to record that `vercor/runtime.py` now also depends on the pure data-forcing adapter layer.
+
+## Tests Added / Updated (Slice 14A)
+
+- Extended `tests/test_runtime_state.py` with:
+  - `jax.jit` and reverse-mode gradient coverage for monthly runtime forcing interpolation
+  - `jax.jit` and reverse-mode gradient coverage for daily runtime time slicing
+- Extended `tests/test_differentiable_coupler_runtime.py` with:
+  - a lightweight real data-component coupler using manually constructed `ERA5Ocean`, `ERA5Land`, and `ERA5Atmosphere` instances without asset downloads
+  - gradient coverage through data-forcing replay into the atmosphere diagnostic
+  - a data-to-slab runtime path using a real bilinear regridder
+  - unsupported CAMulator land-boundary validation coverage
+
+## Validation (Slice 14A, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_differentiable_coupler_runtime.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 14A)
+
+- The first step-metadata implementation reused `get_field_time_slice()` with a JAX marker array during `run_differentiable()`. When called inside a jitted closure, converting that JAX scalar to `int` triggered `ConcretizationTypeError`; the final implementation computes daily indices with host scalar calendar logic before `jax.lax.scan`.
+- The first `ERA5Atmosphere` data-runtime step added `total_surface_temperature` inside the scan body, changing the carry PyTree structure. The final implementation pre-seeds that diagnostic field in the runtime state and validates caller-provided states before traced execution.

@@ -21,11 +21,100 @@ from vercor.exceptions import ExchangerError
 from vercor.exchange import Exchange
 from vercor.types import RuntimeArray
 
+_SUPPORTED_DATA_COMPONENTS = {
+    ("vercor.components.data.era5_atmosphere", "ERA5Atmosphere"),
+    ("vercor.components.data.era5_ocean", "ERA5Ocean"),
+    ("vercor.components.data.era5_land", "ERA5Land"),
+    ("vercor.components.data.erainterim_ocean", "ERAInterimOcean"),
+    ("vercor.components.data.jcm_land", "JCMLand"),
+}
+
 
 def exchange_key_name(source: str, destination: str, interpolation_type: str) -> str:
     """Return a stable field-store key for exchange metadata arrays."""
 
     return f"{source}|{destination}|{interpolation_type}"
+
+
+def is_supported_differentiable_component(component: Any) -> bool:
+    """Return whether ``component`` can run in the pure differentiable runtime."""
+
+    return _is_slab_component(component) or _is_supported_data_component(component)
+
+
+def _is_slab_component(component: Any) -> bool:
+    module_name: str = component.__class__.__module__
+    return module_name.startswith("vercor.components.slab.")
+
+
+def _is_supported_data_component(component: Any) -> bool:
+    return (
+        component.__class__.__module__,
+        component.__class__.__name__,
+    ) in _SUPPORTED_DATA_COMPONENTS
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class RuntimeStepInfo:
+    """Precomputed time-selection metadata for one differentiable runtime step."""
+
+    monthly_index_left: RuntimeArray
+    monthly_index_right: RuntimeArray
+    monthly_weight_left: RuntimeArray
+    monthly_weight_right: RuntimeArray
+    daily_index: RuntimeArray
+
+    @classmethod
+    def from_sequences(
+        cls,
+        monthly_index_left: Sequence[int],
+        monthly_index_right: Sequence[int],
+        monthly_weight_left: Sequence[float],
+        monthly_weight_right: Sequence[float],
+        daily_index: Sequence[int],
+    ) -> "RuntimeStepInfo":
+        """Create scan metadata from host-precomputed index and weight arrays."""
+
+        return cls(
+            monthly_index_left=jnp.asarray(monthly_index_left, dtype=jnp.int32),
+            monthly_index_right=jnp.asarray(monthly_index_right, dtype=jnp.int32),
+            monthly_weight_left=jnp.asarray(monthly_weight_left, dtype=jnp.float_),
+            monthly_weight_right=jnp.asarray(monthly_weight_right, dtype=jnp.float_),
+            daily_index=jnp.asarray(daily_index, dtype=jnp.int32),
+        )
+
+    def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], None]:
+        return (
+            (
+                self.monthly_index_left,
+                self.monthly_index_right,
+                self.monthly_weight_left,
+                self.monthly_weight_right,
+                self.daily_index,
+            ),
+            None,
+        )
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: None, children: tuple[RuntimeArray, ...]
+    ) -> "RuntimeStepInfo":
+        _ = aux_data
+        (
+            monthly_index_left,
+            monthly_index_right,
+            monthly_weight_left,
+            monthly_weight_right,
+            daily_index,
+        ) = children
+        return cls(
+            monthly_index_left=monthly_index_left,
+            monthly_index_right=monthly_index_right,
+            monthly_weight_left=monthly_weight_left,
+            monthly_weight_right=monthly_weight_right,
+            daily_index=daily_index,
+        )
 
 
 @jax.tree_util.register_pytree_node_class
@@ -308,33 +397,99 @@ def receive_component_fields(
     return component_state.with_data(data)
 
 
+def _select_runtime_field_for_send(
+    component: Any,
+    component_state: RuntimeComponentState,
+    field_name: str,
+    step_info: RuntimeStepInfo | None,
+) -> RuntimeArray:
+    field = component_state.data.get(field_name)
+    if step_info is None:
+        return field
+
+    settings = component.settings
+    if settings.apply_time_interpolation:
+        arr = jnp.asarray(field)
+        left = jnp.take(arr, step_info.monthly_index_left, axis=-1)
+        right = jnp.take(arr, step_info.monthly_index_right, axis=-1)
+        return (
+            step_info.monthly_weight_left * left
+            + step_info.monthly_weight_right * right
+        ).swapaxes(-2, -1)
+
+    if settings.get_field_time_slice:
+        return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
+
+    return field
+
+
 def send_component_fields(
     component_state: RuntimeComponentState,
+    component: Any | None = None,
+    step_info: RuntimeStepInfo | None = None,
 ) -> RuntimeComponentState:
     """Move exported component data into outgoing fields."""
 
     outgoing = component_state.outgoing
     for field_name in component_state.fields_to_export:
-        outgoing = outgoing.set(field_name, component_state.data.get(field_name))
+        field_value = (
+            component_state.data.get(field_name)
+            if component is None
+            else _select_runtime_field_for_send(
+                component,
+                component_state,
+                field_name,
+                step_info,
+            )
+        )
+        outgoing = outgoing.set(field_name, field_value)
     return component_state.with_outgoing(outgoing)
 
 
-def step_slab_component_state(
+def _step_data_component_state(
+    component: Any,
+    component_state: RuntimeComponentState,
+) -> RuntimeComponentState:
+    """Return a stepped pure data-forcing component state."""
+
+    if component.__class__.__name__ == "ERA5Atmosphere":
+        data = component_state.data
+        land_surface_temperature = data.get("land_surface_temperature")
+        sea_surface_temperature = data.get("sea_surface_temperature")
+        total_surface_temperature = jnp.nan_to_num(
+            jnp.asarray(land_surface_temperature),
+            nan=0.0,
+        ) + jnp.nan_to_num(
+            jnp.asarray(sea_surface_temperature),
+            nan=0.0,
+        )
+        return component_state.with_data(
+            data.set("total_surface_temperature", total_surface_temperature)
+        )
+
+    return component_state
+
+
+def step_component_state(
     component: Any,
     component_state: RuntimeComponentState,
     dt_seconds: float,
 ) -> RuntimeComponentState:
-    """Return a stepped slab component state.
+    """Return a stepped component state on the differentiable runtime path.
 
-    Only VerCOR-owned slab components have a pure runtime step in this slice.
-    External model adapters remain explicit host/runtime boundaries.
+    VerCOR-owned slab components compute their pure kernels here. Supported
+    data-forcing components either replay forcing through runtime sends or run
+    small JAX-native diagnostic updates.
     """
 
-    module_name = component.__class__.__module__
     class_name = component.__class__.__name__
-    if not module_name.startswith("vercor.components.slab."):
+    if _is_supported_data_component(component):
+        return _step_data_component_state(component, component_state)
+
+    if not _is_slab_component(component):
         raise NotImplementedError(
-            "Differentiable runtime currently supports VerCOR slab components only"
+            "Differentiable runtime currently supports VerCOR slab components "
+            "and pure data-forcing components only"
         )
 
     data = component_state.data
@@ -405,3 +560,20 @@ def step_slab_component_state(
         return component_state.with_data(data.set("ice_fraction", ice_fraction))
 
     raise NotImplementedError(f"No differentiable runtime step for {class_name}")
+
+
+def step_slab_component_state(
+    component: Any,
+    component_state: RuntimeComponentState,
+    dt_seconds: float,
+) -> RuntimeComponentState:
+    """Return a stepped slab component state.
+
+    This compatibility wrapper delegates to ``step_component_state``.
+    """
+
+    if not _is_slab_component(component):
+        raise NotImplementedError(
+            "Differentiable runtime currently supports VerCOR slab components only"
+        )
+    return step_component_state(component, component_state, dt_seconds)
