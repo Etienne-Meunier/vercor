@@ -369,6 +369,28 @@ class Coupler:
             binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
         )
 
+    def _validate_runtime_store_field(
+        self,
+        component_name: str,
+        store: RuntimeFieldStore,
+        field_name: str,
+        store_description: str,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        if field_name not in store.field_names:
+            raise CouplerError(
+                "Differentiable runtime missing "
+                f"{store_description} field '{field_name}' for component '{component_name}'"
+            )
+
+        field_shape = jnp.asarray(store.get(field_name)).shape
+        if field_shape != expected_shape:
+            raise CouplerError(
+                "Differentiable runtime "
+                f"{store_description} field '{field_name}' for component '{component_name}' "
+                f"has shape {field_shape}, expected {expected_shape}"
+            )
+
     def _validate_differentiable_runtime(
         self, runtime_state: RuntimeCouplerState
     ) -> None:
@@ -401,6 +423,31 @@ class Coupler:
                     "Differentiable runtime currently supports VerCOR slab components only "
                     f"(got {component.__class__.__name__} for component '{cname}')"
                 )
+            component_state = runtime_state.get_component_state(cname)
+            for field_name in component_state.fields_to_export:
+                self._validate_runtime_store_field(
+                    cname,
+                    component_state.outgoing,
+                    field_name,
+                    "exported source",
+                    component.grid.shape,
+                )
+            for field_name in component_state.data.field_names:
+                self._validate_runtime_store_field(
+                    cname,
+                    component_state.data,
+                    field_name,
+                    "data",
+                    component.grid.shape,
+                )
+            for field_name in component_state.incoming.field_names:
+                self._validate_runtime_store_field(
+                    cname,
+                    component_state.incoming,
+                    field_name,
+                    "incoming",
+                    component.grid.shape,
+                )
 
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination, exchange.interpolation_type)
@@ -423,6 +470,26 @@ class Coupler:
                 raise CouplerError(
                     "Differentiable runtime requires an initialized fractional mask for exchange "
                     f"{exchange.name}"
+                )
+            destination_shape = self.components[exchange.destination].grid.shape
+            mask_shape = jnp.asarray(
+                runtime_state.fractional_masks.get(mask_name)
+            ).shape
+            if mask_shape != destination_shape:
+                raise CouplerError(
+                    "Differentiable runtime fractional mask for exchange "
+                    f"{exchange.name} has shape {mask_shape}, expected {destination_shape}"
+                )
+
+            source_shape = self.components[exchange.source].grid.shape
+            source_state = runtime_state.get_component_state(exchange.source)
+            for field_name in _flatten_fields(exchange.field_names):
+                self._validate_runtime_store_field(
+                    exchange.source,
+                    source_state.outgoing,
+                    field_name,
+                    "source",
+                    source_shape,
                 )
 
     def create_differentiable_state(

@@ -1068,3 +1068,42 @@
 ## Notes / Failed Approaches (Slice 13B)
 
 - The first initialized-coupler JIT test failed because real regridders recomputed `has_identical_grids` inside `jax.lax.scan`, triggering `TracerBoolConversionError` from `bool(jnp.all(...))`. Caching the identical-grid result when the regridder is constructed keeps that branch static and preserves the existing identical-grid short-circuit behavior.
+
+## Thirteenth JAX Translation Slice 13C: Mixed-Grid Differentiable Runtime Hardening
+
+- Hardened the pure slab differentiable runtime for non-identical component grids without changing the public `run_differentiable(initial_state=None)` or `create_differentiable_state(prefill_missing=True)` APIs:
+  - added mixed-grid four-slab coverage with ATM/LND on a 2x2 grid and OCN/ICE on a 3x3 grid
+  - exercised real conservative OCN -> ATM remapping and real bilinear ATM -> OCN / OCN -> ICE remapping inside `jax.lax.scan`
+  - kept external adapters, file I/O, plotting, Torch/CAMulator, xarray, NetCDF, and Veros object mutation outside the differentiable runtime path
+- Strengthened differentiable-runtime preflight validation in `vercor/coupler.py`:
+  - exported source fields must exist before entering the scan
+  - source/data/incoming runtime fields must match their owning component grid shape
+  - fractional masks must exist and match destination-grid shape
+  - invalid caller-provided runtime states now fail with `CouplerError` before traced execution
+- Extended `tests/test_differentiable_coupler_runtime.py` with:
+  - mixed-grid `jax.jit`, `jax.grad`, and `jax.jvp` coverage
+  - destination-shape assertions for conservative and bilinear exchange results
+  - explicit validation coverage for missing source fields and fractional-mask shape mismatches
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 13C, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_bilinear_rectilinear_regridder.py tests/test_conservative_rectilinear_regridder.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 13C)
+
+- The first mixed-grid test used ocean and atmosphere center coordinates whose inferred latitude bounds did not match, so initialization correctly failed the land-mask consistency check. The final test uses explicit matching cell bounds with different grid resolutions.
