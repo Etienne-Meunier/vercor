@@ -1153,3 +1153,34 @@
 
 - The first step-metadata implementation reused `get_field_time_slice()` with a JAX marker array during `run_differentiable()`. When called inside a jitted closure, converting that JAX scalar to `int` triggered `ConcretizationTypeError`; the final implementation computes daily indices with host scalar calendar logic before `jax.lax.scan`.
 - The first `ERA5Atmosphere` data-runtime step added `total_surface_temperature` inside the scan body, changing the carry PyTree structure. The final implementation pre-seeds that diagnostic field in the runtime state and validates caller-provided states before traced execution.
+
+## Fourteenth JAX Translation Slice 14B: Broaden Data-Forcing Runtime Coverage
+
+- Hardened the pure differentiable data-forcing runtime with coverage for the remaining supported adapters without changing public component, coupler, exchange, regridder, or runtime-state APIs:
+  - `ERAInterimOcean` monthly sea-surface-temperature forcing now has `run_differentiable()` coverage through real bilinear regridding into a slab atmosphere.
+  - `JCMLand` daily land-surface-temperature forcing now has `run_differentiable()` coverage with `get_field_time_slice=True` into an ERA5-style data atmosphere.
+  - Both paths are covered under `jax.jit` and reverse-mode gradients through selected forcing records.
+- No production runtime changes were required; the existing `RuntimeStepInfo`, send-field selection, and supported-data-component dispatch paths already handled both adapters.
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 14B, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py tests/test_runtime_state.py tests/test_runtime_exchange.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py tests/test_runtime_state.py tests/test_runtime_exchange.py -q`
+  - passed after Black reformatted `tests/test_differentiable_coupler_runtime.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 14B)
+
+- No failed implementation approaches. This slice was test-first runtime hardening, and the existing differentiable data-forcing path passed without production changes.
