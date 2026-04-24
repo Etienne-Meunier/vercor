@@ -1,9 +1,9 @@
-from typing import Any, Callable
 from datetime import datetime
+from typing import Any, Callable
 
-import numpy as np
-from numpy.typing import NDArray
+import jax
 
+from examples.jax_array_helpers import component_vector_speed
 from vercor import Clock, Coupler, Exchange
 from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
 from vercor.coupler import RunSequence
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     cpl.run()
     cpl.finalize()
 
-    Metric = str | Callable[[Any], NDArray | float]
+    Metric = str | Callable[[Any], jax.Array | float]
 
     variables: list[tuple[Metric, str]] = [
         ("sea_surface_temperature", "sst"),
@@ -123,7 +123,7 @@ if __name__ == "__main__":
         ("potential_temperature", "tbot"),
         ("model_level_height", "zbot"),
         (
-            lambda c: np.sqrt(c.get("u_velocity") ** 2 + c.get("v_velocity") ** 2),
+            component_vector_speed,
             "speed",
         ),
     ]

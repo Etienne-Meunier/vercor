@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Any, cast
 
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import numpy as np
 
 from vercor import Clock, Coupler, Exchange
 from vercor.components import Atmosphere, Land, Ocean, SeaIce
@@ -22,8 +22,7 @@ if __name__ == "__main__":
     atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
 
     ocn_grid_shape = (64, 32)
-    binary_mask = np.ones(ocn_grid_shape).T
-    binary_mask[:2, :] = 0.0  # land points
+    binary_mask = jnp.ones(ocn_grid_shape).T.at[:2, :].set(0.0)  # land points
     ocn_grid = make_rectilinear_grid(
         "ocn-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0, mask=binary_mask
     )
@@ -138,7 +137,10 @@ if __name__ == "__main__":
         ],
         component_order=["ATM", "OCN", "LND"],
     )
-    print("ICE ice_fraction mean:", np.nanmean(ice.get("ice_fraction")))
+    print(
+        "ICE ice_fraction mean:",
+        float(jnp.nanmean(jnp.asarray(ice.get("ice_fraction")))),
+    )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[

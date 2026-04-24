@@ -1,7 +1,7 @@
 from datetime import datetime
 
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import numpy as np
 
 from vercor import Clock, Coupler, Exchange
 from vercor.components import JAXGCM, Land, Ocean
@@ -24,21 +24,21 @@ if __name__ == "__main__":
     # Build components
     atm = JAXGCM(coords, terrain, forcing_data=forcing, jitted=True)
 
-    ocn_binary_mask = np.where(terrain.fmask < 1, 1, 0).transpose()
+    ocn_binary_mask = jnp.where(jnp.asarray(terrain.fmask) < 1, 1, 0).T
     lnd_binary_mask = 1 - ocn_binary_mask
 
     hgrid = atm.model.coords.horizontal
     lnd_grid = RectilinearGrid(
         name="LND",
-        longitude=np.rad2deg(hgrid.longitudes),
-        latitude=np.rad2deg(hgrid.latitudes),
+        longitude=jnp.rad2deg(jnp.asarray(hgrid.longitudes)),
+        latitude=jnp.rad2deg(jnp.asarray(hgrid.latitudes)),
         binary_mask=lnd_binary_mask,
     )
 
     ocn_grid = RectilinearGrid(
         name="OCN",
-        longitude=np.rad2deg(hgrid.longitudes),
-        latitude=np.rad2deg(hgrid.latitudes),
+        longitude=jnp.rad2deg(jnp.asarray(hgrid.longitudes)),
+        latitude=jnp.rad2deg(jnp.asarray(hgrid.latitudes)),
         binary_mask=ocn_binary_mask,
     )
 
@@ -47,13 +47,13 @@ if __name__ == "__main__":
 
     if atm.grid.binary_mask is not None:
         print("Total number of grids = ", atm.grid.binary_mask.size)
-        print("Sum of atm.grid.binary_mask = ", np.sum(atm.grid.binary_mask))
+        print("Sum of atm.grid.binary_mask = ", float(jnp.sum(atm.grid.binary_mask)))
 
     if lnd.grid.binary_mask is not None:
-        print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
+        print("Sum of lnd.grid.binary_mask = ", float(jnp.sum(lnd.grid.binary_mask)))
 
     if ocn.grid.binary_mask is not None:
-        print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
+        print("Sum of ocn.grid.binary_mask = ", float(jnp.sum(ocn.grid.binary_mask)))
 
     # Clock and sequence
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)

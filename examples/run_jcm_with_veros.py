@@ -1,7 +1,6 @@
 from datetime import datetime
 
-import numpy as np
-
+from examples.jax_array_helpers import transposed_host_array
 from vercor import Clock, Coupler, Exchange
 from vercor.components import JCMLand, VerosGCM, JAXGCM
 from vercor.components.external.jax_gcm_tools import (
@@ -36,7 +35,7 @@ if __name__ == "__main__":
     lnd = JCMLand(coords, forcing, ocn.grid)
 
     # Swap mask in JAXGCM with ocean/land masks from ocean model
-    terrain.fmask = np.array(lnd.grid.binary_mask).T  # type: ignore
+    terrain.fmask = transposed_host_array(lnd.grid.binary_mask)  # type: ignore
 
     # Build components
     atm = JAXGCM(

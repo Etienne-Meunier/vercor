@@ -808,3 +808,44 @@
 ## Notes / Failed Approaches (Slice 8A)
 
 - The first flake8 pass surfaced an unrelated stale `numpy` import in `tests/_tools_support.py`; removing it restored the project lint count to `0`.
+
+## Eighth JAX Translation Slice 8B: JAX-First Example Drivers
+
+- Translated the remaining NumPy-heavy example drivers to use JAX-first runtime array handling while keeping plotting and external runtime boundaries explicit:
+  - `examples/run_data_driver.py`
+    - replaced the NumPy speed metric with a shared JAX helper
+    - removed stale `NDArray` typing from the metric path
+  - `examples/run_slab_driver.py`
+    - replaced example mask construction and ice-fraction diagnostics with `jax.numpy`
+  - `examples/run_jcm_with_slab.py`
+    - replaced mask construction, coordinate conversion, and mask summaries with `jax.numpy`
+  - `examples/run_jcm_with_era5data.py`, `examples/run_jcm_with_veros.py`, and `examples/run_jcm_with_verosdata.py`
+    - replaced direct `np.array(...).T` terrain-mask mutation with an explicit JAX-to-host transfer helper
+- Added `examples/jax_array_helpers.py` for example-local JAX diagnostics and explicit host transfer at third-party model boundaries.
+- Added `examples/__init__.py` so `mypy` resolves the helper under a single module name.
+- Added `tests/test_example_jax_helpers.py` to cover:
+  - host transfer from JAX runtime arrays
+  - transposed host transfer for mutable third-party masks
+  - JAX-backed component vector-speed diagnostics
+- No core coupler, component, or regridder APIs changed.
+- `DEPENDENCIES.md` did not require changes because this slice only updated example-driver code and test coverage.
+
+## Validation (Slice 8B Example Drivers, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_example_jax_helpers.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 8B)
+
+- The first `mypy` pass after adding the helper reported `examples/jax_array_helpers.py` twice, as both `jax_array_helpers` and `examples.jax_array_helpers`. Adding `examples/__init__.py` made `examples` an explicit package and resolved the duplicate-module error.
