@@ -1184,3 +1184,32 @@
 ## Notes / Failed Approaches (Slice 14B)
 
 - No failed implementation approaches. This slice was test-first runtime hardening, and the existing differentiable data-forcing path passed without production changes.
+
+## Fourteenth JAX Translation Slice 14C: Calendar-Aware Differentiable Forcing Runtime
+
+- Hardened the pure differentiable data-forcing runtime calendar coverage without changing public component, coupler, exchange, regridder, or runtime-state APIs:
+  - daily `get_field_time_slice=True` forcing now has `run_differentiable()` coverage under a no-leap model calendar that skips Gregorian February 29.
+  - daily 360-day forcing now verifies the runtime step metadata selects the same no-leap Gregorian day index as the host `get_field_time_slice()` helper.
+  - monthly `apply_time_interpolation=True` forcing now has year-boundary wrap coverage under `jax.jit` and reverse-mode gradients.
+- No production runtime changes were required; the existing host-precomputed `RuntimeStepInfo` path already matched the host forcing calendar helpers.
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 14C, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py tests/test_runtime_state.py tests/test_runtime_exchange.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 14C)
+
+- No failed implementation approaches. This slice was test-first calendar hardening, and the existing differentiable forcing metadata path passed unchanged.

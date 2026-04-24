@@ -30,6 +30,11 @@ from vercor.regridders import bilinear, conservative
 from vercor.run_sequence import RunSequence
 from vercor.runtime import RuntimeComponentState, RuntimeCouplerState, RuntimeFieldStore
 from vercor.settings import ComponentSettings
+from vercor.tools import (
+    datetime_to_seconds_in_year,
+    get_field_time_slice,
+    get_periodic_interval,
+)
 
 
 class _IdentityRegridder:
@@ -869,6 +874,236 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
     assert_allclose_compact(gradient[2], np.ones(grid.shape))
     assert_allclose_compact(gradient[:2], np.zeros((2, 2, 2)))
     assert_allclose_compact(gradient[3:], np.zeros((362, 2, 2)))
+
+
+def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> None:
+    grid = make_test_grid(name="noleap-daily")
+    forcing = jnp.arange(365 * 2 * 2, dtype=jnp.float64).reshape((365, 2, 2))
+    land = _make_data_component(
+        JCMLand,
+        name="LND",
+        grid=grid,
+        data={"land_surface_temperature": forcing},
+        exports=("land_surface_temperature",),
+        settings=ComponentSettings(get_field_time_slice=True),
+    )
+    atmosphere = _make_data_component(
+        ERA5Atmosphere,
+        name="ATM",
+        grid=grid,
+        data={
+            "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+        },
+        imports=("land_surface_temperature",),
+    )
+    coupler = Coupler(
+        clock=Clock(
+            start=datetime(2024, 3, 1),
+            dt_seconds=3600.0,
+            steps=1,
+            year_type="noleap",
+        )
+    )
+    coupler.components = {"LND": land, "ATM": atmosphere}
+    coupler.run_sequence = RunSequence(order=["LND", "ATM"])
+    coupler.exchanges = [
+        Exchange(
+            source="LND",
+            destination="ATM",
+            field_names=["land_surface_temperature"],
+            regridder_factory=cast(Any, _identity_factory),
+        )
+    ]
+    key = ("LND", "ATM", "_identity_factory")
+    coupler._regridders = cast(Any, {key: _IdentityRegridder()})
+    coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
+
+    initial_state = coupler.create_differentiable_state()
+    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+        initial_state
+    )
+    atmosphere_state = final_state.get_component_state("ATM")
+    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
+
+    assert_allclose_compact(total_surface_temperature, np.asarray(forcing[59]))
+
+    def loss(land_forcing: jax.Array) -> jax.Array:
+        land_state = initial_state.get_component_state("LND")
+        state = initial_state.set_component_state(
+            land_state.with_data(
+                land_state.data.set("land_surface_temperature", land_forcing)
+            )
+        )
+        result = coupler.run_differentiable(state)
+        return jnp.sum(
+            result.get_component_state("ATM").data.get("total_surface_temperature")
+        )
+
+    gradient = jax.grad(loss)(forcing)
+    assert_allclose_compact(gradient[59], np.ones(grid.shape))
+    assert_allclose_compact(gradient[:59], np.zeros((59, 2, 2)))
+    assert_allclose_compact(gradient[60:], np.zeros((305, 2, 2)))
+
+
+def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad() -> (
+    None
+):
+    grid = make_test_grid(name="360-daily")
+    forcing = jnp.arange(365 * 2 * 2, dtype=jnp.float64).reshape((365, 2, 2))
+    land = _make_data_component(
+        JCMLand,
+        name="LND",
+        grid=grid,
+        data={"land_surface_temperature": forcing},
+        exports=("land_surface_temperature",),
+        settings=ComponentSettings(get_field_time_slice=True),
+    )
+    atmosphere = _make_data_component(
+        ERA5Atmosphere,
+        name="ATM",
+        grid=grid,
+        data={
+            "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+        },
+        imports=("land_surface_temperature",),
+    )
+    coupler = Coupler(
+        clock=Clock(
+            start=datetime(2001, 2, 28),
+            dt_seconds=3600.0,
+            steps=1,
+            year_type="360",
+        )
+    )
+    coupler.components = {"LND": land, "ATM": atmosphere}
+    coupler.run_sequence = RunSequence(order=["LND", "ATM"])
+    coupler.exchanges = [
+        Exchange(
+            source="LND",
+            destination="ATM",
+            field_names=["land_surface_temperature"],
+            regridder_factory=cast(Any, _identity_factory),
+        )
+    ]
+    key = ("LND", "ATM", "_identity_factory")
+    coupler._regridders = cast(Any, {key: _IdentityRegridder()})
+    coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
+    _, runtime_time, _ = next(coupler.clock.iter())
+    expected_slice = get_field_time_slice(
+        "land_surface_temperature",
+        {"land_surface_temperature": forcing},
+        runtime_time,
+    )
+
+    initial_state = coupler.create_differentiable_state()
+    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+        initial_state
+    )
+    atmosphere_state = final_state.get_component_state("ATM")
+    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
+
+    assert_allclose_compact(expected_slice, np.asarray(forcing[56]))
+    assert_allclose_compact(total_surface_temperature, expected_slice)
+
+    def loss(land_forcing: jax.Array) -> jax.Array:
+        land_state = initial_state.get_component_state("LND")
+        state = initial_state.set_component_state(
+            land_state.with_data(
+                land_state.data.set("land_surface_temperature", land_forcing)
+            )
+        )
+        result = coupler.run_differentiable(state)
+        return jnp.sum(
+            result.get_component_state("ATM").data.get("total_surface_temperature")
+        )
+
+    gradient = jax.grad(loss)(forcing)
+    assert_allclose_compact(gradient[56], np.ones(grid.shape))
+    assert_allclose_compact(gradient[:56], np.zeros((56, 2, 2)))
+    assert_allclose_compact(gradient[57:], np.zeros((308, 2, 2)))
+
+
+def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
+    grid = make_test_grid(name="monthly-wrap")
+    monthly_ocean = jnp.zeros((2, 2, 12), dtype=jnp.float64)
+    month_zero = jnp.asarray([[280.0, 281.0], [282.0, 283.0]], dtype=jnp.float64)
+    month_eleven = jnp.asarray([[292.0, 293.0], [294.0, 295.0]], dtype=jnp.float64)
+    monthly_ocean = monthly_ocean.at[:, :, 0].set(month_zero)
+    monthly_ocean = monthly_ocean.at[:, :, 11].set(month_eleven)
+    ocean = _make_data_component(
+        ERA5Ocean,
+        name="OCN",
+        grid=grid,
+        data={"sea_surface_temperature": monthly_ocean},
+        exports=("sea_surface_temperature",),
+        settings=ComponentSettings(apply_time_interpolation=True),
+    )
+    atmosphere = _make_data_component(
+        ERA5Atmosphere,
+        name="ATM",
+        grid=grid,
+        data={
+            "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+        },
+        imports=("sea_surface_temperature",),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2001, 12, 31, 12), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"OCN": ocean, "ATM": atmosphere}
+    coupler.run_sequence = RunSequence(order=["OCN", "ATM"])
+    coupler.exchanges = [
+        Exchange(
+            source="OCN",
+            destination="ATM",
+            field_names=["sea_surface_temperature"],
+            regridder_factory=cast(Any, _identity_factory),
+        )
+    ]
+    key = ("OCN", "ATM", "_identity_factory")
+    coupler._regridders = cast(Any, {key: _IdentityRegridder()})
+    coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
+    (left_index, left_weight), (right_index, right_weight) = get_periodic_interval(
+        current_time=datetime_to_seconds_in_year(coupler.clock.start),
+        cycle_length=coupler.settings.year_in_seconds,
+        rec_spacing=coupler.settings.year_in_seconds / 12.0,
+        n_rec=12,
+    )
+
+    initial_state = coupler.create_differentiable_state()
+    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+        initial_state
+    )
+    atmosphere_state = final_state.get_component_state("ATM")
+    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
+    expected = np.asarray(
+        left_weight * monthly_ocean[:, :, left_index]
+        + right_weight * monthly_ocean[:, :, right_index]
+    ).T
+
+    assert (left_index, right_index) == (11, 0)
+    assert total_surface_temperature.shape == grid.shape
+    assert_allclose_compact(total_surface_temperature, expected)
+
+    def loss(ocean_forcing: jax.Array) -> jax.Array:
+        ocean_state = initial_state.get_component_state("OCN")
+        state = initial_state.set_component_state(
+            ocean_state.with_data(
+                ocean_state.data.set("sea_surface_temperature", ocean_forcing)
+            )
+        )
+        result = coupler.run_differentiable(state)
+        return jnp.sum(
+            result.get_component_state("ATM").data.get("total_surface_temperature")
+        )
+
+    gradient = jax.grad(loss)(monthly_ocean)
+    assert_allclose_compact(gradient[:, :, 0], np.full(grid.shape, right_weight))
+    assert_allclose_compact(gradient[:, :, 11], np.full(grid.shape, left_weight))
+    assert_allclose_compact(gradient[:, :, 1:11], np.zeros((2, 2, 10)))
 
 
 def test_run_differentiable_validates_missing_run_sequence() -> None:
