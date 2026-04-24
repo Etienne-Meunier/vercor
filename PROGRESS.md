@@ -912,3 +912,44 @@
 ## Notes / Failed Approaches (Slice 11B)
 
 - No failed implementation approaches. The slice keeps h5netcdf/NumPy as the file-read boundary and makes the returned in-memory forcing arrays JAX-backed.
+
+## Twelfth JAX Translation Slice 12A: Land Adapter JAX Boundary Cleanup
+
+- Tightened the remaining land-adapter runtime boundary helpers without changing public component, coupler, exchange, or regridder APIs:
+  - `vercor/components/data/jcm_land.py`
+    - added `_prepare_jcm_land_runtime_fields()` for JAX-backed coordinate conversion plus transposed land temperature and soil-moisture storage
+    - kept `_coordinates_in_degrees()` as the existing public test helper and routed it through the shared coordinate logic
+    - `JCMLand.__init__()` now stores both land-surface temperature and soil moisture from the helper output
+  - `vercor/components/data/camulator_land.py`
+    - added `_prepare_camulator_land_surface_temperature()` for JAX-backed CAMulator land-temperature storage
+    - `CAMulatorLand.step()` now uses the helper at the xarray-to-runtime boundary
+- Extended focused coverage:
+  - `tests/test_data_component_kernels.py`
+    - `jax.jit` coverage for the new JCM land runtime helper
+    - reverse-mode gradient smoke coverage for JCM land temperature and soil-moisture passthrough
+    - `jax.jit` coverage for the CAMulator land temperature helper
+  - `tests/test_component_models_coverage.py`
+    - asserts JCM land `soil_moisture` is JAX-backed, matching the existing temperature assertion
+  - `tests/test_production_numpy_boundaries.py`
+    - adds an AST-based production audit that limits NumPy imports to explicit host/file/plotting/type-boundary modules
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 12A Land Adapter JAX Boundary Cleanup, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_data_component_kernels.py tests/test_component_models_coverage.py tests/test_camulator_component_kernels.py tests/test_production_numpy_boundaries.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 12A)
+
+- No failed implementation approaches. The slice only adds named JAX helper boundaries around existing land-adapter behavior and leaves host-only NumPy boundaries explicit.

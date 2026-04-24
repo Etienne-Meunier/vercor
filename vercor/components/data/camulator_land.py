@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from vercor.components.external.camulator import parse_datetime_from_config
 from vercor.components.external.camulator_state import initialize_camulator
@@ -13,6 +15,13 @@ from vercor.clock import CustomDateTime
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+
+
+def _prepare_camulator_land_surface_temperature(
+    land_surface_temperature: ArrayLike,
+) -> jax.Array:
+    """Normalize CAMulator land temperature fields for JAX-backed runtime storage."""
+    return jnp.asarray(land_surface_temperature)
 
 
 class CAMulatorLand(Component):
@@ -126,6 +135,8 @@ class CAMulatorLand(Component):
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
 
-        self.data["land_surface_temperature"] = jnp.asarray(ts["TS"].values)
+        self.data["land_surface_temperature"] = (
+            _prepare_camulator_land_surface_temperature(ts["TS"].values)
+        )
 
         self.timestep_counter += 1

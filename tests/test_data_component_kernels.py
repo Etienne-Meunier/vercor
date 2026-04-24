@@ -23,7 +23,13 @@ from vercor.components.data.erainterim_ocean import (
     _binary_ocean_mask_from_salinity,
     _mask_sea_surface_temperature as _mask_erainterim_sea_surface_temperature,
 )
-from vercor.components.data.jcm_land import _coordinates_in_degrees
+from vercor.components.data.camulator_land import (
+    _prepare_camulator_land_surface_temperature,
+)
+from vercor.components.data.jcm_land import (
+    _coordinates_in_degrees,
+    _prepare_jcm_land_runtime_fields,
+)
 from vercor.settings import VercorSettings
 
 
@@ -212,3 +218,69 @@ def test_jcm_land_coordinate_helper_supports_jit() -> None:
     assert isinstance(latitude_degrees, jax.Array)
     assert_allclose_compact(longitude_degrees, np.asarray([0.0, 180.0]))
     assert_allclose_compact(latitude_degrees, np.asarray([-45.0, 45.0]))
+
+
+def test_jcm_land_runtime_helper_supports_jit_and_gradients() -> None:
+    longitude_radians = jnp.deg2rad(jnp.asarray([0.0, 180.0]))
+    latitude_radians = jnp.deg2rad(jnp.asarray([-45.0, 45.0]))
+    land_surface_temperature = jnp.asarray([[280.0, 281.0], [282.0, 283.0]])
+    soil_moisture = jnp.asarray([[0.1, 0.2], [0.3, 0.4]])
+
+    (
+        longitude_degrees,
+        latitude_degrees,
+        prepared_temperature,
+        prepared_soil_moisture,
+    ) = jax.jit(_prepare_jcm_land_runtime_fields)(
+        longitude_radians,
+        latitude_radians,
+        land_surface_temperature,
+        soil_moisture,
+    )
+
+    assert isinstance(longitude_degrees, jax.Array)
+    assert isinstance(latitude_degrees, jax.Array)
+    assert isinstance(prepared_temperature, jax.Array)
+    assert isinstance(prepared_soil_moisture, jax.Array)
+    assert_allclose_compact(longitude_degrees, np.asarray([0.0, 180.0]))
+    assert_allclose_compact(latitude_degrees, np.asarray([-45.0, 45.0]))
+    assert_allclose_compact(
+        prepared_temperature, np.asarray(land_surface_temperature).T
+    )
+    assert_allclose_compact(prepared_soil_moisture, np.asarray(soil_moisture).T)
+
+    temperature_gradient, soil_gradient = jax.grad(
+        lambda temperature, soil: jnp.sum(
+            _prepare_jcm_land_runtime_fields(
+                longitude_radians,
+                latitude_radians,
+                temperature,
+                soil,
+            )[2]
+            + _prepare_jcm_land_runtime_fields(
+                longitude_radians,
+                latitude_radians,
+                temperature,
+                soil,
+            )[3]
+        ),
+        argnums=(0, 1),
+    )(land_surface_temperature, soil_moisture)
+    assert_allclose_compact(
+        temperature_gradient, np.ones_like(np.asarray(land_surface_temperature))
+    )
+    assert_allclose_compact(soil_gradient, np.ones_like(np.asarray(soil_moisture)))
+
+
+def test_camulator_land_temperature_helper_supports_jit() -> None:
+    land_surface_temperature = jnp.asarray([[281.0, 282.0], [283.0, 284.0]])
+
+    prepared_temperature = jax.jit(_prepare_camulator_land_surface_temperature)(
+        land_surface_temperature
+    )
+
+    assert isinstance(prepared_temperature, jax.Array)
+    assert_allclose_compact(
+        prepared_temperature,
+        np.asarray([[281.0, 282.0], [283.0, 284.0]]),
+    )

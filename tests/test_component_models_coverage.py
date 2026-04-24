@@ -499,6 +499,7 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
     assert component.settings.get_field_time_slice
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.data["land_surface_temperature"], jax.Array)
+    assert isinstance(component.data["soil_moisture"], jax.Array)
     assert_allclose_compact(recorded_inputs["atm_lon"], np.asarray([0.0, 180.0]))
     assert_allclose_compact(recorded_inputs["atm_lat"], np.asarray([-45.0, 45.0]))
     binary_mask = component.grid.binary_mask

@@ -22,9 +22,35 @@ def _coordinates_in_degrees(
     latitude_radians: ArrayLike,
 ) -> tuple[jax.Array, jax.Array]:
     """Convert JCM coordinates from radians to degrees on the JAX runtime path."""
+    return _jcm_coordinates_in_degrees(longitude_radians, latitude_radians)
+
+
+def _jcm_coordinates_in_degrees(
+    longitude_radians: ArrayLike,
+    latitude_radians: ArrayLike,
+) -> tuple[jax.Array, jax.Array]:
+    """Convert JCM horizontal coordinates from radians to degrees."""
     return (
         jnp.rad2deg(jnp.asarray(longitude_radians)),
         jnp.rad2deg(jnp.asarray(latitude_radians)),
+    )
+
+
+def _prepare_jcm_land_runtime_fields(
+    longitude_radians: ArrayLike,
+    latitude_radians: ArrayLike,
+    land_surface_temperature: ArrayLike,
+    soil_moisture: ArrayLike,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Prepare JCM land coordinates and monthly forcing fields for VerCOR storage."""
+    longitude, latitude = _jcm_coordinates_in_degrees(
+        longitude_radians, latitude_radians
+    )
+    return (
+        longitude,
+        latitude,
+        jnp.asarray(land_surface_temperature).T,
+        jnp.asarray(soil_moisture).T,
     )
 
 
@@ -50,9 +76,16 @@ class JCMLand(Component):
                 grid: RectilinearGrid
         """
 
-        longitude, latitude = _coordinates_in_degrees(
+        (
+            longitude,
+            latitude,
+            land_surface_temperature,
+            soil_moisture,
+        ) = _prepare_jcm_land_runtime_fields(
             jcm_coords.horizontal.longitudes,
             jcm_coords.horizontal.latitudes,
+            jcm_forcing.stl_am,
+            jcm_forcing.soilw_am,
         )
         lnd_bmask, _ = create_lnd_mask_from_ocn(
             atm_lat=latitude,
@@ -72,9 +105,9 @@ class JCMLand(Component):
         self.settings.get_field_time_slice = True
 
         # Units: [K]
-        self.data["land_surface_temperature"] = jnp.asarray(jcm_forcing.stl_am.T)
+        self.data["land_surface_temperature"] = land_surface_temperature
         # Units: [???]
-        self.data["soil_moisture"] = jnp.asarray(jcm_forcing.soilw_am.T)
+        self.data["soil_moisture"] = soil_moisture
 
     def initialize(self, coupler: "Coupler") -> None:
         pass
