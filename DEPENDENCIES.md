@@ -4,7 +4,7 @@
 4. `vercor/components/external/jax_gcm_tools.py` - existing JAX helper layer used by the JCM adapter; validated for `jax.jit`
 5. `vercor/components/external/jax_gcm.py` - JCM adapter boundary that stores translated kernel outputs
 6. `vercor/components/external/veros_gcm.py` - Veros adapter boundary that converts translated flux outputs back to NumPy for Veros state updates
-7. `vercor/components/external/camulator.py` - CAMulator adapter boundary that converts translated thermodynamic outputs back to NumPy / Torch-facing storage
+7. `vercor/components/external/camulator.py` - CAMulator adapter boundary with JAX-backed runtime-field helpers and explicit Torch / xarray output boundaries
 8. `vercor/grid.py` - JAX-friendly `RectilinearGrid` holder with eager validation and PyTree registration
 9. `vercor/regridders/helpers.py` - JAX-native rectilinear helper kernels built on (8)
 10. `vercor/interpolators/bilinear_rectilinear.py` - JAX-native bilinear scalar/vector interpolation and extrapolation built on (8, 9)
@@ -18,3 +18,4 @@
 18. `vercor/components/data/era5_ocean.py` - ERA5 ocean forcing adapter with JAX-backed mask and SST application built on (8)
 19. `vercor/components/data/erainterim_ocean.py` - ERA-Interim ocean forcing adapter with JAX-backed global field assembly built on (8)
 20. `vercor/components/data/jcm_land.py` - JCM land forcing adapter with JAX-backed coordinate conversion and runtime storage built on (8)
+21. `vercor/components/data/camulator_land.py` - CAMulator land forcing adapter with JAX-backed runtime temperature storage built on (7, 8, 9)

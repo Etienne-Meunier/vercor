@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-import numpy as np
-
 from vercor.clock import Clock
 from vercor.grid import RectilinearGrid
 from vercor.settings import VercorSettings

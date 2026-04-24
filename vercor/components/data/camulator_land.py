@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax.numpy as jnp
 
 from vercor.components.external.camulator import parse_datetime_from_config
 from vercor.components.external.camulator_state import initialize_camulator
@@ -112,8 +112,8 @@ class CAMulatorLand(Component):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.data["land_surface_temperature"] = np.full(
-            self.grid.shape, 283.0, dtype=np.float32
+        self.data["land_surface_temperature"] = jnp.full(
+            self.grid.shape, 283.0, dtype=jnp.float32
         )
 
     def step(
@@ -126,6 +126,6 @@ class CAMulatorLand(Component):
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
 
-        self.data["land_surface_temperature"] = ts["TS"].values
+        self.data["land_surface_temperature"] = jnp.asarray(ts["TS"].values)
 
         self.timestep_counter += 1

@@ -16,14 +16,12 @@ import os
 from typing import TYPE_CHECKING, Optional
 from pathlib import Path
 
+import jax
+import jax.numpy as jnp
+
 from vercor.components.external.camulator_state import (
     initialize_camulator,
     StateVariableAccessor,
-)
-from vercor.fluxes.utilities import (
-    compute_air_density,
-    compute_potential_temperature,
-    get_altitudes_hybrid_sigma_levels,
 )
 
 from datetime import datetime, timedelta
@@ -55,6 +53,177 @@ os.environ["MKL_NUM_THREADS"] = "1"
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+
+_CAMULATOR_RUNTIME_FIELD_NAMES = (
+    "specific_humidity",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+    "sea_surface_temperature",
+    "land_surface_temperature",
+    "u_velocity",
+    "v_velocity",
+    "temperature",
+    "potential_temperature",
+    "density",
+    "latent_heat_flux",
+    "sensible_heat_flux",
+    "model_level_height",
+)
+
+
+def _initialize_camulator_runtime_fields(
+    grid_shape: tuple[int, int],
+) -> dict[str, jax.Array]:
+    """Create JAX-backed zero fields for CAMulator exchange storage."""
+
+    zeros = jnp.full(grid_shape, 0.0, dtype=jnp.float_)
+    return {field_name: zeros for field_name in _CAMULATOR_RUNTIME_FIELD_NAMES}
+
+
+@jax.jit
+def _prepare_camulator_surface_forcing(
+    sea_surface_temperature: object,
+    land_surface_temperature: object,
+    land_mask_coslat: object,
+) -> tuple[jax.Array, jax.Array]:
+    """Prepare CAMulator's rescaled surface-temperature forcing field."""
+
+    sst = jnp.nan_to_num(jnp.asarray(sea_surface_temperature, dtype=jnp.float_))
+    skt = jnp.nan_to_num(jnp.asarray(land_surface_temperature, dtype=jnp.float_))
+    land_mask = jnp.asarray(land_mask_coslat, dtype=jnp.float_)
+
+    total_surface_temperature = jnp.where(land_mask < 1.0, sst + skt, 283.0)
+    rescaled_total_surface_temperature = (
+        total_surface_temperature - jnp.nanmean(total_surface_temperature)
+    ) / jnp.nanstd(total_surface_temperature)
+
+    return total_surface_temperature, rescaled_total_surface_temperature
+
+
+@jax.jit
+def _map_camulator_prediction_arrays(
+    earth_radius: float,
+    gravity: float,
+    rdair: float,
+    zvir: float,
+    mwdair: float,
+    rgas: float,
+    potential_temperature_reference_pressure: float,
+    cappa: float,
+    stef_boltz: float,
+    camulator_reference_pressure: float,
+    hyai: object,
+    hybi: object,
+    hyam: object,
+    hybm: object,
+    u_wind: object,
+    v_wind: object,
+    surface_temperature: object,
+    temperature_3d: object,
+    specific_humidity_3d: object,
+    net_shortwave_radiation_flux_accumulated: object,
+    net_longwave_radiation_flux_accumulated: object,
+    surface_pressure: object,
+) -> dict[str, jax.Array]:
+    """Map CAMulator tensor outputs into VerCOR runtime exchange fields."""
+
+    hyai_array = jnp.asarray(hyai, dtype=jnp.float_).reshape(-1)
+    hybi_array = jnp.asarray(hybi, dtype=jnp.float_).reshape(-1)
+    hyam_array = jnp.asarray(hyam, dtype=jnp.float_).reshape(-1)
+    hybm_array = jnp.asarray(hybm, dtype=jnp.float_).reshape(-1)
+
+    u_velocity = jnp.asarray(u_wind, dtype=jnp.float_).squeeze()[-1, :, :]
+    v_velocity = jnp.asarray(v_wind, dtype=jnp.float_).squeeze()[-1, :, :]
+    surface_temperature_array = jnp.asarray(
+        surface_temperature, dtype=jnp.float_
+    ).squeeze()
+    temperature_3d_array = jnp.asarray(temperature_3d, dtype=jnp.float_).squeeze()
+    specific_humidity_3d_array = jnp.asarray(
+        specific_humidity_3d, dtype=jnp.float_
+    ).squeeze()
+    temperature = temperature_3d_array[-1, ...]
+    specific_humidity = specific_humidity_3d_array[-1, ...]
+
+    net_shortwave_radiation_flux = (
+        jnp.asarray(
+            net_shortwave_radiation_flux_accumulated, dtype=jnp.float_
+        ).squeeze()
+        / 21600.0
+    )
+    net_longwave_radiation_flux = (
+        jnp.asarray(net_longwave_radiation_flux_accumulated, dtype=jnp.float_).squeeze()
+        / -21600.0
+    )
+    downward_longwave_radiation_flux = (
+        stef_boltz * surface_temperature_array**4 - net_longwave_radiation_flux
+    )
+
+    surface_pressure_array = jnp.asarray(surface_pressure, dtype=jnp.float_).squeeze()
+    p_mid = (
+        hyam_array[:, jnp.newaxis, jnp.newaxis] * camulator_reference_pressure
+        + hybm_array[:, jnp.newaxis, jnp.newaxis]
+        * surface_pressure_array[jnp.newaxis, :, :]
+    )
+    p_int = (
+        hyai_array[:, jnp.newaxis, jnp.newaxis] * camulator_reference_pressure
+        + hybi_array[:, jnp.newaxis, jnp.newaxis]
+        * surface_pressure_array[jnp.newaxis, :, :]
+    )
+
+    temperature_for_height = temperature_3d_array.T
+    humidity_for_height = specific_humidity_3d_array.T
+    pressure_interfaces_for_height = p_int.T
+    virtual_temperature = temperature_for_height * (1.0 + zvir * humidity_for_height)
+    dlog_p = jnp.log(
+        pressure_interfaces_for_height[:, :, 1:]
+        / pressure_interfaces_for_height[:, :, :-1]
+    )
+    alpha = 1.0 - (
+        pressure_interfaces_for_height[:, :, :-1]
+        / (
+            pressure_interfaces_for_height[:, :, 1:]
+            - pressure_interfaces_for_height[:, :, :-1]
+        )
+        * dlog_p
+    )
+    virtual_temperature *= rdair
+    increment = jnp.flip(virtual_temperature * dlog_p, axis=2)
+    half_level_geopotential = jnp.cumsum(increment, axis=2)
+    padded_half_level_geopotential = jnp.pad(
+        half_level_geopotential, ((0, 0), (0, 0), (1, 0))
+    )
+    full_level_geopotential = (
+        jnp.flip(virtual_temperature * alpha, axis=2)
+        + padded_half_level_geopotential[:, :, :-1]
+    )
+    altitude = (
+        earth_radius
+        * full_level_geopotential
+        / gravity
+        / (earth_radius - full_level_geopotential / gravity)
+    )
+    model_level_height = altitude[..., 0].T
+
+    density = mwdair / rgas * p_mid[-1, :, :] / temperature
+    potential_temperature = (
+        temperature
+        * (potential_temperature_reference_pressure / p_mid[-1, :, :]) ** cappa
+    )
+
+    return {
+        "u_velocity": u_velocity,
+        "v_velocity": v_velocity,
+        "temperature_3d": temperature_3d_array,
+        "specific_humidity_3d": specific_humidity_3d_array,
+        "specific_humidity": specific_humidity,
+        "temperature": temperature,
+        "net_shortwave_radiation_flux": net_shortwave_radiation_flux,
+        "downward_longwave_radiation_flux": downward_longwave_radiation_flux,
+        "model_level_height": model_level_height,
+        "density": density,
+        "potential_temperature": potential_temperature,
+    }
 
 
 def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor:
@@ -262,20 +431,7 @@ class CAMulatorGCM(Component):
         self.forecast_hour = 1
         self.timestep_counter = 0
 
-        zeros = np.zeros(self.grid.shape)
-        self.data["specific_humidity"] = zeros.copy()
-        self.data["net_shortwave_radiation_flux"] = zeros.copy()
-        self.data["downward_longwave_radiation_flux"] = zeros.copy()
-        self.data["sea_surface_temperature"] = zeros.copy()
-        self.data["land_surface_temperature"] = zeros.copy()
-        self.data["u_velocity"] = zeros.copy()
-        self.data["v_velocity"] = zeros.copy()
-        self.data["temperature"] = zeros.copy()
-        self.data["potential_temperature"] = zeros.copy()
-        self.data["density"] = zeros.copy()
-        self.data["latent_heat_flux"] = zeros.copy()
-        self.data["sensible_heat_flux"] = zeros.copy()
-        self.data["model_level_height"] = zeros.copy()
+        self.data.update(_initialize_camulator_runtime_fields(self.grid.shape))
 
     def step(
         self,
@@ -350,24 +506,27 @@ class CAMulatorGCM(Component):
                 # First iteration: initial state already contains forcing
                 model_input = self.state
 
-            # once the coupler has run, set the variable: NOTE this needs to be rescaled for our ML model.
-            # !!! NOTE this needs to be rescaled for our ML model. !!!
-            sst = np.nan_to_num(self.data["sea_surface_temperature"], nan=0.0)
-            skt = np.nan_to_num(self.data["land_surface_temperature"], nan=0.0)
-
-            total_ts = np.where(self.LANDM_COSLAT < 1.0, sst + skt, 283.0)
-            rescaled_total_ts = (total_ts - np.nanmean(total_ts)) / np.nanstd(total_ts)
+            total_ts, rescaled_total_ts = _prepare_camulator_surface_forcing(
+                self.data["sea_surface_temperature"],
+                self.data["land_surface_temperature"],
+                self.LANDM_COSLAT,
+            )
+            self.data["total_surface_temperature"] = total_ts
 
             # Land surface temperature is already rescaled in the same way as sst
             logger.info(
-                f"    Rescaled ts stats - max: {rescaled_total_ts.max():.4f}, min: {rescaled_total_ts.min():.4f}"
+                "    Rescaled ts stats - max: "
+                f"{float(jnp.max(rescaled_total_ts)):.4f}, min: "
+                f"{float(jnp.min(rescaled_total_ts)):.4f}"
             )
 
             self.accessor_input.set_state_var(
                 model_input,
                 "SST",
                 torch.tensor(
-                    rescaled_total_ts[np.newaxis, np.newaxis, np.newaxis, ...]
+                    np.asarray(rescaled_total_ts)[
+                        np.newaxis, np.newaxis, np.newaxis, ...
+                    ]
                 ).to(self.device),
             )
 
@@ -425,75 +584,34 @@ class CAMulatorGCM(Component):
         # get all of the variables for coupling:
         prediction_out = self.state_transformer.inverse_transform(prediction)
 
-        # Units: [m/s]
-        data["u_velocity"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "U")
-            .cpu()
-            .squeeze()[-1, :, :]
+        mapped_fields = _map_camulator_prediction_arrays(
+            settings.earth_radius,
+            settings.gravity,
+            settings.rdair,
+            settings.zvir,
+            settings.mwdair,
+            settings.rgas,
+            settings.p0,
+            settings.cappa,
+            settings.stefBoltz,
+            self.P0,
+            np.asarray(self.hyai.cpu()).squeeze(),
+            np.asarray(self.hybi.cpu()).squeeze(),
+            np.asarray(self.hyam.cpu()).squeeze(),
+            np.asarray(self.hybm.cpu()).squeeze(),
+            np.asarray(self.accessor_output.get_state_var(prediction_out, "U").cpu()),
+            np.asarray(self.accessor_output.get_state_var(prediction_out, "V").cpu()),
+            np.asarray(self.accessor_output.get_state_var(prediction_out, "TS").cpu()),
+            np.asarray(self.accessor_output.get_state_var(prediction_out, "T").cpu()),
+            np.asarray(
+                self.accessor_output.get_state_var(prediction_out, "Qtot").cpu()
+            ),
+            np.asarray(
+                self.accessor_output.get_state_var(prediction_out, "FSNS").cpu()
+            ),
+            np.asarray(
+                self.accessor_output.get_state_var(prediction_out, "FLNS").cpu()
+            ),
+            np.asarray(self.accessor_output.get_state_var(prediction_out, "PS").cpu()),
         )
-        # Units: [m/s]
-        data["v_velocity"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "V")
-            .cpu()
-            .squeeze()[-1, :, :]
-        )
-        # Units: [K]
-        ts = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "TS").cpu()
-        )  # surface temp
-        # Units: [K]
-        data["temperature_3d"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "T").cpu().squeeze()
-        )  # temperature
-        # Units: [kg/kg]
-        data["specific_humidity_3d"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "Qtot").cpu().squeeze()
-        )  # specific humidty
-        data["specific_humidity"] = data["specific_humidity_3d"][-1, ...]
-        # Near surface temperature
-        data["temperature"] = data["temperature_3d"][-1, ...]
-        fsns = self.accessor_output.get_state_var(prediction_out, "FSNS")
-        # average radiative flux during 6-hour period in [J/m²] convert to [W/m²]
-        # 6 × 3600 = 21600
-        fsns /= 21600
-        data["net_shortwave_radiation_flux"] = np.asarray(fsns.cpu().squeeze())
-
-        flns = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "FLNS").cpu()
-        )  # flds ≈ εσTs{^4}flns  # will have to approximate it. where emissivity in CAM = 1
-        flns /= -21600  # J/m² back in CAM units [W/m²]
-        flds = settings.stefBoltz * ts[...] ** 4 - flns
-        # Units: [W/m²]
-        data["downward_longwave_radiation_flux"] = np.asarray(flds.squeeze())
-
-        # Pressure model levels:
-        # Units: [Pa]
-        PS = self.accessor_output.get_state_var(
-            prediction_out, "PS"
-        )  # surface pressure
-        p_mid = np.asarray(
-            (self.hyam * self.P0 + self.hybm * PS).cpu().squeeze()
-        )  # pm(k) = Am(k) P0 + Bm(k) PS
-        p_int = np.asarray(
-            (self.hyai * self.P0 + self.hybi * PS).cpu().squeeze()
-        )  # pi(k) = Ai(k) P0 + Bi(k) PS
-
-        # Units: [m]
-        data["model_level_height"] = np.asarray(
-            get_altitudes_hybrid_sigma_levels(
-                settings,
-                data["temperature_3d"].T,
-                data["specific_humidity_3d"].T,
-                p_int[...].T,
-            )[..., 0].T
-        )
-        # Units: [kg/m³]
-        data["density"] = np.asarray(
-            compute_air_density(settings, p_mid[-1, :, :], data["temperature"][:, :])
-        )
-        # Units: [K]
-        data["potential_temperature"] = np.asarray(
-            compute_potential_temperature(
-                settings, data["temperature"][:, :], p_mid[-1, :, :]
-            )
-        )
+        data.update(mapped_fields)

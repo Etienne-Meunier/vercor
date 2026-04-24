@@ -771,3 +771,40 @@
 ## Notes / Failed Approaches (Slice 7B)
 
 - The first test-only pass fed JAX arrays into `DummyGridComponent`, but that helper was still typed as `dict[str, np.ndarray]`, so `mypy` rejected the updated coverage. The final version widens that test helper to the existing `RuntimeArray` alias instead of changing any production interface.
+
+## Eighth JAX Translation Slice 8A: CAMulator Boundary
+
+- Translated the in-scope CAMulator adapter boundary while preserving the explicit Torch, xarray, CREDIT, and file-output boundaries:
+  - `vercor/components/external/camulator.py`
+    - added a JAX-backed runtime-field initializer for exchange storage
+    - added `_prepare_camulator_surface_forcing()` for NaN cleanup, land-mask fallback, and rescaling through `jax.numpy`
+    - added `_map_camulator_prediction_arrays()` to map host-transferred CAMulator tensor outputs into JAX-backed VerCOR runtime fields
+    - kept all Torch tensor creation, xarray output, and NetCDF writes host-side
+  - `vercor/components/data/camulator_land.py`
+    - initialized and stepped land surface temperature storage with JAX arrays
+- Added `tests/test_camulator_component_kernels.py`:
+  - `jax.jit` coverage for the CAMulator surface-forcing and prediction-mapping helpers
+  - reverse-mode gradient smoke test for surface-forcing preparation
+  - flux sign, pressure/height, shape, and JAX runtime-storage checks
+  - lightweight patched CAMulatorLand coverage without real CAMulator model files
+- Updated `DEPENDENCIES.md` to describe the CAMulator adapter and land forcing layer.
+
+## Validation (Slice 8A CAMulator Boundary, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_camulator_component_kernels.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 8A)
+
+- The first flake8 pass surfaced an unrelated stale `numpy` import in `tests/_tools_support.py`; removing it restored the project lint count to `0`.
