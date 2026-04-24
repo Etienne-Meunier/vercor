@@ -5,6 +5,7 @@ from logging import Logger
 from pathlib import Path
 from typing import Optional
 
+import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
@@ -13,7 +14,6 @@ from vercor.components import TimedNamedArray as TNA
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
-    ExchangerError,
 )
 from vercor.exchange import Exchange
 from vercor.regridders import (
@@ -21,6 +21,16 @@ from vercor.regridders import (
     ConservativeRectilinearRegridder,
 )
 from vercor.run_sequence import RunSequence
+from vercor.runtime import (
+    RuntimeComponentState,
+    RuntimeCouplerState,
+    RuntimeFieldStore,
+    dispatch_component_exchanges,
+    exchange_key_name,
+    receive_component_fields,
+    send_component_fields,
+    step_slab_component_state,
+)
 from vercor.settings import VercorSettings
 from vercor.tools import (
     check_total_lnd_ocn_mask_sum,
@@ -308,6 +318,57 @@ class Coupler:
                     f"(mismatched points: {mismatch})"
                 )
 
+    def _component_to_runtime_state(
+        self,
+        component: AllComponentsType,
+        *,
+        prefill_missing: bool,
+    ) -> RuntimeComponentState:
+        data = dict(component.data)
+        incoming = component.incoming_fields.fields()
+        outgoing = component.outgoing_fields.fields()
+
+        if prefill_missing:
+            zeros = jnp.zeros(component.grid.shape, dtype=jnp.float_)
+            for field_name in component._fields2import:
+                incoming.setdefault(field_name, zeros)
+                data.setdefault(field_name, zeros)
+            for field_name in component._fields2export:
+                outgoing.setdefault(field_name, data.get(field_name, zeros))
+                data.setdefault(field_name, zeros)
+
+        return RuntimeComponentState(
+            name=component.name,
+            data=RuntimeFieldStore.from_mapping(data),
+            incoming=RuntimeFieldStore.from_mapping(incoming),
+            outgoing=RuntimeFieldStore.from_mapping(outgoing),
+            fields_to_import=tuple(component._fields2import),
+            fields_to_export=tuple(component._fields2export),
+        )
+
+    def _runtime_state_from_components(
+        self, *, prefill_missing: bool = False
+    ) -> RuntimeCouplerState:
+        components = tuple(
+            self._component_to_runtime_state(
+                component,
+                prefill_missing=prefill_missing,
+            )
+            for component in self.components.values()
+        )
+        fractional_masks = {
+            exchange_key_name(*key): value
+            for key, value in self._fractional_masks.items()
+        }
+        binary_masks = {
+            exchange_key_name(*key): value for key, value in self._binary_masks.items()
+        }
+        return RuntimeCouplerState(
+            components=components,
+            fractional_masks=RuntimeFieldStore.from_mapping(fractional_masks),
+            binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
+        )
+
     def append_masks_to_output(
         self,
         name: str,
@@ -358,66 +419,57 @@ class Coupler:
             if exchange.destination != component.name:
                 continue
 
-            source_component = self.components[exchange.source]
-            destination_component = self.components[exchange.destination]
-
             self.logger.info(f" Exchange fields: {exchange.name}")
 
-            key = (exchange.source, exchange.destination, exchange.interpolation_type)
+        runtime_state = self._runtime_state_from_components(prefill_missing=False)
+        runtime_state = dispatch_component_exchanges(
+            runtime_state,
+            component.name,
+            self.exchanges,
+            self._regridders,
+        )
+        destination_state = runtime_state.get_component_state(component.name)
+        destination_fields = Shared()
 
-            regrid = self._regridders[key]
-            fractional_mask = self._fractional_masks[key]
-
-            source_fields = source_component.export_fields()
-            destination_fields = Shared()
-
-            # Regridder (regrid) checks if components have identical grids internally and
-            # returns fields as-is (from source to destination) if so, avoiding unnecessary computation
+        for exchange in self.exchanges:
+            if exchange.destination != component.name:
+                continue
             for field_name in exchange.field_names:
-                # Figure out if scalar or vector field to be regridded & passed to destination
                 if isinstance(field_name, tuple):
-                    field_name_set = set(field_name)
-                    if not field_name_set.issubset(set(source_fields.fields().keys())):
-                        raise ExchangerError(
-                            f"Not all fields in vector {field_name} are present in source fields"
-                        )
-                    (
-                        u_vector,
-                        v_vector,
-                    ) = regrid(
-                        getattr(source_fields, field_name[0]).data,
-                        getattr(source_fields, field_name[1]).data,
-                    )
                     setattr(
                         destination_fields,
                         field_name[0],
-                        TNA(u_vector, timestamp, exchange.source),
+                        TNA(
+                            destination_state.incoming.get(field_name[0]),
+                            timestamp,
+                            exchange.source,
+                        ),
                     )
                     setattr(
                         destination_fields,
                         field_name[1],
-                        TNA(v_vector, timestamp, exchange.source),
+                        TNA(
+                            destination_state.incoming.get(field_name[1]),
+                            timestamp,
+                            exchange.source,
+                        ),
                     )
                 else:
-                    if field_name not in source_fields.fields().keys():
-                        raise ExchangerError(
-                            f"Field {field_name} not present in source fields"
-                        )
-                    source_field_data = getattr(source_fields, field_name).data
-                    scalar = regrid(source_field_data) * fractional_mask
-
                     setattr(
                         destination_fields,
                         field_name,
-                        TNA(scalar, timestamp, exchange.source),
+                        TNA(
+                            destination_state.incoming.get(field_name),
+                            timestamp,
+                            exchange.source,
+                        ),
                     )
 
-            if not destination_fields.is_empty:
-                destination_component.import_fields(destination_fields)
-                self.logger.debug(
-                    f" Exchanged {destination_fields.field_names}"
-                    f" from {exchange.source} to {exchange.destination}"
-                )
+        if not destination_fields.is_empty:
+            component.import_fields(destination_fields)
+            self.logger.debug(
+                f" Exchanged {destination_fields.field_names}" f" to {component.name}"
+            )
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
         """
@@ -478,3 +530,48 @@ class Coupler:
                 self.components[cname].step(dt, time, self)
 
                 self.components[cname].send_fields(time, self)
+
+    def run_differentiable(
+        self, initial_state: RuntimeCouplerState | None = None
+    ) -> RuntimeCouplerState:
+        """Run the pure JAX slab-runtime path and return the final state.
+
+        Existing public component and coupler APIs remain imperative. This entrypoint
+        provides a differentiable state path for VerCOR-owned slab components while
+        external model adapters stay explicit host/runtime boundaries.
+        """
+
+        runtime_state = (
+            self._runtime_state_from_components(prefill_missing=True)
+            if initial_state is None
+            else initial_state
+        )
+
+        def step_all_components(
+            state: RuntimeCouplerState, _: None
+        ) -> tuple[RuntimeCouplerState, None]:
+            for cname in self.run_sequence:
+                state = dispatch_component_exchanges(
+                    state,
+                    cname,
+                    self.exchanges,
+                    self._regridders,
+                )
+                component_state = state.get_component_state(cname)
+                component_state = receive_component_fields(component_state)
+                component_state = step_slab_component_state(
+                    self.components[cname],
+                    component_state,
+                    self.clock.dt_seconds,
+                )
+                component_state = send_component_fields(component_state)
+                state = state.set_component_state(component_state)
+            return state, None
+
+        final_state, _ = jax.lax.scan(
+            step_all_components,
+            runtime_state,
+            None,
+            length=self.clock.steps,
+        )
+        return final_state

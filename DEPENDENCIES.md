@@ -20,3 +20,4 @@
 20. `vercor/components/data/erainterim_ocean.py` - ERA-Interim ocean forcing adapter with JAX-backed global field assembly built on (8)
 21. `vercor/components/data/jcm_land.py` - JCM land forcing adapter with JAX-backed coordinate conversion and runtime storage built on (8)
 22. `vercor/components/data/camulator_land.py` - CAMulator land forcing adapter with JAX-backed runtime temperature storage built on (7, 8, 9)
+23. `vercor/runtime.py` - differentiable immutable runtime state, pure exchange dispatch, and slab component stepping built on (8, 10, 11, 13, 14, 15, 16)
