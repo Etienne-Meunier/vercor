@@ -64,11 +64,9 @@ class ERA5Ocean(Component, ComponentForcingData):
             "surface": str(surface_file),
         }
 
-        longitude = jnp.asarray(self._read_forcing("longitude", where="surface"))
-        latitude = jnp.asarray(self._read_forcing("latitude", where="surface"))[::-1]
-        land_fraction = jnp.asarray(
-            self._read_forcing("lsm", where="surface", flip_y=True)
-        ).T[0, ::]
+        longitude = self._read_forcing("longitude", where="surface")
+        latitude = self._read_forcing("latitude", where="surface")[::-1]
+        land_fraction = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
         binary_mask = _ocean_binary_mask_from_land_fraction(land_fraction)
 
         self.grid = RectilinearGrid(
@@ -84,7 +82,7 @@ class ERA5Ocean(Component, ComponentForcingData):
 
         # Units: [K]
         self.data["sea_surface_temperature"] = _mask_sea_surface_temperature(
-            jnp.asarray(self._read_forcing("sst", where="surface", flip_y=True)),
+            self._read_forcing("sst", where="surface", flip_y=True),
             binary_mask,
         )
 

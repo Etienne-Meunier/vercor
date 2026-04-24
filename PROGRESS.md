@@ -871,3 +871,44 @@
 ## Notes / Failed Approaches (Slice 11A)
 
 - No failed implementation approaches. The slice keeps forcing file reads host-side and only normalizes the in-memory VerCOR runtime fields to JAX arrays.
+
+## Eleventh JAX Translation Slice 11B: JAX-Backed Forcing Read Boundary
+
+- Moved the shared forcing-read boundary to JAX-backed runtime storage while preserving the explicit h5netcdf/NumPy file-read boundary:
+  - `vercor/components/base.py`
+    - `_read_forcing()` now returns `RuntimeArray`
+    - file loading remains host-side through h5netcdf and NumPy
+    - transposed forcing arrays are normalized with `jnp.asarray(...)`
+    - `flip_y=True` now uses `jnp.flip(..., axis=1)`
+  - `vercor/components/data/era5_atmosphere.py`, `vercor/components/data/era5_ocean.py`, and `vercor/components/data/erainterim_ocean.py`
+    - removed redundant `jnp.asarray(self._read_forcing(...))` wrappers now that `_read_forcing()` is the normalization point
+- Extended focused coverage:
+  - `tests/test_component_base_coverage.py`
+    - asserts normal and flipped `_read_forcing()` calls return `jax.Array`
+  - `tests/test_component_models_coverage.py`
+    - widened patched `_read_forcing()` helper annotations to `RuntimeArray`
+- No public component, coupler, exchange, or regridder APIs changed.
+
+## Validation (Slice 11B JAX-Backed Forcing Read Boundary, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_data_component_kernels.py -q`
+  - passed
+- `conda run -n scipy mypy vercor/components/base.py vercor/components/data/era5_atmosphere.py vercor/components/data/era5_ocean.py vercor/components/data/erainterim_ocean.py tests/test_component_base_coverage.py tests/test_component_models_coverage.py`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_data_component_kernels.py -q`
+  - passed after Black reformatted the ERA5 atmosphere and ERA5 ocean adapters
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 11B)
+
+- No failed implementation approaches. The slice keeps h5netcdf/NumPy as the file-read boundary and makes the returned in-memory forcing arrays JAX-backed.

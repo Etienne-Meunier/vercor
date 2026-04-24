@@ -26,6 +26,7 @@ from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
+from vercor.types import RuntimeArray
 
 
 @pytest.mark.fast_always
@@ -122,7 +123,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
         variable: str,
         where: str,
         flip_y: bool = False,
-    ) -> NDArray:
+    ) -> RuntimeArray:
         assert where == "surface"
         assert not flip_y
         return forcing[variable]
@@ -177,7 +178,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
         variable: str,
         where: str,
         flip_y: bool = False,
-    ) -> NDArray:
+    ) -> RuntimeArray:
         assert where == "surface"
         return forcing[variable]
 
@@ -225,7 +226,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
         variable: str,
         where: str,
         flip_y: bool = False,
-    ) -> NDArray:
+    ) -> RuntimeArray:
         assert where == "model_level"
         assert not flip_y
         return forcing[variable]
@@ -299,7 +300,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         variable: str,
         where: str,
         flip_y: bool = False,
-    ) -> NDArray:
+    ) -> RuntimeArray:
         if where == "model_level":
             assert variable in {
                 "longitude",

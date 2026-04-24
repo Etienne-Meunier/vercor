@@ -236,9 +236,14 @@ def test_component_forcing_data_read_and_write_round_trip(tmp_path: Path) -> Non
     reader = ComponentForcingData()
     reader.DATA_FILES = {"sample": str(path)}
 
-    assert_allclose_compact(reader._read_forcing("foo", "sample"), source.T)
+    normal_read = reader._read_forcing("foo", "sample")
+    flipped_read = reader._read_forcing("foo", "sample", flip_y=True)
+
+    assert isinstance(normal_read, jax.Array)
+    assert isinstance(flipped_read, jax.Array)
+    assert_allclose_compact(normal_read, source.T)
     assert_allclose_compact(
-        reader._read_forcing("foo", "sample", flip_y=True),
+        flipped_read,
         np.flip(source.T, axis=1),
     )
 

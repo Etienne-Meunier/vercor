@@ -103,7 +103,7 @@ class ERAInterimOcean(Component, ComponentForcingData):
             "model_level": str(model_level_file),
         }
 
-        longitude = jnp.asarray(self._read_forcing("xt", where="model_level"))
+        longitude = self._read_forcing("xt", where="model_level")
         grid_step = float(longitude[1] - longitude[0])
         yt_bndry = 89.5 if grid_step == 1 else 90.0
         latitude_start = 10 if grid_step == 1 else 3

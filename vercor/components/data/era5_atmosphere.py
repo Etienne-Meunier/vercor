@@ -118,10 +118,8 @@ class ERA5Atmosphere(Component, ComponentForcingData):
             "surface": str(surface_file),
         }
 
-        longitude = jnp.asarray(self._read_forcing("longitude", where="model_level"))
-        latitude = jnp.asarray(self._read_forcing("latitude", where="model_level"))[
-            ::-1
-        ]
+        longitude = self._read_forcing("longitude", where="model_level")
+        latitude = self._read_forcing("latitude", where="model_level")[::-1]
 
         grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
@@ -133,65 +131,55 @@ class ERA5Atmosphere(Component, ComponentForcingData):
 
         self.settings.apply_time_interpolation = True
 
-        self.data["hyai"] = jnp.asarray(
-            self._read_forcing("hyai", where="model_level")
-        )[
+        self.data["hyai"] = self._read_forcing("hyai", where="model_level")[
             -3:
         ]  # L135-L137
-        self.data["hybi"] = jnp.asarray(
-            self._read_forcing("hybi", where="model_level")
-        )[
+        self.data["hybi"] = self._read_forcing("hybi", where="model_level")[
             -3:
         ]  # L135-L137
-        self.data["hyam"] = jnp.asarray(
-            self._read_forcing("hyam", where="model_level")
-        )[
+        self.data["hyam"] = self._read_forcing("hyam", where="model_level")[
             -2:
         ]  # L136-L137
-        self.data["hybm"] = jnp.asarray(
-            self._read_forcing("hybm", where="model_level")
-        )[
+        self.data["hybm"] = self._read_forcing("hybm", where="model_level")[
             -2:
         ]  # L136-L137
 
-        lnsp = jnp.asarray(
-            self._read_forcing("lnsp", where="model_level", flip_y=True)
-        )[..., 0, :]
+        lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
         # Units: [Pa]
         self.data["surface_pressure"] = _decode_surface_pressure(lnsp)
         # Units: [kg/kg]
-        self.data["specific_humidity_3d"] = jnp.asarray(
-            self._read_forcing("q", where="model_level", flip_y=True)
+        self.data["specific_humidity_3d"] = self._read_forcing(
+            "q", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
         # Units: [K]
-        self.data["temperature_3d"] = jnp.asarray(
-            self._read_forcing("t", where="model_level", flip_y=True)
+        self.data["temperature_3d"] = self._read_forcing(
+            "t", where="model_level", flip_y=True
         )[
             ..., 1:, :
         ]  # L136-L137
         # Units: [m/s]
-        self.data["u_velocity"] = jnp.asarray(
-            self._read_forcing("u", where="model_level", flip_y=True)
+        self.data["u_velocity"] = self._read_forcing(
+            "u", where="model_level", flip_y=True
         )[
             :, :, 1, :
         ]  # L136
         # Units: [m/s]
-        self.data["v_velocity"] = jnp.asarray(
-            self._read_forcing("v", where="model_level", flip_y=True)
+        self.data["v_velocity"] = self._read_forcing(
+            "v", where="model_level", flip_y=True
         )[
             :, :, 1, :
         ]  # L136
 
         # tcc = self._read_forcing("tcc", where="surface", flip_y=True)
         # Units: [W/m²]
-        self.data["net_shortwave_radiation_flux"] = jnp.asarray(
-            self._read_forcing("msnswrf", where="surface", flip_y=True)
+        self.data["net_shortwave_radiation_flux"] = self._read_forcing(
+            "msnswrf", where="surface", flip_y=True
         )
         # Units: [W/m²]
-        self.data["downward_longwave_radiation_flux"] = jnp.asarray(
-            self._read_forcing("msdwlwrf", where="surface", flip_y=True)
+        self.data["downward_longwave_radiation_flux"] = self._read_forcing(
+            "msdwlwrf", where="surface", flip_y=True
         )
         # Units: [kg/kg]
         self.data["specific_humidity"] = self.data["specific_humidity_3d"][

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 import h5netcdf
+import jax.numpy as jnp
 import numpy as np
 import xarray as xr
 from numpy.typing import DTypeLike, NDArray
@@ -385,7 +386,7 @@ class ComponentForcingData:
 
     def _read_forcing(
         self, variable: str, where: str, flip_y: bool = False
-    ) -> NDArray[Any]:
+    ) -> RuntimeArray:
         """Read a variable from the specified forcing file.
 
         Arguments:
@@ -394,14 +395,14 @@ class ComponentForcingData:
             flip_y (bool): whether to flip the variable along the latitude axis
 
         Returns:
-            (`ndarray`): the requested variable data
+            RuntimeArray: the requested variable data as a JAX-backed array.
         """
 
         try:
             with h5netcdf.File(self.DATA_FILES[where], "r") as infile:
-                var_obj = np.array(infile.variables[variable]).T
+                var_obj = jnp.asarray(np.array(infile.variables[variable]).T)
                 if flip_y:
-                    return np.flip(var_obj, axis=1)
+                    return jnp.flip(var_obj, axis=1)
                 else:
                     return var_obj
         except KeyError as e:
