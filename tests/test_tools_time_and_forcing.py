@@ -111,7 +111,17 @@ def test_get_field_time_slice_cases(
         out = get_field_time_slice(
             "foo", {"foo": case.data}, case.time, no_leap=case.no_leap
         )
+        assert isinstance(out, jax.Array)
         assert_allclose_compact(out, case.expected, label=case.case_id)
+
+
+def test_get_field_time_slice_returns_jax_array_for_jax_backed_data() -> None:
+    data = {"foo": jnp.arange(365 * 2, dtype=jnp.float64).reshape(365, 2)}
+
+    out = get_field_time_slice("foo", data, datetime(2001, 1, 2), no_leap=False)
+
+    assert isinstance(out, jax.Array)
+    assert_allclose_compact(out, np.asarray([2.0, 3.0]))
 
 
 def test_get_field_at_specific_time_weights_and_interpolation() -> None:
@@ -139,6 +149,7 @@ def test_get_field_at_specific_time_weights_and_interpolation() -> None:
     assert np.isclose(f1 + f2, 1.0)
 
     out = get_field_at_specific_time("foo", data, coupler, current_time=current_time)
+    assert isinstance(out, jax.Array)
     assert_allclose_compact(out, 2.5)
 
 

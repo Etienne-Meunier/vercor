@@ -957,3 +957,41 @@
 
 - The first helper implementation used `torch.as_tensor()` directly on a JAX host transfer, which produced a read-only NumPy-array warning from Torch. The final helper copies the host array before constructing the Torch tensor.
 - The first `mypy` pass rejected fake test accessors assigned to `CAMulatorGCM` attributes; the final test casts the manually constructed component to `Any` because this is intentionally patched wrapper coverage rather than normal construction.
+
+## Tenth JAX Translation Slice 10A: Shared Runtime Array Boundaries
+
+- Tightened the shared component/tooling runtime-array boundaries without changing public component, coupler, or exchange APIs:
+  - added `vercor.tools._runtime_array_to_host()` as the explicit JAX device-to-host transfer helper for NumPy-only consumers
+  - normalized `get_field_time_slice()` and `get_field_at_specific_time()` through `jax.numpy` so sliced/interpolated fields return JAX-backed arrays for both NumPy and JAX input data
+  - moved plotting data extraction in `vercor/tools.py` to use the explicit host-transfer helper at the Matplotlib boundary
+  - moved `TimedNamedArray.__array__()` and `write_shared_to_netcdf()` in `vercor/components/base.py` to the same explicit host-transfer boundary
+- Extended focused coverage:
+  - `tests/test_tools_time_and_forcing.py`
+    - asserts time slicing and monthly interpolation return `jax.Array` from NumPy-backed data
+    - adds direct JAX-backed time-slice coverage
+  - `tests/test_component_base_coverage.py`
+    - asserts `TimedNamedArray.__array__()` works for JAX-backed data
+    - writes JAX-backed shared fields and JAX-backed grid coordinates through NetCDF output
+  - `tests/test_tools_components_and_plotting.py`
+    - keeps mixed NumPy/JAX component plotting coverage and now uses JAX-backed grid coordinates in one plotted component
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 10A Shared Runtime Array Boundaries, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_tools_time_and_forcing.py tests/test_tools_components_and_plotting.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 10A)
+
+- No failed implementation approaches. The slice only moves NumPy conversion to explicit host-only boundaries and keeps VerCOR runtime data JAX-backed.

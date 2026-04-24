@@ -13,7 +13,11 @@ from vercor.clock import ModelDateTime, CustomDateTime
 from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
 from vercor.settings import ComponentSettings
-from vercor.tools import get_field_at_specific_time, get_field_time_slice
+from vercor.tools import (
+    _runtime_array_to_host,
+    get_field_at_specific_time,
+    get_field_time_slice,
+)
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
 from vercor.types import RuntimeArray
 
@@ -31,7 +35,7 @@ class TimedNamedArray:
 
     def __array__(self, dtype: Optional[DTypeLike] = None) -> NDArray[Any]:
         """Let NumPy see this as an array transparently."""
-        return np.asarray(self.data, dtype=dtype)
+        return np.asarray(_runtime_array_to_host(self.data), dtype=dtype)
 
     def __str__(self) -> str:
         return (
@@ -429,13 +433,17 @@ def write_shared_to_netcdf(
         filename: path to the output netCDF file
     """
 
-    lat = xr.DataArray(np.asarray(grid.latitude), dims=("nlat",), name="latitude")
-    lon = xr.DataArray(np.asarray(grid.longitude), dims=("nlon",), name="longitude")
+    lat = xr.DataArray(
+        _runtime_array_to_host(grid.latitude), dims=("nlat",), name="latitude"
+    )
+    lon = xr.DataArray(
+        _runtime_array_to_host(grid.longitude), dims=("nlon",), name="longitude"
+    )
 
     data_vars = {}
     for name, tna in shared._fields.items():
         data_vars[name] = xr.DataArray(
-            data=np.asarray(tna.data),
+            data=_runtime_array_to_host(tna.data),
             dims=("nlat", "nlon"),
             coords={"latitude": lat, "longitude": lon},
             attrs={

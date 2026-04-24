@@ -132,8 +132,8 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
 
     atm_grid = RectilinearGrid(
         "atm",
-        longitude=np.array([0.0, 1.0, 2.0]),
-        latitude=np.array([-1.0, 1.0]),
+        longitude=jnp.asarray([0.0, 1.0, 2.0]),
+        latitude=jnp.asarray([-1.0, 1.0]),
     )
     ocn_grid = RectilinearGrid(
         "ocn",

@@ -6,6 +6,7 @@ import shutil
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 from urllib.request import urlopen
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
@@ -167,6 +168,12 @@ def _append_unique(target: list[str], exchange_items: list[str]) -> None:
     target.extend([item for item in exchange_items if item not in target])
 
 
+def _runtime_array_to_host(array: RuntimeArray) -> NDArray[Any]:
+    """Transfer a runtime array to host memory for NumPy-only consumers."""
+
+    return np.asarray(jax.device_get(jnp.asarray(array)))
+
+
 def safe_component_nanmean(component: Any, field_name: str) -> float:
     """Return a robust NaN-aware mean for a component field."""
 
@@ -234,12 +241,14 @@ def _get_component_plot_data(
 ) -> tuple[NDArray, NDArray, NDArray, NDArray, NDArray]:
     """Return lon/lat grids and scalar/vector fields for one component."""
 
-    lon = np.asarray(component.grid.longitude)
-    lat = np.asarray(component.grid.latitude)
+    lon = _runtime_array_to_host(component.grid.longitude)
+    lat = _runtime_array_to_host(component.grid.latitude)
     lon_2d, lat_2d = np.meshgrid(lon, lat, indexing="ij")
-    scalar_field = np.asarray(component.get(scalar_field_name)).T
-    u_field = np.asarray(component.get(u_field_name)).T
-    v_field = np.asarray(component.get(v_field_name)).T
+    scalar_field = _runtime_array_to_host(
+        jnp.asarray(component.get(scalar_field_name)).T
+    )
+    u_field = _runtime_array_to_host(jnp.asarray(component.get(u_field_name)).T)
+    v_field = _runtime_array_to_host(jnp.asarray(component.get(v_field_name)).T)
     return lon_2d, lat_2d, scalar_field, u_field, v_field
 
 
@@ -504,7 +513,7 @@ def get_field_time_slice(
 
     time_index = tm_yday - 1
 
-    out: RuntimeArray = data[field_name][time_index, ...]
+    out: RuntimeArray = jnp.asarray(data[field_name])[time_index, ...]
 
     return out
 
@@ -540,7 +549,7 @@ def get_field_at_specific_time(
         n_rec=12,
     )
 
-    arr = data[field_name]
+    arr = jnp.asarray(data[field_name])
 
     # Use swapaxes to have (lat, lon) ordering
     out: RuntimeArray = (f1 * arr[..., n1] + f2 * arr[..., n2]).swapaxes(-2, -1)

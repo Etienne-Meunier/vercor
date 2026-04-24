@@ -30,8 +30,13 @@ def test_timed_named_array_and_shared_accessors(
     timestamp = datetime(2001, 2, 3, 4, 5, 6)
     data = np.asarray([[1.0, 2.0], [3.0, 4.0]])
     timed = TimedNamedArray(data=data, timestamp=timestamp, component_name="ATM")
+    jax_timed = TimedNamedArray(
+        data=jnp.asarray(data), timestamp=timestamp, component_name="ATM"
+    )
 
     assert_allclose_compact(np.asarray(timed), data)
+    assert_allclose_compact(np.asarray(jax_timed), data)
+    assert isinstance(jax_timed.data, jax.Array)
     assert "ATM" in str(timed)
     assert "shape=(2, 2)" in repr(timed)
 
@@ -252,12 +257,18 @@ def test_component_forcing_data_read_and_write_round_trip(tmp_path: Path) -> Non
 
     shared = Shared()
     timestamp = datetime(2000, 1, 1, 12, 0, 0)
-    shared["temperature"] = (np.asarray([[10.0, 11.0], [12.0, 13.0]]), timestamp, "ATM")
+    shared["temperature"] = (
+        jnp.asarray([[10.0, 11.0], [12.0, 13.0]]),
+        timestamp,
+        "ATM",
+    )
     output = tmp_path / "shared.nc"
 
     write_shared_to_netcdf(shared, make_test_grid(), output)
 
     with xr.open_dataset(output) as dataset:
         assert_allclose_compact(dataset["temperature"].values, shared.temperature.data)
+        assert_allclose_compact(dataset["latitude"].values, np.asarray([-1.0, 1.0]))
+        assert_allclose_compact(dataset["longitude"].values, np.asarray([0.0, 1.0]))
         assert dataset["temperature"].attrs["component"] == "ATM"
         assert dataset["temperature"].attrs["timestamp"] == timestamp.isoformat()
