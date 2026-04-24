@@ -369,6 +369,73 @@ class Coupler:
             binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
         )
 
+    def _validate_differentiable_runtime(
+        self, runtime_state: RuntimeCouplerState
+    ) -> None:
+        if not hasattr(self, "run_sequence"):
+            raise CouplerError(
+                "Differentiable runtime requires a configured component run sequence"
+            )
+
+        run_order = tuple(self.run_sequence)
+        if not run_order:
+            raise CouplerError(
+                "Differentiable runtime requires a non-empty component run sequence"
+            )
+
+        runtime_component_names = set(runtime_state.component_names)
+        for cname in run_order:
+            if cname not in self.components:
+                raise CouplerError(
+                    f"Run-sequence component '{cname}' is not registered in coupler"
+                )
+            if cname not in runtime_component_names:
+                raise CouplerError(
+                    f"Run-sequence component '{cname}' is missing from differentiable state"
+                )
+
+            component = self.components[cname]
+            module_name = component.__class__.__module__
+            if not module_name.startswith("vercor.components.slab."):
+                raise ComponentError(
+                    "Differentiable runtime currently supports VerCOR slab components only "
+                    f"(got {component.__class__.__name__} for component '{cname}')"
+                )
+
+        for exchange in self.exchanges:
+            key = (exchange.source, exchange.destination, exchange.interpolation_type)
+            if exchange.source not in runtime_component_names:
+                raise CouplerError(
+                    f"Exchange source component '{exchange.source}' is missing from differentiable state"
+                )
+            if exchange.destination not in runtime_component_names:
+                raise CouplerError(
+                    f"Exchange destination component '{exchange.destination}' is missing from differentiable state"
+                )
+            if key not in self._regridders:
+                raise CouplerError(
+                    "Differentiable runtime requires an initialized regridder for exchange "
+                    f"{exchange.name}"
+                )
+
+            mask_name = exchange_key_name(*key)
+            if mask_name not in runtime_state.fractional_masks.field_names:
+                raise CouplerError(
+                    "Differentiable runtime requires an initialized fractional mask for exchange "
+                    f"{exchange.name}"
+                )
+
+    def create_differentiable_state(
+        self, *, prefill_missing: bool = True
+    ) -> RuntimeCouplerState:
+        """Create and validate the immutable state used by ``run_differentiable``."""
+
+        runtime_state = self._runtime_state_from_components(
+            prefill_missing=prefill_missing
+        )
+        self._validate_differentiable_runtime(runtime_state)
+        return runtime_state
+
     def append_masks_to_output(
         self,
         name: str,
@@ -542,10 +609,11 @@ class Coupler:
         """
 
         runtime_state = (
-            self._runtime_state_from_components(prefill_missing=True)
+            self.create_differentiable_state(prefill_missing=True)
             if initial_state is None
             else initial_state
         )
+        self._validate_differentiable_runtime(runtime_state)
 
         def step_all_components(
             state: RuntimeCouplerState, _: None

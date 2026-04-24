@@ -1032,3 +1032,39 @@
 
 - The first scalar dispatch test expected `13.0` for a masked scaled field, but the correct sum is `12.0`; the test was corrected before implementation validation continued.
 - The first slab-ocean closed-form test omitted the existing restoring term in `_advance_sea_surface_temperature()`; the test now includes that term.
+
+## Thirteenth JAX Translation Slice 13B: Harden Differentiable Slab Runtime
+
+- Hardened the public differentiable slab runtime path without changing the existing `run_differentiable(initial_state=None)` signature:
+  - added `Coupler.create_differentiable_state(prefill_missing=True)` as the public immutable runtime-state builder
+  - added preflight validation for configured run sequence, slab-only components, runtime-state component coverage, initialized regridders, and initialized fractional masks
+  - `run_differentiable()` now validates both internally created states and caller-provided initial states before entering `jax.lax.scan`
+- Made real VerCOR regridders safe to use inside the traced differentiable runtime by caching identical-grid status at regridder construction time instead of recomputing a Python `bool(...)` from JAX arrays inside the scan body.
+- Extended `tests/test_differentiable_coupler_runtime.py`:
+  - normal four-slab `Coupler` construction through `register()`, `add_exchange()`, `set_components_run_sequence()`, and `initialize()`
+  - real bilinear regridder coverage under `jax.jit`
+  - gradient coverage for final ocean SST with respect to initialized runtime-state SST
+  - clear validation errors for missing run sequence, unsupported non-slab components, missing regridders, and missing fractional masks
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 13B, 2026-04-24)
+
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_differentiable_coupler_runtime.py tests/test_bilinear_rectilinear_regridder.py tests/test_conservative_rectilinear_regridder.py tests/test_coupler_coverage.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 13B)
+
+- The first initialized-coupler JIT test failed because real regridders recomputed `has_identical_grids` inside `jax.lax.scan`, triggering `TracerBoolConversionError` from `bool(jnp.all(...))`. Caching the identical-grid result when the regridder is constructed keeps that branch static and preserves the existing identical-grid short-circuit behavior.

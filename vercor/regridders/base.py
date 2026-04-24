@@ -19,9 +19,9 @@ class Regridder:
         self.interpolator: Union[
             BilinearRectilinearInterpolator, ConservativeRectilinearRemapper, None
         ] = None
+        self._has_identical_grids = self._compute_has_identical_grids()
 
-    @property
-    def has_identical_grids(self) -> bool:
+    def _compute_has_identical_grids(self) -> bool:
         """Check if source and destination grids are identical in shape and coordinates."""
 
         source = self.source_grid
@@ -38,6 +38,12 @@ class Regridder:
         )
 
         return shape_condition and coord_condition
+
+    @property
+    def has_identical_grids(self) -> bool:
+        """Return whether source and destination grids are identical."""
+
+        return self._has_identical_grids
 
     def _ensure_ready(self, args: Tuple[Any, ...]) -> None:
         """

@@ -6,8 +6,9 @@ from typing import Any, cast
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
-from tests._coverage_support import make_test_grid
+from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 from vercor.components.slab.atmosphere import Atmosphere
@@ -15,7 +16,9 @@ from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
 from vercor.coupler import Coupler
+from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchange import Exchange
+from vercor.regridders import bilinear
 from vercor.run_sequence import RunSequence
 from vercor.runtime import RuntimeComponentState, RuntimeCouplerState, RuntimeFieldStore
 
@@ -112,6 +115,95 @@ def _make_coupler(steps: int) -> Coupler:
     return coupler
 
 
+def _make_initialized_slab_coupler(steps: int) -> Coupler:
+    longitude = np.asarray([0.0, 1.0], dtype=float)
+    latitude = np.asarray([-1.0, 1.0], dtype=float)
+    ocean_mask = np.ones((2, 2), dtype=float)
+    land_mask = np.zeros((2, 2), dtype=float)
+
+    atmosphere_grid = make_test_grid(
+        name="ATM",
+        longitude=longitude,
+        latitude=latitude,
+    )
+    ocean_grid = make_test_grid(
+        name="OCN",
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=ocean_mask,
+    )
+    land_grid = make_test_grid(
+        name="LND",
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=land_mask,
+    )
+    ice_grid = make_test_grid(
+        name="ICE",
+        longitude=longitude,
+        latitude=latitude,
+    )
+
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+    )
+    coupler.register(Atmosphere(atmosphere_grid))
+    coupler.register(Ocean(ocean_grid))
+    coupler.register(Land(land_grid))
+    coupler.register(SeaIce(ice_grid))
+    coupler.add_exchange(
+        Exchange(
+            source="OCN",
+            destination="ATM",
+            field_names=["sea_surface_temperature"],
+            regridder_factory=bilinear,
+        )
+    )
+    coupler.add_exchange(
+        Exchange(
+            source="LND",
+            destination="ATM",
+            field_names=["land_surface_temperature"],
+            regridder_factory=bilinear,
+        )
+    )
+    coupler.add_exchange(
+        Exchange(
+            source="ICE",
+            destination="ATM",
+            field_names=["ice_fraction"],
+            regridder_factory=bilinear,
+        )
+    )
+    coupler.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="OCN",
+            field_names=["sensible_heat_flux", "latent_heat_flux"],
+            regridder_factory=bilinear,
+        )
+    )
+    coupler.add_exchange(
+        Exchange(
+            source="ATM",
+            destination="LND",
+            field_names=["latent_heat_flux"],
+            regridder_factory=bilinear,
+        )
+    )
+    coupler.add_exchange(
+        Exchange(
+            source="OCN",
+            destination="ICE",
+            field_names=["sea_surface_temperature"],
+            regridder_factory=bilinear,
+        )
+    )
+    coupler.set_components_run_sequence(RunSequence(order=["ATM", "OCN", "LND", "ICE"]))
+    coupler.initialize()
+    return coupler
+
+
 def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerState:
     zeros = jnp.zeros_like(sea_surface_temperature)
     temperature_2m = jnp.full_like(sea_surface_temperature, 288.15)
@@ -179,6 +271,19 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
     )
 
 
+def _with_ocean_sst(
+    state: RuntimeCouplerState, sea_surface_temperature: jax.Array
+) -> RuntimeCouplerState:
+    ocean = state.get_component_state("OCN")
+    ocean = ocean.with_data(
+        ocean.data.set("sea_surface_temperature", sea_surface_temperature)
+    )
+    ocean = ocean.with_outgoing(
+        ocean.outgoing.set("sea_surface_temperature", sea_surface_temperature)
+    )
+    return state.set_component_state(ocean)
+
+
 def test_run_differentiable_supports_jit_grad_and_jvp() -> None:
     coupler = _make_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
@@ -225,3 +330,75 @@ def test_run_differentiable_matches_one_step_closed_form_for_slab_ocean() -> Non
     )
 
     assert_allclose_compact(ocean_sst, expected)
+
+
+def test_initialized_slab_coupler_creates_jittable_differentiable_state() -> None:
+    coupler = _make_initialized_slab_coupler(steps=2)
+    initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
+    initial_state = _with_ocean_sst(
+        coupler.create_differentiable_state(),
+        initial_sst,
+    )
+
+    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+        initial_state
+    )
+    ocean_sst = final_state.get_component_state("OCN").data.get(
+        "sea_surface_temperature"
+    )
+
+    assert final_state.component_names == ("ATM", "OCN", "LND", "ICE")
+    assert ocean_sst.shape == (2, 2)
+    assert isinstance(ocean_sst, jax.Array)
+    assert np.all(np.isfinite(np.asarray(ocean_sst)))
+
+    def loss(sea_surface_temperature: jax.Array) -> jax.Array:
+        state = _with_ocean_sst(initial_state, sea_surface_temperature)
+        result = coupler.run_differentiable(state)
+        return jnp.sum(
+            result.get_component_state("OCN").data.get("sea_surface_temperature")
+        )
+
+    gradient = jax.grad(loss)(initial_sst)
+    assert gradient.shape == initial_sst.shape
+    assert np.all(np.isfinite(np.asarray(gradient)))
+
+
+def test_run_differentiable_validates_missing_run_sequence() -> None:
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+
+    with pytest.raises(CouplerError, match="run sequence"):
+        coupler.run_differentiable()
+
+
+def test_run_differentiable_rejects_non_slab_components() -> None:
+    grid = make_test_grid(name="dummy")
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": cast(Any, DummyComponent("ATM", grid))}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    with pytest.raises(ComponentError, match="slab components only"):
+        coupler.run_differentiable()
+
+
+def test_run_differentiable_validates_regridders_and_fractional_masks() -> None:
+    coupler = _make_coupler(steps=1)
+    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    coupler._regridders = {}
+
+    with pytest.raises(CouplerError, match="initialized regridder"):
+        coupler.run_differentiable(state)
+
+    coupler = _make_coupler(steps=1)
+    state = RuntimeCouplerState(
+        components=state.components,
+        fractional_masks=RuntimeFieldStore.empty(),
+        binary_masks=RuntimeFieldStore.empty(),
+    )
+
+    with pytest.raises(CouplerError, match="fractional mask"):
+        coupler.run_differentiable(state)
