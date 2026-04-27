@@ -654,9 +654,6 @@ class Coupler:
         if not commit_wrappers:
             return self._run_scanned_runtime(initial_state)
 
-        # TODO: add setup checks like time step consistency,
-        # component's readiness (outgoing fields), etc.
-        # Wrap in a class method or function
         for cname in self.run_sequence:
             if self.components[cname].outgoing_fields.is_empty:
                 raise ComponentError(
