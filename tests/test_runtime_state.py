@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -19,6 +21,21 @@ from vercor.runtime import (
 class _RuntimeSendComponent:
     def __init__(self, settings: ComponentSettings) -> None:
         self.settings = settings
+
+
+def test_runtime_module_does_not_own_component_specific_steps() -> None:
+    runtime_source = Path("vercor/runtime.py").read_text(encoding="utf-8")
+
+    forbidden_component_markers = (
+        "step_slab_component_state",
+        "is_supported_differentiable_component",
+        "JAXGCMRuntimePayload",
+        "VerosGCM",
+        "CAMulatorGCM",
+        "CAMulatorLand",
+    )
+    for marker in forbidden_component_markers:
+        assert marker not in runtime_source
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:

@@ -453,6 +453,7 @@ class JAXGCM(Component):
     ) -> None:
         """Validate JAXGCM runtime payload and pre-seeded output fields."""
 
+        super().validate_runtime_state(component_state, expected_shape)
         if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
             raise ComponentError(
                 "JAXGCM runtime requires an initialized immutable runtime payload "

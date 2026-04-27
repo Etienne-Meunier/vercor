@@ -108,6 +108,7 @@ class Ocean(Component):
     ) -> None:
         """Validate slab-ocean runtime fields."""
 
+        super().validate_runtime_state(component_state, expected_shape)
         self._validate_runtime_grid_data_field(
             component_state,
             "sea_surface_temperature",

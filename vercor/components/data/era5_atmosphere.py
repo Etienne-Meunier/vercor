@@ -250,6 +250,7 @@ class ERA5Atmosphere(Component, ComponentForcingData):
     ) -> None:
         """Validate ERA5 atmosphere runtime diagnostic fields."""
 
+        super().validate_runtime_state(component_state, expected_shape)
         for field_name in (
             "land_surface_temperature",
             "sea_surface_temperature",

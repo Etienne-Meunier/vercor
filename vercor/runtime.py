@@ -20,7 +20,7 @@ def exchange_key_name(source: str, destination: str, interpolation_type: str) ->
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class RuntimeStepInfo:
-    """Precomputed time-selection metadata for one differentiable runtime step."""
+    """Precomputed time-selection metadata for one runtime step."""
 
     monthly_index_left: RuntimeArray
     monthly_index_right: RuntimeArray
@@ -83,7 +83,7 @@ class RuntimeStepInfo:
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class RuntimeFieldStore:
-    """Immutable named array store used by the differentiable runtime."""
+    """Immutable named array store used by the runtime."""
 
     field_names: tuple[str, ...]
     values: tuple[RuntimeArray, ...]
@@ -159,7 +159,7 @@ class RuntimeFieldStore:
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class RuntimeComponentState:
-    """Immutable differentiable state for one component."""
+    """Immutable runtime state for one component."""
 
     name: str
     data: RuntimeFieldStore
@@ -260,7 +260,7 @@ class RuntimeComponentState:
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class RuntimeCouplerState:
-    """Immutable differentiable state for the VerCOR runtime core."""
+    """Immutable runtime state for the VerCOR runtime core."""
 
     components: tuple[RuntimeComponentState, ...]
     fractional_masks: RuntimeFieldStore

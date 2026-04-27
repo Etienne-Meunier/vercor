@@ -136,7 +136,7 @@ def test_component_get_import_receive_merge_and_finalize(
     assert coupler.appended_components == ["ATM"]
 
 
-def test_component_validation_and_timestamp_mismatch() -> None:
+def test_component_validation_and_runtime_receive_delegate() -> None:
     component = DummyComponent(name="ATM", grid=make_test_grid())
 
     with pytest.raises(ComponentError, match="no fields to import"):
@@ -161,8 +161,10 @@ def test_component_validation_and_timestamp_mismatch() -> None:
         datetime(2000, 1, 1, 1, 0, 0),
         "OCN",
     )
-    with pytest.raises(ComponentError, match="does not match current time"):
-        component.receive_fields(timestamp)
+    component.receive_fields(timestamp)
+    assert_allclose_compact(
+        component.data["temperature"], np.ones(component.grid.shape)
+    )
 
     with pytest.raises(
         ComponentError, match="not found in incoming, outgoing or internal"

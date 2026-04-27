@@ -54,6 +54,7 @@ class SeaIce(Component):
     ) -> None:
         """Validate slab-sea-ice runtime fields."""
 
+        super().validate_runtime_state(component_state, expected_shape)
         for field_name in ("ice_fraction", "sea_surface_temperature"):
             self._validate_runtime_grid_data_field(
                 component_state,

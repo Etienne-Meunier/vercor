@@ -321,37 +321,11 @@ class Coupler:
                     f"(mismatched points: {mismatch})"
                 )
 
-    def _component_to_runtime_state(
-        self,
-        component: AllComponentsType,
-        *,
-        prefill_missing: bool,
-    ) -> RuntimeComponentState:
-        data = dict(component.data)
-        incoming = component.incoming_fields.fields()
-        outgoing = component.outgoing_fields.fields()
-
-        if prefill_missing:
-            component.prefill_runtime_state_fields(data, incoming, outgoing)
-
-        return RuntimeComponentState(
-            name=component.name,
-            data=RuntimeFieldStore.from_mapping(data),
-            incoming=RuntimeFieldStore.from_mapping(incoming),
-            outgoing=RuntimeFieldStore.from_mapping(outgoing),
-            fields_to_import=tuple(component._fields2import),
-            fields_to_export=tuple(component._fields2export),
-            runtime_payload=component.create_runtime_payload(),
-        )
-
     def _runtime_state_from_components(
         self, *, prefill_missing: bool = False
     ) -> RuntimeCouplerState:
         components = tuple(
-            self._component_to_runtime_state(
-                component,
-                prefill_missing=prefill_missing,
-            )
+            component.to_runtime_component_state(prefill_missing=prefill_missing)
             for component in self.components.values()
         )
         fractional_masks = {
@@ -365,58 +339,6 @@ class Coupler:
             components=components,
             fractional_masks=RuntimeFieldStore.from_mapping(fractional_masks),
             binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
-        )
-
-    def _validate_runtime_store_field(
-        self,
-        component_name: str,
-        store: RuntimeFieldStore,
-        field_name: str,
-        store_description: str,
-        expected_shape: tuple[int, int],
-    ) -> None:
-        if field_name not in store.field_names:
-            raise CouplerError(
-                "Runtime missing "
-                f"{store_description} field '{field_name}' for component '{component_name}'"
-            )
-
-        field_shape = jnp.asarray(store.get(field_name)).shape
-        if field_shape != expected_shape:
-            raise CouplerError(
-                "Runtime "
-                f"{store_description} field '{field_name}' for component '{component_name}' "
-                f"has shape {field_shape}, expected {expected_shape}"
-            )
-
-    def _validate_runtime_data_field_exists(
-        self,
-        component_name: str,
-        component_state: RuntimeComponentState,
-        field_name: str,
-    ) -> None:
-        if field_name not in component_state.data.field_names:
-            raise CouplerError(
-                "Runtime missing required data field "
-                f"'{field_name}' for component '{component_name}'"
-            )
-
-    def _validate_runtime_grid_data_field(
-        self,
-        component_name: str,
-        component_state: RuntimeComponentState,
-        field_name: str,
-        expected_shape: tuple[int, int],
-    ) -> None:
-        self._validate_runtime_data_field_exists(
-            component_name, component_state, field_name
-        )
-        self._validate_runtime_store_field(
-            component_name,
-            component_state.data,
-            field_name,
-            "required data",
-            expected_shape,
         )
 
     def _runtime_step_info_from_times(
@@ -469,11 +391,11 @@ class Coupler:
 
         return day_of_year - 1
 
-    def _build_differentiable_step_info(self) -> RuntimeStepInfo:
+    def _build_runtime_step_info(self) -> RuntimeStepInfo:
         times = [time for _, time, _ in self.clock.iter()]
         return self._runtime_step_info_from_times(times)
 
-    def _initial_differentiable_step_info(self) -> RuntimeStepInfo:
+    def _initial_runtime_step_info(self) -> RuntimeStepInfo:
         clock_iter = self.clock.iter()
         try:
             _, first_time, _ = next(clock_iter)
@@ -485,11 +407,11 @@ class Coupler:
             jax.tree_util.tree_map(lambda value: value[0], batched_step_info),
         )
 
-    def _prime_differentiable_runtime_outgoing(
+    def _prime_runtime_outgoing(
         self,
         runtime_state: RuntimeCouplerState,
     ) -> RuntimeCouplerState:
-        step_info = self._initial_differentiable_step_info()
+        step_info = self._initial_runtime_step_info()
         for cname in self.run_sequence:
             component_state = runtime_state.get_component_state(cname)
             component_state = send_component_fields(
@@ -516,65 +438,22 @@ class Coupler:
                 )
             if cname not in runtime_component_names:
                 raise CouplerError(
-                    f"Run-sequence component '{cname}' is missing from differentiable state"
+                    f"Run-sequence component '{cname}' is missing from runtime state"
                 )
 
             component = self.components[cname]
             component_state = runtime_state.get_component_state(cname)
             component.validate_runtime_state(component_state, component.grid.shape)
-            for field_name in component_state.fields_to_import:
-                self._validate_runtime_store_field(
-                    cname,
-                    component_state.incoming,
-                    field_name,
-                    "imported incoming",
-                    component.grid.shape,
-                )
-                self._validate_runtime_grid_data_field(
-                    cname,
-                    component_state,
-                    field_name,
-                    component.grid.shape,
-                )
-            for field_name in component_state.fields_to_export:
-                self._validate_runtime_data_field_exists(
-                    cname,
-                    component_state,
-                    field_name,
-                )
-                if component.__class__.__module__.startswith("vercor.components.slab."):
-                    self._validate_runtime_store_field(
-                        cname,
-                        component_state.data,
-                        field_name,
-                        "exported data",
-                        component.grid.shape,
-                    )
-                self._validate_runtime_store_field(
-                    cname,
-                    component_state.outgoing,
-                    field_name,
-                    "exported source",
-                    component.grid.shape,
-                )
-            for field_name in component_state.incoming.field_names:
-                self._validate_runtime_store_field(
-                    cname,
-                    component_state.incoming,
-                    field_name,
-                    "incoming",
-                    component.grid.shape,
-                )
 
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination, exchange.interpolation_type)
             if exchange.source not in runtime_component_names:
                 raise CouplerError(
-                    f"Exchange source component '{exchange.source}' is missing from differentiable state"
+                    f"Exchange source component '{exchange.source}' is missing from runtime state"
                 )
             if exchange.destination not in runtime_component_names:
                 raise CouplerError(
-                    f"Exchange destination component '{exchange.destination}' is missing from differentiable state"
+                    f"Exchange destination component '{exchange.destination}' is missing from runtime state"
                 )
             if key not in self._regridders:
                 raise CouplerError(
@@ -598,17 +477,6 @@ class Coupler:
                     f"{exchange.name} has shape {mask_shape}, expected {destination_shape}"
                 )
 
-            source_shape = self.components[exchange.source].grid.shape
-            source_state = runtime_state.get_component_state(exchange.source)
-            for field_name in _flatten_fields(exchange.field_names):
-                self._validate_runtime_store_field(
-                    exchange.source,
-                    source_state.outgoing,
-                    field_name,
-                    "source",
-                    source_shape,
-                )
-
     def create_runtime_state(
         self, *, prefill_missing: bool = True
     ) -> RuntimeCouplerState:
@@ -618,7 +486,7 @@ class Coupler:
             prefill_missing=prefill_missing
         )
         if prefill_missing and hasattr(self, "run_sequence"):
-            runtime_state = self._prime_differentiable_runtime_outgoing(runtime_state)
+            runtime_state = self._prime_runtime_outgoing(runtime_state)
         self._validate_runtime_state(runtime_state)
         return runtime_state
 
@@ -851,7 +719,7 @@ class Coupler:
             else initial_state
         )
         self._validate_runtime_state(runtime_state)
-        step_infos = self._build_differentiable_step_info()
+        step_infos = self._build_runtime_step_info()
 
         def step_all_components(
             state: RuntimeCouplerState, step_info: RuntimeStepInfo

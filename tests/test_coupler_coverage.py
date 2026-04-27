@@ -677,3 +677,39 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         "step_runtime:OCN:2000-01-01T00:00:00:60.0",
         "send:OCN",
     ]
+
+
+def test_run_and_differentiable_alias_use_runtime_component_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coupler = make_coupler()
+    timestamp = coupler.clock.start
+    atmosphere = _RunComponent("ATM", [], timestamp)
+    ocean = _RunComponent("OCN", [], timestamp)
+    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
+    coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
+
+    events: list[str] = []
+
+    def fake_runtime_step(
+        state: Any,
+        component_name: str,
+        step_info: Any,
+        *,
+        time: Any | None = None,
+    ) -> Any:
+        _ = step_info
+        mode = "run" if time is not None else "scan"
+        events.append(f"{mode}:{component_name}")
+        return state
+
+    monkeypatch.setattr(coupler, "_step_runtime_component", fake_runtime_step)
+
+    coupler.run()
+    run_events = list(events)
+    events.clear()
+
+    coupler.run_differentiable()
+
+    assert run_events == ["run:ATM", "run:OCN"]
+    assert events == ["scan:ATM", "scan:OCN"]

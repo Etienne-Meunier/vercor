@@ -1375,3 +1375,38 @@
 ## Notes / Failed Approaches (Slice 16B)
 
 - An intermediate lint run caught a stale unused `Any` import in `vercor/components/external/camulator.py` after removing its no-op runtime override. The import was removed and flake8 then reported `0`.
+
+## Sixteenth JAX Translation Slice 16C: Unified Runtime Cleanup Completion
+
+- Completed the unified-runtime cleanup requested after Slice 16B:
+  - canonicalized runtime naming in private coupler helpers and runtime-state docstrings
+  - kept `create_differentiable_state()` and `run_differentiable()` only as compatibility delegates
+  - moved generic import/export/incoming runtime validation into `Component.validate_runtime_state()`
+  - updated slab, ERA5 atmosphere, and JAXGCM runtime validators to layer component-specific checks on top of the shared base validation
+  - removed remaining component-category validation branching from `Coupler`
+  - made `Coupler` create component runtime state through `Component.to_runtime_component_state(prefill_missing=...)`
+  - thinned `Component.receive_fields()` to the runtime receive delegate
+- Added regression coverage that:
+  - `run()` and `run_differentiable()` both use `_step_runtime_component()`
+  - `vercor/runtime.py` does not own component-specific step helpers or external-component payload classes
+- Updated `DEPENDENCIES.md` to describe `run()` / `create_runtime_state()` as the canonical runtime path with compatibility aliases.
+
+## Validation (Slice 16C, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_coupler_coverage.py tests/test_component_base_coverage.py tests/test_differentiable_coupler_runtime.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 16C)
+
+- No failed implementation approaches. The slice kept Veros, CAMulator, Torch, xarray, NetCDF, and file output as explicit component-owned host boundaries while unifying the VerCOR runtime interface around immutable runtime state.

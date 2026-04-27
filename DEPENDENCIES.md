@@ -23,4 +23,4 @@
 23. `vercor/components/base.py` - unified runtime component interface for payload creation, state prefill/validation, stepping, and wrapper commits built on (8)
 24. `vercor/runtime.py` - immutable runtime state, pure exchange dispatch, generic receive/send, and component-step dispatch built on (8, 10, 11, 23)
 25. `vercor/components/external/jax_gcm.py` runtime payload path - immutable JCM state/forcing runtime integration built on (5, 23, 24)
-26. `vercor/coupler.py` unified runtime loop - shared `run()` / `run_differentiable()` execution path built on (12, 23, 24, 25)
+26. `vercor/coupler.py` unified runtime loop - canonical `run()` / `create_runtime_state()` path with compatibility aliases built on (12, 23, 24, 25)

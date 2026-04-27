@@ -62,6 +62,7 @@ class Land(Component):
     ) -> None:
         """Validate slab-land runtime fields."""
 
+        super().validate_runtime_state(component_state, expected_shape)
         self._validate_runtime_grid_data_field(
             component_state,
             "soil_moisture",

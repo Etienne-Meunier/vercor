@@ -108,6 +108,7 @@ class Atmosphere(Component):
     ) -> None:
         """Validate slab-atmosphere runtime fields."""
 
+        super().validate_runtime_state(component_state, expected_shape)
         for field_name in (
             "temperature_2m",
             "sensible_heat_flux",

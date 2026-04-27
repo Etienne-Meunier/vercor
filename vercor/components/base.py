@@ -265,20 +265,54 @@ class Component(abc.ABC):
         component_state: "RuntimeComponentState",
         expected_shape: tuple[int, int],
     ) -> None:
-        """Validate component-specific runtime fields before execution."""
+        """Validate generic runtime fields before execution."""
 
-        _ = component_state, expected_shape
+        for field_name in component_state.fields_to_import:
+            self._validate_runtime_store_field(
+                component_state.incoming,
+                field_name,
+                "imported incoming",
+                expected_shape,
+            )
+            self._validate_runtime_grid_data_field(
+                component_state,
+                field_name,
+                expected_shape,
+            )
+        for field_name in component_state.fields_to_export:
+            self._validate_runtime_data_field_exists(component_state, field_name)
+            self._validate_runtime_store_field(
+                component_state.outgoing,
+                field_name,
+                "exported source",
+                expected_shape,
+            )
+        for field_name in component_state.incoming.field_names:
+            self._validate_runtime_store_field(
+                component_state.incoming,
+                field_name,
+                "incoming",
+                expected_shape,
+            )
 
-    def to_runtime_component_state(self) -> "RuntimeComponentState":
+    def to_runtime_component_state(
+        self, *, prefill_missing: bool = False
+    ) -> "RuntimeComponentState":
         """Create a runtime component state from this wrapper's current fields."""
 
         from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 
+        data = dict(self.data)
+        incoming = self.incoming_fields.fields()
+        outgoing = self.outgoing_fields.fields()
+        if prefill_missing:
+            self.prefill_runtime_state_fields(data, incoming, outgoing)
+
         return RuntimeComponentState(
             name=self.name,
-            data=RuntimeFieldStore.from_mapping(dict(self.data)),
-            incoming=RuntimeFieldStore.from_mapping(self.incoming_fields.fields()),
-            outgoing=RuntimeFieldStore.from_mapping(self.outgoing_fields.fields()),
+            data=RuntimeFieldStore.from_mapping(data),
+            incoming=RuntimeFieldStore.from_mapping(incoming),
+            outgoing=RuntimeFieldStore.from_mapping(outgoing),
             fields_to_import=tuple(self._fields2import),
             fields_to_export=tuple(self._fields2export),
             runtime_payload=self.create_runtime_payload(),
@@ -398,20 +432,6 @@ class Component(abc.ABC):
         Arguments:
             time: current simulation (coupler's) time
         """
-
-        for fld in self._fields2import:
-            try:
-                tna = self.incoming_fields[fld]
-            except KeyError as exc:
-                raise ComponentError(
-                    f"Field '{fld}' required by component '{self.name}' not found in incoming fields."
-                ) from exc
-
-            if tna is not None and tna.timestamp != time:
-                raise ComponentError(
-                    f"Receive field '{fld}' timestamp {tna.timestamp} does not match "
-                    f"current time {time} in component '{self.name}'."
-                )
 
         from vercor.runtime import receive_component_fields
 
