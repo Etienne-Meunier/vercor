@@ -1,18 +1,13 @@
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.clock import CustomDateTime
 from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_forcing_data
-
-if TYPE_CHECKING:
-    from vercor.coupler import Coupler
 
 
 def _ocean_binary_mask_from_land_fraction(land_fraction: ArrayLike) -> jax.Array:
@@ -85,18 +80,3 @@ class ERA5Ocean(Component, ComponentForcingData):
             self._read_forcing("sst", where="surface", flip_y=True),
             binary_mask,
         )
-
-    def initialize(self, coupler: "Coupler") -> None:
-        pass
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        """
-        Advance to the next time step in the dataset
-        using time interpolation from one month to another.
-        """
-        pass

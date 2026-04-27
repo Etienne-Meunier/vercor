@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,6 +22,25 @@ from vercor.components.base import (
 )
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError
+from vercor.runtime import RuntimeComponentState
+
+
+class _RuntimeOnlyComponent(base_module.Component):
+    def step_runtime_state(
+        self,
+        component_state: RuntimeComponentState,
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: Any | None = None,
+        coupler: Any | None = None,
+    ) -> RuntimeComponentState:
+        _ = runtime_settings, time, coupler
+        data = component_state.data.set(
+            "temperature",
+            component_state.data.get("temperature") + dt_seconds,
+        )
+        return component_state.with_data(data)
 
 
 @pytest.mark.fast_always
@@ -79,7 +98,7 @@ def test_shared_rejects_invalid_assignments() -> None:
         shared.temperature = np.asarray([1.0])
 
 
-def test_component_get_import_receive_merge_and_finalize(
+def test_component_get_receive_merge_and_finalize(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     grid = make_test_grid(name="atm")
@@ -89,7 +108,7 @@ def test_component_get_import_receive_merge_and_finalize(
 
     incoming = Shared()
     incoming["temperature"] = (jnp.ones(grid.shape), timestamp, "OCN")
-    component.import_fields(incoming)
+    component.incoming_fields = incoming
     component._fields2import = ["temperature"]
     component_state = component.receive_runtime_fields(
         component.to_runtime_component_state()
@@ -137,6 +156,29 @@ def test_component_get_import_receive_merge_and_finalize(
     assert captured["filename"] == Path("atm_snapshot.nc")
     assert "mask_for_atm" in captured["shared"].field_names
     assert coupler.appended_components == ["ATM"]
+
+
+def test_component_removed_import_export_api_and_base_step_delegate() -> None:
+    grid = make_test_grid(name="runtime-only")
+    coupler = CoverageCouplerStub()
+    timestamp = coupler.clock.start
+
+    plain_component = base_module.Component(name="ATM", grid=grid)
+    assert not hasattr(plain_component, "import_fields")
+    assert not hasattr(plain_component, "export_fields")
+
+    plain_component.initialize(cast(Any, coupler))
+    plain_component.data["temperature"] = jnp.ones(grid.shape)
+    plain_component.step(timedelta(seconds=5.0), timestamp, cast(Any, coupler))
+    assert_allclose_compact(plain_component.data["temperature"], np.ones(grid.shape))
+
+    runtime_component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    runtime_component.data["temperature"] = jnp.ones(grid.shape)
+    runtime_component.step(timedelta(seconds=5.0), timestamp, cast(Any, coupler))
+    assert_allclose_compact(
+        runtime_component.data["temperature"],
+        np.full(grid.shape, 6.0),
+    )
 
 
 def test_component_validation_and_runtime_receive_delegate() -> None:

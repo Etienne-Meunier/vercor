@@ -13,7 +13,7 @@ Key improvements:
 
 import os
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from pathlib import Path
 
 import jax
@@ -45,6 +45,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -469,12 +470,22 @@ class CAMulatorGCM(Component):
 
         self.data.update(_initialize_camulator_runtime_fields(self.grid.shape))
 
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance the host-backed CAMulator atmosphere boundary."""
+
+        _ = dt_seconds, runtime_settings
+        if time is None or coupler is None:
+            return component_state
+
+        self.commit_runtime_state(component_state, time)
 
         settings = coupler.settings
         logger = coupler.logger
@@ -660,3 +671,8 @@ class CAMulatorGCM(Component):
             ),
         )
         data.update(mapped_fields)
+        from vercor.runtime import RuntimeFieldStore
+
+        return component_state.with_data(
+            RuntimeFieldStore.from_mapping(self.data)
+        ).with_runtime_payload(component_state.runtime_payload)

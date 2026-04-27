@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import jax
@@ -34,21 +34,6 @@ class SeaIce(Component):
 
     def initialize(self, coupler: "Coupler") -> None:
         self.data["ice_fraction"] = jnp.zeros(self.grid.shape, dtype=jnp.float64)
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        component_state = self.step_runtime_state(
-            self.to_runtime_component_state(prefill_missing=True),
-            float(dt.total_seconds()),
-            coupler.settings,
-            time=time,
-            coupler=coupler,
-        )
-        self.commit_runtime_state(component_state, time)
 
     def validate_runtime_state(
         self,

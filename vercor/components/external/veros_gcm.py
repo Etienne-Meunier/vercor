@@ -23,6 +23,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 try:
@@ -384,12 +385,23 @@ class VerosGCM(Component):
             self._veros_state.variables.tau,
         )
 
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance the host-backed Veros boundary."""
+
+        _ = dt_seconds, runtime_settings
+        if time is None or coupler is None:
+            return component_state
+
+        self.commit_runtime_state(component_state, time)
+
         taux, tauy, qnet, qnec = compute_fluxes(self, coupler.settings)
         forcing_fields = _prepare_surface_forcing_fields(
             taux, tauy, qnet, qnec, self.restore_to_climatology
@@ -414,3 +426,8 @@ class VerosGCM(Component):
             self._veros_state.variables.temp,
             self._veros_state.variables.tau,
         )
+        from vercor.runtime import RuntimeFieldStore
+
+        return component_state.with_data(
+            RuntimeFieldStore.from_mapping(self.data)
+        ).with_runtime_payload(component_state.runtime_payload)

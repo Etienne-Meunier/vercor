@@ -41,6 +41,16 @@ class _RuntimeSendComponent(Component):
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_source = Path("vercor/runtime.py").read_text(encoding="utf-8")
+    coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
+    jax_gcm_source = Path("vercor/components/external/jax_gcm.py").read_text(
+        encoding="utf-8"
+    )
+    veros_source = Path("vercor/components/external/veros_gcm.py").read_text(
+        encoding="utf-8"
+    )
+    camulator_source = Path("vercor/components/external/camulator.py").read_text(
+        encoding="utf-8"
+    )
 
     forbidden_component_markers = (
         "step_slab_component_state",
@@ -55,6 +65,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     for marker in forbidden_component_markers:
         assert marker not in runtime_source
+    assert "import_fields" not in coupler_source
+    assert "def step_runtime_state" in jax_gcm_source
+    assert "def step_runtime_state" in veros_source
+    assert "def step_runtime_state" in camulator_source
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:

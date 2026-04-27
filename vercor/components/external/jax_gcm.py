@@ -579,52 +579,49 @@ class JAXGCM(Component):
     ) -> "RuntimeComponentState":
         """Advance JAXGCM on immutable runtime state."""
 
-        _ = dt_seconds, time, coupler
-        stepped_state, _ = self._step_jax_gcm_component_state(
+        _ = dt_seconds
+        if coupler is not None:
+            coupler.logger.info(
+                " Mean of SST: {}".format(
+                    float(
+                        jnp.nanmean(
+                            jnp.asarray(
+                                component_state.data.get("sea_surface_temperature")
+                            )
+                        )
+                    )
+                )
+            )
+
+        stepped_state, prediction = self._step_jax_gcm_component_state(
             component_state,
             runtime_settings,
         )
-        return stepped_state
 
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        logger = coupler.logger
+        if time is None or coupler is None:
+            return stepped_state
 
-        logger.info(
-            " Mean of SST: {}".format(
-                float(jnp.nanmean(jnp.asarray(self.data["sea_surface_temperature"])))
-            )
-        )
-
-        component_state = self.to_runtime_component_state(prefill_missing=True)
-        stepped_state, prediction = self._step_jax_gcm_component_state(
-            component_state,
-            coupler.settings,
-        )
         payload = stepped_state.runtime_payload
         if isinstance(payload, JAXGCMRuntimePayload):
             self._state = payload.jcm_state
             self.forcing = payload.forcing
-        self.commit_runtime_state(stepped_state, time)
         self._predictions_list.append(prediction)
 
         _, _, _, cold_surface_cells = _cleanup_surface_temperature_fields(
-            self.data["land_surface_temperature"],
-            self.data["sea_surface_temperature"],
+            stepped_state.data.get("land_surface_temperature"),
+            stepped_state.data.get("sea_surface_temperature"),
         )
-        logger.info(
+        coupler.logger.info(
             " Number of cells with (SST + SKT) less than 250.0 K: {}".format(
                 int(jnp.sum(cold_surface_cells))
             ),
         )
 
-        if self._should_write_output(time=time, dt=dt):
+        if self._should_write_output(time=time, dt=timedelta(seconds=dt_seconds)):
             date_time = time.strftime("%Y-%m-%d")
             self._write_output(output=f"jcm.averages.{date_time}.nc")
+
+        return stepped_state
 
     def _is_period_end(
         self,

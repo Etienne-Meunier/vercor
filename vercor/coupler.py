@@ -574,7 +574,7 @@ class Coupler:
             )
 
         if not destination_fields.is_empty:
-            component.import_fields(destination_fields)
+            component.incoming_fields = destination_fields
             self.logger.debug(
                 f" Exchanged {destination_fields.field_names}" f" to {component.name}"
             )

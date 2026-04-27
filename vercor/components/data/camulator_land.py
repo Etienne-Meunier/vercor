@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -11,10 +11,11 @@ from vercor.components.external.camulator_state import initialize_camulator
 from vercor.grid import RectilinearGrid
 from vercor.components import Component
 from vercor.tools import create_lnd_mask_from_ocn
-from vercor.clock import CustomDateTime
+from vercor.clock import ModelDateTime
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 def _prepare_camulator_land_surface_temperature(
@@ -125,12 +126,22 @@ class CAMulatorLand(Component):
             self.grid.shape, 283.0, dtype=jnp.float32
         )
 
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance the host-backed CAMulator land forcing boundary."""
+
+        _ = dt_seconds, runtime_settings
+        if time is None or coupler is None:
+            return component_state
+
+        self.commit_runtime_state(component_state, time)
 
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
@@ -140,3 +151,8 @@ class CAMulatorLand(Component):
         )
 
         self.timestep_counter += 1
+        from vercor.runtime import RuntimeFieldStore
+
+        return component_state.with_data(
+            RuntimeFieldStore.from_mapping(self.data)
+        ).with_runtime_payload(component_state.runtime_payload)

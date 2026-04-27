@@ -1470,3 +1470,41 @@
 ## Notes / Failed Approaches (Slice 16E)
 
 - No failed implementation approaches. The audit found only the missing direct CAMulatorGCM runtime-acceptance coverage, which is now locked by a lightweight test that avoids model-file, Torch, and xarray execution boundaries.
+
+## Sixteenth JAX Translation Slice 16F: Runtime-First Component API Cleanup
+
+- Completed the remaining wrapper-era component cleanup:
+  - removed `Component.export_fields()` and `Component.import_fields()`
+  - made `Component.initialize()` a concrete no-op default
+  - made `Component.step()` a thin compatibility adapter over `step_runtime_state()`
+  - made the default `Component.step_runtime_state()` a no-op immutable runtime transition
+- Replaced the last production `component.import_fields(...)` call in `Coupler._commit_runtime_incoming_fields()` with direct assignment of runtime-built `Shared` incoming fields.
+- Removed redundant no-op `initialize()` / `step()` implementations from data-forcing components and redundant `step()` wrappers from slab components and `ERA5Atmosphere`.
+- Moved host-backed adapter stepping into component-owned runtime overrides:
+  - `CAMulatorLand.step_runtime_state()`
+  - `CAMulatorGCM.step_runtime_state()`
+  - `VerosGCM.step_runtime_state()`
+- Updated `JAXGCM.step_runtime_state()` so host bookkeeping, prediction storage, logging, and optional output happen when `time` and `coupler` are supplied, while scanned runtime execution remains side-effect free.
+- Extended regression coverage so the removed component import/export API is absent, base `step()` delegates through runtime state, `Coupler` no longer calls `import_fields`, and external runtime stepping remains in component files.
+- `DEPENDENCIES.md` did not require changes because the module dependency order and ownership descriptions stayed valid.
+
+## Validation (Slice 16F, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_runtime_state.py tests/test_coupler_runtime.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 16F)
+
+- The first focused test run exposed old tests that constructed host-backed external components through `__new__()` and called `step()` directly, bypassing the base runtime state expected by the new compatibility wrapper. The tests now call `step_runtime_state()` with explicit `RuntimeComponentState` objects for those patched adapter-boundary cases.
+- The first `mypy` pass rejected `CAMulatorLand.step_runtime_state()` because it accepted the broader `CustomDateTime` alias while `commit_runtime_state()` expects `ModelDateTime`; the annotation was narrowed to the base runtime contract.

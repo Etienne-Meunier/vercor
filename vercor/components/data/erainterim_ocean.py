@@ -1,18 +1,13 @@
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.clock import CustomDateTime
 from vercor.components import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_forcing_data
-
-if TYPE_CHECKING:
-    from vercor.coupler import Coupler
 
 
 def _assemble_erainterim_latitude(
@@ -154,18 +149,3 @@ class ERAInterimOcean(Component, ComponentForcingData):
 
         # Units: [K]
         self.data["sea_surface_temperature"] = sst
-
-    def initialize(self, coupler: "Coupler") -> None:
-        pass
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        """
-        Advance to the next time step in the dataset
-        using time interpolation from one month to another.
-        """
-        pass

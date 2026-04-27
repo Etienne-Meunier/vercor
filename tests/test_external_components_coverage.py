@@ -18,6 +18,7 @@ import vercor.components.external.veros_gcm as veros_gcm_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.base import Shared
+from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.settings import VercorSettings
 
 
@@ -27,6 +28,20 @@ class _RecordingLogger:
 
     def info(self, message: str) -> None:
         self.messages.append(message)
+
+
+def _runtime_component_state(
+    name: str,
+    data: dict[str, Any] | None = None,
+) -> RuntimeComponentState:
+    return RuntimeComponentState(
+        name=name,
+        data=RuntimeFieldStore.from_mapping(data or {}),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+        fields_to_import=(),
+        fields_to_export=(),
+    )
 
 
 @dataclass
@@ -1160,7 +1175,13 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component._step_function = fake_step_function
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component.step(timedelta(seconds=20.0), datetime(2000, 1, 1), coupler)
+    component.step_runtime_state(
+        _runtime_component_state("OCN", component.data),
+        20.0,
+        coupler.settings,
+        time=datetime(2000, 1, 1),
+        coupler=coupler,
+    )
 
     expected_names = ["taux", "tauy", "qnet", "qnec"]
     assert [name for name, _ in set_calls] == expected_names
@@ -1209,7 +1230,13 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     component._step_function = lambda state: state
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component.step(timedelta(seconds=20.0), datetime(2000, 1, 1), coupler)
+    component.step_runtime_state(
+        _runtime_component_state("OCN", component.data),
+        20.0,
+        coupler.settings,
+        time=datetime(2000, 1, 1),
+        coupler=coupler,
+    )
 
     assert [name for name, _ in set_calls] == ["taux", "tauy", "qnet", "qnec"]
     assert_allclose_compact(

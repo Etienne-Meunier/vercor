@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -214,25 +214,6 @@ class ERA5Atmosphere(Component, ComponentForcingData):
             [item[2] for item in diagnostics],
             axis=-1,
         )
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        """
-        Advance to the next time step in the dataset
-        using time interpolation from one month to another.
-        """
-        component_state = self.step_runtime_state(
-            self.to_runtime_component_state(prefill_missing=True),
-            float(dt.total_seconds()),
-            coupler.settings,
-            time=time,
-            coupler=coupler,
-        )
-        self.commit_runtime_state(component_state, time)
 
     def prefill_runtime_state_fields(
         self,

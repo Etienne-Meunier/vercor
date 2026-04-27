@@ -1,4 +1,3 @@
-import abc
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -145,7 +144,7 @@ class Shared:
 
 
 @dataclass
-class Component(abc.ABC):
+class Component:
     name: str
     grid: RectilinearGrid
     incoming_fields: Shared = field(default_factory=Shared)
@@ -180,18 +179,27 @@ class Component(abc.ABC):
         _fields2export: list of field names to export to other components from data
     """
 
-    @abc.abstractmethod
     def initialize(self, coupler: "Coupler") -> None:
-        raise NotImplementedError
+        """Initialize component-owned runtime data before coupling."""
 
-    @abc.abstractmethod
+        _ = coupler
+
     def step(
         self,
         dt: timedelta,
         time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-        raise NotImplementedError
+        """Compatibility wrapper around the runtime-state step implementation."""
+
+        component_state = self.step_runtime_state(
+            self.to_runtime_component_state(prefill_missing=True),
+            float(dt.total_seconds()),
+            getattr(coupler, "settings", None),
+            time=time,
+            coupler=coupler,
+        )
+        self.commit_runtime_state(component_state, time)
 
     def create_runtime_payload(self) -> Any | None:
         """Return optional immutable payload carried by runtime component state."""
@@ -402,21 +410,10 @@ class Component(abc.ABC):
         time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
-        """Return this component advanced by one runtime step.
+        """Return this component advanced by one runtime step."""
 
-        Pure JAX components override this method. Host-backed components keep
-        their existing ``step`` implementation on the imperative run path; in a
-        traced runtime without host context, the default is a no-op state step.
-        """
-
-        _ = runtime_settings
-        if time is None or coupler is None:
-            return component_state
-
-        self.commit_runtime_state(component_state, time)
-        self.step(timedelta(seconds=dt_seconds), time, coupler)
-        stepped_state = self.to_runtime_component_state()
-        return stepped_state.with_runtime_payload(component_state.runtime_payload)
+        _ = dt_seconds, runtime_settings, time, coupler
+        return component_state
 
     def finalize(
         self, coupler: "Coupler", output_file_mask: Optional[Path] = None
@@ -457,26 +454,6 @@ class Component(abc.ABC):
             raise ComponentError(
                 f"Component '{self.name}' has overlapping fields in import/export lists."
             )
-
-    def export_fields(self) -> Shared:
-        """
-        Prepare and deposit/return the outgoing_fields to be sent/dispatched to another component(s).
-        """
-        # TODO: export only component related fields
-        return self.outgoing_fields
-
-    def import_fields(self, fields: Shared) -> None:
-        """
-        Import fields received from another component(s) into receptor/incoming_fields.
-
-        Arguments:
-            fields: Shared object containing fields to import from another component
-        """
-        # TODO: import only component related fields
-
-        incoming_fields = fields.field_names
-        for name in incoming_fields:
-            self.incoming_fields[name] = fields[name]
 
     def check_valid_exchange_field_names(self) -> None:
         for fld in set(self._fields2import + self._fields2export):

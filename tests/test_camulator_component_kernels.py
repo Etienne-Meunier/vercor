@@ -24,6 +24,7 @@ from vercor.components.external.camulator import (
     _torch_tensor_from_jax_array,
 )
 from vercor.grid import RectilinearGrid
+from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.settings import VercorSettings
 
 
@@ -36,6 +37,20 @@ class _RecordingLogger:
 
     def warning(self, message: str) -> None:
         self.messages.append(message)
+
+
+def _runtime_component_state(
+    name: str,
+    data: dict[str, Any] | None = None,
+) -> RuntimeComponentState:
+    return RuntimeComponentState(
+        name=name,
+        data=RuntimeFieldStore.from_mapping(data or {}),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+        fields_to_import=(),
+        fields_to_export=(),
+    )
 
 
 def _make_coupler(start: datetime) -> Any:
@@ -452,8 +467,10 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
     )
 
-    component.step(
-        dt=datetime(2000, 1, 1, 6, 0, 0) - start,
+    component.step_runtime_state(
+        _runtime_component_state("ATM", component.data),
+        float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
+        VercorSettings(),
         time=start,
         coupler=SimpleNamespace(settings=VercorSettings(), logger=_RecordingLogger()),
     )
