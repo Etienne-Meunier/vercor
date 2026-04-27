@@ -1508,3 +1508,37 @@
 
 - The first focused test run exposed old tests that constructed host-backed external components through `__new__()` and called `step()` directly, bypassing the base runtime state expected by the new compatibility wrapper. The tests now call `step_runtime_state()` with explicit `RuntimeComponentState` objects for those patched adapter-boundary cases.
 - The first `mypy` pass rejected `CAMulatorLand.step_runtime_state()` because it accepted the broader `CustomDateTime` alias while `commit_runtime_state()` expects `ModelDateTime`; the annotation was narrowed to the base runtime contract.
+
+## Wrapper Runtime Startup Prefill Fix
+
+- Fixed the default host/wrapper `Coupler.run()` startup path so it creates the same prefilled and primed runtime state as the scanned runtime path when no explicit initial state is supplied.
+- Preserved strict validation for caller-supplied `initial_state` objects; only the internally-created default state is prefilled.
+- Added regression coverage for an initialized slab coupler whose wrapper incoming fields start empty but whose default `run()` still succeeds and commits imported runtime fields.
+- Updated the wrapper-run coverage expectation to include startup outgoing-field priming before the first step.
+
+## Validation (Wrapper Runtime Startup Prefill Fix, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_coupler_runtime.py::test_initialized_slab_coupler_wrapper_run_prefills_missing_imports -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_coupler_runtime.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+- `MPLCONFIGDIR=/tmp/vercor-mplconfig MPLBACKEND=Agg conda run -n scipy python examples/run_slab_driver.py`
+  - passed
+- `MPLCONFIGDIR=/tmp/vercor-mplconfig MPLBACKEND=Agg conda run -n scipy python examples/run_data_driver.py`
+  - passed
+
+## Notes / Failed Approaches (Wrapper Runtime Startup Prefill Fix)
+
+- The first new regression test asserted the full example-driver wind imports against the smaller existing slab test helper, which only imports heat fluxes into `OCN`; the final assertion uses the helper's actual imported fields while preserving the same missing-prefill failure mode.
+- The first full-suite run exposed that the wrapper-run coverage test was still expecting no startup priming. The test now records the intentional initial `send_runtime_fields()` priming events before step dispatch.

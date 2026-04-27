@@ -664,7 +664,7 @@ class Coupler:
                 )
 
         runtime_state = (
-            self.create_runtime_state(prefill_missing=False)
+            self.create_runtime_state(prefill_missing=True)
             if initial_state is None
             else initial_state
         )

@@ -660,6 +660,23 @@ def test_initialized_slab_coupler_creates_jittable_runtime_state() -> None:
     assert np.all(np.isfinite(np.asarray(gradient)))
 
 
+def test_initialized_slab_coupler_wrapper_run_prefills_missing_imports() -> None:
+    coupler = _make_initialized_slab_coupler(steps=1)
+    ocean = coupler.components["OCN"]
+
+    assert "sensible_heat_flux" not in ocean.incoming_fields.field_names
+    assert "latent_heat_flux" not in ocean.incoming_fields.field_names
+
+    final_state = coupler.run()
+    ocean_state = final_state.get_component_state("OCN")
+
+    assert final_state.component_names == ("ATM", "OCN", "LND", "ICE")
+    assert ocean_state.incoming.get("sensible_heat_flux").shape == ocean.grid.shape
+    assert ocean_state.incoming.get("latent_heat_flux").shape == ocean.grid.shape
+    assert "sensible_heat_flux" in ocean.incoming_fields.field_names
+    assert "latent_heat_flux" in ocean.incoming_fields.field_names
+
+
 def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jvp() -> (
     None
 ):

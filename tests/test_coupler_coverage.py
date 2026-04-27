@@ -687,6 +687,8 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     coupler.run()
 
     assert events == [
+        "send:ATM",
+        "send:OCN",
         "dispatch:ATM",
         "receive:ATM",
         "step_runtime:ATM:2000-01-01T00:00:00:60.0",
