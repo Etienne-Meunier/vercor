@@ -21,6 +21,8 @@ from vercor.exchange import Exchange
 from vercor.regridders.bilinear import bilinear
 from vercor.regridders.conservative import conservative
 from vercor.run_sequence import RunSequence
+from vercor.runtime import dispatch_component_exchanges
+from vercor.tools import _flatten_fields
 
 
 class _RecordingLogger:
@@ -74,6 +76,47 @@ class _RunComponent(DummyComponent):
 
 def make_coupler() -> Coupler:
     return Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
+
+
+def _dispatch_runtime_fields(
+    coupler: Coupler,
+    runtime_state: Any,
+    component_name: str,
+) -> Any:
+    return dispatch_component_exchanges(
+        runtime_state,
+        component_name,
+        coupler.exchanges,
+        coupler._regridders,
+    )
+
+
+def _commit_runtime_incoming_fields(
+    coupler: Coupler,
+    component: Any,
+    component_state: Any,
+    timestamp: datetime,
+) -> None:
+    source_by_field: dict[str, str] = {}
+    for exchange in coupler.exchanges:
+        if exchange.destination != component.name:
+            continue
+        for field_name in _flatten_fields(exchange.field_names):
+            source_by_field[field_name] = exchange.source
+
+    destination_fields = Shared()
+    for field_name, field_value in component_state.incoming.to_mapping().items():
+        destination_fields[field_name] = (
+            field_value,
+            timestamp,
+            source_by_field.get(field_name, component.name),
+        )
+
+    if not destination_fields.is_empty:
+        component.incoming_fields = destination_fields
+        coupler.logger.debug(
+            f" Exchanged {destination_fields.field_names}" f" to {component.name}"
+        )
 
 
 @pytest.mark.fast_always
@@ -469,12 +512,14 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         ("OCN", "ATM", "conservative"): np.ones((2, 2)),
     }
 
-    runtime_state = coupler._dispatch_runtime_fields(
+    runtime_state = _dispatch_runtime_fields(
+        coupler,
         coupler._runtime_state_from_components(prefill_missing=True),
         "ATM",
     )
     destination_state = runtime_state.get_component_state("ATM")
-    coupler._commit_runtime_incoming_fields(
+    _commit_runtime_incoming_fields(
+        coupler,
         cast(Any, destination),
         destination_state,
         timestamp,
@@ -527,12 +572,14 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
     }
 
-    runtime_state = coupler._dispatch_runtime_fields(
+    runtime_state = _dispatch_runtime_fields(
+        coupler,
         coupler._runtime_state_from_components(prefill_missing=True),
         "ATM",
     )
     destination_state = runtime_state.get_component_state("ATM")
-    coupler._commit_runtime_incoming_fields(
+    _commit_runtime_incoming_fields(
+        coupler,
         cast(Any, destination),
         destination_state,
         timestamp,
@@ -566,7 +613,8 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     coupler._fractional_masks = {("OCN", "ATM", "bilinear"): np.ones((2, 2))}
 
     with pytest.raises(ExchangerError, match="Field temperature not present"):
-        coupler._dispatch_runtime_fields(
+        _dispatch_runtime_fields(
+            coupler,
             coupler._runtime_state_from_components(prefill_missing=True),
             scalar_destination.name,
         )
@@ -597,7 +645,8 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     coupler._fractional_masks = {("OCN", "ATM", "conservative"): np.ones((2, 2))}
 
     with pytest.raises(ExchangerError, match="Not all fields in vector"):
-        coupler._dispatch_runtime_fields(
+        _dispatch_runtime_fields(
+            coupler,
             coupler._runtime_state_from_components(prefill_missing=True),
             vector_destination.name,
         )
@@ -707,6 +756,8 @@ def test_host_and_scanned_run_use_runtime_component_helper(
     assert not hasattr(coupler, "run_differentiable")
     assert not hasattr(coupler, "create_differentiable_state")
     assert not hasattr(coupler, "interpolate_and_dispatch_fields")
+    assert not hasattr(coupler, "_dispatch_runtime_fields")
+    assert not hasattr(coupler, "_commit_runtime_incoming_fields")
 
     timestamp = coupler.clock.start
     atmosphere = _RunComponent("ATM", [], timestamp)

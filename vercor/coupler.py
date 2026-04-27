@@ -21,7 +21,6 @@ from vercor.regridders import (
 )
 from vercor.run_sequence import RunSequence
 from vercor.runtime import (
-    RuntimeComponentState,
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
@@ -535,49 +534,6 @@ class Coupler:
             self.components[component_name].commit_runtime_state(component_state, time)
 
         return runtime_state
-
-    def _dispatch_runtime_fields(
-        self,
-        runtime_state: RuntimeCouplerState,
-        component_name: str,
-    ) -> RuntimeCouplerState:
-        """Return ``runtime_state`` with exchanges dispatched to one component."""
-
-        return dispatch_component_exchanges(
-            runtime_state,
-            component_name,
-            self.exchanges,
-            self._regridders,
-        )
-
-    def _commit_runtime_incoming_fields(
-        self,
-        component: AllComponentsType,
-        component_state: RuntimeComponentState,
-        timestamp: datetime | ModelDateTime,
-    ) -> None:
-        """Copy runtime-dispatched incoming fields into a legacy component wrapper."""
-
-        source_by_field: dict[str, str] = {}
-        for exchange in self.exchanges:
-            if exchange.destination != component.name:
-                continue
-            for field_name in _flatten_fields(exchange.field_names):
-                source_by_field[field_name] = exchange.source
-
-        destination_fields = Shared()
-        for field_name, field_value in component_state.incoming.to_mapping().items():
-            destination_fields[field_name] = (
-                field_value,
-                timestamp,
-                source_by_field.get(field_name, component.name),
-            )
-
-        if not destination_fields.is_empty:
-            component.incoming_fields = destination_fields
-            self.logger.debug(
-                f" Exchanged {destination_fields.field_names}" f" to {component.name}"
-            )
 
     def append_masks_to_output(
         self,

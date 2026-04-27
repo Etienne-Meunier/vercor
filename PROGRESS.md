@@ -1592,3 +1592,32 @@
 ## Notes / Failed Approaches (Unified Runtime Test Audit and Cleanup)
 
 - No failed implementation approaches. The audit found only intentional absence guards for removed APIs, so deleting tests would have weakened regression coverage rather than removing stale behavior coverage.
+
+## Test-Only Coupler Runtime Wrapper Removal
+
+- Removed the private `Coupler._dispatch_runtime_fields()` and `Coupler._commit_runtime_incoming_fields()` compatibility wrappers from production code.
+- Moved their remaining coverage-only behavior into local helpers in `tests/test_coupler_coverage.py`:
+  - exchange dispatch now calls the canonical `dispatch_component_exchanges()` runtime function directly
+  - wrapper incoming-field commit logic is now test-local for compatibility assertions only
+- Extended removed-API regression coverage so `Coupler` is asserted not to expose either private test-only wrapper.
+- No `DEPENDENCIES.md` update was required because this removed dead compatibility methods without changing module dependency order.
+
+## Validation (Test-Only Coupler Runtime Wrapper Removal, 2026-04-27)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 83 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_runtime_exchange.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Test-Only Coupler Runtime Wrapper Removal)
+
+- No failed implementation approaches. The cleanup stayed limited to private test-only compatibility wrappers and kept public/protocol/lifecycle APIs intact.
