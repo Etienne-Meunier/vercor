@@ -6,8 +6,8 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 from vercor.settings import ComponentSettings
+from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
-    JAXGCMRuntimePayload,
     RuntimeComponentState,
     RuntimeCouplerState,
     RuntimeFieldStore,

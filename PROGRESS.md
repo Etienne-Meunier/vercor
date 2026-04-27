@@ -1115,7 +1115,7 @@
   - `Coupler.run_differentiable()` now scans over precomputed step metadata instead of deriving forcing times inside the traced body
   - runtime field sending now supports direct 2D fields, monthly interpolated forcing cubes, and daily time-sliced forcing arrays
   - differentiable component validation now accepts VerCOR slab components plus pure data-forcing adapters (`ERA5Atmosphere`, `ERA5Ocean`, `ERA5Land`, `ERAInterimOcean`, and `JCMLand`)
-  - external runtime boundaries, including CAMulator-backed land forcing, remain rejected with a clear preflight error
+  - external runtime boundaries, including CAMulator-backed land forcing, were rejected at this stage; Slice 16A replaced this with unified runtime-state acceptance
 - Added a pure data-component runtime step for `ERA5Atmosphere`:
   - combines imported land and sea surface temperatures into `total_surface_temperature`
   - keeps other supported data-forcing components as no-op steps whose runtime behavior is forcing replay through `send_component_fields()`
@@ -1221,8 +1221,8 @@
   - added `JAXGCMRuntimePayload` for immutable JCM state and forcing carry data
   - added JAXGCM support detection and preflight payload validation
   - added a pure JAXGCM runtime step that prepares surface-temperature forcing, calls the existing JCM step function, maps JCM outputs back into runtime fields, and skips prediction history / file output
-- Preserved explicit host/runtime boundaries:
-  - CAMulator and Veros remain rejected by `run_differentiable()`
+- Preserved explicit host/runtime boundaries at this stage; this was superseded by Slice 16A:
+  - CAMulator and Veros were still rejected by `run_differentiable()`
   - JAXGCM imperative `step()` still owns host transfers and output writing outside the pure runtime path
 - Pre-seeded JAXGCM runtime output fields, including 3D pressure from sigma-level count, so `jax.lax.scan` carries a stable PyTree structure.
 - Updated `DEPENDENCIES.md` with the JAXGCM runtime payload dependency edge.
@@ -1270,13 +1270,13 @@
   - exported fields must be present in component data before traced send logic can run
   - ERA5Atmosphere data-runtime diagnostics now require land, sea, and total surface temperature fields up front
   - JAXGCM runtime states now validate all pre-seeded 2D output fields plus the sigma-level pressure field before traced execution
-- Clarified unsupported external boundary errors:
-  - CAMulator components are reported as explicit non-differentiable host/runtime boundaries
-  - VerosGCM is reported as an explicit non-differentiable host/runtime boundary
+- Clarified unsupported external boundary errors at this stage; this was superseded by Slice 16A:
+  - CAMulator components were reported as explicit host/runtime boundaries
+  - VerosGCM was reported as an explicit host/runtime boundary
 - Extended differentiable integration coverage:
   - data-forcing ERA5Ocean now replays into a JAXGCM runtime component under `jax.jit`, `jax.grad`, and `jax.jvp`
   - missing slab required data, missing import/export data, and missing JAXGCM preseeded pressure now raise `CouplerError` before traced execution
-  - CAMulatorLand and VerosGCM rejection tests now also assert their VerCOR boundary data remains JAX-backed
+  - CAMulatorLand and VerosGCM rejection tests also asserted their VerCOR boundary data remained JAX-backed; Slice 16A replaced these with runtime-acceptance tests
 - `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
 
 ## Validation (Slice 15B, 2026-04-27)
@@ -1298,3 +1298,45 @@
 ## Notes / Failed Approaches (Slice 15B)
 
 - No failed implementation approaches. The slice tightened preflight validation and expanded integration coverage while preserving the existing differentiable runtime APIs.
+
+## Sixteenth JAX Translation Slice 16A: Unified Runtime Component Path
+
+- Replaced the divergent imperative/differentiable coupler execution split with a shared runtime-state sequence:
+  - `Coupler.run()` now builds `RuntimeCouplerState` and advances components through exchange dispatch, runtime receive, runtime step, runtime send, and wrapper commit.
+  - `Coupler.run_differentiable()` remains as a compatibility entrypoint but delegates each scanned component step to the same runtime component helper used by `run()`.
+  - legacy `Component.receive_fields()` and `Component.send_fields()` now delegate to runtime receive/send helpers.
+- Added a component-owned runtime interface on `Component`:
+  - `create_runtime_payload()`
+  - `prefill_runtime_state_fields()`
+  - `validate_runtime_state()`
+  - `step_runtime_state()`
+  - `commit_runtime_state()`
+- Moved component-specific runtime stepping out of `vercor/runtime.py`:
+  - slab atmosphere, ocean, land, and sea-ice runtime steps now live in their component files
+  - ERA5 atmosphere surface-temperature diagnostics now live in `vercor/components/data/era5_atmosphere.py`
+  - JAXGCM runtime payload, validation, and immutable step logic now live in `vercor/components/external/jax_gcm.py`
+  - CAMulatorGCM and VerosGCM expose host-backed runtime-step overrides in their own component files
+- Removed CAMulator and Veros runtime-validation rejection paths. They now create and validate runtime state through the same component interface, with host internals remaining explicit component-owned boundaries.
+- Updated runtime/coupler tests so `Coupler.run()` is verified against runtime dispatch/receive/step/send order, and CAMulatorLand / VerosGCM are accepted by runtime state creation instead of rejected.
+
+## Validation (Slice 16A, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_differentiable_coupler_runtime.py tests/test_coupler_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q`
+  - passed
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_differentiable_coupler_runtime.py tests/test_coupler_coverage.py tests/test_component_base_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+
+## Notes / Failed Approaches (Slice 16A)
+
+- The first runtime-interface type pass broadened `Component.step()` to `CustomDateTime`, which made external component overrides appear too narrow to `mypy`. The final interface uses `datetime | ModelDateTime`, while component methods that accept `CustomDateTime` remain valid broader overrides.

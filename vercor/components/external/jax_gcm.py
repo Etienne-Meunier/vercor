@@ -25,6 +25,7 @@ from jcm.physics_interface import (
 
 from vercor.clock import ModelDateTime
 from vercor.components.base import Component
+from vercor.exceptions import ComponentError, CouplerError
 from vercor.components.external.jax_gcm_tools import (
     change_jcm_parameter_values,
     mean_leaf,
@@ -39,6 +40,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 try:
@@ -200,6 +202,26 @@ class JCMState:
     prog: PhysicsState
     phydata: Any
     metadata: primitive_equations.State
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class JAXGCMRuntimePayload:
+    """Immutable JAXGCM model state carried by runtime component state."""
+
+    jcm_state: Any
+    forcing: Any
+
+    def tree_flatten(self) -> tuple[tuple[Any, Any], None]:
+        return (self.jcm_state, self.forcing), None
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: None, children: tuple[Any, Any]
+    ) -> "JAXGCMRuntimePayload":
+        _ = aux_data
+        jcm_state, forcing = children
+        return cls(jcm_state=jcm_state, forcing=forcing)
 
 
 class JAXGCM(Component):
@@ -372,6 +394,181 @@ class JAXGCM(Component):
             for i in range(self.spinup_steps):
                 coupler.logger.info(f" JCM spinup step {i+1} / {self.spinup_steps}")
                 _, _ = self.do_jcm_steps()
+
+    def create_runtime_payload(self) -> JAXGCMRuntimePayload:
+        """Return immutable JCM state and forcing for runtime execution."""
+
+        missing = [
+            name
+            for name in ("_state", "forcing", "_step_function")
+            if not hasattr(self, name)
+        ]
+        if missing:
+            missing_names = ", ".join(missing)
+            raise ComponentError(
+                "JAXGCM runtime requires component initialization before "
+                f"state creation; missing {missing_names}"
+            )
+
+        return JAXGCMRuntimePayload(
+            jcm_state=self._state,
+            forcing=self.forcing,
+        )
+
+    def prefill_runtime_state_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        incoming: dict[str, RuntimeArray],
+        outgoing: dict[str, RuntimeArray],
+    ) -> None:
+        """Pre-seed JAXGCM output fields so scan carry structure is stable."""
+
+        zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
+        data.setdefault("total_surface_temperature", zeros)
+        for field_name in (
+            "u_velocity",
+            "v_velocity",
+            "temperature",
+            "specific_humidity",
+            "sensible_heat_flux",
+            "latent_heat_flux",
+            "net_shortwave_radiation_flux",
+            "downward_longwave_radiation_flux",
+            "density",
+            "potential_temperature",
+            "model_level_height",
+        ):
+            data.setdefault(field_name, zeros)
+        sigma_levels = jnp.asarray(self.sigma_levels)
+        data.setdefault(
+            "pressure",
+            jnp.zeros((sigma_levels.shape[0], *self.grid.shape), dtype=jnp.float_),
+        )
+        super().prefill_runtime_state_fields(data, incoming, outgoing)
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        expected_shape: tuple[int, int],
+    ) -> None:
+        """Validate JAXGCM runtime payload and pre-seeded output fields."""
+
+        if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
+            raise ComponentError(
+                "JAXGCM runtime requires an initialized immutable runtime payload "
+                f"for component '{self.name}'"
+            )
+
+        grid_fields = (
+            "land_surface_temperature",
+            "sea_surface_temperature",
+            "total_surface_temperature",
+            "u_velocity",
+            "v_velocity",
+            "temperature",
+            "specific_humidity",
+            "sensible_heat_flux",
+            "latent_heat_flux",
+            "net_shortwave_radiation_flux",
+            "downward_longwave_radiation_flux",
+            "density",
+            "potential_temperature",
+            "model_level_height",
+        )
+        for field_name in grid_fields:
+            self._validate_runtime_grid_data_field(
+                component_state,
+                field_name,
+                expected_shape,
+            )
+
+        self._validate_runtime_data_field_exists(component_state, "pressure")
+        pressure_shape = jnp.asarray(component_state.data.get("pressure")).shape
+        sigma_levels = jnp.asarray(self.sigma_levels)
+        expected_pressure_shape = (sigma_levels.shape[0], *expected_shape)
+        if pressure_shape != expected_pressure_shape:
+            raise CouplerError(
+                "Runtime required data field 'pressure' "
+                f"for component '{self.name}' has shape {pressure_shape}, "
+                f"expected {expected_pressure_shape}"
+            )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: ModelDateTime | datetime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance JAXGCM on immutable runtime state."""
+
+        _ = dt_seconds, time, coupler
+        if runtime_settings is None:
+            raise NotImplementedError("JAXGCM runtime settings are not initialized")
+
+        payload = component_state.runtime_payload
+        if not isinstance(payload, JAXGCMRuntimePayload):
+            raise ComponentError(
+                "JAXGCM runtime requires an initialized immutable runtime payload "
+                f"for component '{self.name}'"
+            )
+
+        data = component_state.data
+        (
+            land_surface_temperature,
+            sea_surface_temperature,
+            total_surface_temperature,
+            _,
+        ) = _cleanup_surface_temperature_fields(
+            data.get("land_surface_temperature"),
+            data.get("sea_surface_temperature"),
+        )
+
+        land_surface_temperature_forcing, sea_surface_temperature_forcing = (
+            _prepare_surface_temperature_forcing(
+                total_surface_temperature,
+                jnp.asarray(self.model.terrain.fmask, dtype=jnp.float_).T,
+            )
+        )
+        forcing = payload.forcing.copy(
+            stl_am=land_surface_temperature_forcing.T,
+            sea_surface_temperature=sea_surface_temperature_forcing.T,
+        )
+        jcm_state, prediction = self._step_function(payload.jcm_state, forcing)
+        averaged_prediction = mean_leaf(
+            unwrap_leading_dims(stack_objects([prediction])), axis=0
+        )
+
+        mapped_fields = _map_jcm_output_fields(
+            runtime_settings.latvap,
+            p0,
+            self.sigma_levels,
+            runtime_settings.mwdair,
+            runtime_settings.rgas,
+            runtime_settings.p0,
+            runtime_settings.cappa,
+            averaged_prediction.physics.surface_flux.shf,
+            averaged_prediction.physics.surface_flux.evap,
+            averaged_prediction.physics.surface_flux.rlds,
+            averaged_prediction.physics.shortwave_rad.rsns,
+            averaged_prediction.dynamics.normalized_surface_pressure,
+            averaged_prediction.dynamics.u_wind,
+            averaged_prediction.dynamics.v_wind,
+            averaged_prediction.dynamics.temperature,
+            averaged_prediction.dynamics.specific_humidity,
+        )
+
+        data = data.set("land_surface_temperature", land_surface_temperature)
+        data = data.set("sea_surface_temperature", sea_surface_temperature)
+        data = data.set("total_surface_temperature", total_surface_temperature)
+        for field_name, field_value in mapped_fields.items():
+            data = data.set(field_name, field_value)
+
+        return component_state.with_data(data).with_runtime_payload(
+            JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=forcing)
+        )
 
     def step(
         self,

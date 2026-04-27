@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -10,6 +10,7 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -98,4 +99,55 @@ class Ocean(Component):
             self.H,
             self.lambda_relax,
             _REFERENCE_SEA_SURFACE_TEMPERATURE,
+        )
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        expected_shape: tuple[int, int],
+    ) -> None:
+        """Validate slab-ocean runtime fields."""
+
+        self._validate_runtime_grid_data_field(
+            component_state,
+            "sea_surface_temperature",
+            expected_shape,
+        )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | CustomDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance the slab ocean on immutable runtime state."""
+
+        _ = runtime_settings, time, coupler
+        data = component_state.data
+        sea_surface_temperature = data.get("sea_surface_temperature")
+        try:
+            sensible_heat_flux = data.get("sensible_heat_flux")
+        except KeyError:
+            sensible_heat_flux = jnp.zeros_like(sea_surface_temperature)
+        try:
+            latent_heat_flux = data.get("latent_heat_flux")
+        except KeyError:
+            latent_heat_flux = jnp.zeros_like(sea_surface_temperature)
+
+        updated_sst = _advance_sea_surface_temperature(
+            sea_surface_temperature,
+            sensible_heat_flux,
+            latent_heat_flux,
+            dt_seconds,
+            self.rho,
+            self.cp,
+            self.H,
+            self.lambda_relax,
+            _REFERENCE_SEA_SURFACE_TEMPERATURE,
+        )
+        return component_state.with_data(
+            data.set("sea_surface_temperature", updated_sst)
         )

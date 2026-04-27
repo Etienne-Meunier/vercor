@@ -23,6 +23,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 try:
@@ -382,6 +383,25 @@ class VerosGCM(Component):
         self.data["sea_surface_temperature"] = _extract_surface_temperature(
             self._veros_state.variables.temp,
             self._veros_state.variables.tau,
+        )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance Veros through the unified runtime host boundary."""
+
+        return super().step_runtime_state(
+            component_state,
+            dt_seconds,
+            runtime_settings,
+            time=time,
+            coupler=coupler,
         )
 
     def step(

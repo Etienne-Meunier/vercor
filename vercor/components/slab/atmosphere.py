@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -10,6 +10,7 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -99,3 +100,57 @@ class Atmosphere(Component):
         self.data["sensible_heat_flux"] = sensible_heat_flux
         self.data["latent_heat_flux"] = latent_heat_flux
         self.data["temperature_2m"] = updated_temperature_2m
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        expected_shape: tuple[int, int],
+    ) -> None:
+        """Validate slab-atmosphere runtime fields."""
+
+        for field_name in (
+            "temperature_2m",
+            "sensible_heat_flux",
+            "latent_heat_flux",
+            "u_velocity_10m",
+            "v_velocity_10m",
+        ):
+            self._validate_runtime_grid_data_field(
+                component_state,
+                field_name,
+                expected_shape,
+            )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | CustomDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance the slab atmosphere on immutable runtime state."""
+
+        _ = dt_seconds, runtime_settings, time, coupler
+        data = component_state.data
+        temperature_2m = data.get("temperature_2m")
+        try:
+            sea_surface_temperature = data.get("sea_surface_temperature")
+        except KeyError:
+            sea_surface_temperature = _default_sea_surface_temperature(temperature_2m)
+
+        sensible_heat_flux, latent_heat_flux, updated_temperature_2m = _bulk_flux_step(
+            temperature_2m,
+            sea_surface_temperature,
+        )
+        u_velocity_10m, v_velocity_10m = _surface_wind_10m(
+            self.grid.latitude,
+            self.grid.longitude,
+        )
+        data = data.set("u_velocity_10m", u_velocity_10m)
+        data = data.set("v_velocity_10m", v_velocity_10m)
+        data = data.set("sensible_heat_flux", sensible_heat_flux)
+        data = data.set("latent_heat_flux", latent_heat_flux)
+        data = data.set("temperature_2m", updated_temperature_2m)
+        return component_state.with_data(data)

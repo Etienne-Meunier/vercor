@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -10,6 +10,7 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 @jax.jit
@@ -52,4 +53,44 @@ class Land(Component):
             soil_moisture,
             latent_heat_flux if latent_heat_flux is not None else 0.0,
             float(dt.total_seconds()),
+        )
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        expected_shape: tuple[int, int],
+    ) -> None:
+        """Validate slab-land runtime fields."""
+
+        self._validate_runtime_grid_data_field(
+            component_state,
+            "soil_moisture",
+            expected_shape,
+        )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | CustomDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance the slab land component on immutable runtime state."""
+
+        _ = runtime_settings, time, coupler
+        data = component_state.data
+        soil_moisture = data.get("soil_moisture")
+        try:
+            latent_heat_flux = data.get("latent_heat_flux")
+        except KeyError:
+            latent_heat_flux = jnp.zeros_like(soil_moisture)
+        updated_soil_moisture = _update_soil_moisture(
+            soil_moisture,
+            latent_heat_flux,
+            dt_seconds,
+        )
+        return component_state.with_data(
+            data.set("soil_moisture", updated_soil_moisture)
         )

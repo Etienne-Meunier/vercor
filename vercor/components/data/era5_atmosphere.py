@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import jax
 import jax.numpy as jnp
@@ -17,9 +17,11 @@ from vercor.fluxes.utilities import (
 from vercor.grid import RectilinearGrid
 from vercor.settings import VercorSettings
 from vercor.tools import get_forcing_data
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
@@ -227,4 +229,55 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         self.data["total_surface_temperature"] = _combine_surface_temperatures(
             self.data["land_surface_temperature"],
             self.data["sea_surface_temperature"],
+        )
+
+    def prefill_runtime_state_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        incoming: dict[str, RuntimeArray],
+        outgoing: dict[str, RuntimeArray],
+    ) -> None:
+        """Pre-seed ERA5 atmosphere diagnostics for stable runtime state."""
+
+        zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
+        data.setdefault("total_surface_temperature", zeros)
+        super().prefill_runtime_state_fields(data, incoming, outgoing)
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        expected_shape: tuple[int, int],
+    ) -> None:
+        """Validate ERA5 atmosphere runtime diagnostic fields."""
+
+        for field_name in (
+            "land_surface_temperature",
+            "sea_surface_temperature",
+            "total_surface_temperature",
+        ):
+            self._validate_runtime_grid_data_field(
+                component_state,
+                field_name,
+                expected_shape,
+            )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | CustomDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Update ERA5 atmosphere surface-temperature diagnostics."""
+
+        _ = dt_seconds, runtime_settings, time, coupler
+        data = component_state.data
+        total_surface_temperature = _combine_surface_temperatures(
+            data.get("land_surface_temperature"),
+            data.get("sea_surface_temperature"),
+        )
+        return component_state.with_data(
+            data.set("total_surface_temperature", total_surface_temperature)
         )

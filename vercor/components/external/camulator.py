@@ -13,7 +13,7 @@ Key improvements:
 
 import os
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from pathlib import Path
 
 import jax
@@ -45,6 +45,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -468,6 +469,25 @@ class CAMulatorGCM(Component):
         self.timestep_counter = 0
 
         self.data.update(_initialize_camulator_runtime_fields(self.grid.shape))
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance CAMulator through the unified runtime host boundary."""
+
+        return super().step_runtime_state(
+            component_state,
+            dt_seconds,
+            runtime_settings,
+            time=time,
+            coupler=coupler,
+        )
 
     def step(
         self,

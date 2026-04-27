@@ -1,34 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, cast
 
 import jax
 import jax.numpy as jnp
 
-from vercor.components.slab.atmosphere import (
-    _bulk_flux_step,
-    _default_sea_surface_temperature,
-    _surface_wind_10m,
-)
-from vercor.components.slab.land import _update_soil_moisture
-from vercor.components.slab.ocean import (
-    _REFERENCE_SEA_SURFACE_TEMPERATURE,
-    _advance_sea_surface_temperature,
-)
-from vercor.components.slab.seaice import _diagnose_ice_fraction
-from vercor.exceptions import ComponentError, ExchangerError
+from vercor.exceptions import ExchangerError
 from vercor.exchange import Exchange
 from vercor.types import RuntimeArray
-
-_SUPPORTED_JAX_GCM_COMPONENT = ("vercor.components.external.jax_gcm", "JAXGCM")
-_SUPPORTED_DATA_COMPONENTS = {
-    ("vercor.components.data.era5_atmosphere", "ERA5Atmosphere"),
-    ("vercor.components.data.era5_ocean", "ERA5Ocean"),
-    ("vercor.components.data.era5_land", "ERA5Land"),
-    ("vercor.components.data.erainterim_ocean", "ERAInterimOcean"),
-    ("vercor.components.data.jcm_land", "JCMLand"),
-}
 
 
 def exchange_key_name(source: str, destination: str, interpolation_type: str) -> str:
@@ -38,32 +18,14 @@ def exchange_key_name(source: str, destination: str, interpolation_type: str) ->
 
 
 def is_supported_differentiable_component(component: Any) -> bool:
-    """Return whether ``component`` can run in the pure differentiable runtime."""
+    """Return whether ``component`` exposes the unified runtime interface."""
 
-    return (
-        _is_slab_component(component)
-        or _is_supported_data_component(component)
-        or _is_supported_jax_gcm_component(component)
-    )
+    return hasattr(component, "step_runtime_state")
 
 
 def _is_slab_component(component: Any) -> bool:
     module_name: str = component.__class__.__module__
     return module_name.startswith("vercor.components.slab.")
-
-
-def _is_supported_data_component(component: Any) -> bool:
-    return (
-        component.__class__.__module__,
-        component.__class__.__name__,
-    ) in _SUPPORTED_DATA_COMPONENTS
-
-
-def _is_supported_jax_gcm_component(component: Any) -> bool:
-    return (
-        component.__class__.__module__,
-        component.__class__.__name__,
-    ) == _SUPPORTED_JAX_GCM_COMPONENT
 
 
 @jax.tree_util.register_pytree_node_class
@@ -203,50 +165,6 @@ class RuntimeFieldStore:
         """Return a dictionary view of the store values."""
 
         return dict(zip(self.field_names, self.values))
-
-
-@jax.tree_util.register_pytree_node_class
-@dataclass(frozen=True)
-class JAXGCMRuntimePayload:
-    """Immutable JAXGCM model state carried by the differentiable runtime."""
-
-    jcm_state: Any
-    forcing: Any
-
-    def tree_flatten(self) -> tuple[tuple[Any, Any], None]:
-        return (self.jcm_state, self.forcing), None
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: None, children: tuple[Any, Any]
-    ) -> "JAXGCMRuntimePayload":
-        _ = aux_data
-        jcm_state, forcing = children
-        return cls(jcm_state=jcm_state, forcing=forcing)
-
-
-def create_component_runtime_payload(component: Any) -> Any | None:
-    """Return the immutable runtime payload required by ``component`` if any."""
-
-    if not _is_supported_jax_gcm_component(component):
-        return None
-
-    missing = [
-        name
-        for name in ("_state", "forcing", "_step_function")
-        if not hasattr(component, name)
-    ]
-    if missing:
-        missing_names = ", ".join(missing)
-        raise ComponentError(
-            "Differentiable JAXGCM runtime requires component initialization before "
-            f"state creation; missing {missing_names}"
-        )
-
-    return JAXGCMRuntimePayload(
-        jcm_state=component._state,
-        forcing=component.forcing,
-    )
 
 
 @jax.tree_util.register_pytree_node_class
@@ -527,207 +445,27 @@ def send_component_fields(
     return component_state.with_outgoing(outgoing)
 
 
-def _step_data_component_state(
-    component: Any,
-    component_state: RuntimeComponentState,
-) -> RuntimeComponentState:
-    """Return a stepped pure data-forcing component state."""
-
-    if component.__class__.__name__ == "ERA5Atmosphere":
-        data = component_state.data
-        land_surface_temperature = data.get("land_surface_temperature")
-        sea_surface_temperature = data.get("sea_surface_temperature")
-        total_surface_temperature = jnp.nan_to_num(
-            jnp.asarray(land_surface_temperature),
-            nan=0.0,
-        ) + jnp.nan_to_num(
-            jnp.asarray(sea_surface_temperature),
-            nan=0.0,
-        )
-        return component_state.with_data(
-            data.set("total_surface_temperature", total_surface_temperature)
-        )
-
-    return component_state
-
-
-def _step_jax_gcm_component_state(
-    component: Any,
-    component_state: RuntimeComponentState,
-    runtime_settings: Any,
-) -> RuntimeComponentState:
-    """Return a stepped immutable JAXGCM component state."""
-
-    from jcm.constants import p0
-    from vercor.components.external.jax_gcm import (
-        _cleanup_surface_temperature_fields,
-        _map_jcm_output_fields,
-        _prepare_surface_temperature_forcing,
-        mean_leaf,
-        stack_objects,
-        unwrap_leading_dims,
-    )
-
-    payload = component_state.runtime_payload
-    if not isinstance(payload, JAXGCMRuntimePayload):
-        raise NotImplementedError("JAXGCM runtime payload is not initialized")
-
-    data = component_state.data
-    (
-        land_surface_temperature,
-        sea_surface_temperature,
-        total_surface_temperature,
-        _,
-    ) = _cleanup_surface_temperature_fields(
-        data.get("land_surface_temperature"),
-        data.get("sea_surface_temperature"),
-    )
-
-    land_surface_temperature_forcing, sea_surface_temperature_forcing = (
-        _prepare_surface_temperature_forcing(
-            total_surface_temperature,
-            jnp.asarray(component.model.terrain.fmask, dtype=jnp.float_).T,
-        )
-    )
-    forcing = payload.forcing.copy(
-        stl_am=land_surface_temperature_forcing.T,
-        sea_surface_temperature=sea_surface_temperature_forcing.T,
-    )
-    jcm_state, prediction = component._step_function(payload.jcm_state, forcing)
-    averaged_prediction = mean_leaf(
-        unwrap_leading_dims(stack_objects([prediction])), axis=0
-    )
-
-    mapped_fields = _map_jcm_output_fields(
-        runtime_settings.latvap,
-        p0,
-        component.sigma_levels,
-        runtime_settings.mwdair,
-        runtime_settings.rgas,
-        runtime_settings.p0,
-        runtime_settings.cappa,
-        averaged_prediction.physics.surface_flux.shf,
-        averaged_prediction.physics.surface_flux.evap,
-        averaged_prediction.physics.surface_flux.rlds,
-        averaged_prediction.physics.shortwave_rad.rsns,
-        averaged_prediction.dynamics.normalized_surface_pressure,
-        averaged_prediction.dynamics.u_wind,
-        averaged_prediction.dynamics.v_wind,
-        averaged_prediction.dynamics.temperature,
-        averaged_prediction.dynamics.specific_humidity,
-    )
-
-    data = data.set("land_surface_temperature", land_surface_temperature)
-    data = data.set("sea_surface_temperature", sea_surface_temperature)
-    data = data.set("total_surface_temperature", total_surface_temperature)
-    for field_name, field_value in mapped_fields.items():
-        data = data.set(field_name, field_value)
-
-    return component_state.with_data(data).with_runtime_payload(
-        JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=forcing)
-    )
-
-
 def step_component_state(
     component: Any,
     component_state: RuntimeComponentState,
     dt_seconds: float,
     runtime_settings: Any | None = None,
+    *,
+    time: Any | None = None,
+    coupler: Any | None = None,
 ) -> RuntimeComponentState:
-    """Return a stepped component state on the differentiable runtime path.
+    """Return a stepped component state through the component runtime interface."""
 
-    VerCOR-owned slab components compute their pure kernels here. Supported
-    data-forcing components either replay forcing through runtime sends or run
-    small JAX-native diagnostic updates.
-    """
-
-    class_name = component.__class__.__name__
-    if _is_supported_data_component(component):
-        return _step_data_component_state(component, component_state)
-
-    if _is_supported_jax_gcm_component(component):
-        if runtime_settings is None:
-            raise NotImplementedError("JAXGCM runtime settings are not initialized")
-        return _step_jax_gcm_component_state(
-            component,
+    return cast(
+        RuntimeComponentState,
+        component.step_runtime_state(
             component_state,
+            dt_seconds,
             runtime_settings,
-        )
-
-    if not _is_slab_component(component):
-        raise NotImplementedError(
-            "Differentiable runtime currently supports VerCOR slab components "
-            "pure data-forcing components, and JAXGCM"
-        )
-
-    data = component_state.data
-    if class_name == "Atmosphere":
-        temperature_2m = data.get("temperature_2m")
-        try:
-            sea_surface_temperature = data.get("sea_surface_temperature")
-        except KeyError:
-            sea_surface_temperature = _default_sea_surface_temperature(temperature_2m)
-
-        sensible_heat_flux, latent_heat_flux, updated_temperature_2m = _bulk_flux_step(
-            temperature_2m, sea_surface_temperature
-        )
-        u_velocity_10m, v_velocity_10m = _surface_wind_10m(
-            component.grid.latitude, component.grid.longitude
-        )
-        data = data.set("u_velocity_10m", u_velocity_10m)
-        data = data.set("v_velocity_10m", v_velocity_10m)
-        data = data.set("sensible_heat_flux", sensible_heat_flux)
-        data = data.set("latent_heat_flux", latent_heat_flux)
-        data = data.set("temperature_2m", updated_temperature_2m)
-        return component_state.with_data(data)
-
-    if class_name == "Ocean":
-        sea_surface_temperature = data.get("sea_surface_temperature")
-        try:
-            sensible_heat_flux = data.get("sensible_heat_flux")
-        except KeyError:
-            sensible_heat_flux = jnp.zeros_like(sea_surface_temperature)
-        try:
-            latent_heat_flux = data.get("latent_heat_flux")
-        except KeyError:
-            latent_heat_flux = jnp.zeros_like(sea_surface_temperature)
-
-        updated_sst = _advance_sea_surface_temperature(
-            sea_surface_temperature,
-            sensible_heat_flux,
-            latent_heat_flux,
-            dt_seconds,
-            component.rho,
-            component.cp,
-            component.H,
-            component.lambda_relax,
-            _REFERENCE_SEA_SURFACE_TEMPERATURE,
-        )
-        return component_state.with_data(
-            data.set("sea_surface_temperature", updated_sst)
-        )
-
-    if class_name == "Land":
-        soil_moisture = data.get("soil_moisture")
-        try:
-            latent_heat_flux = data.get("latent_heat_flux")
-        except KeyError:
-            latent_heat_flux = jnp.zeros_like(soil_moisture)
-        updated_soil_moisture = _update_soil_moisture(
-            soil_moisture,
-            latent_heat_flux,
-            dt_seconds,
-        )
-        return component_state.with_data(
-            data.set("soil_moisture", updated_soil_moisture)
-        )
-
-    if class_name == "SeaIce":
-        sea_surface_temperature = data.get("sea_surface_temperature")
-        ice_fraction = _diagnose_ice_fraction(sea_surface_temperature)
-        return component_state.with_data(data.set("ice_fraction", ice_fraction))
-
-    raise NotImplementedError(f"No differentiable runtime step for {class_name}")
+            time=time,
+            coupler=coupler,
+        ),
+    )
 
 
 def step_slab_component_state(
@@ -742,6 +480,6 @@ def step_slab_component_state(
 
     if not _is_slab_component(component):
         raise NotImplementedError(
-            "Differentiable runtime currently supports VerCOR slab components only"
+            "Runtime slab compatibility wrapper supports VerCOR slab components only"
         )
     return step_component_state(component, component_state, dt_seconds)

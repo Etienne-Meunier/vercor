@@ -1408,7 +1408,7 @@ def test_run_differentiable_validates_missing_run_sequence() -> None:
         coupler.run_differentiable()
 
 
-def test_run_differentiable_rejects_non_slab_components() -> None:
+def test_run_differentiable_accepts_default_runtime_component() -> None:
     grid = make_test_grid(name="dummy")
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
@@ -1416,11 +1416,12 @@ def test_run_differentiable_rejects_non_slab_components() -> None:
     coupler.components = {"ATM": cast(Any, DummyComponent("ATM", grid))}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    with pytest.raises(ComponentError, match="JAXGCM"):
-        coupler.run_differentiable()
+    final_state = coupler.run_differentiable()
+
+    assert final_state.component_names == ("ATM",)
 
 
-def test_run_differentiable_rejects_camulator_land_boundary() -> None:
+def test_run_differentiable_accepts_camulator_land_runtime_boundary() -> None:
     grid = make_test_grid(name="camulator")
     camulator_land = _make_data_component(
         CAMulatorLand,
@@ -1435,11 +1436,17 @@ def test_run_differentiable_rejects_camulator_land_boundary() -> None:
     coupler.run_sequence = RunSequence(order=["LND"])
 
     assert isinstance(camulator_land.data["land_surface_temperature"], jax.Array)
-    with pytest.raises(ComponentError, match="CAMulator.*non-differentiable"):
-        coupler.run_differentiable()
+    state = coupler.create_differentiable_state()
+    final_state = coupler.run_differentiable(state)
+
+    assert final_state.component_names == ("LND",)
+    assert_allclose_compact(
+        final_state.get_component_state("LND").data.get("land_surface_temperature"),
+        np.zeros(grid.shape),
+    )
 
 
-def test_run_differentiable_rejects_veros_boundary() -> None:
+def test_run_differentiable_accepts_veros_runtime_boundary() -> None:
     grid = make_test_grid(name="veros")
     veros = _make_data_component(
         VerosGCM,
@@ -1454,8 +1461,14 @@ def test_run_differentiable_rejects_veros_boundary() -> None:
     coupler.run_sequence = RunSequence(order=["OCN"])
 
     assert isinstance(veros.data["sea_surface_temperature"], jax.Array)
-    with pytest.raises(ComponentError, match="VerosGCM.*non-differentiable"):
-        coupler.run_differentiable()
+    state = coupler.create_differentiable_state()
+    final_state = coupler.run_differentiable(state)
+
+    assert final_state.component_names == ("OCN",)
+    assert_allclose_compact(
+        final_state.get_component_state("OCN").data.get("sea_surface_temperature"),
+        np.zeros(grid.shape),
+    )
 
 
 def test_run_differentiable_validates_regridders_and_fractional_masks() -> None:

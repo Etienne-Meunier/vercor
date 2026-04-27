@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -26,11 +26,8 @@ from vercor.runtime import (
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
-    JAXGCMRuntimePayload,
-    create_component_runtime_payload,
     dispatch_component_exchanges,
     exchange_key_name,
-    is_supported_differentiable_component,
     receive_component_fields,
     send_component_fields,
     step_component_state,
@@ -336,40 +333,7 @@ class Coupler:
         outgoing = component.outgoing_fields.fields()
 
         if prefill_missing:
-            zeros = jnp.zeros(component.grid.shape, dtype=jnp.float_)
-            if component.__class__.__name__ == "ERA5Atmosphere":
-                data.setdefault("total_surface_temperature", zeros)
-            if self._is_jax_gcm_component(component):
-                jax_gcm_component = cast(Any, component)
-                data.setdefault("total_surface_temperature", zeros)
-                for field_name in (
-                    "u_velocity",
-                    "v_velocity",
-                    "temperature",
-                    "specific_humidity",
-                    "sensible_heat_flux",
-                    "latent_heat_flux",
-                    "net_shortwave_radiation_flux",
-                    "downward_longwave_radiation_flux",
-                    "density",
-                    "potential_temperature",
-                    "model_level_height",
-                ):
-                    data.setdefault(field_name, zeros)
-                sigma_levels = jnp.asarray(jax_gcm_component.sigma_levels)
-                data.setdefault(
-                    "pressure",
-                    jnp.zeros(
-                        (sigma_levels.shape[0], *component.grid.shape),
-                        dtype=jnp.float_,
-                    ),
-                )
-            for field_name in component._fields2import:
-                incoming.setdefault(field_name, zeros)
-                data.setdefault(field_name, zeros)
-            for field_name in component._fields2export:
-                outgoing.setdefault(field_name, data.get(field_name, zeros))
-                data.setdefault(field_name, zeros)
+            component.prefill_runtime_state_fields(data, incoming, outgoing)
 
         return RuntimeComponentState(
             name=component.name,
@@ -378,7 +342,7 @@ class Coupler:
             outgoing=RuntimeFieldStore.from_mapping(outgoing),
             fields_to_import=tuple(component._fields2import),
             fields_to_export=tuple(component._fields2export),
-            runtime_payload=create_component_runtime_payload(component),
+            runtime_payload=component.create_runtime_payload(),
         )
 
     def _runtime_state_from_components(
@@ -414,14 +378,14 @@ class Coupler:
     ) -> None:
         if field_name not in store.field_names:
             raise CouplerError(
-                "Differentiable runtime missing "
+                "Runtime missing "
                 f"{store_description} field '{field_name}' for component '{component_name}'"
             )
 
         field_shape = jnp.asarray(store.get(field_name)).shape
         if field_shape != expected_shape:
             raise CouplerError(
-                "Differentiable runtime "
+                "Runtime "
                 f"{store_description} field '{field_name}' for component '{component_name}' "
                 f"has shape {field_shape}, expected {expected_shape}"
             )
@@ -434,7 +398,7 @@ class Coupler:
     ) -> None:
         if field_name not in component_state.data.field_names:
             raise CouplerError(
-                "Differentiable runtime missing required data field "
+                "Runtime missing required data field "
                 f"'{field_name}' for component '{component_name}'"
             )
 
@@ -506,93 +470,6 @@ class Coupler:
                 field_name,
                 expected_shape,
             )
-
-    def _is_jax_gcm_component(self, component: AllComponentsType) -> bool:
-        return (
-            component.__class__.__module__,
-            component.__class__.__name__,
-        ) == ("vercor.components.external.jax_gcm", "JAXGCM")
-
-    def _validate_jax_gcm_runtime_payload(
-        self,
-        component_name: str,
-        component_state: RuntimeComponentState,
-    ) -> None:
-        if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
-            raise ComponentError(
-                "Differentiable JAXGCM runtime requires an initialized immutable "
-                f"runtime payload for component '{component_name}'"
-            )
-
-    def _validate_jax_gcm_runtime_state(
-        self,
-        component_name: str,
-        component_state: RuntimeComponentState,
-        expected_shape: tuple[int, int],
-    ) -> None:
-        self._validate_jax_gcm_runtime_payload(component_name, component_state)
-        component = cast(Any, self.components[component_name])
-        sigma_levels = jnp.asarray(component.sigma_levels)
-        grid_fields = (
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-            "u_velocity",
-            "v_velocity",
-            "temperature",
-            "specific_humidity",
-            "sensible_heat_flux",
-            "latent_heat_flux",
-            "net_shortwave_radiation_flux",
-            "downward_longwave_radiation_flux",
-            "density",
-            "potential_temperature",
-            "model_level_height",
-        )
-        for field_name in grid_fields:
-            self._validate_runtime_grid_data_field(
-                component_name,
-                component_state,
-                field_name,
-                expected_shape,
-            )
-
-        self._validate_runtime_data_field_exists(
-            component_name, component_state, "pressure"
-        )
-        pressure_shape = jnp.asarray(component_state.data.get("pressure")).shape
-        expected_pressure_shape = (sigma_levels.shape[0], *expected_shape)
-        if pressure_shape != expected_pressure_shape:
-            raise CouplerError(
-                "Differentiable runtime required data field 'pressure' "
-                f"for component '{component_name}' has shape {pressure_shape}, "
-                f"expected {expected_pressure_shape}"
-            )
-
-    def _unsupported_differentiable_component_error(
-        self,
-        component_name: str,
-        component: AllComponentsType,
-    ) -> ComponentError:
-        class_name = component.__class__.__name__
-        module_name = component.__class__.__module__
-        if class_name.startswith("CAMulator") or "camulator" in module_name:
-            return ComponentError(
-                "CAMulator components are explicit non-differentiable host/runtime "
-                "boundaries and cannot be used with run_differentiable "
-                f"(got {class_name} for component '{component_name}')"
-            )
-        if class_name == "VerosGCM":
-            return ComponentError(
-                "VerosGCM is an explicit non-differentiable host/runtime boundary "
-                "and cannot be used with run_differentiable "
-                f"(got {class_name} for component '{component_name}')"
-            )
-        return ComponentError(
-            "Differentiable runtime currently supports VerCOR slab components, "
-            "pure data-forcing components, and JAXGCM "
-            f"(got {class_name} for component '{component_name}')"
-        )
 
     def _runtime_step_info_from_times(
         self,
@@ -679,15 +556,11 @@ class Coupler:
         self, runtime_state: RuntimeCouplerState
     ) -> None:
         if not hasattr(self, "run_sequence"):
-            raise CouplerError(
-                "Differentiable runtime requires a configured component run sequence"
-            )
+            raise CouplerError("Runtime requires a configured component run sequence")
 
         run_order = tuple(self.run_sequence)
         if not run_order:
-            raise CouplerError(
-                "Differentiable runtime requires a non-empty component run sequence"
-            )
+            raise CouplerError("Runtime requires a non-empty component run sequence")
 
         runtime_component_names = set(runtime_state.component_names)
         for cname in run_order:
@@ -701,21 +574,8 @@ class Coupler:
                 )
 
             component = self.components[cname]
-            if not is_supported_differentiable_component(component):
-                raise self._unsupported_differentiable_component_error(cname, component)
             component_state = runtime_state.get_component_state(cname)
-            if self._is_jax_gcm_component(component):
-                self._validate_jax_gcm_runtime_state(
-                    cname, component_state, component.grid.shape
-                )
-            elif component.__class__.__module__.startswith("vercor.components.slab."):
-                self._validate_slab_runtime_state(
-                    cname, component_state, component.grid.shape
-                )
-            else:
-                self._validate_data_runtime_state(
-                    cname, component_state, component.grid.shape
-                )
+            component.validate_runtime_state(component_state, component.grid.shape)
             for field_name in component_state.fields_to_import:
                 self._validate_runtime_store_field(
                     cname,
@@ -772,14 +632,14 @@ class Coupler:
                 )
             if key not in self._regridders:
                 raise CouplerError(
-                    "Differentiable runtime requires an initialized regridder for exchange "
+                    "Runtime requires an initialized regridder for exchange "
                     f"{exchange.name}"
                 )
 
             mask_name = exchange_key_name(*key)
             if mask_name not in runtime_state.fractional_masks.field_names:
                 raise CouplerError(
-                    "Differentiable runtime requires an initialized fractional mask for exchange "
+                    "Runtime requires an initialized fractional mask for exchange "
                     f"{exchange.name}"
                 )
             destination_shape = self.components[exchange.destination].grid.shape
@@ -788,7 +648,7 @@ class Coupler:
             ).shape
             if mask_shape != destination_shape:
                 raise CouplerError(
-                    "Differentiable runtime fractional mask for exchange "
+                    "Runtime fractional mask for exchange "
                     f"{exchange.name} has shape {mask_shape}, expected {destination_shape}"
                 )
 
@@ -814,6 +674,52 @@ class Coupler:
         if hasattr(self, "run_sequence"):
             runtime_state = self._prime_differentiable_runtime_outgoing(runtime_state)
         self._validate_differentiable_runtime(runtime_state)
+        return runtime_state
+
+    def _scalar_runtime_step_info(
+        self,
+        time: datetime | ModelDateTime,
+    ) -> RuntimeStepInfo:
+        batched_step_info = self._runtime_step_info_from_times([time])
+        return cast(
+            RuntimeStepInfo,
+            jax.tree_util.tree_map(lambda value: value[0], batched_step_info),
+        )
+
+    def _step_runtime_component(
+        self,
+        runtime_state: RuntimeCouplerState,
+        component_name: str,
+        step_info: RuntimeStepInfo,
+        *,
+        time: datetime | ModelDateTime | None = None,
+    ) -> RuntimeCouplerState:
+        runtime_state = dispatch_component_exchanges(
+            runtime_state,
+            component_name,
+            self.exchanges,
+            self._regridders,
+        )
+        component_state = runtime_state.get_component_state(component_name)
+        component_state = receive_component_fields(component_state)
+        component_state = step_component_state(
+            self.components[component_name],
+            component_state,
+            self.clock.dt_seconds,
+            self.settings,
+            time=time,
+            coupler=self if time is not None else None,
+        )
+        component_state = send_component_fields(
+            component_state,
+            self.components[component_name],
+            step_info,
+        )
+        runtime_state = runtime_state.set_component_state(component_state)
+
+        if time is not None:
+            self.components[component_name].commit_runtime_state(component_state, time)
+
         return runtime_state
 
     def append_masks_to_output(
@@ -868,7 +774,7 @@ class Coupler:
 
             self.logger.info(f" Exchange fields: {exchange.name}")
 
-        runtime_state = self._runtime_state_from_components(prefill_missing=False)
+        runtime_state = self._runtime_state_from_components(prefill_missing=True)
         runtime_state = dispatch_component_exchanges(
             runtime_state,
             component.name,
@@ -962,32 +868,28 @@ class Coupler:
                     f"Component {cname} outgoing fields were not initialized properly."
                 )
 
+        runtime_state = self._runtime_state_from_components(prefill_missing=False)
+        self._validate_differentiable_runtime(runtime_state)
+
         for n, time, dt in self.clock.iter():
             self.logger.info(
                 f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
             )
+            step_info = self._scalar_runtime_step_info(time)
 
-            # Step components in declared order
             for cname in self.run_sequence:
-                self.interpolate_and_dispatch_fields(self.components[cname], time)
-
                 self.logger.info(f" Run component: {cname}")
-                self.components[cname].receive_fields(time)
-
-                self.components[cname].step(dt, time, self)
-
-                self.components[cname].send_fields(time, self)
+                runtime_state = self._step_runtime_component(
+                    runtime_state,
+                    cname,
+                    step_info,
+                    time=time,
+                )
 
     def run_differentiable(
         self, initial_state: RuntimeCouplerState | None = None
     ) -> RuntimeCouplerState:
-        """Run the pure JAX differentiable runtime path and return the final state.
-
-        Existing public component and coupler APIs remain imperative. This entrypoint
-        provides a differentiable state path for VerCOR-owned slab and pure
-        data-forcing components while external model adapters stay explicit
-        host/runtime boundaries.
-        """
+        """Run the unified runtime path under ``jax.lax.scan`` and return state."""
 
         runtime_state = (
             self.create_differentiable_state(prefill_missing=True)
@@ -1001,26 +903,11 @@ class Coupler:
             state: RuntimeCouplerState, step_info: RuntimeStepInfo
         ) -> tuple[RuntimeCouplerState, None]:
             for cname in self.run_sequence:
-                state = dispatch_component_exchanges(
+                state = self._step_runtime_component(
                     state,
                     cname,
-                    self.exchanges,
-                    self._regridders,
-                )
-                component_state = state.get_component_state(cname)
-                component_state = receive_component_fields(component_state)
-                component_state = step_component_state(
-                    self.components[cname],
-                    component_state,
-                    self.clock.dt_seconds,
-                    self.settings,
-                )
-                component_state = send_component_fields(
-                    component_state,
-                    self.components[cname],
                     step_info,
                 )
-                state = state.set_component_state(component_state)
             return state, None
 
         final_state, _ = jax.lax.scan(

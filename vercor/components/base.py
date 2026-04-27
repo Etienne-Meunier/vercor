@@ -11,7 +11,7 @@ import xarray as xr
 from numpy.typing import DTypeLike, NDArray
 
 from vercor.clock import ModelDateTime, CustomDateTime
-from vercor.exceptions import ComponentError
+from vercor.exceptions import ComponentError, CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.settings import ComponentSettings
 from vercor.tools import (
@@ -24,6 +24,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 @dataclass
@@ -191,10 +192,147 @@ class Component(abc.ABC):
     def step(
         self,
         dt: timedelta,
-        time: datetime,
+        time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
         raise NotImplementedError
+
+    def create_runtime_payload(self) -> Any | None:
+        """Return optional immutable payload carried by runtime component state."""
+
+        return None
+
+    def prefill_runtime_state_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        incoming: dict[str, RuntimeArray],
+        outgoing: dict[str, RuntimeArray],
+    ) -> None:
+        """Add missing fields required for stable runtime-state execution."""
+
+        zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
+        for field_name in self._fields2import:
+            incoming.setdefault(field_name, zeros)
+            data.setdefault(field_name, zeros)
+        for field_name in self._fields2export:
+            outgoing.setdefault(field_name, data.get(field_name, zeros))
+            data.setdefault(field_name, zeros)
+
+    def _validate_runtime_store_field(
+        self,
+        store: Any,
+        field_name: str,
+        store_description: str,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        if field_name not in store.field_names:
+            raise CouplerError(
+                "Runtime missing "
+                f"{store_description} field '{field_name}' for component '{self.name}'"
+            )
+
+        field_shape = jnp.asarray(store.get(field_name)).shape
+        if field_shape != expected_shape:
+            raise CouplerError(
+                "Runtime "
+                f"{store_description} field '{field_name}' for component '{self.name}' "
+                f"has shape {field_shape}, expected {expected_shape}"
+            )
+
+    def _validate_runtime_data_field_exists(
+        self,
+        component_state: "RuntimeComponentState",
+        field_name: str,
+    ) -> None:
+        if field_name not in component_state.data.field_names:
+            raise CouplerError(
+                "Runtime missing required data field "
+                f"'{field_name}' for component '{self.name}'"
+            )
+
+    def _validate_runtime_grid_data_field(
+        self,
+        component_state: "RuntimeComponentState",
+        field_name: str,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        self._validate_runtime_data_field_exists(component_state, field_name)
+        self._validate_runtime_store_field(
+            component_state.data,
+            field_name,
+            "required data",
+            expected_shape,
+        )
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        expected_shape: tuple[int, int],
+    ) -> None:
+        """Validate component-specific runtime fields before execution."""
+
+        _ = component_state, expected_shape
+
+    def to_runtime_component_state(self) -> "RuntimeComponentState":
+        """Create a runtime component state from this wrapper's current fields."""
+
+        from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+
+        return RuntimeComponentState(
+            name=self.name,
+            data=RuntimeFieldStore.from_mapping(dict(self.data)),
+            incoming=RuntimeFieldStore.from_mapping(self.incoming_fields.fields()),
+            outgoing=RuntimeFieldStore.from_mapping(self.outgoing_fields.fields()),
+            fields_to_import=tuple(self._fields2import),
+            fields_to_export=tuple(self._fields2export),
+            runtime_payload=self.create_runtime_payload(),
+        )
+
+    def commit_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        timestamp: datetime | ModelDateTime | None = None,
+    ) -> None:
+        """Copy runtime state fields back to this compatibility wrapper."""
+
+        self.data = component_state.data.to_mapping()
+        if timestamp is None:
+            return
+
+        incoming_fields = Shared()
+        for field_name, field_value in component_state.incoming.to_mapping().items():
+            incoming_fields[field_name] = (field_value, timestamp, self.name)
+        self.incoming_fields = incoming_fields
+
+        outgoing_fields = Shared()
+        for field_name, field_value in component_state.outgoing.to_mapping().items():
+            outgoing_fields[field_name] = (field_value, timestamp, self.name)
+        self.outgoing_fields = outgoing_fields
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Return this component advanced by one runtime step.
+
+        Pure JAX components override this method. Host-backed components keep
+        their existing ``step`` implementation on the imperative run path; in a
+        traced runtime without host context, the default is a no-op state step.
+        """
+
+        _ = runtime_settings
+        if time is None or coupler is None:
+            return component_state
+
+        self.commit_runtime_state(component_state, time)
+        self.step(timedelta(seconds=dt_seconds), time, coupler)
+        stepped_state = self.to_runtime_component_state()
+        return stepped_state.with_runtime_payload(component_state.runtime_payload)
 
     def finalize(
         self, coupler: "Coupler", output_file_mask: Optional[Path] = None
@@ -256,7 +394,7 @@ class Component(abc.ABC):
         for name in incoming_fields:
             self.incoming_fields[name] = fields[name]
 
-    def receive_fields(self, time: datetime | CustomDateTime) -> None:
+    def receive_fields(self, time: datetime | ModelDateTime) -> None:
         """
         Receive interpolated fields from receptor/incoming_fields (from another component(s))
         and store them in data.
@@ -279,7 +417,10 @@ class Component(abc.ABC):
                     f"current time {time} in component '{self.name}'."
                 )
 
-        self.data.update(self.incoming_fields.fields())
+        from vercor.runtime import receive_component_fields
+
+        component_state = receive_component_fields(self.to_runtime_component_state())
+        self.commit_runtime_state(component_state, time)
 
     def send_fields(self, time: datetime | ModelDateTime, coupler: "Coupler") -> None:
         """
@@ -291,12 +432,22 @@ class Component(abc.ABC):
             coupler: Coupler instance for possible time interpolation
         """
 
+        from vercor.runtime import send_component_fields
+
+        if hasattr(coupler, "_scalar_runtime_step_info"):
+            step_info = coupler._scalar_runtime_step_info(time)
+            component_state = send_component_fields(
+                self.to_runtime_component_state(),
+                self,
+                step_info,
+            )
+            self.commit_runtime_state(component_state, time)
+            return
+
         for fld in self._fields2export:
             if self.settings.apply_time_interpolation:
-                # for data models with monthly means
                 field2send = get_field_at_specific_time(fld, self.data, coupler)
             elif self.settings.get_field_time_slice:
-                # for data models with higher frequency data
                 field2send = get_field_time_slice(fld, self.data, time)
             else:
                 field2send = self.data[fld]

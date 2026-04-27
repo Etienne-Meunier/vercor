@@ -49,23 +49,27 @@ class _FinalizeComponent(DummyComponent):
         self.finalize_calls.append(output_file_mask)
 
 
-class _RunComponent:
+class _RunComponent(DummyComponent):
     def __init__(self, name: str, events: list[str], timestamp: datetime) -> None:
-        self.name = name
+        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
-        self.outgoing_fields = Shared()
+        self.data["temperature"] = np.ones((2, 2))
+        self._fields2export = ["temperature"]
         self.outgoing_fields["temperature"] = (np.ones((2, 2)), timestamp, name)
 
-    def receive_fields(self, time: datetime) -> None:
-        self.events.append(f"receive:{self.name}:{time.isoformat()}")
-
-    def step(self, dt: Any, time: datetime, coupler: Any) -> None:
-        _ = coupler
-        self.events.append(f"step:{self.name}:{time.isoformat()}:{dt.total_seconds()}")
-
-    def send_fields(self, time: datetime, coupler: Any) -> None:
-        _ = coupler
-        self.events.append(f"send:{self.name}:{time.isoformat()}")
+    def step_runtime_state(
+        self,
+        component_state: Any,
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: Any | None = None,
+        coupler: Any | None = None,
+    ) -> Any:
+        _ = runtime_settings, coupler
+        time_label = "none" if time is None else time.isoformat()
+        self.events.append(f"step_runtime:{self.name}:{time_label}:{dt_seconds}")
+        return component_state
 
 
 def make_coupler() -> Coupler:
@@ -643,20 +647,33 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
     coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
 
-    def fake_dispatch(component: Any, time: datetime) -> None:
-        events.append(f"dispatch:{component.name}:{time.isoformat()}")
+    def fake_dispatch(state: Any, component_name: str, *args: Any) -> Any:
+        _ = args
+        events.append(f"dispatch:{component_name}")
+        return state
 
-    monkeypatch.setattr(coupler, "interpolate_and_dispatch_fields", fake_dispatch)
+    def fake_receive(component_state: Any) -> Any:
+        events.append(f"receive:{component_state.name}")
+        return component_state
+
+    def fake_send(component_state: Any, *args: Any) -> Any:
+        _ = args
+        events.append(f"send:{component_state.name}")
+        return component_state
+
+    monkeypatch.setattr("vercor.coupler.dispatch_component_exchanges", fake_dispatch)
+    monkeypatch.setattr("vercor.coupler.receive_component_fields", fake_receive)
+    monkeypatch.setattr("vercor.coupler.send_component_fields", fake_send)
 
     coupler.run()
 
     assert events == [
-        "dispatch:ATM:2000-01-01T00:00:00",
-        "receive:ATM:2000-01-01T00:00:00",
-        "step:ATM:2000-01-01T00:00:00:60.0",
-        "send:ATM:2000-01-01T00:00:00",
-        "dispatch:OCN:2000-01-01T00:00:00",
-        "receive:OCN:2000-01-01T00:00:00",
-        "step:OCN:2000-01-01T00:00:00:60.0",
-        "send:OCN:2000-01-01T00:00:00",
+        "dispatch:ATM",
+        "receive:ATM",
+        "step_runtime:ATM:2000-01-01T00:00:00:60.0",
+        "send:ATM",
+        "dispatch:OCN",
+        "receive:OCN",
+        "step_runtime:OCN:2000-01-01T00:00:00:60.0",
+        "send:OCN",
     ]
