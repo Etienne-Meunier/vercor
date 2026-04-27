@@ -18,6 +18,7 @@ from vercor.components.data.era5_land import ERA5Land
 from vercor.components.data.era5_ocean import ERA5Ocean
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.components.data.jcm_land import JCMLand
+from vercor.components.external.camulator import CAMulatorGCM
 from vercor.components.external.jax_gcm import JAXGCM, JCMState
 from vercor.components.external.veros_gcm import VerosGCM
 from vercor.components.slab.atmosphere import Atmosphere
@@ -1446,6 +1447,31 @@ def test_run_accepts_camulator_land_runtime_boundary() -> None:
     assert_allclose_compact(
         final_state.get_component_state("LND").data.get("land_surface_temperature"),
         np.zeros(grid.shape),
+    )
+
+
+def test_run_accepts_camulator_gcm_runtime_boundary() -> None:
+    grid = make_test_grid(name="camulator-gcm")
+    camulator = _make_data_component(
+        CAMulatorGCM,
+        name="ATM",
+        grid=grid,
+        data={"temperature": jnp.ones(grid.shape, dtype=jnp.float64)},
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": cast(Any, camulator)}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    assert isinstance(camulator.data["temperature"], jax.Array)
+    state = coupler.create_runtime_state()
+    final_state = coupler.run(state, commit_wrappers=False)
+
+    assert final_state.component_names == ("ATM",)
+    assert_allclose_compact(
+        final_state.get_component_state("ATM").data.get("temperature"),
+        np.ones(grid.shape),
     )
 
 

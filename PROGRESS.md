@@ -1441,3 +1441,32 @@
 
 - The first thinned slab-ocean wrapper broke a direct unit test that calls `Ocean.step()` before initialization; the runtime step now preserves the old no-op behavior when SST is absent, while validated coupler runtime states still reject missing required SST before scans.
 - The first JAXGCM external coverage update still monkeypatched the old `do_jcm_steps()` host path. The test now seeds the runtime payload and `_step_function` directly, matching the canonical component runtime path.
+
+## Sixteenth JAX Translation Slice 16E: Unified Runtime Audit Completion
+
+- Completed the unified-runtime audit / hardening pass requested after Slice 16D:
+  - confirmed the legacy divergent public APIs remain absent (`run_differentiable`, `create_differentiable_state`, and `interpolate_and_dispatch_fields`)
+  - confirmed generic runtime.py remains limited to immutable runtime state plus exchange dispatch, with component-specific runtime stepping kept in component modules
+  - added direct `Coupler.run(..., commit_wrappers=False)` coverage for `CAMulatorGCM` so CAMulator atmosphere, CAMulator land, Veros, slab, data, and JAXGCM adapters are all covered through the canonical runtime-state path
+- No production code changes were required; the slice only added targeted regression coverage.
+- `DEPENDENCIES.md` did not require changes because no new module dependency edge was introduced.
+
+## Validation (Slice 16E, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_coupler_runtime.py::test_run_accepts_camulator_gcm_runtime_boundary -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 16E)
+
+- No failed implementation approaches. The audit found only the missing direct CAMulatorGCM runtime-acceptance coverage, which is now locked by a lightweight test that avoids model-file, Torch, and xarray execution boundaries.
