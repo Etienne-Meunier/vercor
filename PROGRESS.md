@@ -1261,3 +1261,40 @@
 - The first JAXGCM runtime test failed because `component.settings` is the component time-selection settings, not the coupler physical constants used by JAXGCM output mapping. The runtime step now receives `Coupler.settings` explicitly.
 - The first JAXGCM scan attempt added output fields inside the scan body, changing the carry PyTree structure. The coupler now pre-seeds all JAXGCM runtime output fields before scanning.
 - Running JAXGCM runtime tests before external coverage exposed a cached `jax.jit` monkeypatch hazard in `_map_jcm_output_fields`; the affected test now clears the JIT cache after monkeypatching.
+
+## Fifteenth JAX Translation Slice 15B: Differentiable Integration Hardening
+
+- Hardened the pure differentiable runtime preflight checks without changing public component, coupler, exchange, regridder, or runtime-state APIs:
+  - caller-provided runtime states now fail before `jax.lax.scan` if slab components are missing required data fields needed to preserve a stable carry PyTree
+  - imported fields must be present in both incoming and data stores before traced receive/update logic can run
+  - exported fields must be present in component data before traced send logic can run
+  - ERA5Atmosphere data-runtime diagnostics now require land, sea, and total surface temperature fields up front
+  - JAXGCM runtime states now validate all pre-seeded 2D output fields plus the sigma-level pressure field before traced execution
+- Clarified unsupported external boundary errors:
+  - CAMulator components are reported as explicit non-differentiable host/runtime boundaries
+  - VerosGCM is reported as an explicit non-differentiable host/runtime boundary
+- Extended differentiable integration coverage:
+  - data-forcing ERA5Ocean now replays into a JAXGCM runtime component under `jax.jit`, `jax.grad`, and `jax.jvp`
+  - missing slab required data, missing import/export data, and missing JAXGCM preseeded pressure now raise `CouplerError` before traced execution
+  - CAMulatorLand and VerosGCM rejection tests now also assert their VerCOR boundary data remains JAX-backed
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 15B, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_differentiable_coupler_runtime.py tests/test_runtime_state.py tests/test_runtime_exchange.py -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 15B)
+
+- No failed implementation approaches. The slice tightened preflight validation and expanded integration coverage while preserving the existing differentiable runtime APIs.

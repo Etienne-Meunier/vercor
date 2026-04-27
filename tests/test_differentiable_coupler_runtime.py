@@ -568,6 +568,14 @@ def _with_ocean_sst(
     return state.set_component_state(ocean)
 
 
+def _without_store_field(
+    store: RuntimeFieldStore, field_name: str
+) -> RuntimeFieldStore:
+    values = store.to_mapping()
+    values.pop(field_name)
+    return RuntimeFieldStore.from_mapping(values)
+
+
 def test_run_differentiable_supports_jit_grad_and_jvp() -> None:
     coupler = _make_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
@@ -1299,6 +1307,75 @@ def test_jax_gcm_runs_inside_differentiable_runtime_under_jit_and_grad() -> None
     assert np.any(np.asarray(gradient) != 0.0)
 
 
+def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> None:
+    grid = make_test_grid(name="data-jcm-runtime")
+    sea_surface_temperature = jnp.asarray(
+        [[280.0, 281.0], [282.0, 283.0]], dtype=jnp.float64
+    )
+    ocean = _make_data_component(
+        ERA5Ocean,
+        name="OCN",
+        grid=grid,
+        data={"sea_surface_temperature": sea_surface_temperature},
+        exports=("sea_surface_temperature",),
+    )
+    atmosphere = _make_jax_gcm_component(grid)
+    atmosphere._fields2import = ["sea_surface_temperature"]
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"OCN": ocean, "ATM": atmosphere}
+    coupler.run_sequence = RunSequence(order=["OCN", "ATM"])
+    coupler.exchanges = [
+        Exchange(
+            source="OCN",
+            destination="ATM",
+            field_names=["sea_surface_temperature"],
+            regridder_factory=cast(Any, _identity_factory),
+        )
+    ]
+    key = ("OCN", "ATM", "_identity_factory")
+    coupler._regridders = cast(Any, {key: _IdentityRegridder()})
+    coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
+
+    initial_state = coupler.create_differentiable_state()
+    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+        initial_state
+    )
+    atmosphere_state = final_state.get_component_state("ATM")
+    temperature = atmosphere_state.data.get("temperature")
+    received_sst = atmosphere_state.incoming.get("sea_surface_temperature")
+
+    assert temperature.shape == grid.shape
+    assert received_sst.shape == grid.shape
+    assert isinstance(temperature, jax.Array)
+    assert isinstance(received_sst, jax.Array)
+    assert_allclose_compact(received_sst, sea_surface_temperature)
+    assert np.all(np.isfinite(np.asarray(temperature)))
+
+    def loss(forcing: jax.Array) -> jax.Array:
+        ocean_state = initial_state.get_component_state("OCN")
+        state = initial_state.set_component_state(
+            ocean_state.with_data(
+                ocean_state.data.set("sea_surface_temperature", forcing)
+            )
+        )
+        result = coupler.run_differentiable(state)
+        return jnp.sum(result.get_component_state("ATM").data.get("temperature"))
+
+    gradient = jax.grad(loss)(sea_surface_temperature)
+    _, tangent = jax.jvp(
+        loss,
+        (sea_surface_temperature,),
+        (jnp.ones_like(sea_surface_temperature),),
+    )
+
+    assert gradient.shape == grid.shape
+    assert np.all(np.isfinite(np.asarray(gradient)))
+    assert np.any(np.asarray(gradient) != 0.0)
+    assert np.isfinite(np.asarray(tangent))
+
+
 def test_jax_gcm_runtime_requires_initialized_payload() -> None:
     grid = make_test_grid(name="jcm-uninitialized")
     component = _make_jax_gcm_component(grid)
@@ -1357,7 +1434,8 @@ def test_run_differentiable_rejects_camulator_land_boundary() -> None:
     coupler.components = {"LND": cast(Any, camulator_land)}
     coupler.run_sequence = RunSequence(order=["LND"])
 
-    with pytest.raises(ComponentError, match="JAXGCM"):
+    assert isinstance(camulator_land.data["land_surface_temperature"], jax.Array)
+    with pytest.raises(ComponentError, match="CAMulator.*non-differentiable"):
         coupler.run_differentiable()
 
 
@@ -1375,7 +1453,8 @@ def test_run_differentiable_rejects_veros_boundary() -> None:
     coupler.components = {"OCN": cast(Any, veros)}
     coupler.run_sequence = RunSequence(order=["OCN"])
 
-    with pytest.raises(ComponentError, match="JAXGCM"):
+    assert isinstance(veros.data["sea_surface_temperature"], jax.Array)
+    with pytest.raises(ComponentError, match="VerosGCM.*non-differentiable"):
         coupler.run_differentiable()
 
 
@@ -1405,6 +1484,64 @@ def test_run_differentiable_validates_missing_source_fields_before_scan() -> Non
     state = state.set_component_state(ocean)
 
     with pytest.raises(CouplerError, match="source field"):
+        coupler.run_differentiable(state)
+
+
+def test_run_differentiable_validates_missing_slab_required_data_before_scan() -> None:
+    coupler = _make_coupler(steps=1)
+    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    atmosphere = state.get_component_state("ATM")
+    atmosphere = atmosphere.with_data(
+        _without_store_field(atmosphere.data, "temperature_2m")
+    )
+    state = state.set_component_state(atmosphere)
+
+    with pytest.raises(CouplerError, match="required data field 'temperature_2m'"):
+        coupler.run_differentiable(state)
+
+
+def test_run_differentiable_validates_missing_import_data_before_scan() -> None:
+    coupler = _make_coupler(steps=1)
+    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    atmosphere = state.get_component_state("ATM")
+    atmosphere = atmosphere.with_data(
+        _without_store_field(atmosphere.data, "sea_surface_temperature")
+    )
+    state = state.set_component_state(atmosphere)
+
+    with pytest.raises(
+        CouplerError, match="required data field 'sea_surface_temperature'"
+    ):
+        coupler.run_differentiable(state)
+
+
+def test_run_differentiable_validates_missing_export_data_before_scan() -> None:
+    coupler = _make_coupler(steps=1)
+    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    land = state.get_component_state("LND")
+    land = land.with_data(_without_store_field(land.data, "land_surface_temperature"))
+    state = state.set_component_state(land)
+
+    with pytest.raises(
+        CouplerError, match="required data field 'land_surface_temperature'"
+    ):
+        coupler.run_differentiable(state)
+
+
+def test_run_differentiable_validates_missing_jax_gcm_preseed_before_scan() -> None:
+    grid = make_test_grid(name="jcm-missing-preseed")
+    component = _make_jax_gcm_component(grid)
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": component}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+    state = coupler.create_differentiable_state()
+    atmosphere = state.get_component_state("ATM")
+    atmosphere = atmosphere.with_data(_without_store_field(atmosphere.data, "pressure"))
+    state = state.set_component_state(atmosphere)
+
+    with pytest.raises(CouplerError, match="required data field 'pressure'"):
         coupler.run_differentiable(state)
 
 

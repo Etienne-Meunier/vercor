@@ -426,6 +426,87 @@ class Coupler:
                 f"has shape {field_shape}, expected {expected_shape}"
             )
 
+    def _validate_runtime_data_field_exists(
+        self,
+        component_name: str,
+        component_state: RuntimeComponentState,
+        field_name: str,
+    ) -> None:
+        if field_name not in component_state.data.field_names:
+            raise CouplerError(
+                "Differentiable runtime missing required data field "
+                f"'{field_name}' for component '{component_name}'"
+            )
+
+    def _validate_runtime_grid_data_field(
+        self,
+        component_name: str,
+        component_state: RuntimeComponentState,
+        field_name: str,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        self._validate_runtime_data_field_exists(
+            component_name, component_state, field_name
+        )
+        self._validate_runtime_store_field(
+            component_name,
+            component_state.data,
+            field_name,
+            "required data",
+            expected_shape,
+        )
+
+    def _validate_slab_runtime_state(
+        self,
+        component_name: str,
+        component_state: RuntimeComponentState,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        required_by_class = {
+            "Atmosphere": (
+                "temperature_2m",
+                "sensible_heat_flux",
+                "latent_heat_flux",
+                "u_velocity_10m",
+                "v_velocity_10m",
+            ),
+            "Ocean": ("sea_surface_temperature",),
+            "Land": ("soil_moisture",),
+            "SeaIce": ("ice_fraction", "sea_surface_temperature"),
+        }
+        required_fields = required_by_class.get(
+            self.components[component_name].__class__.__name__,
+            (),
+        )
+        for field_name in required_fields:
+            self._validate_runtime_grid_data_field(
+                component_name,
+                component_state,
+                field_name,
+                expected_shape,
+            )
+
+    def _validate_data_runtime_state(
+        self,
+        component_name: str,
+        component_state: RuntimeComponentState,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        if self.components[component_name].__class__.__name__ != "ERA5Atmosphere":
+            return
+
+        for field_name in (
+            "land_surface_temperature",
+            "sea_surface_temperature",
+            "total_surface_temperature",
+        ):
+            self._validate_runtime_grid_data_field(
+                component_name,
+                component_state,
+                field_name,
+                expected_shape,
+            )
+
     def _is_jax_gcm_component(self, component: AllComponentsType) -> bool:
         return (
             component.__class__.__module__,
@@ -442,6 +523,76 @@ class Coupler:
                 "Differentiable JAXGCM runtime requires an initialized immutable "
                 f"runtime payload for component '{component_name}'"
             )
+
+    def _validate_jax_gcm_runtime_state(
+        self,
+        component_name: str,
+        component_state: RuntimeComponentState,
+        expected_shape: tuple[int, int],
+    ) -> None:
+        self._validate_jax_gcm_runtime_payload(component_name, component_state)
+        component = cast(Any, self.components[component_name])
+        sigma_levels = jnp.asarray(component.sigma_levels)
+        grid_fields = (
+            "land_surface_temperature",
+            "sea_surface_temperature",
+            "total_surface_temperature",
+            "u_velocity",
+            "v_velocity",
+            "temperature",
+            "specific_humidity",
+            "sensible_heat_flux",
+            "latent_heat_flux",
+            "net_shortwave_radiation_flux",
+            "downward_longwave_radiation_flux",
+            "density",
+            "potential_temperature",
+            "model_level_height",
+        )
+        for field_name in grid_fields:
+            self._validate_runtime_grid_data_field(
+                component_name,
+                component_state,
+                field_name,
+                expected_shape,
+            )
+
+        self._validate_runtime_data_field_exists(
+            component_name, component_state, "pressure"
+        )
+        pressure_shape = jnp.asarray(component_state.data.get("pressure")).shape
+        expected_pressure_shape = (sigma_levels.shape[0], *expected_shape)
+        if pressure_shape != expected_pressure_shape:
+            raise CouplerError(
+                "Differentiable runtime required data field 'pressure' "
+                f"for component '{component_name}' has shape {pressure_shape}, "
+                f"expected {expected_pressure_shape}"
+            )
+
+    def _unsupported_differentiable_component_error(
+        self,
+        component_name: str,
+        component: AllComponentsType,
+    ) -> ComponentError:
+        class_name = component.__class__.__name__
+        module_name = component.__class__.__module__
+        if class_name.startswith("CAMulator") or "camulator" in module_name:
+            return ComponentError(
+                "CAMulator components are explicit non-differentiable host/runtime "
+                "boundaries and cannot be used with run_differentiable "
+                f"(got {class_name} for component '{component_name}')"
+            )
+        if class_name == "VerosGCM":
+            return ComponentError(
+                "VerosGCM is an explicit non-differentiable host/runtime boundary "
+                "and cannot be used with run_differentiable "
+                f"(got {class_name} for component '{component_name}')"
+            )
+        return ComponentError(
+            "Differentiable runtime currently supports VerCOR slab components, "
+            "pure data-forcing components, and JAXGCM "
+            f"(got {class_name} for component '{component_name}')"
+        )
 
     def _runtime_step_info_from_times(
         self,
@@ -551,23 +702,48 @@ class Coupler:
 
             component = self.components[cname]
             if not is_supported_differentiable_component(component):
-                raise ComponentError(
-                    "Differentiable runtime currently supports VerCOR slab components "
-                    "pure data-forcing components, and JAXGCM "
-                    f"(got {component.__class__.__name__} for component '{cname}')"
-                )
+                raise self._unsupported_differentiable_component_error(cname, component)
             component_state = runtime_state.get_component_state(cname)
             if self._is_jax_gcm_component(component):
-                self._validate_jax_gcm_runtime_payload(cname, component_state)
-            if (
-                component.__class__.__name__ == "ERA5Atmosphere"
-                and "total_surface_temperature" not in component_state.data.field_names
-            ):
-                raise CouplerError(
-                    "Differentiable runtime missing data field "
-                    f"'total_surface_temperature' for component '{cname}'"
+                self._validate_jax_gcm_runtime_state(
+                    cname, component_state, component.grid.shape
+                )
+            elif component.__class__.__module__.startswith("vercor.components.slab."):
+                self._validate_slab_runtime_state(
+                    cname, component_state, component.grid.shape
+                )
+            else:
+                self._validate_data_runtime_state(
+                    cname, component_state, component.grid.shape
+                )
+            for field_name in component_state.fields_to_import:
+                self._validate_runtime_store_field(
+                    cname,
+                    component_state.incoming,
+                    field_name,
+                    "imported incoming",
+                    component.grid.shape,
+                )
+                self._validate_runtime_grid_data_field(
+                    cname,
+                    component_state,
+                    field_name,
+                    component.grid.shape,
                 )
             for field_name in component_state.fields_to_export:
+                self._validate_runtime_data_field_exists(
+                    cname,
+                    component_state,
+                    field_name,
+                )
+                if component.__class__.__module__.startswith("vercor.components.slab."):
+                    self._validate_runtime_store_field(
+                        cname,
+                        component_state.data,
+                        field_name,
+                        "exported data",
+                        component.grid.shape,
+                    )
                 self._validate_runtime_store_field(
                     cname,
                     component_state.outgoing,
@@ -575,15 +751,6 @@ class Coupler:
                     "exported source",
                     component.grid.shape,
                 )
-            if component.__class__.__module__.startswith("vercor.components.slab."):
-                for field_name in component_state.data.field_names:
-                    self._validate_runtime_store_field(
-                        cname,
-                        component_state.data,
-                        field_name,
-                        "data",
-                        component.grid.shape,
-                    )
             for field_name in component_state.incoming.field_names:
                 self._validate_runtime_store_field(
                     cname,
