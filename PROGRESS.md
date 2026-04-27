@@ -1542,3 +1542,53 @@
 
 - The first new regression test asserted the full example-driver wind imports against the smaller existing slab test helper, which only imports heat fluxes into `OCN`; the final assertion uses the helper's actual imported fields while preserving the same missing-prefill failure mode.
 - The first full-suite run exposed that the wrapper-run coverage test was still expecting no startup priming. The test now records the intentional initial `send_runtime_fields()` priming events before step dispatch.
+
+## Unified Runtime Test Audit and Cleanup
+
+- Audited `tests/` against the current canonical runtime API:
+  - `Coupler.run(...)`
+  - `Coupler.create_runtime_state(...)`
+  - `Component.step_runtime_state(...)`
+  - `Component.receive_runtime_fields(...)`
+  - `Component.send_runtime_fields(...)`
+- Confirmed removed wrapper-era APIs are referenced only by negative regression guards:
+  - `run_differentiable`
+  - `create_differentiable_state`
+  - `interpolate_and_dispatch_fields`
+  - `import_fields`
+  - `export_fields`
+  - `receive_component_fields`
+  - `send_component_fields`
+  - `step_component_state`
+  - `step_slab_component_state`
+  - `is_supported_differentiable_component`
+- Rechecked patched external-component tests that construct components through `__new__()`:
+  - host-backed Veros and CAMulator boundary tests now call `step_runtime_state()` with explicit `RuntimeComponentState` objects where they exercise runtime behavior
+  - remaining direct `step()` tests cover the current compatibility wrapper, not removed APIs
+- No stale behavior tests were found, so no unit tests were removed.
+- Confirmed the production NumPy-boundary audit still limits direct NumPy imports to explicit host/type/output boundary modules:
+  - `vercor/components/base.py`
+  - `vercor/tools.py`
+  - `vercor/types.py`
+
+## Validation (Unified Runtime Test Audit and Cleanup, 2026-04-27)
+
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ --collect-only -q`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully and left 83 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed after lint/type checks
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Unified Runtime Test Audit and Cleanup)
+
+- No failed implementation approaches. The audit found only intentional absence guards for removed APIs, so deleting tests would have weakened regression coverage rather than removing stale behavior coverage.
