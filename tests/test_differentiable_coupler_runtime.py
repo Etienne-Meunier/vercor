@@ -627,10 +627,10 @@ def test_run_differentiable_matches_one_step_closed_form_for_slab_ocean() -> Non
 def test_initialized_slab_coupler_creates_jittable_differentiable_state() -> None:
     coupler = _make_initialized_slab_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
-    initial_state = _with_ocean_sst(
-        coupler.create_differentiable_state(),
-        initial_sst,
-    )
+    canonical_state = coupler.create_runtime_state()
+    compatibility_state = coupler.create_differentiable_state()
+    assert compatibility_state.component_names == canonical_state.component_names
+    initial_state = _with_ocean_sst(canonical_state, initial_sst)
 
     final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
         initial_state

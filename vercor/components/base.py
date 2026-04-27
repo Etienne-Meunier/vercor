@@ -14,11 +14,7 @@ from vercor.clock import ModelDateTime, CustomDateTime
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.settings import ComponentSettings
-from vercor.tools import (
-    _runtime_array_to_host,
-    get_field_at_specific_time,
-    get_field_time_slice,
-)
+from vercor.tools import _runtime_array_to_host
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
 from vercor.types import RuntimeArray
 
@@ -434,25 +430,17 @@ class Component(abc.ABC):
 
         from vercor.runtime import send_component_fields
 
-        if hasattr(coupler, "_scalar_runtime_step_info"):
-            step_info = coupler._scalar_runtime_step_info(time)
-            component_state = send_component_fields(
-                self.to_runtime_component_state(),
-                self,
-                step_info,
-            )
-            self.commit_runtime_state(component_state, time)
-            return
-
-        for fld in self._fields2export:
-            if self.settings.apply_time_interpolation:
-                field2send = get_field_at_specific_time(fld, self.data, coupler)
-            elif self.settings.get_field_time_slice:
-                field2send = get_field_time_slice(fld, self.data, time)
-            else:
-                field2send = self.data[fld]
-
-            self.outgoing_fields[fld] = (field2send, time, self.name)
+        step_info = (
+            coupler._scalar_runtime_step_info(time)
+            if hasattr(coupler, "_scalar_runtime_step_info")
+            else None
+        )
+        component_state = send_component_fields(
+            self.to_runtime_component_state(),
+            self,
+            step_info,
+        )
+        self.commit_runtime_state(component_state, time)
 
     def check_valid_exchange_field_names(self) -> None:
         for fld in set(self._fields2import + self._fields2export):

@@ -1340,3 +1340,38 @@
 ## Notes / Failed Approaches (Slice 16A)
 
 - The first runtime-interface type pass broadened `Component.step()` to `CustomDateTime`, which made external component overrides appear too narrow to `mypy`. The final interface uses `datetime | ModelDateTime`, while component methods that accept `CustomDateTime` remain valid broader overrides.
+
+## Sixteenth JAX Translation Slice 16B: Runtime Compatibility API Cleanup
+
+- Completed the follow-up unified runtime cleanup:
+  - added canonical `Coupler.create_runtime_state(prefill_missing=True)`
+  - kept `create_differentiable_state()` and `run_differentiable()` as compatibility aliases over the unified runtime path
+  - made `Coupler.run()` return the final `RuntimeCouplerState` while preserving wrapper commits on the host path
+  - replaced `interpolate_and_dispatch_fields()` internals with runtime exchange dispatch plus a wrapper-field commit
+- Removed remaining duplicated compatibility helpers:
+  - deleted stale slab/data runtime validators from `vercor/coupler.py`
+  - deleted `is_supported_differentiable_component()` and `step_slab_component_state()` from `vercor/runtime.py`
+  - removed no-op CAMulatorGCM and VerosGCM `step_runtime_state()` overrides so both use the shared base host-boundary implementation
+  - removed the old non-runtime `Component.send_fields()` interpolation/time-slice fallback
+- Updated tests so compatibility methods are checked as runtime delegates, while `create_runtime_state()` is covered as the canonical state factory.
+- `DEPENDENCIES.md` did not require changes because no new module-level dependency edge was introduced.
+
+## Validation (Slice 16B, 2026-04-27)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_differentiable_coupler_runtime.py tests/test_coupler_coverage.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 16B)
+
+- An intermediate lint run caught a stale unused `Any` import in `vercor/components/external/camulator.py` after removing its no-op runtime override. The import was removed and flake8 then reported `0`.

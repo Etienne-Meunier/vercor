@@ -10,7 +10,6 @@ import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
 from vercor.components import Shared
-from vercor.components import TimedNamedArray as TNA
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -420,57 +419,6 @@ class Coupler:
             expected_shape,
         )
 
-    def _validate_slab_runtime_state(
-        self,
-        component_name: str,
-        component_state: RuntimeComponentState,
-        expected_shape: tuple[int, int],
-    ) -> None:
-        required_by_class = {
-            "Atmosphere": (
-                "temperature_2m",
-                "sensible_heat_flux",
-                "latent_heat_flux",
-                "u_velocity_10m",
-                "v_velocity_10m",
-            ),
-            "Ocean": ("sea_surface_temperature",),
-            "Land": ("soil_moisture",),
-            "SeaIce": ("ice_fraction", "sea_surface_temperature"),
-        }
-        required_fields = required_by_class.get(
-            self.components[component_name].__class__.__name__,
-            (),
-        )
-        for field_name in required_fields:
-            self._validate_runtime_grid_data_field(
-                component_name,
-                component_state,
-                field_name,
-                expected_shape,
-            )
-
-    def _validate_data_runtime_state(
-        self,
-        component_name: str,
-        component_state: RuntimeComponentState,
-        expected_shape: tuple[int, int],
-    ) -> None:
-        if self.components[component_name].__class__.__name__ != "ERA5Atmosphere":
-            return
-
-        for field_name in (
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-        ):
-            self._validate_runtime_grid_data_field(
-                component_name,
-                component_state,
-                field_name,
-                expected_shape,
-            )
-
     def _runtime_step_info_from_times(
         self,
         times: list[datetime | ModelDateTime],
@@ -552,9 +500,7 @@ class Coupler:
             runtime_state = runtime_state.set_component_state(component_state)
         return runtime_state
 
-    def _validate_differentiable_runtime(
-        self, runtime_state: RuntimeCouplerState
-    ) -> None:
+    def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
         if not hasattr(self, "run_sequence"):
             raise CouplerError("Runtime requires a configured component run sequence")
 
@@ -663,18 +609,25 @@ class Coupler:
                     source_shape,
                 )
 
-    def create_differentiable_state(
+    def create_runtime_state(
         self, *, prefill_missing: bool = True
     ) -> RuntimeCouplerState:
-        """Create and validate the immutable state used by ``run_differentiable``."""
+        """Create and validate the immutable state used by the unified runtime."""
 
         runtime_state = self._runtime_state_from_components(
             prefill_missing=prefill_missing
         )
-        if hasattr(self, "run_sequence"):
+        if prefill_missing and hasattr(self, "run_sequence"):
             runtime_state = self._prime_differentiable_runtime_outgoing(runtime_state)
-        self._validate_differentiable_runtime(runtime_state)
+        self._validate_runtime_state(runtime_state)
         return runtime_state
+
+    def create_differentiable_state(
+        self, *, prefill_missing: bool = True
+    ) -> RuntimeCouplerState:
+        """Compatibility alias for ``create_runtime_state``."""
+
+        return self.create_runtime_state(prefill_missing=prefill_missing)
 
     def _scalar_runtime_step_info(
         self,
@@ -721,6 +674,49 @@ class Coupler:
             self.components[component_name].commit_runtime_state(component_state, time)
 
         return runtime_state
+
+    def _dispatch_runtime_fields(
+        self,
+        runtime_state: RuntimeCouplerState,
+        component_name: str,
+    ) -> RuntimeCouplerState:
+        """Return ``runtime_state`` with exchanges dispatched to one component."""
+
+        return dispatch_component_exchanges(
+            runtime_state,
+            component_name,
+            self.exchanges,
+            self._regridders,
+        )
+
+    def _commit_runtime_incoming_fields(
+        self,
+        component: AllComponentsType,
+        component_state: RuntimeComponentState,
+        timestamp: datetime | ModelDateTime,
+    ) -> None:
+        """Copy runtime-dispatched incoming fields into a legacy component wrapper."""
+
+        source_by_field: dict[str, str] = {}
+        for exchange in self.exchanges:
+            if exchange.destination != component.name:
+                continue
+            for field_name in _flatten_fields(exchange.field_names):
+                source_by_field[field_name] = exchange.source
+
+        destination_fields = Shared()
+        for field_name, field_value in component_state.incoming.to_mapping().items():
+            destination_fields[field_name] = (
+                field_value,
+                timestamp,
+                source_by_field.get(field_name, component.name),
+            )
+
+        if not destination_fields.is_empty:
+            component.import_fields(destination_fields)
+            self.logger.debug(
+                f" Exchanged {destination_fields.field_names}" f" to {component.name}"
+            )
 
     def append_masks_to_output(
         self,
@@ -774,55 +770,12 @@ class Coupler:
 
             self.logger.info(f" Exchange fields: {exchange.name}")
 
-        runtime_state = self._runtime_state_from_components(prefill_missing=True)
-        runtime_state = dispatch_component_exchanges(
-            runtime_state,
+        runtime_state = self._dispatch_runtime_fields(
+            self._runtime_state_from_components(prefill_missing=True),
             component.name,
-            self.exchanges,
-            self._regridders,
         )
         destination_state = runtime_state.get_component_state(component.name)
-        destination_fields = Shared()
-
-        for exchange in self.exchanges:
-            if exchange.destination != component.name:
-                continue
-            for field_name in exchange.field_names:
-                if isinstance(field_name, tuple):
-                    setattr(
-                        destination_fields,
-                        field_name[0],
-                        TNA(
-                            destination_state.incoming.get(field_name[0]),
-                            timestamp,
-                            exchange.source,
-                        ),
-                    )
-                    setattr(
-                        destination_fields,
-                        field_name[1],
-                        TNA(
-                            destination_state.incoming.get(field_name[1]),
-                            timestamp,
-                            exchange.source,
-                        ),
-                    )
-                else:
-                    setattr(
-                        destination_fields,
-                        field_name,
-                        TNA(
-                            destination_state.incoming.get(field_name),
-                            timestamp,
-                            exchange.source,
-                        ),
-                    )
-
-        if not destination_fields.is_empty:
-            component.import_fields(destination_fields)
-            self.logger.debug(
-                f" Exchanged {destination_fields.field_names}" f" to {component.name}"
-            )
+        self._commit_runtime_incoming_fields(component, destination_state, timestamp)
 
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
         """
@@ -854,7 +807,7 @@ class Coupler:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={' -> '.join(self.run_sequence)})"
 
-    def run(self) -> None:
+    def run(self) -> RuntimeCouplerState:
         """
         Run the coupler and all registered components according to the run sequence.
         """
@@ -868,8 +821,7 @@ class Coupler:
                     f"Component {cname} outgoing fields were not initialized properly."
                 )
 
-        runtime_state = self._runtime_state_from_components(prefill_missing=False)
-        self._validate_differentiable_runtime(runtime_state)
+        runtime_state = self.create_runtime_state(prefill_missing=False)
 
         for n, time, dt in self.clock.iter():
             self.logger.info(
@@ -886,17 +838,19 @@ class Coupler:
                     time=time,
                 )
 
-    def run_differentiable(
+        return runtime_state
+
+    def _run_scanned_runtime(
         self, initial_state: RuntimeCouplerState | None = None
     ) -> RuntimeCouplerState:
         """Run the unified runtime path under ``jax.lax.scan`` and return state."""
 
         runtime_state = (
-            self.create_differentiable_state(prefill_missing=True)
+            self.create_runtime_state(prefill_missing=True)
             if initial_state is None
             else initial_state
         )
-        self._validate_differentiable_runtime(runtime_state)
+        self._validate_runtime_state(runtime_state)
         step_infos = self._build_differentiable_step_info()
 
         def step_all_components(
@@ -917,3 +871,10 @@ class Coupler:
             length=self.clock.steps,
         )
         return final_state
+
+    def run_differentiable(
+        self, initial_state: RuntimeCouplerState | None = None
+    ) -> RuntimeCouplerState:
+        """Compatibility alias for the scanned unified runtime."""
+
+        return self._run_scanned_runtime(initial_state)

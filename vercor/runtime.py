@@ -17,17 +17,6 @@ def exchange_key_name(source: str, destination: str, interpolation_type: str) ->
     return f"{source}|{destination}|{interpolation_type}"
 
 
-def is_supported_differentiable_component(component: Any) -> bool:
-    """Return whether ``component`` exposes the unified runtime interface."""
-
-    return hasattr(component, "step_runtime_state")
-
-
-def _is_slab_component(component: Any) -> bool:
-    module_name: str = component.__class__.__module__
-    return module_name.startswith("vercor.components.slab.")
-
-
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class RuntimeStepInfo:
@@ -466,20 +455,3 @@ def step_component_state(
             coupler=coupler,
         ),
     )
-
-
-def step_slab_component_state(
-    component: Any,
-    component_state: RuntimeComponentState,
-    dt_seconds: float,
-) -> RuntimeComponentState:
-    """Return a stepped slab component state.
-
-    This compatibility wrapper delegates to ``step_component_state``.
-    """
-
-    if not _is_slab_component(component):
-        raise NotImplementedError(
-            "Runtime slab compatibility wrapper supports VerCOR slab components only"
-        )
-    return step_component_state(component, component_state, dt_seconds)

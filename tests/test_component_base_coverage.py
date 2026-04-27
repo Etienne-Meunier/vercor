@@ -13,14 +13,15 @@ import xarray as xr
 import vercor.components.base as base_module
 from tests._coverage_support import CoverageCouplerStub, DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.clock import Clock
 from vercor.components.base import (
     ComponentForcingData,
     Shared,
     TimedNamedArray,
     write_shared_to_netcdf,
 )
+from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError
-from vercor.types import RuntimeArray
 
 
 @pytest.mark.fast_always
@@ -169,9 +170,7 @@ def test_component_validation_and_timestamp_mismatch() -> None:
         component.get("missing")
 
 
-def test_send_fields_uses_expected_data_source(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_send_fields_delegates_to_runtime_sender() -> None:
     grid = make_test_grid()
     component = DummyComponent(name="ATM", grid=grid)
     coupler = CoverageCouplerStub()
@@ -186,44 +185,32 @@ def test_send_fields_uses_expected_data_source(
     )
     assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
-    def fake_interpolate(
-        field_name: str,
-        data: dict[str, RuntimeArray],
-        coupler_like: Any,
-        current_time: datetime | None = None,
-    ) -> RuntimeArray:
-        assert field_name == "temperature"
-        assert current_time is None
-        return jnp.full(grid.shape, 2.0)
-
-    def fake_time_slice(
-        field_name: str,
-        data: dict[str, RuntimeArray],
-        time: datetime,
-        no_leap: bool = True,
-    ) -> RuntimeArray:
-        assert field_name == "temperature"
-        assert no_leap
-        return jnp.full(grid.shape, 3.0)
-
-    monkeypatch.setattr(base_module, "get_field_at_specific_time", fake_interpolate)
-    monkeypatch.setattr(base_module, "get_field_time_slice", fake_time_slice)
-
+    runtime_coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    monthly = jnp.zeros((*grid.shape, 12), dtype=jnp.float64)
+    monthly = monthly.at[:, :, 0].set(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
     component.settings.apply_time_interpolation = True
     component.settings.get_field_time_slice = False
-    component.send_fields(timestamp, cast(Any, coupler))
+    component.data["temperature"] = monthly
+    component.send_fields(timestamp, cast(Any, runtime_coupler))
     assert_allclose_compact(
         component.outgoing_fields.temperature.data,
-        np.full(grid.shape, 2.0),
+        np.asarray(monthly[:, :, 0]).T,
     )
     assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
+    runtime_coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1)
+    )
+    daily = jnp.arange(5 * 2 * 2, dtype=jnp.float64).reshape((5, *grid.shape))
     component.settings.apply_time_interpolation = False
     component.settings.get_field_time_slice = True
-    component.send_fields(timestamp, cast(Any, coupler))
+    component.data["temperature"] = daily
+    component.send_fields(runtime_coupler.clock.start, cast(Any, runtime_coupler))
     assert_allclose_compact(
         component.outgoing_fields.temperature.data,
-        np.full(grid.shape, 3.0),
+        np.asarray(daily[2]),
     )
     assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
