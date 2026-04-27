@@ -414,7 +414,7 @@ def test_append_masks_to_output_appends_destination_exchange_masks() -> None:
     assert shared.component_names()["fmask_LND_ATM_bilinear"] == "ATM"
 
 
-def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> None:
+def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     coupler = make_coupler()
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
@@ -469,7 +469,16 @@ def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> No
         ("OCN", "ATM", "conservative"): np.ones((2, 2)),
     }
 
-    coupler.interpolate_and_dispatch_fields(cast(Any, destination), timestamp)
+    runtime_state = coupler._dispatch_runtime_fields(
+        coupler._runtime_state_from_components(prefill_missing=True),
+        "ATM",
+    )
+    destination_state = runtime_state.get_component_state("ATM")
+    coupler._commit_runtime_incoming_fields(
+        cast(Any, destination),
+        destination_state,
+        timestamp,
+    )
 
     assert_allclose_compact(
         destination.incoming_fields.temperature.data,
@@ -486,7 +495,7 @@ def test_interpolate_and_dispatch_fields_handles_scalar_and_vector_paths() -> No
     )
 
 
-def test_interpolate_and_dispatch_fields_accepts_mixed_numpy_and_jax_arrays() -> None:
+def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     coupler = make_coupler()
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
@@ -518,7 +527,16 @@ def test_interpolate_and_dispatch_fields_accepts_mixed_numpy_and_jax_arrays() ->
         ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
     }
 
-    coupler.interpolate_and_dispatch_fields(cast(Any, destination), timestamp)
+    runtime_state = coupler._dispatch_runtime_fields(
+        coupler._runtime_state_from_components(prefill_missing=True),
+        "ATM",
+    )
+    destination_state = runtime_state.get_component_state("ATM")
+    coupler._commit_runtime_incoming_fields(
+        cast(Any, destination),
+        destination_state,
+        timestamp,
+    )
 
     assert isinstance(destination.incoming_fields.temperature.data, jax.Array)
     assert_allclose_compact(
@@ -527,9 +545,7 @@ def test_interpolate_and_dispatch_fields_accepts_mixed_numpy_and_jax_arrays() ->
     )
 
 
-def test_interpolate_and_dispatch_fields_rejects_missing_scalar_and_vector_fields() -> (
-    None
-):
+def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> None:
     coupler = make_coupler()
     timestamp = coupler.clock.start
 
@@ -550,8 +566,9 @@ def test_interpolate_and_dispatch_fields_rejects_missing_scalar_and_vector_field
     coupler._fractional_masks = {("OCN", "ATM", "bilinear"): np.ones((2, 2))}
 
     with pytest.raises(ExchangerError, match="Field temperature not present"):
-        coupler.interpolate_and_dispatch_fields(
-            cast(Any, scalar_destination), timestamp
+        coupler._dispatch_runtime_fields(
+            coupler._runtime_state_from_components(prefill_missing=True),
+            scalar_destination.name,
         )
 
     vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
@@ -580,8 +597,9 @@ def test_interpolate_and_dispatch_fields_rejects_missing_scalar_and_vector_field
     coupler._fractional_masks = {("OCN", "ATM", "conservative"): np.ones((2, 2))}
 
     with pytest.raises(ExchangerError, match="Not all fields in vector"):
-        coupler.interpolate_and_dispatch_fields(
-            cast(Any, vector_destination), timestamp
+        coupler._dispatch_runtime_fields(
+            coupler._runtime_state_from_components(prefill_missing=True),
+            vector_destination.name,
         )
 
 
@@ -652,18 +670,19 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         events.append(f"dispatch:{component_name}")
         return state
 
-    def fake_receive(component_state: Any) -> Any:
+    def fake_receive(component: Any, component_state: Any) -> Any:
+        _ = component
         events.append(f"receive:{component_state.name}")
         return component_state
 
-    def fake_send(component_state: Any, *args: Any) -> Any:
-        _ = args
+    def fake_send(component: Any, component_state: Any, *args: Any) -> Any:
+        _ = component, args
         events.append(f"send:{component_state.name}")
         return component_state
 
     monkeypatch.setattr("vercor.coupler.dispatch_component_exchanges", fake_dispatch)
-    monkeypatch.setattr("vercor.coupler.receive_component_fields", fake_receive)
-    monkeypatch.setattr("vercor.coupler.send_component_fields", fake_send)
+    monkeypatch.setattr(_RunComponent, "receive_runtime_fields", fake_receive)
+    monkeypatch.setattr(_RunComponent, "send_runtime_fields", fake_send)
 
     coupler.run()
 
@@ -679,10 +698,14 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     ]
 
 
-def test_run_and_differentiable_alias_use_runtime_component_helper(
+def test_host_and_scanned_run_use_runtime_component_helper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = make_coupler()
+    assert not hasattr(coupler, "run_differentiable")
+    assert not hasattr(coupler, "create_differentiable_state")
+    assert not hasattr(coupler, "interpolate_and_dispatch_fields")
+
     timestamp = coupler.clock.start
     atmosphere = _RunComponent("ATM", [], timestamp)
     ocean = _RunComponent("OCN", [], timestamp)
@@ -709,7 +732,7 @@ def test_run_and_differentiable_alias_use_runtime_component_helper(
     run_events = list(events)
     events.clear()
 
-    coupler.run_differentiable()
+    coupler.run(commit_wrappers=False)
 
     assert run_events == ["run:ATM", "run:OCN"]
     assert events == ["scan:ATM", "scan:OCN"]

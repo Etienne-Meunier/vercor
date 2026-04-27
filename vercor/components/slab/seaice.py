@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
+from vercor.clock import ModelDateTime
 from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
@@ -38,14 +38,17 @@ class SeaIce(Component):
     def step(
         self,
         dt: timedelta,
-        time: datetime | CustomDateTime,
+        time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-        sst = self.data.get("sea_surface_temperature", None)
-        if sst is None:
-            return
-
-        self.data["ice_fraction"] = _diagnose_ice_fraction(sst)
+        component_state = self.step_runtime_state(
+            self.to_runtime_component_state(prefill_missing=True),
+            float(dt.total_seconds()),
+            coupler.settings,
+            time=time,
+            coupler=coupler,
+        )
+        self.commit_runtime_state(component_state, time)
 
     def validate_runtime_state(
         self,
@@ -68,13 +71,16 @@ class SeaIce(Component):
         dt_seconds: float,
         runtime_settings: Any | None = None,
         *,
-        time: datetime | CustomDateTime | None = None,
+        time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
         """Diagnose slab sea-ice fraction on immutable runtime state."""
 
         _ = dt_seconds, runtime_settings, time, coupler
         data = component_state.data
-        sea_surface_temperature = data.get("sea_surface_temperature")
+        try:
+            sea_surface_temperature = data.get("sea_surface_temperature")
+        except KeyError:
+            return component_state
         ice_fraction = _diagnose_ice_fraction(sea_surface_temperature)
         return component_state.with_data(data.set("ice_fraction", ice_fraction))

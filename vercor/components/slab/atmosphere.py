@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
+from vercor.clock import ModelDateTime
 from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
@@ -77,29 +77,17 @@ class Atmosphere(Component):
     def step(
         self,
         dt: timedelta,
-        time: datetime | CustomDateTime,
+        time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-        sst = self.data.get("sea_surface_temperature", None)
-        temperature_2m = jnp.asarray(self.data["temperature_2m"], dtype=jnp.float64)
-
-        if sst is None:
-            sst_array = _default_sea_surface_temperature(temperature_2m)
-        else:
-            sst_array = jnp.asarray(sst, dtype=jnp.float64)
-
-        sensible_heat_flux, latent_heat_flux, updated_temperature_2m = _bulk_flux_step(
-            temperature_2m, sst_array
+        component_state = self.step_runtime_state(
+            self.to_runtime_component_state(prefill_missing=True),
+            float(dt.total_seconds()),
+            coupler.settings,
+            time=time,
+            coupler=coupler,
         )
-        u_velocity_10m, v_velocity_10m = _surface_wind_10m(
-            self.grid.latitude, self.grid.longitude
-        )
-
-        self.data["u_velocity_10m"] = u_velocity_10m
-        self.data["v_velocity_10m"] = v_velocity_10m
-        self.data["sensible_heat_flux"] = sensible_heat_flux
-        self.data["latent_heat_flux"] = latent_heat_flux
-        self.data["temperature_2m"] = updated_temperature_2m
+        self.commit_runtime_state(component_state, time)
 
     def validate_runtime_state(
         self,
@@ -128,7 +116,7 @@ class Atmosphere(Component):
         dt_seconds: float,
         runtime_settings: Any | None = None,
         *,
-        time: datetime | CustomDateTime | None = None,
+        time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
         """Advance the slab atmosphere on immutable runtime state."""

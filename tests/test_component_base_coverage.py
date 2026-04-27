@@ -91,7 +91,10 @@ def test_component_get_import_receive_merge_and_finalize(
     incoming["temperature"] = (jnp.ones(grid.shape), timestamp, "OCN")
     component.import_fields(incoming)
     component._fields2import = ["temperature"]
-    component.receive_fields(timestamp)
+    component_state = component.receive_runtime_fields(
+        component.to_runtime_component_state()
+    )
+    component.commit_runtime_state(component_state, timestamp)
 
     assert_allclose_compact(component.get("temperature"), np.ones(grid.shape))
     assert isinstance(component.get("temperature"), jax.Array)
@@ -161,7 +164,10 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
         datetime(2000, 1, 1, 1, 0, 0),
         "OCN",
     )
-    component.receive_fields(timestamp)
+    component_state = component.receive_runtime_fields(
+        component.to_runtime_component_state()
+    )
+    component.commit_runtime_state(component_state, timestamp)
     assert_allclose_compact(
         component.data["temperature"], np.ones(component.grid.shape)
     )
@@ -172,7 +178,7 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
         component.get("missing")
 
 
-def test_send_fields_delegates_to_runtime_sender() -> None:
+def test_send_runtime_fields_updates_outgoing_store() -> None:
     grid = make_test_grid()
     component = DummyComponent(name="ATM", grid=grid)
     coupler = CoverageCouplerStub()
@@ -180,7 +186,10 @@ def test_send_fields_delegates_to_runtime_sender() -> None:
     component._fields2export = ["temperature"]
     component.data["temperature"] = jnp.full(grid.shape, 1.0)
 
-    component.send_fields(timestamp, cast(Any, coupler))
+    component_state = component.send_runtime_fields(
+        component.to_runtime_component_state(),
+    )
+    component.commit_runtime_state(component_state, timestamp)
     assert_allclose_compact(
         component.outgoing_fields.temperature.data,
         np.full(grid.shape, 1.0),
@@ -195,7 +204,11 @@ def test_send_fields_delegates_to_runtime_sender() -> None:
     component.settings.apply_time_interpolation = True
     component.settings.get_field_time_slice = False
     component.data["temperature"] = monthly
-    component.send_fields(timestamp, cast(Any, runtime_coupler))
+    component_state = component.send_runtime_fields(
+        component.to_runtime_component_state(),
+        runtime_coupler._scalar_runtime_step_info(timestamp),
+    )
+    component.commit_runtime_state(component_state, timestamp)
     assert_allclose_compact(
         component.outgoing_fields.temperature.data,
         np.asarray(monthly[:, :, 0]).T,
@@ -209,7 +222,11 @@ def test_send_fields_delegates_to_runtime_sender() -> None:
     component.settings.apply_time_interpolation = False
     component.settings.get_field_time_slice = True
     component.data["temperature"] = daily
-    component.send_fields(runtime_coupler.clock.start, cast(Any, runtime_coupler))
+    component_state = component.send_runtime_fields(
+        component.to_runtime_component_state(),
+        runtime_coupler._scalar_runtime_step_info(runtime_coupler.clock.start),
+    )
+    component.commit_runtime_state(component_state, runtime_coupler.clock.start)
     assert_allclose_compact(
         component.outgoing_fields.temperature.data,
         np.asarray(daily[2]),

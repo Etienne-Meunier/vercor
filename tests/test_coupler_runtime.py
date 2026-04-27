@@ -576,12 +576,12 @@ def _without_store_field(
     return RuntimeFieldStore.from_mapping(values)
 
 
-def test_run_differentiable_supports_jit_grad_and_jvp() -> None:
+def test_run_supports_jit_grad_and_jvp() -> None:
     coupler = _make_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
     initial_state = _make_initial_state(initial_sst)
 
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     ocean_sst = final_state.get_component_state("OCN").data.get(
@@ -593,7 +593,7 @@ def test_run_differentiable_supports_jit_grad_and_jvp() -> None:
 
     def loss(sst: jax.Array) -> jax.Array:
         state = _make_initial_state(sst)
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("OCN").data.get("sea_surface_temperature")
         )
@@ -605,10 +605,13 @@ def test_run_differentiable_supports_jit_grad_and_jvp() -> None:
     assert np.isfinite(np.asarray(tangent))
 
 
-def test_run_differentiable_matches_one_step_closed_form_for_slab_ocean() -> None:
+def test_run_matches_one_step_closed_form_for_slab_ocean() -> None:
     coupler = _make_coupler(steps=1)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
-    final_state = coupler.run_differentiable(_make_initial_state(initial_sst))
+    final_state = coupler.run(
+        _make_initial_state(initial_sst),
+        commit_wrappers=False,
+    )
 
     ocean_sst = final_state.get_component_state("OCN").data.get(
         "sea_surface_temperature"
@@ -624,15 +627,15 @@ def test_run_differentiable_matches_one_step_closed_form_for_slab_ocean() -> Non
     assert_allclose_compact(ocean_sst, expected)
 
 
-def test_initialized_slab_coupler_creates_jittable_differentiable_state() -> None:
+def test_initialized_slab_coupler_creates_jittable_runtime_state() -> None:
     coupler = _make_initialized_slab_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
     canonical_state = coupler.create_runtime_state()
-    compatibility_state = coupler.create_differentiable_state()
-    assert compatibility_state.component_names == canonical_state.component_names
+    runtime_state_copy = coupler.create_runtime_state()
+    assert runtime_state_copy.component_names == canonical_state.component_names
     initial_state = _with_ocean_sst(canonical_state, initial_sst)
 
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     ocean_sst = final_state.get_component_state("OCN").data.get(
@@ -646,7 +649,7 @@ def test_initialized_slab_coupler_creates_jittable_differentiable_state() -> Non
 
     def loss(sea_surface_temperature: jax.Array) -> jax.Array:
         state = _with_ocean_sst(initial_state, sea_surface_temperature)
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("OCN").data.get("sea_surface_temperature")
         )
@@ -660,11 +663,11 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
     None
 ):
     coupler = _make_initialized_mixed_grid_slab_coupler(steps=2)
-    initial_state = coupler.create_differentiable_state()
+    initial_state = coupler.create_runtime_state()
     initial_sst = jnp.linspace(285.15, 287.15, 9, dtype=jnp.float64).reshape((3, 3))
     initial_state = _with_ocean_sst(initial_state, initial_sst)
 
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
 
@@ -687,7 +690,7 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
 
     def loss(sea_surface_temperature: jax.Array) -> jax.Array:
         state = _with_ocean_sst(initial_state, sea_surface_temperature)
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("OCN").data.get("sea_surface_temperature")
         )
@@ -700,7 +703,7 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
     assert np.isfinite(np.asarray(tangent))
 
 
-def test_data_forcing_components_run_inside_differentiable_runtime() -> None:
+def test_data_forcing_components_run_inside_runtime() -> None:
     grid = make_test_grid(name="forcing")
     monthly_ocean = jnp.zeros((2, 2, 12), dtype=jnp.float64)
     monthly_ocean = monthly_ocean.at[:, :, 0].set(
@@ -768,8 +771,8 @@ def test_data_forcing_components_run_inside_differentiable_runtime() -> None:
         key: jnp.ones(grid.shape, dtype=jnp.float64) for key in coupler._regridders
     }
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere = final_state.get_component_state("ATM")
@@ -785,7 +788,7 @@ def test_data_forcing_components_run_inside_differentiable_runtime() -> None:
         state = initial_state.set_component_state(
             ocean.with_data(ocean.data.set("sea_surface_temperature", ocean_forcing))
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("ATM").data.get("total_surface_temperature")
         )
@@ -844,8 +847,8 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
         "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
     }
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -921,8 +924,8 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         "sea_surface_temperature": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
     }
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -945,7 +948,7 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
                 ocean_state.data.set("sea_surface_temperature", ocean_forcing)
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("ATM").incoming.get("sea_surface_temperature")
         )
@@ -995,8 +998,8 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
     coupler._regridders = cast(Any, {key: bilinear(grid, grid)})
     coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -1017,7 +1020,7 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
                 land_state.data.set("land_surface_temperature", land_forcing)
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("ATM").data.get("total_surface_temperature")
         )
@@ -1072,8 +1075,8 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
     coupler._regridders = cast(Any, {key: _IdentityRegridder()})
     coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -1088,7 +1091,7 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
                 land_state.data.set("land_surface_temperature", land_forcing)
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("ATM").data.get("total_surface_temperature")
         )
@@ -1150,8 +1153,8 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         runtime_time,
     )
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -1167,7 +1170,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
                 land_state.data.set("land_surface_temperature", land_forcing)
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("ATM").data.get("total_surface_temperature")
         )
@@ -1226,8 +1229,8 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         n_rec=12,
     )
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -1248,7 +1251,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
                 ocean_state.data.set("sea_surface_temperature", ocean_forcing)
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(
             result.get_component_state("ATM").data.get("total_surface_temperature")
         )
@@ -1259,7 +1262,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     assert_allclose_compact(gradient[:, :, 1:11], np.zeros((2, 2, 10)))
 
 
-def test_jax_gcm_runs_inside_differentiable_runtime_under_jit_and_grad() -> None:
+def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     grid = make_test_grid(name="jcm-runtime")
     component = _make_jax_gcm_component(grid)
     original_state = component._state
@@ -1270,8 +1273,8 @@ def test_jax_gcm_runs_inside_differentiable_runtime_under_jit_and_grad() -> None
     coupler.components = {"ATM": component}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -1298,7 +1301,7 @@ def test_jax_gcm_runs_inside_differentiable_runtime_under_jit_and_grad() -> None
                 )
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(result.get_component_state("ATM").data.get("temperature"))
 
     gradient = jax.grad(loss)(jnp.full(grid.shape, 281.0, dtype=jnp.float64))
@@ -1338,8 +1341,8 @@ def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> N
     coupler._regridders = cast(Any, {key: _IdentityRegridder()})
     coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
 
-    initial_state = coupler.create_differentiable_state()
-    final_state = jax.jit(lambda state: coupler.run_differentiable(state))(
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler.run(state, commit_wrappers=False))(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
@@ -1360,7 +1363,7 @@ def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> N
                 ocean_state.data.set("sea_surface_temperature", forcing)
             )
         )
-        result = coupler.run_differentiable(state)
+        result = coupler.run(state, commit_wrappers=False)
         return jnp.sum(result.get_component_state("ATM").data.get("temperature"))
 
     gradient = jax.grad(loss)(sea_surface_temperature)
@@ -1387,28 +1390,28 @@ def test_jax_gcm_runtime_requires_initialized_payload() -> None:
     coupler.run_sequence = RunSequence(order=["ATM"])
 
     with pytest.raises(ComponentError, match="component initialization"):
-        coupler.run_differentiable()
+        coupler.run(commit_wrappers=False)
 
     component = _make_jax_gcm_component(grid)
     coupler.components = {"ATM": component}
-    state = coupler.create_differentiable_state()
+    state = coupler.create_runtime_state()
     atmosphere = state.get_component_state("ATM").with_runtime_payload(None)
     state = state.set_component_state(atmosphere)
 
     with pytest.raises(ComponentError, match="runtime payload"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_missing_run_sequence() -> None:
+def test_run_validates_missing_run_sequence() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
 
     with pytest.raises(CouplerError, match="run sequence"):
-        coupler.run_differentiable()
+        coupler.run(commit_wrappers=False)
 
 
-def test_run_differentiable_accepts_default_runtime_component() -> None:
+def test_run_accepts_default_runtime_component() -> None:
     grid = make_test_grid(name="dummy")
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
@@ -1416,12 +1419,12 @@ def test_run_differentiable_accepts_default_runtime_component() -> None:
     coupler.components = {"ATM": cast(Any, DummyComponent("ATM", grid))}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    final_state = coupler.run_differentiable()
+    final_state = coupler.run(commit_wrappers=False)
 
     assert final_state.component_names == ("ATM",)
 
 
-def test_run_differentiable_accepts_camulator_land_runtime_boundary() -> None:
+def test_run_accepts_camulator_land_runtime_boundary() -> None:
     grid = make_test_grid(name="camulator")
     camulator_land = _make_data_component(
         CAMulatorLand,
@@ -1436,8 +1439,8 @@ def test_run_differentiable_accepts_camulator_land_runtime_boundary() -> None:
     coupler.run_sequence = RunSequence(order=["LND"])
 
     assert isinstance(camulator_land.data["land_surface_temperature"], jax.Array)
-    state = coupler.create_differentiable_state()
-    final_state = coupler.run_differentiable(state)
+    state = coupler.create_runtime_state()
+    final_state = coupler.run(state, commit_wrappers=False)
 
     assert final_state.component_names == ("LND",)
     assert_allclose_compact(
@@ -1446,7 +1449,7 @@ def test_run_differentiable_accepts_camulator_land_runtime_boundary() -> None:
     )
 
 
-def test_run_differentiable_accepts_veros_runtime_boundary() -> None:
+def test_run_accepts_veros_runtime_boundary() -> None:
     grid = make_test_grid(name="veros")
     veros = _make_data_component(
         VerosGCM,
@@ -1461,8 +1464,8 @@ def test_run_differentiable_accepts_veros_runtime_boundary() -> None:
     coupler.run_sequence = RunSequence(order=["OCN"])
 
     assert isinstance(veros.data["sea_surface_temperature"], jax.Array)
-    state = coupler.create_differentiable_state()
-    final_state = coupler.run_differentiable(state)
+    state = coupler.create_runtime_state()
+    final_state = coupler.run(state, commit_wrappers=False)
 
     assert final_state.component_names == ("OCN",)
     assert_allclose_compact(
@@ -1471,13 +1474,13 @@ def test_run_differentiable_accepts_veros_runtime_boundary() -> None:
     )
 
 
-def test_run_differentiable_validates_regridders_and_fractional_masks() -> None:
+def test_run_validates_regridders_and_fractional_masks() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
     coupler._regridders = {}
 
     with pytest.raises(CouplerError, match="initialized regridder"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
     coupler = _make_coupler(steps=1)
     state = RuntimeCouplerState(
@@ -1487,20 +1490,20 @@ def test_run_differentiable_validates_regridders_and_fractional_masks() -> None:
     )
 
     with pytest.raises(CouplerError, match="fractional mask"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_missing_source_fields_before_scan() -> None:
+def test_run_validates_missing_source_fields_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
     ocean = state.get_component_state("OCN").with_outgoing(RuntimeFieldStore.empty())
     state = state.set_component_state(ocean)
 
     with pytest.raises(CouplerError, match="source field"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_missing_slab_required_data_before_scan() -> None:
+def test_run_validates_missing_slab_required_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
     atmosphere = state.get_component_state("ATM")
@@ -1510,10 +1513,10 @@ def test_run_differentiable_validates_missing_slab_required_data_before_scan() -
     state = state.set_component_state(atmosphere)
 
     with pytest.raises(CouplerError, match="required data field 'temperature_2m'"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_missing_import_data_before_scan() -> None:
+def test_run_validates_missing_import_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
     atmosphere = state.get_component_state("ATM")
@@ -1525,10 +1528,10 @@ def test_run_differentiable_validates_missing_import_data_before_scan() -> None:
     with pytest.raises(
         CouplerError, match="required data field 'sea_surface_temperature'"
     ):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_missing_export_data_before_scan() -> None:
+def test_run_validates_missing_export_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
     land = state.get_component_state("LND")
@@ -1538,10 +1541,10 @@ def test_run_differentiable_validates_missing_export_data_before_scan() -> None:
     with pytest.raises(
         CouplerError, match="required data field 'land_surface_temperature'"
     ):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_missing_jax_gcm_preseed_before_scan() -> None:
+def test_run_validates_missing_jax_gcm_preseed_before_scan() -> None:
     grid = make_test_grid(name="jcm-missing-preseed")
     component = _make_jax_gcm_component(grid)
     coupler = Coupler(
@@ -1549,16 +1552,16 @@ def test_run_differentiable_validates_missing_jax_gcm_preseed_before_scan() -> N
     )
     coupler.components = {"ATM": component}
     coupler.run_sequence = RunSequence(order=["ATM"])
-    state = coupler.create_differentiable_state()
+    state = coupler.create_runtime_state()
     atmosphere = state.get_component_state("ATM")
     atmosphere = atmosphere.with_data(_without_store_field(atmosphere.data, "pressure"))
     state = state.set_component_state(atmosphere)
 
     with pytest.raises(CouplerError, match="required data field 'pressure'"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)
 
 
-def test_run_differentiable_validates_fractional_mask_shape_before_scan() -> None:
+def test_run_validates_fractional_mask_shape_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
     state = RuntimeCouplerState(
@@ -1575,4 +1578,4 @@ def test_run_differentiable_validates_fractional_mask_shape_before_scan() -> Non
     )
 
     with pytest.raises(CouplerError, match="fractional mask.*shape"):
-        coupler.run_differentiable(state)
+        coupler.run(state, commit_wrappers=False)

@@ -27,9 +27,6 @@ from vercor.runtime import (
     RuntimeStepInfo,
     dispatch_component_exchanges,
     exchange_key_name,
-    receive_component_fields,
-    send_component_fields,
-    step_component_state,
 )
 from vercor.settings import VercorSettings
 from vercor.tools import (
@@ -216,7 +213,12 @@ class Coupler:
             component.check_not_empty_import_export_lists()
             component.check_valid_exchange_field_names()
             # Deposit initial data to be sent from component to coupler
-            component.send_fields(self.clock.start, self)
+            step_info = self._initial_runtime_step_info()
+            component_state = component.send_runtime_fields(
+                component.to_runtime_component_state(),
+                step_info,
+            )
+            component.commit_runtime_state(component_state, self.clock.start)
 
         self._create_exchange_masks()
         self._validate_land_mask_consistency()
@@ -414,9 +416,8 @@ class Coupler:
         step_info = self._initial_runtime_step_info()
         for cname in self.run_sequence:
             component_state = runtime_state.get_component_state(cname)
-            component_state = send_component_fields(
+            component_state = self.components[cname].send_runtime_fields(
                 component_state,
-                self.components[cname],
                 step_info,
             )
             runtime_state = runtime_state.set_component_state(component_state)
@@ -490,13 +491,6 @@ class Coupler:
         self._validate_runtime_state(runtime_state)
         return runtime_state
 
-    def create_differentiable_state(
-        self, *, prefill_missing: bool = True
-    ) -> RuntimeCouplerState:
-        """Compatibility alias for ``create_runtime_state``."""
-
-        return self.create_runtime_state(prefill_missing=prefill_missing)
-
     def _scalar_runtime_step_info(
         self,
         time: datetime | ModelDateTime,
@@ -522,18 +516,17 @@ class Coupler:
             self._regridders,
         )
         component_state = runtime_state.get_component_state(component_name)
-        component_state = receive_component_fields(component_state)
-        component_state = step_component_state(
-            self.components[component_name],
+        component = self.components[component_name]
+        component_state = component.receive_runtime_fields(component_state)
+        component_state = component.step_runtime_state(
             component_state,
             self.clock.dt_seconds,
             self.settings,
             time=time,
             coupler=self if time is not None else None,
         )
-        component_state = send_component_fields(
+        component_state = component.send_runtime_fields(
             component_state,
-            self.components[component_name],
             step_info,
         )
         runtime_state = runtime_state.set_component_state(component_state)
@@ -618,33 +611,6 @@ class Coupler:
                 name,
             )
 
-    def interpolate_and_dispatch_fields(
-        self,
-        component: AllComponentsType,
-        timestamp: datetime | ModelDateTime,
-    ) -> None:
-        """
-        Interpolate and dispatch fields to the given component at the specified timestamp.
-
-        Arguments:
-            timestamp: current simulation (coupler's) time
-            component: destination component instance to process exchanges for
-        """
-
-        for exchange in self.exchanges:
-            # Ensure exchange for currently stepping component only
-            if exchange.destination != component.name:
-                continue
-
-            self.logger.info(f" Exchange fields: {exchange.name}")
-
-        runtime_state = self._dispatch_runtime_fields(
-            self._runtime_state_from_components(prefill_missing=True),
-            component.name,
-        )
-        destination_state = runtime_state.get_component_state(component.name)
-        self._commit_runtime_incoming_fields(component, destination_state, timestamp)
-
     def finalize(self, output_file_mask: Optional[Path] = None) -> None:
         """
         Finalize the coupler and all registered components.
@@ -675,10 +641,18 @@ class Coupler:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={' -> '.join(self.run_sequence)})"
 
-    def run(self) -> RuntimeCouplerState:
+    def run(
+        self,
+        initial_state: RuntimeCouplerState | None = None,
+        *,
+        commit_wrappers: bool = True,
+    ) -> RuntimeCouplerState:
         """
         Run the coupler and all registered components according to the run sequence.
         """
+
+        if not commit_wrappers:
+            return self._run_scanned_runtime(initial_state)
 
         # TODO: add setup checks like time step consistency,
         # component's readiness (outgoing fields), etc.
@@ -689,7 +663,12 @@ class Coupler:
                     f"Component {cname} outgoing fields were not initialized properly."
                 )
 
-        runtime_state = self.create_runtime_state(prefill_missing=False)
+        runtime_state = (
+            self.create_runtime_state(prefill_missing=False)
+            if initial_state is None
+            else initial_state
+        )
+        self._validate_runtime_state(runtime_state)
 
         for n, time, dt in self.clock.iter():
             self.logger.info(
@@ -739,10 +718,3 @@ class Coupler:
             length=self.clock.steps,
         )
         return final_state
-
-    def run_differentiable(
-        self, initial_state: RuntimeCouplerState | None = None
-    ) -> RuntimeCouplerState:
-        """Compatibility alias for the scanned unified runtime."""
-
-        return self._run_scanned_runtime(initial_state)

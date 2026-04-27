@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
+from vercor.clock import ModelDateTime
 from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
@@ -43,17 +43,17 @@ class Land(Component):
     def step(
         self,
         dt: timedelta,
-        time: datetime | CustomDateTime,
+        time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-        latent_heat_flux = self.data["latent_heat_flux"]
-        soil_moisture = self.data["soil_moisture"]
-
-        self.data["soil_moisture"] = _update_soil_moisture(
-            soil_moisture,
-            latent_heat_flux if latent_heat_flux is not None else 0.0,
+        component_state = self.step_runtime_state(
+            self.to_runtime_component_state(prefill_missing=True),
             float(dt.total_seconds()),
+            coupler.settings,
+            time=time,
+            coupler=coupler,
         )
+        self.commit_runtime_state(component_state, time)
 
     def validate_runtime_state(
         self,
@@ -75,7 +75,7 @@ class Land(Component):
         dt_seconds: float,
         runtime_settings: Any | None = None,
         *,
-        time: datetime | CustomDateTime | None = None,
+        time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
         """Advance the slab land component on immutable runtime state."""

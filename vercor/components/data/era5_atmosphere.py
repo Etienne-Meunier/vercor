@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.clock import CustomDateTime
+from vercor.clock import ModelDateTime
 from vercor.components import Component, ComponentForcingData
 from vercor.fluxes.utilities import (
     compute_air_density,
@@ -218,18 +218,21 @@ class ERA5Atmosphere(Component, ComponentForcingData):
     def step(
         self,
         dt: timedelta,
-        time: datetime | CustomDateTime,
+        time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
         """
         Advance to the next time step in the dataset
         using time interpolation from one month to another.
         """
-        # Units: [K]
-        self.data["total_surface_temperature"] = _combine_surface_temperatures(
-            self.data["land_surface_temperature"],
-            self.data["sea_surface_temperature"],
+        component_state = self.step_runtime_state(
+            self.to_runtime_component_state(prefill_missing=True),
+            float(dt.total_seconds()),
+            coupler.settings,
+            time=time,
+            coupler=coupler,
         )
+        self.commit_runtime_state(component_state, time)
 
     def prefill_runtime_state_fields(
         self,
@@ -268,7 +271,7 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         dt_seconds: float,
         runtime_settings: Any | None = None,
         *,
-        time: datetime | CustomDateTime | None = None,
+        time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
         """Update ERA5 atmosphere surface-temperature diagnostics."""

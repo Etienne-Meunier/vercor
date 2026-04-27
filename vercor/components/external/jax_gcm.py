@@ -35,7 +35,6 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.grid import RectilinearGrid
-from vercor.tools import _runtime_array_to_host
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -494,18 +493,13 @@ class JAXGCM(Component):
                 f"expected {expected_pressure_shape}"
             )
 
-    def step_runtime_state(
+    def _step_jax_gcm_component_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: ModelDateTime | datetime | None = None,
-        coupler: "Coupler | None" = None,
-    ) -> "RuntimeComponentState":
-        """Advance JAXGCM on immutable runtime state."""
+        runtime_settings: Any | None,
+    ) -> tuple["RuntimeComponentState", Predictions]:
+        """Advance JAXGCM runtime state and return the raw prediction."""
 
-        _ = dt_seconds, time, coupler
         if runtime_settings is None:
             raise NotImplementedError("JAXGCM runtime settings are not initialized")
 
@@ -567,9 +561,30 @@ class JAXGCM(Component):
         for field_name, field_value in mapped_fields.items():
             data = data.set(field_name, field_value)
 
-        return component_state.with_data(data).with_runtime_payload(
-            JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=forcing)
+        return (
+            component_state.with_data(data).with_runtime_payload(
+                JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=forcing)
+            ),
+            prediction,
         )
+
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: ModelDateTime | datetime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance JAXGCM on immutable runtime state."""
+
+        _ = dt_seconds, time, coupler
+        stepped_state, _ = self._step_jax_gcm_component_state(
+            component_state,
+            runtime_settings,
+        )
+        return stepped_state
 
     def step(
         self,
@@ -577,8 +592,6 @@ class JAXGCM(Component):
         time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-        settings = coupler.settings
-
         logger = coupler.logger
 
         logger.info(
@@ -587,62 +600,27 @@ class JAXGCM(Component):
             )
         )
 
-        (
-            land_surface_temperature,
-            sea_surface_temperature,
-            total_surface_temperature,
-            cold_surface_cells,
-        ) = _cleanup_surface_temperature_fields(
+        component_state = self.to_runtime_component_state(prefill_missing=True)
+        stepped_state, prediction = self._step_jax_gcm_component_state(
+            component_state,
+            coupler.settings,
+        )
+        payload = stepped_state.runtime_payload
+        if isinstance(payload, JAXGCMRuntimePayload):
+            self._state = payload.jcm_state
+            self.forcing = payload.forcing
+        self.commit_runtime_state(stepped_state, time)
+        self._predictions_list.append(prediction)
+
+        _, _, _, cold_surface_cells = _cleanup_surface_temperature_fields(
             self.data["land_surface_temperature"],
             self.data["sea_surface_temperature"],
         )
-
-        self.data["land_surface_temperature"] = land_surface_temperature
-        self.data["sea_surface_temperature"] = sea_surface_temperature
-        self.data["total_surface_temperature"] = total_surface_temperature
-
         logger.info(
             " Number of cells with (SST + SKT) less than 250.0 K: {}".format(
                 int(jnp.sum(cold_surface_cells))
             ),
         )
-
-        land_surface_temperature_forcing, sea_surface_temperature_forcing = (
-            _prepare_surface_temperature_forcing(
-                total_surface_temperature,
-                jnp.asarray(self.model.terrain.fmask, dtype=jnp.float_).T,
-            )
-        )
-
-        self.forcing = self.forcing.copy(
-            stl_am=_runtime_array_to_host(land_surface_temperature_forcing).T,
-            sea_surface_temperature=_runtime_array_to_host(
-                sea_surface_temperature_forcing
-            ).T,
-        )
-
-        p, d = self.do_jcm_steps()
-
-        mapped_fields = _map_jcm_output_fields(
-            settings.latvap,
-            p0,
-            self.sigma_levels,
-            settings.mwdair,
-            settings.rgas,
-            settings.p0,
-            settings.cappa,
-            p.surface_flux.shf,
-            p.surface_flux.evap,
-            p.surface_flux.rlds,
-            p.shortwave_rad.rsns,
-            d.normalized_surface_pressure,
-            d.u_wind,
-            d.v_wind,
-            d.temperature,
-            d.specific_humidity,
-        )
-
-        self.data.update(mapped_fields)
 
         if self._should_write_output(time=time, dt=dt):
             date_time = time.strftime("%Y-%m-%d")

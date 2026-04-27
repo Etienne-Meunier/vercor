@@ -1410,3 +1410,34 @@
 ## Notes / Failed Approaches (Slice 16C)
 
 - No failed implementation approaches. The slice kept Veros, CAMulator, Torch, xarray, NetCDF, and file output as explicit component-owned host boundaries while unifying the VerCOR runtime interface around immutable runtime state.
+
+## Sixteenth JAX Translation Slice 16D: Remove Legacy Differentiable API
+
+- Completed the final unified-runtime API cleanup:
+  - removed `Coupler.create_differentiable_state()`, `Coupler.run_differentiable()`, and `Coupler.interpolate_and_dispatch_fields()`
+  - made `Coupler.run(initial_state=None, commit_wrappers=True)` the only execution entrypoint, with `commit_wrappers=False` using the scanned JAX runtime path
+  - moved receive/send runtime field handling from `vercor/runtime.py` into `Component.receive_runtime_fields()` and `Component.send_runtime_fields()`
+  - removed `receive_component_fields()`, `send_component_fields()`, and `step_component_state()` from `vercor/runtime.py`
+  - thinned pure slab, ERA5 atmosphere, and JAXGCM `step()` wrappers so component math goes through `step_runtime_state()`
+- Renamed the large runtime integration test module from `tests/test_differentiable_coupler_runtime.py` to `tests/test_coupler_runtime.py`.
+- Updated regression coverage so removed legacy API names are absent from `Coupler` and generic runtime.py no longer owns component receive/send/step dispatch.
+- Updated `DEPENDENCIES.md` to describe `vercor/runtime.py` as immutable state plus generic exchange dispatch only.
+
+## Validation (Slice 16D, 2026-04-27)
+
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning but completed successfully
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Slice 16D)
+
+- The first thinned slab-ocean wrapper broke a direct unit test that calls `Ocean.step()` before initialization; the runtime step now preserves the old no-op behavior when SST is absent, while validated coupler runtime states still reject missing required SST before scans.
+- The first JAXGCM external coverage update still monkeypatched the old `do_jcm_steps()` host path. The test now seeds the runtime payload and `_step_function` directly, matching the canonical component runtime path.

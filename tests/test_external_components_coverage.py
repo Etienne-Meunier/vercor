@@ -17,6 +17,7 @@ import vercor.components.external.jax_gcm as jax_gcm_module
 import vercor.components.external.veros_gcm as veros_gcm_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.components.base import Shared
 from vercor.settings import VercorSettings
 
 
@@ -569,6 +570,12 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
+    component.name = "ATM"
+    component.grid = make_test_grid(name="atm")
+    component.incoming_fields = Shared()
+    component.outgoing_fields = Shared()
+    component._fields2import = []
+    component._fields2export = []
     component.data = {
         "sea_surface_temperature": np.asarray([[np.nan, 281.0], [282.0, 283.0]]),
         "land_surface_temperature": np.asarray([[270.0, np.nan], [0.0, 284.0]]),
@@ -578,6 +585,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     component.forcing = _FakeForcing()
     component.sigma_levels = np.asarray([0.2, 1.0], dtype=float)
+    component._state = cast(Any, SimpleNamespace(metadata=jnp.asarray(0.0)))
     component._predictions_list = []
     component.output_frequency = "day"
 
@@ -619,7 +627,17 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         normalized_surface_pressure=np.asarray([[0.9, 1.0], [1.1, 1.2]], dtype=float),
     )
 
-    monkeypatch.setattr(component, "do_jcm_steps", lambda: (p, d))
+    prediction = SimpleNamespace(physics=p, dynamics=d)
+    component._step_function = cast(
+        Any,
+        lambda state, forcing: (
+            SimpleNamespace(metadata=jnp.asarray(1.0)),
+            prediction,
+        ),
+    )
+    monkeypatch.setattr(jax_gcm_module, "stack_objects", lambda objs: objs[0])
+    monkeypatch.setattr(jax_gcm_module, "unwrap_leading_dims", lambda obj: obj)
+    monkeypatch.setattr(jax_gcm_module, "mean_leaf", lambda obj, axis: obj)
     monkeypatch.setattr(
         jax_gcm_module,
         "compute_pressure_levels",
@@ -654,8 +672,8 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     component.step(timedelta(days=1), datetime(2000, 1, 2), coupler)
 
     forcing_call = component.forcing.copy_calls[-1]
-    assert isinstance(forcing_call["stl_am"], np.ndarray)
-    assert isinstance(forcing_call["sea_surface_temperature"], np.ndarray)
+    assert isinstance(forcing_call["stl_am"], jax.Array)
+    assert isinstance(forcing_call["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
         forcing_call["stl_am"],
         np.asarray([[270.0, 288.15], [288.15, 567.0]]),

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Any
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
+from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.clock import ModelDateTime
+from vercor.components.base import Component
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
@@ -14,13 +19,24 @@ from vercor.runtime import (
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
-    send_component_fields,
 )
 
 
-class _RuntimeSendComponent:
+class _RuntimeSendComponent(Component):
     def __init__(self, settings: ComponentSettings) -> None:
+        super().__init__("DATA", make_test_grid(name="runtime-send"))
         self.settings = settings
+
+    def initialize(self, coupler: Any) -> None:
+        _ = coupler
+
+    def step(
+        self,
+        dt: timedelta,
+        time: datetime | ModelDateTime,
+        coupler: Any,
+    ) -> None:
+        _ = dt, time, coupler
 
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
@@ -29,6 +45,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     forbidden_component_markers = (
         "step_slab_component_state",
         "is_supported_differentiable_component",
+        "receive_component_fields",
+        "send_component_fields",
+        "step_component_state",
         "JAXGCMRuntimePayload",
         "VerosGCM",
         "CAMulatorGCM",
@@ -169,11 +188,11 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
             fields_to_import=(),
             fields_to_export=("temperature",),
         )
-        sent = send_component_fields(state, component, step_info)
+        sent = component.send_runtime_fields(state, step_info)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     sent_state = jax.jit(
-        lambda field: send_component_fields(
+        lambda field: component.send_runtime_fields(
             RuntimeComponentState(
                 name="DATA",
                 data=RuntimeFieldStore.from_mapping({"temperature": field}),
@@ -182,7 +201,6 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
                 fields_to_import=(),
                 fields_to_export=("temperature",),
             ),
-            component,
             step_info,
         )
     )(forcing)
@@ -213,7 +231,7 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
             fields_to_import=(),
             fields_to_export=("temperature",),
         )
-        sent = send_component_fields(state, component, step_info)
+        sent = component.send_runtime_fields(state, step_info)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     state = RuntimeComponentState(
@@ -224,9 +242,9 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
         fields_to_import=(),
         fields_to_export=("temperature",),
     )
-    sent_state = jax.jit(
-        lambda value: send_component_fields(value, component, step_info)
-    )(state)
+    sent_state = jax.jit(lambda value: component.send_runtime_fields(value, step_info))(
+        state
+    )
     gradient = jax.grad(send_loss)(forcing)
 
     assert_allclose_compact(

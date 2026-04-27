@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, Mapping, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -372,86 +372,3 @@ def dispatch_component_exchanges(
 
     destination_component = destination_component.with_incoming(destination_incoming)
     return state.set_component_state(destination_component)
-
-
-def receive_component_fields(
-    component_state: RuntimeComponentState,
-) -> RuntimeComponentState:
-    """Move imported incoming fields into component data."""
-
-    data = component_state.data
-    for field_name in component_state.fields_to_import:
-        data = data.set(field_name, component_state.incoming.get(field_name))
-    return component_state.with_data(data)
-
-
-def _select_runtime_field_for_send(
-    component: Any,
-    component_state: RuntimeComponentState,
-    field_name: str,
-    step_info: RuntimeStepInfo | None,
-) -> RuntimeArray:
-    field = component_state.data.get(field_name)
-    if step_info is None:
-        return field
-
-    settings = component.settings
-    if settings.apply_time_interpolation:
-        arr = jnp.asarray(field)
-        left = jnp.take(arr, step_info.monthly_index_left, axis=-1)
-        right = jnp.take(arr, step_info.monthly_index_right, axis=-1)
-        return (
-            step_info.monthly_weight_left * left
-            + step_info.monthly_weight_right * right
-        ).swapaxes(-2, -1)
-
-    if settings.get_field_time_slice:
-        return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
-
-    return field
-
-
-def send_component_fields(
-    component_state: RuntimeComponentState,
-    component: Any | None = None,
-    step_info: RuntimeStepInfo | None = None,
-) -> RuntimeComponentState:
-    """Move exported component data into outgoing fields."""
-
-    outgoing = component_state.outgoing
-    for field_name in component_state.fields_to_export:
-        field_value = (
-            component_state.data.get(field_name)
-            if component is None
-            else _select_runtime_field_for_send(
-                component,
-                component_state,
-                field_name,
-                step_info,
-            )
-        )
-        outgoing = outgoing.set(field_name, field_value)
-    return component_state.with_outgoing(outgoing)
-
-
-def step_component_state(
-    component: Any,
-    component_state: RuntimeComponentState,
-    dt_seconds: float,
-    runtime_settings: Any | None = None,
-    *,
-    time: Any | None = None,
-    coupler: Any | None = None,
-) -> RuntimeComponentState:
-    """Return a stepped component state through the component runtime interface."""
-
-    return cast(
-        RuntimeComponentState,
-        component.step_runtime_state(
-            component_state,
-            dt_seconds,
-            runtime_settings,
-            time=time,
-            coupler=coupler,
-        ),
-    )

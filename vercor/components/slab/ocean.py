@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
+from vercor.clock import ModelDateTime
 from vercor.components import Component
 from vercor.grid import RectilinearGrid
 
@@ -68,38 +68,17 @@ class Ocean(Component):
     def step(
         self,
         dt: timedelta,
-        time: datetime | CustomDateTime,
+        time: datetime | ModelDateTime,
         coupler: "Coupler",
     ) -> None:
-        sst = self.data.get("sea_surface_temperature", None)
-        if sst is None:
-            return
-
-        sst_array = jnp.asarray(sst, dtype=jnp.float64)
-        SHF = self.data.get("sensible_heat_flux", None)
-        LHF = self.data.get("latent_heat_flux", None)
-        sensible_heat_flux = (
-            jnp.zeros_like(sst_array)
-            if SHF is None
-            else jnp.asarray(SHF, dtype=jnp.float64)
-        )
-        latent_heat_flux = (
-            jnp.zeros_like(sst_array)
-            if LHF is None
-            else jnp.asarray(LHF, dtype=jnp.float64)
-        )
-
-        self.data["sea_surface_temperature"] = _advance_sea_surface_temperature(
-            sst_array,
-            sensible_heat_flux,
-            latent_heat_flux,
+        component_state = self.step_runtime_state(
+            self.to_runtime_component_state(prefill_missing=True),
             float(dt.total_seconds()),
-            self.rho,
-            self.cp,
-            self.H,
-            self.lambda_relax,
-            _REFERENCE_SEA_SURFACE_TEMPERATURE,
+            coupler.settings,
+            time=time,
+            coupler=coupler,
         )
+        self.commit_runtime_state(component_state, time)
 
     def validate_runtime_state(
         self,
@@ -121,14 +100,17 @@ class Ocean(Component):
         dt_seconds: float,
         runtime_settings: Any | None = None,
         *,
-        time: datetime | CustomDateTime | None = None,
+        time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
         """Advance the slab ocean on immutable runtime state."""
 
         _ = runtime_settings, time, coupler
         data = component_state.data
-        sea_surface_temperature = data.get("sea_surface_temperature")
+        try:
+            sea_surface_temperature = data.get("sea_surface_temperature")
+        except KeyError:
+            return component_state
         try:
             sensible_heat_flux = data.get("sensible_heat_flux")
         except KeyError:

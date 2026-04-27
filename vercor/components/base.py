@@ -20,7 +20,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState
+    from vercor.runtime import RuntimeComponentState, RuntimeStepInfo
 
 
 @dataclass
@@ -339,6 +339,60 @@ class Component(abc.ABC):
             outgoing_fields[field_name] = (field_value, timestamp, self.name)
         self.outgoing_fields = outgoing_fields
 
+    def receive_runtime_fields(
+        self,
+        component_state: "RuntimeComponentState",
+    ) -> "RuntimeComponentState":
+        """Move imported incoming runtime fields into component data."""
+
+        data = component_state.data
+        for field_name in component_state.fields_to_import:
+            data = data.set(field_name, component_state.incoming.get(field_name))
+        return component_state.with_data(data)
+
+    def _select_runtime_field_for_send(
+        self,
+        component_state: "RuntimeComponentState",
+        field_name: str,
+        step_info: "RuntimeStepInfo | None",
+    ) -> RuntimeArray:
+        field = component_state.data.get(field_name)
+        if step_info is None:
+            return field
+
+        if self.settings.apply_time_interpolation:
+            arr = jnp.asarray(field)
+            left = jnp.take(arr, step_info.monthly_index_left, axis=-1)
+            right = jnp.take(arr, step_info.monthly_index_right, axis=-1)
+            return (
+                step_info.monthly_weight_left * left
+                + step_info.monthly_weight_right * right
+            ).swapaxes(-2, -1)
+
+        if self.settings.get_field_time_slice:
+            return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
+
+        return field
+
+    def send_runtime_fields(
+        self,
+        component_state: "RuntimeComponentState",
+        step_info: "RuntimeStepInfo | None" = None,
+    ) -> "RuntimeComponentState":
+        """Move exported component data into outgoing runtime fields."""
+
+        outgoing = component_state.outgoing
+        for field_name in component_state.fields_to_export:
+            outgoing = outgoing.set(
+                field_name,
+                self._select_runtime_field_for_send(
+                    component_state,
+                    field_name,
+                    step_info,
+                ),
+            )
+        return component_state.with_outgoing(outgoing)
+
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
@@ -423,44 +477,6 @@ class Component(abc.ABC):
         incoming_fields = fields.field_names
         for name in incoming_fields:
             self.incoming_fields[name] = fields[name]
-
-    def receive_fields(self, time: datetime | ModelDateTime) -> None:
-        """
-        Receive interpolated fields from receptor/incoming_fields (from another component(s))
-        and store them in data.
-
-        Arguments:
-            time: current simulation (coupler's) time
-        """
-
-        from vercor.runtime import receive_component_fields
-
-        component_state = receive_component_fields(self.to_runtime_component_state())
-        self.commit_runtime_state(component_state, time)
-
-    def send_fields(self, time: datetime | ModelDateTime, coupler: "Coupler") -> None:
-        """
-        Prepare fields from data to be deposited to outgoing_fields,
-        to be later sent to another component(s).
-
-        Arguments:
-            time: current simulation (coupler's) time
-            coupler: Coupler instance for possible time interpolation
-        """
-
-        from vercor.runtime import send_component_fields
-
-        step_info = (
-            coupler._scalar_runtime_step_info(time)
-            if hasattr(coupler, "_scalar_runtime_step_info")
-            else None
-        )
-        component_state = send_component_fields(
-            self.to_runtime_component_state(),
-            self,
-            step_info,
-        )
-        self.commit_runtime_state(component_state, time)
 
     def check_valid_exchange_field_names(self) -> None:
         for fld in set(self._fields2import + self._fields2export):
