@@ -5,7 +5,7 @@ from jax.typing import ArrayLike
 from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.forcing import ForcingData
 
-from vercor.components import Component
+from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 from vercor.tools import create_lnd_mask_from_ocn
 
@@ -86,14 +86,14 @@ class JCMLand(Component):
             ocn_grid=ocn_grid,
         )
 
-        self.grid = RectilinearGrid(
+        grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
             binary_mask=lnd_bmask,
         )
 
-        super().__init__(name, grid=self.grid)
+        super().__init__(name, grid=grid)
 
         self.settings.get_field_time_slice = True
 

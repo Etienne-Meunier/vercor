@@ -7,7 +7,6 @@ import numpy as np
 from numpy.typing import NDArray
 import xarray as xr
 
-from vercor.grid import RectilinearGrid
 from vercor.runtime_views import RuntimeComponentView
 from vercor.types import RuntimeArray
 
@@ -19,9 +18,7 @@ def _runtime_array_to_host(array: RuntimeArray) -> NDArray[Any]:
 
 
 def _write_runtime_component_to_netcdf(
-    component_name: str,
     view: RuntimeComponentView,
-    grid: RectilinearGrid,
     filename: Path,
     *,
     masks: dict[str, RuntimeArray] | None = None,
@@ -29,18 +26,16 @@ def _write_runtime_component_to_netcdf(
     """Write final runtime component fields to a netCDF file.
 
     Arguments:
-        component_name: component name to write as output metadata
         view: runtime component view containing fields to write
-        grid: Grid object defining the grid
         filename: path to the output NetCDF file
         masks: optional mask fields to include in the same output
     """
 
     lat = xr.DataArray(
-        _runtime_array_to_host(grid.latitude), dims=("nlat",), name="latitude"
+        _runtime_array_to_host(view.grid.latitude), dims=("nlat",), name="latitude"
     )
     lon = xr.DataArray(
-        _runtime_array_to_host(grid.longitude), dims=("nlon",), name="longitude"
+        _runtime_array_to_host(view.grid.longitude), dims=("nlon",), name="longitude"
     )
 
     data_vars = {}
@@ -54,7 +49,7 @@ def _write_runtime_component_to_netcdf(
                 dims=("nlat", "nlon"),
                 coords={"latitude": lat, "longitude": lon},
                 attrs={
-                    "component": component_name,
+                    "component": view.name,
                     "runtime_store": store_name,
                     "field_name": name,
                 },
@@ -66,7 +61,7 @@ def _write_runtime_component_to_netcdf(
             dims=("nlat", "nlon"),
             coords={"latitude": lat, "longitude": lon},
             attrs={
-                "component": component_name,
+                "component": view.name,
                 "runtime_store": "mask",
                 "field_name": name,
             },
@@ -87,9 +82,7 @@ def write_runtime_component_view_to_netcdf(
     """Write final runtime fields from a single runtime component view."""
 
     _write_runtime_component_to_netcdf(
-        view.name,
         view,
-        view.grid,
         filename,
         masks=masks,
     )

@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components import Component, ComponentForcingData
+from vercor.components.base import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.tools import get_forcing_data
 
@@ -124,14 +124,14 @@ class ERAInterimOcean(Component, ComponentForcingData):
         )
         binary_mask = _binary_ocean_mask_from_salinity(sss)
 
-        self.grid = RectilinearGrid(
+        grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
             binary_mask=binary_mask,
         )
 
-        super().__init__(name, grid=self.grid)
+        super().__init__(name, grid=grid)
 
         self.settings.apply_time_interpolation = True
 
