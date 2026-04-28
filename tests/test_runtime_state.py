@@ -69,6 +69,11 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     for marker in forbidden_component_markers:
         assert marker not in runtime_source
     assert "import_fields" not in coupler_source
+    assert 'hasattr(component, "_step_host_runtime_state")' not in coupler_source
+    assert "isinstance(component, HostRuntimeComponent)" in coupler_source
+    assert "_sync_data_from_runtime_state" not in Path(
+        "vercor/components/base.py"
+    ).read_text(encoding="utf-8")
     assert "def step_runtime_state" in jax_gcm_source
     assert "def _step_host_runtime_state" in veros_source
     assert "def _step_host_runtime_state" in camulator_source

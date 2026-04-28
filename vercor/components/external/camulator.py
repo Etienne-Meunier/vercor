@@ -38,7 +38,7 @@ except ModuleNotFoundError:
     print("Credit module not found. Please install credit to use CAMulator.")
 
 from vercor.clock import ModelDateTime
-from vercor.components.base import Component
+from vercor.components.base import HostRuntimeComponent
 from vercor.grid import RectilinearGrid
 from vercor.tools import _runtime_array_to_host
 from vercor.types import RuntimeArray
@@ -314,7 +314,7 @@ def parse_datetime_from_config(conf: dict) -> datetime:
 # ============================================================================
 
 
-class CAMulatorGCM(Component):
+class CAMulatorGCM(HostRuntimeComponent):
 
     def __init__(
         self,
@@ -485,11 +485,9 @@ class CAMulatorGCM(Component):
         if time is None or coupler is None:
             return component_state
 
-        self._sync_data_from_runtime_state(component_state)
-
         settings = coupler.settings
         logger = coupler.logger
-        data = self.data
+        data = component_state.data.to_mapping()
 
         prediction = None
 
@@ -555,11 +553,11 @@ class CAMulatorGCM(Component):
                 model_input = self.state
 
             total_ts, rescaled_total_ts = _prepare_camulator_surface_forcing(
-                self.data["sea_surface_temperature"],
-                self.data["land_surface_temperature"],
+                data["sea_surface_temperature"],
+                data["land_surface_temperature"],
                 self.LANDM_COSLAT,
             )
-            self.data["total_surface_temperature"] = total_ts
+            data["total_surface_temperature"] = total_ts
 
             # Land surface temperature is already rescaled in the same way as sst
             logger.info(
@@ -673,6 +671,4 @@ class CAMulatorGCM(Component):
         data.update(mapped_fields)
         from vercor.runtime import RuntimeFieldStore
 
-        return component_state.with_data(
-            RuntimeFieldStore.from_mapping(self.data)
-        ).with_runtime_payload(component_state.runtime_payload)
+        return component_state.with_data(RuntimeFieldStore.from_mapping(data))

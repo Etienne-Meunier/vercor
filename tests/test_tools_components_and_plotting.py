@@ -14,7 +14,7 @@ from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.tools import (
-    ComponentFieldView,
+    RuntimeComponentView,
     _append_unique,
     _flatten_fields,
     get_component,
@@ -212,7 +212,9 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         rows=[
             (
                 "ATM",
-                ComponentFieldView.from_component_state(component, runtime_state),
+                RuntimeComponentView.from_runtime_state(
+                    "ATM", component, runtime_state
+                ),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",

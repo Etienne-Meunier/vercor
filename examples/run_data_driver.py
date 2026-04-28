@@ -9,7 +9,7 @@ from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
 from vercor.coupler import RunSequence
 from vercor.regridders import bilinear, conservative
 from vercor.tools import (
-    ComponentFieldView,
+    RuntimeComponentView,
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
@@ -142,20 +142,14 @@ if __name__ == "__main__":
         rows=[
             (
                 "ATM",
-                ComponentFieldView.from_component_state(
-                    atm,
-                    final_state.get_component_state("ATM"),
-                ),
+                RuntimeComponentView.from_coupler_state(cpl, final_state, "ATM"),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",
             ),
             (
                 "OCN",
-                ComponentFieldView.from_component_state(
-                    ocn,
-                    final_state.get_component_state("OCN"),
-                ),
+                RuntimeComponentView.from_coupler_state(cpl, final_state, "OCN"),
                 "sea_surface_temperature",
                 "u_velocity",
                 "v_velocity",

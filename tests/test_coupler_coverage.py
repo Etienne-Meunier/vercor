@@ -14,6 +14,7 @@ import pytest
 from tests._coverage_support import DummyComponent, RecordingRegridder, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
+from vercor.components import HostRuntimeComponent
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
@@ -60,6 +61,30 @@ class _RunComponent(DummyComponent):
         time_label = "none" if time is None else time.isoformat()
         self.events.append(f"step_runtime:{self.name}:{time_label}:{dt_seconds}")
         return component_state
+
+
+class _HostRunComponent(HostRuntimeComponent):
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.data["temperature"] = np.ones((2, 2))
+        self._fields2export = ["temperature"]
+
+    def _step_host_runtime_state(
+        self,
+        component_state: Any,
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: Any | None = None,
+        coupler: Any | None = None,
+    ) -> Any:
+        _ = runtime_settings, time, coupler
+        data = component_state.data.set(
+            "temperature",
+            component_state.data.get("temperature") + dt_seconds,
+        )
+        self.data["host_event"] = np.asarray(dt_seconds)
+        return component_state.with_data(data.set("host_time_seen", np.asarray(1.0)))
 
 
 def make_coupler() -> Coupler:
@@ -587,26 +612,26 @@ def test_coupler_finalize_writes_runtime_outputs_for_all_components(
     }
     coupler.components = cast(Any, components)
     state = coupler._runtime_state_from_components(prefill_missing=True)
-    captured: list[tuple[str, Any, Any, Path, dict[str, Any]]] = []
+    captured: list[tuple[str, Any, Path, dict[str, Any]]] = []
 
     def fake_write(
-        component_name: str,
-        component_state: Any,
-        grid: Any,
+        view: Any,
         filename: Path,
         *,
         masks: dict[str, Any] | None = None,
     ) -> None:
-        captured.append((component_name, component_state, grid, filename, masks or {}))
+        captured.append((view.name, view, filename, masks or {}))
 
-    monkeypatch.setattr("vercor.coupler.write_runtime_component_to_netcdf", fake_write)
+    monkeypatch.setattr(
+        "vercor.coupler.write_runtime_component_view_to_netcdf", fake_write
+    )
 
     coupler.finalize(state, Path("snapshot"))
 
     assert [item[0] for item in captured] == ["ATM", "OCN"]
-    assert captured[0][2] is components["ATM"].grid
-    assert captured[0][3] == Path("atm_snapshot.nc")
-    assert captured[1][3] == Path("ocn_snapshot.nc")
+    assert captured[0][1].grid is components["ATM"].grid
+    assert captured[0][2] == Path("atm_snapshot.nc")
+    assert captured[1][2] == Path("ocn_snapshot.nc")
 
 
 def test_coupler_string_representations_include_registered_state() -> None:
@@ -680,6 +705,32 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         "step_runtime:OCN:2000-01-01T00:00:00:60.0",
         "send:OCN",
     ]
+
+
+def test_host_runtime_components_use_explicit_host_contract() -> None:
+    coupler = make_coupler()
+    host_component = _HostRunComponent("ATM")
+    coupler.components = cast(Any, {"ATM": host_component})
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    final_state = coupler.run()
+    final_component = final_state.get_component_state("ATM")
+
+    assert isinstance(host_component, HostRuntimeComponent)
+    assert "host_time_seen" in final_component.data.field_names
+    assert_allclose_compact(
+        final_component.data.get("temperature"),
+        np.full((2, 2), 61.0),
+    )
+
+
+def test_compile_runtime_rejects_host_backed_components() -> None:
+    coupler = make_coupler()
+    coupler.components = cast(Any, {"ATM": _HostRunComponent("ATM")})
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    with pytest.raises(CouplerError, match="host-backed component"):
+        coupler.compile_runtime(donate_state=False)
 
 
 def test_host_and_scanned_run_use_runtime_component_helper(

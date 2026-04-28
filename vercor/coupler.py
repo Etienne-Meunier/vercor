@@ -9,7 +9,10 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
-from vercor.components import write_runtime_component_to_netcdf
+from vercor.components import (
+    HostRuntimeComponent,
+    write_runtime_component_view_to_netcdf,
+)
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -39,6 +42,7 @@ from vercor.tools import (
     _flatten_fields,
     check_remap_conservation,
     compute_ocn_lnd_masks_on_atm_grid,
+    RuntimeComponentView,
 )
 from vercor.types import AllComponentsType, RuntimeArray
 
@@ -511,8 +515,8 @@ class Coupler:
         component_state = runtime_state.get_component_state(component_name)
         component = self.components[component_name]
         component_state = component.receive_runtime_fields(component_state)
-        if time is not None and hasattr(component, "_step_host_runtime_state"):
-            component_state = component._step_host_runtime_state(  # type: ignore[attr-defined]
+        if time is not None and isinstance(component, HostRuntimeComponent):
+            component_state = component._step_host_runtime_state(
                 component_state,
                 self.clock.dt_seconds,
                 self.settings,
@@ -555,6 +559,15 @@ class Coupler:
             masks["fmask_" + source_destination_name] = self._fractional_masks[key]
         return masks
 
+    def runtime_component_view(
+        self,
+        runtime_state: RuntimeCouplerState,
+        name: str,
+    ) -> RuntimeComponentView:
+        """Return a single object containing component metadata and runtime fields."""
+
+        return RuntimeComponentView.from_coupler_state(self, runtime_state, name)
+
     def finalize(
         self,
         final_state: RuntimeCouplerState,
@@ -574,10 +587,9 @@ class Coupler:
                 filepath = Path(f"{name.lower()}_component_runtime_fields.nc")
             else:
                 filepath = Path(f"{name.lower()}_{output_file_mask}.nc")
-            write_runtime_component_to_netcdf(
-                name,
-                final_state.get_component_state(name),
-                component.grid,
+            view = self.runtime_component_view(final_state, name)
+            write_runtime_component_view_to_netcdf(
+                view,
                 filepath,
                 masks=self._output_masks_for_component(name),
             )
@@ -648,6 +660,17 @@ class Coupler:
         state as consumed and must not read it after invoking the compiled
         callable.
         """
+        host_component_names = [
+            name
+            for name, component in self.components.items()
+            if isinstance(component, HostRuntimeComponent)
+        ]
+        if host_component_names:
+            names = ", ".join(host_component_names)
+            raise CouplerError(
+                "compile_runtime() only supports differentiable runtime components; "
+                f"host-backed component(s) require run(): {names}"
+            )
 
         def scanned_runtime(
             state: RuntimeCouplerState,

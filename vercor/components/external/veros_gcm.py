@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Mapping
 import jax
 import jax.numpy as jnp
 from datetime import datetime, timedelta
@@ -14,7 +14,7 @@ from veros.routines import veros_kernel, veros_routine
 from veros.state import KernelOutput, VerosState
 from veros.tools import get_periodic_interval
 
-from vercor.components.base import Component
+from vercor.components.base import HostRuntimeComponent
 from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
 from vercor.settings import VercorSettings
@@ -181,11 +181,13 @@ def _extract_surface_temperature(
 
 
 def compute_fluxes(
-    component_state: "VerosGCM", settings: VercorSettings
+    veros_state: VerosState,
+    runtime_fields: Mapping[str, RuntimeArray],
+    settings: VercorSettings,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Compute atmosphere-ocean fluxes from explicit Veros and runtime fields."""
 
-    cs = component_state
-    vs = cs._veros_state.variables
+    vs = veros_state.variables
 
     # u & v have Arakawa-C grid staggering in Veros
     # require additional interpolation
@@ -217,13 +219,13 @@ def compute_fluxes(
     ) = new_flux_atmOcn(
         settings,
         jnp.asarray(vs.maskT[2:-2, 2:-2, -1], dtype=jnp.float64).T,
-        jnp.asarray(cs.data["model_level_height"], dtype=jnp.float64),
-        jnp.asarray(cs.data["u_velocity"], dtype=jnp.float64),
-        jnp.asarray(cs.data["v_velocity"], dtype=jnp.float64),
-        jnp.asarray(cs.data["potential_temperature"], dtype=jnp.float64),
-        jnp.asarray(cs.data["specific_humidity"], dtype=jnp.float64),
-        jnp.asarray(cs.data["density"], dtype=jnp.float64),
-        jnp.asarray(cs.data["temperature"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["model_level_height"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["u_velocity"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["v_velocity"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["potential_temperature"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["specific_humidity"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["density"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields["temperature"], dtype=jnp.float64),
         u_tgrid[1:-2, :].T,
         v_tgrid[:, 1:-2].T,
         temp,
@@ -234,8 +236,10 @@ def compute_fluxes(
     # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
 
     qnet = (
-        jnp.asarray(cs.data["net_shortwave_radiation_flux"], dtype=jnp.float64)
-        + jnp.asarray(cs.data["downward_longwave_radiation_flux"], dtype=jnp.float64)
+        jnp.asarray(runtime_fields["net_shortwave_radiation_flux"], dtype=jnp.float64)
+        + jnp.asarray(
+            runtime_fields["downward_longwave_radiation_flux"], dtype=jnp.float64
+        )
         + lwup
         + senf
         + latf
@@ -305,7 +309,7 @@ def set_variable(
     return n_state
 
 
-class VerosGCM(Component):
+class VerosGCM(HostRuntimeComponent):
     def __init__(
         self,
         name: str = "OCN",
@@ -400,9 +404,13 @@ class VerosGCM(Component):
         if time is None or coupler is None:
             return component_state
 
-        self._sync_data_from_runtime_state(component_state)
+        runtime_fields = component_state.data.to_mapping()
 
-        taux, tauy, qnet, qnec = compute_fluxes(self, coupler.settings)
+        taux, tauy, qnet, qnec = compute_fluxes(
+            self._veros_state,
+            runtime_fields,
+            coupler.settings,
+        )
         forcing_fields = _prepare_surface_forcing_fields(
             taux, tauy, qnet, qnec, self.restore_to_climatology
         )
@@ -422,12 +430,11 @@ class VerosGCM(Component):
             coupler.logger.info(f" Veros sub-step {i+1} / {self.model_substeps}")
             self._veros_state = self._step_function(self._veros_state)
 
-        self.data["sea_surface_temperature"] = _extract_surface_temperature(
-            self._veros_state.variables.temp,
-            self._veros_state.variables.tau,
+        data = component_state.data.set(
+            "sea_surface_temperature",
+            _extract_surface_temperature(
+                self._veros_state.variables.temp,
+                self._veros_state.variables.tau,
+            ),
         )
-        from vercor.runtime import RuntimeFieldStore
-
-        return component_state.with_data(
-            RuntimeFieldStore.from_mapping(self.data)
-        ).with_runtime_payload(component_state.runtime_payload)
+        return component_state.with_data(data)

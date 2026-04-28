@@ -35,7 +35,7 @@ def _step_component(
     time: datetime,
     coupler: Any,
 ) -> None:
-    """Advance one component through the runtime-state API and sync test storage."""
+    """Advance one component through the runtime-state API for legacy assertions."""
 
     component_state = component.step_runtime_state(
         component.to_runtime_component_state(prefill_missing=True),
@@ -44,7 +44,7 @@ def _step_component(
         time=time,
         coupler=coupler,
     )
-    component._sync_data_from_runtime_state(component_state)
+    component.data = component_state.data.to_mapping()
 
 
 @pytest.mark.fast_always

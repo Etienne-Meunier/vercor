@@ -12,7 +12,7 @@ from vercor.clock import ModelDateTime
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.settings import ComponentSettings
-from vercor.tools import _runtime_array_to_host
+from vercor.tools import RuntimeComponentView, _runtime_array_to_host
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
 from vercor.types import RuntimeArray
 
@@ -176,14 +176,6 @@ class Component:
             runtime_payload=self.create_runtime_payload(),
         )
 
-    def _sync_data_from_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-    ) -> None:
-        """Synchronize mutable host-adapter storage from runtime state data."""
-
-        self.data = component_state.data.to_mapping()
-
     def receive_runtime_fields(
         self,
         component_state: "RuntimeComponentState",
@@ -296,6 +288,23 @@ class Component:
         return f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)})"
 
 
+class HostRuntimeComponent(Component):
+    """Base class for host-backed adapters that cannot run inside JAX scan."""
+
+    def _step_host_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        dt_seconds: float,
+        runtime_settings: Any | None = None,
+        *,
+        time: datetime | ModelDateTime | None = None,
+        coupler: "Coupler | None" = None,
+    ) -> "RuntimeComponentState":
+        """Advance this non-differentiable host adapter by one runtime step."""
+
+        raise NotImplementedError
+
+
 class ComponentForcingData:
     def __init__(self) -> None:
         self.DATA_FILES: dict[str, str] = {}
@@ -342,7 +351,7 @@ class ComponentForcingData:
 
 def write_runtime_component_to_netcdf(
     component_name: str,
-    component_state: "RuntimeComponentState",
+    component_state: Any,
     grid: RectilinearGrid,
     filename: Path,
     *,
@@ -398,3 +407,20 @@ def write_runtime_component_to_netcdf(
         data_vars=data_vars,
         coords={"latitude": lat, "longitude": lon},
     ).to_netcdf(filename)
+
+
+def write_runtime_component_view_to_netcdf(
+    view: RuntimeComponentView,
+    filename: Path,
+    *,
+    masks: dict[str, RuntimeArray] | None = None,
+) -> None:
+    """Write final runtime fields from a single runtime component view."""
+
+    write_runtime_component_to_netcdf(
+        view.name,
+        view,
+        view.grid,
+        filename,
+        masks=masks,
+    )

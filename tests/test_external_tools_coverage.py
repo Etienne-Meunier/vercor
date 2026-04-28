@@ -223,20 +223,18 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
         maskT=np.ones((8, 8, 1), dtype=float),
         tau=0,
     )
-    component_state = SimpleNamespace(
-        _veros_state=SimpleNamespace(variables=variables),
-        data={
-            "model_level_height": np.full((4, 4), 10.0),
-            "u_velocity": np.full((4, 4), 11.0),
-            "v_velocity": np.full((4, 4), 12.0),
-            "potential_temperature": np.full((4, 4), 13.0),
-            "specific_humidity": np.full((4, 4), 14.0),
-            "density": np.full((4, 4), 15.0),
-            "temperature": np.full((4, 4), 16.0),
-            "net_shortwave_radiation_flux": np.full((4, 4), 20.0),
-            "downward_longwave_radiation_flux": np.full((4, 4), 30.0),
-        },
-    )
+    veros_state = SimpleNamespace(variables=variables)
+    runtime_fields = {
+        "model_level_height": np.full((4, 4), 10.0),
+        "u_velocity": np.full((4, 4), 11.0),
+        "v_velocity": np.full((4, 4), 12.0),
+        "potential_temperature": np.full((4, 4), 13.0),
+        "specific_humidity": np.full((4, 4), 14.0),
+        "density": np.full((4, 4), 15.0),
+        "temperature": np.full((4, 4), 16.0),
+        "net_shortwave_radiation_flux": np.full((4, 4), 20.0),
+        "downward_longwave_radiation_flux": np.full((4, 4), 30.0),
+    }
 
     def fake_new_flux_atm_ocn(*args: Any) -> tuple[Any, ...]:
         _ = args
@@ -270,7 +268,8 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
     )
 
     taux, tauy, qnet, qnec = veros_gcm_module.compute_fluxes(
-        component_state=component_state,  # type: ignore[arg-type]
+        veros_state=veros_state,  # type: ignore[arg-type]
+        runtime_fields=runtime_fields,
         settings=VercorSettings(),
     )
 

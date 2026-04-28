@@ -686,8 +686,6 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         time=datetime(2000, 1, 2),
         coupler=coupler,
     )
-    component._sync_data_from_runtime_state(component_state)
-
     forcing_call = component.forcing.copy_calls[-1]
     assert isinstance(forcing_call["stl_am"], jax.Array)
     assert isinstance(forcing_call["sea_surface_temperature"], jax.Array)
@@ -699,32 +697,31 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         forcing_call["sea_surface_temperature"],
         np.asarray([[288.15, 282.0], [281.0, 288.15]]),
     )
+    data = component_state.data
     assert_allclose_compact(
-        component.data["total_surface_temperature"],
+        data.get("total_surface_temperature"),
         np.asarray([[270.0, 281.0], [282.0, 567.0]]),
     )
     assert_allclose_compact(
-        component.data["u_velocity"], np.asarray([[5.0, 7.0], [6.0, 8.0]])
+        data.get("u_velocity"), np.asarray([[5.0, 7.0], [6.0, 8.0]])
     )
     assert_allclose_compact(
-        component.data["v_velocity"], np.asarray([[6.0, 8.0], [7.0, 9.0]])
+        data.get("v_velocity"), np.asarray([[6.0, 8.0], [7.0, 9.0]])
     )
     assert_allclose_compact(
-        component.data["temperature"], np.asarray([[284.0, 286.0], [285.0, 287.0]])
+        data.get("temperature"), np.asarray([[284.0, 286.0], [285.0, 287.0]])
     )
     assert_allclose_compact(
-        component.data["specific_humidity"],
+        data.get("specific_humidity"),
         np.asarray([[0.05, 0.07], [0.06, 0.08]]),
     )
+    assert_allclose_compact(data.get("sensible_heat_flux"), np.full((2, 2), -10.0))
     assert_allclose_compact(
-        component.data["sensible_heat_flux"], np.full((2, 2), -10.0)
-    )
-    assert_allclose_compact(
-        component.data["latent_heat_flux"],
+        data.get("latent_heat_flux"),
         np.full((2, 2), -2.0 / 1e3 * coupler.settings.latvap * 2.0),
     )
     assert_allclose_compact(
-        component.data["pressure"],
+        data.get("pressure"),
         np.asarray(
             [
                 np.full((2, 2), 90000.0),
@@ -733,20 +730,18 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         ),
     )
     assert_allclose_compact(
-        component.data["density"],
+        data.get("density"),
         coupler.settings.mwdair
         / coupler.settings.rgas
         * np.full((2, 2), 80000.0)
         / np.asarray([[284.0, 286.0], [285.0, 287.0]]),
     )
     assert_allclose_compact(
-        component.data["potential_temperature"],
+        data.get("potential_temperature"),
         np.asarray([[284.0, 286.0], [285.0, 287.0]])
         * (coupler.settings.p0 / 80000.0) ** coupler.settings.cappa,
     )
-    assert_allclose_compact(
-        component.data["model_level_height"], np.full((2, 2), 150.0)
-    )
+    assert_allclose_compact(data.get("model_level_height"), np.full((2, 2), 150.0))
     assert written["path"] == "jcm.averages.2000-01-02.nc"
 
 
@@ -845,7 +840,9 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
     monkeypatch.setattr(veros_gcm_module, "new_flux_atmOcn", fake_new_flux_atm_ocn)
 
     taux, tauy, qnet, qnec = veros_gcm_module.compute_fluxes(
-        component, VercorSettings()
+        component._veros_state,
+        component.data,
+        VercorSettings(),
     )
 
     assert isinstance(taux, jax.Array)
@@ -1166,7 +1163,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     monkeypatch.setattr(
         veros_gcm_module,
         "compute_fluxes",
-        lambda component_state, settings: (
+        lambda veros_state, runtime_fields, settings: (
             np.asarray([[1.0, 2.0], [3.0, 4.0]]),
             np.asarray([[5.0, 6.0], [7.0, 8.0]]),
             np.asarray([[9.0, 10.0], [11.0, 12.0]]),
@@ -1177,7 +1174,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component._step_function = fake_step_function
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component._step_host_runtime_state(
+    component_state = component._step_host_runtime_state(
         _runtime_component_state("OCN", component.data),
         20.0,
         coupler.settings,
@@ -1192,10 +1189,10 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     )
     assert_allclose_compact(set_calls[3][1], expected_qnec)
     assert_allclose_compact(
-        component.data["sea_surface_temperature"],
+        component_state.data.get("sea_surface_temperature"),
         np.full((4, 4), 288.15),
     )
-    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
+    assert isinstance(component_state.data.get("sea_surface_temperature"), jax.Array)
 
 
 def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
@@ -1221,7 +1218,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     monkeypatch.setattr(
         veros_gcm_module,
         "compute_fluxes",
-        lambda component_state, settings: (
+        lambda veros_state, runtime_fields, settings: (
             np.asarray([[1.0, np.nan], [3.0, 4.0]]),
             np.asarray([[5.0, 6.0], [np.nan, 8.0]]),
             np.asarray([[9.0, 10.0], [11.0, np.nan]]),

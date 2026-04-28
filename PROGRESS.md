@@ -1,5 +1,45 @@
 # 2026-04-28
 
+## Incremental Runtime Bridge Simplification
+
+- Made the non-differentiable host boundary explicit:
+  - added `HostRuntimeComponent` for adapters that require Python/host-side mutation
+  - Veros, CAMulator atmosphere, and CAMulator land now inherit that contract
+  - `Coupler` dispatches host steps with `isinstance(..., HostRuntimeComponent)` instead of introspecting for private methods
+  - `compile_runtime()` now raises a clear `CouplerError` when host-backed adapters are registered
+- Removed the base runtime-to-component sync compatibility hook:
+  - deleted `Component._sync_data_from_runtime_state()`
+  - host adapters read from `RuntimeComponentState.data` mappings directly
+  - CAMulator and CAMulator land return updated runtime states without copying runtime fields back into `self.data`
+  - Veros flux coupling now receives explicit Veros state and runtime fields instead of the whole component instance
+- Consolidated runtime diagnostic/output views:
+  - replaced plotting-side `ComponentFieldView` usage with `RuntimeComponentView`
+  - added `Coupler.runtime_component_view()` and runtime-view NetCDF output
+  - examples now request views from the coupler instead of manually pairing component objects with runtime states
+- Updated `DEPENDENCIES.md` to document the host-runtime contract and runtime-view coupler responsibilities.
+
+## Validation (Incremental Runtime Bridge Simplification, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_runtime_state.py tests/test_external_tools_coverage.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py tests/test_tools_components_and_plotting.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_external_components_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
+## Notes / Failed Approaches
+
+- Removing the Veros runtime-state refresh from `component.data` exposed stale tests that still asserted on adapter-owned mutable storage. The tests now assert on the returned runtime state, matching the new runtime-state authority.
+
 ## Runtime Metadata De-Compatibility Cleanup
 
 - Removed duplicated component metadata from `RuntimeComponentState`:

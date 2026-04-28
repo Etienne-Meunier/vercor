@@ -9,7 +9,7 @@ from vercor.components.external.camulator import parse_datetime_from_config
 from vercor.components.external.camulator_state import initialize_camulator
 
 from vercor.grid import RectilinearGrid
-from vercor.components import Component
+from vercor.components.base import HostRuntimeComponent
 from vercor.tools import create_lnd_mask_from_ocn
 from vercor.clock import ModelDateTime
 
@@ -25,7 +25,7 @@ def _prepare_camulator_land_surface_temperature(
     return jnp.asarray(land_surface_temperature)
 
 
-class CAMulatorLand(Component):
+class CAMulatorLand(HostRuntimeComponent):
     def __init__(
         self,
         config_path: str,
@@ -141,18 +141,16 @@ class CAMulatorLand(Component):
         if time is None or coupler is None:
             return component_state
 
-        self._sync_data_from_runtime_state(component_state)
+        data = component_state.data.to_mapping()
 
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
 
-        self.data["land_surface_temperature"] = (
-            _prepare_camulator_land_surface_temperature(ts["TS"].values)
+        data["land_surface_temperature"] = _prepare_camulator_land_surface_temperature(
+            ts["TS"].values
         )
 
         self.timestep_counter += 1
         from vercor.runtime import RuntimeFieldStore
 
-        return component_state.with_data(
-            RuntimeFieldStore.from_mapping(self.data)
-        ).with_runtime_payload(component_state.runtime_payload)
+        return component_state.with_data(RuntimeFieldStore.from_mapping(data))

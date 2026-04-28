@@ -18,10 +18,12 @@ from vercor.clock import Clock
 from vercor.components.base import (
     ComponentForcingData,
     write_runtime_component_to_netcdf,
+    write_runtime_component_view_to_netcdf,
 )
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.tools import RuntimeComponentView
 
 
 class _RuntimeOnlyComponent(base_module.Component):
@@ -57,9 +59,10 @@ def test_legacy_wrapper_api_is_removed() -> None:
     assert not hasattr(component, "merge_incoming_outgoing_fields")
     assert not hasattr(component, "get")
     assert not hasattr(component, "step")
+    assert not hasattr(component, "_sync_data_from_runtime_state")
 
 
-def test_runtime_state_creation_receive_send_and_sync_bridge() -> None:
+def test_runtime_state_creation_receive_and_send() -> None:
     grid = make_test_grid(name="atm")
     component = _RuntimeOnlyComponent(name="ATM", grid=grid)
     component._fields2import = ["temperature"]
@@ -83,9 +86,6 @@ def test_runtime_state_creation_receive_send_and_sync_bridge() -> None:
         sent.outgoing.get("sensible_heat_flux"),
         np.full(grid.shape, 2.0),
     )
-
-    component._sync_data_from_runtime_state(stepped)
-    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 8.0))
 
 
 def test_component_validation_and_runtime_receive_delegate() -> None:
@@ -266,3 +266,15 @@ def test_component_forcing_data_read_and_runtime_write_round_trip(
         assert dataset["incoming_temperature"].attrs["component"] == "ATM"
         assert dataset["incoming_temperature"].attrs["runtime_store"] == "incoming"
         assert "fmask_OCN_ATM_bilinear" in dataset
+
+    view_output = tmp_path / "runtime-view.nc"
+    write_runtime_component_view_to_netcdf(
+        RuntimeComponentView.from_runtime_state(
+            "ATM",
+            DummyComponent(name="ATM", grid=make_test_grid()),
+            state,
+        ),
+        view_output,
+    )
+    with xr.open_dataset(view_output) as dataset:
+        assert dataset["outgoing_humidity"].attrs["component"] == "ATM"

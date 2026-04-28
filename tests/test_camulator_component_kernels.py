@@ -337,10 +337,10 @@ def test_camulator_land_stores_jax_runtime_arrays(
         time=start,
         coupler=coupler,
     )
-    component._sync_data_from_runtime_state(component_state)
-    assert isinstance(component.data["land_surface_temperature"], jax.Array)
+    land_surface_temperature = component_state.data.get("land_surface_temperature")
+    assert isinstance(land_surface_temperature, jax.Array)
     assert_allclose_compact(
-        component.data["land_surface_temperature"],
+        land_surface_temperature,
         np.asarray([[281.0, 282.0], [283.0, 284.0]]),
     )
 
@@ -469,7 +469,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
     )
 
-    component._step_host_runtime_state(
+    component_state = component._step_host_runtime_state(
         _runtime_component_state("ATM", component.data),
         float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
         VercorSettings(),
@@ -488,9 +488,11 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         ),
     )
     assert captured["sst"].shape == (1, 1, 1, 2, 2)
-    assert isinstance(component.data["total_surface_temperature"], jax.Array)
+    assert isinstance(component_state.data.get("total_surface_temperature"), jax.Array)
     assert_allclose_compact(
-        component.data["total_surface_temperature"],
+        component_state.data.get("total_surface_temperature"),
         np.asarray([[11.0, 283.0], [33.0, 44.0]]),
     )
-    assert_allclose_compact(component.data["temperature"], np.full((2, 2), 9.0))
+    assert_allclose_compact(
+        component_state.data.get("temperature"), np.full((2, 2), 9.0)
+    )
