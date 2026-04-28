@@ -165,16 +165,6 @@ class RuntimeFieldStore:
             out = out.set(name, value)
         return out
 
-    def subset(self, names: Sequence[str]) -> "RuntimeFieldStore":
-        """Return a new store containing fields in ``names`` order."""
-
-        return RuntimeFieldStore.from_mapping({name: self.get(name) for name in names})
-
-    def to_mapping(self) -> dict[str, RuntimeArray]:
-        """Return a dictionary view of the store values."""
-
-        return dict(zip(self.field_names, self.values))
-
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)

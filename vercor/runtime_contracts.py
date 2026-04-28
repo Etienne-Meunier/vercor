@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from vercor.exceptions import CouplerError
 from vercor.exchange import Exchange
@@ -80,18 +80,3 @@ def build_runtime_contracts(
             exports=destination_contract.exports,
         )
     return contracts
-
-
-def build_runtime_contracts_for_components(
-    components: Mapping[str, object],
-    exchanges: Sequence[Exchange],
-    *,
-    validate_endpoints: bool,
-) -> dict[str, RuntimeComponentContract]:
-    """Build runtime contracts from a component mapping without inspecting components."""
-
-    return build_runtime_contracts(
-        tuple(components.keys()),
-        exchanges,
-        validate_endpoints=validate_endpoints,
-    )

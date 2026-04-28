@@ -107,47 +107,6 @@ def wind_filter(
         return field_filtered
 
 
-def post_process_wind_artifacts_deprecated(
-    x: torch.Tensor, conf: dict, enable_filtering: bool = True
-) -> None:
-    """
-    Apply wind artifact filtering post-processing to model state
-
-    Args:
-        x: Model state tensor to filter
-        conf: Configuration dictionary containing variable info
-        enable_filtering: Whether to apply filtering (for easy on/off)
-
-    Returns:
-        None (modifies x in-place)
-    """
-    if not enable_filtering:
-        return
-
-    try:
-        # Extract configuration
-        varname_upper = conf["data"]["variables"]
-        levels = conf["model"]["levels"]
-
-        # Apply wind artifact filtering with sensible defaults
-        apply_wind_artifact_filter_to_tensor(
-            x=x,
-            varname_upper=varname_upper,
-            levels_per_var=levels,
-            mask_level=14,  # Good middle troposphere level
-            target_levels=range(9, 21),  # Upper troposphere where jets occur
-            target_vars=["U", "V", "T", "Qtot"],  # Wind and related fields
-            speed_threshold=3.0193274566643846,  # tuned threshold
-            smooth_sigma=1,  # Light smoothing
-            dilation_zonal=13,  # Wide for jets
-            dilation_meridional=5,  # Narrow for jets
-            falloff_sigma=4.0,  # Smooth transitions
-        )
-    except Exception as e:
-        print(f"Wind artifact filtering failed: {e}")
-        # Continue without filtering rather than crash
-
-
 def post_process_wind_artifacts(
     x: torch.Tensor, conf: dict, enable_filtering: bool = True
 ) -> None:

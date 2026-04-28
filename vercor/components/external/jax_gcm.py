@@ -59,6 +59,60 @@ def asfloat(tree: Any) -> Any:
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 _COLD_SURFACE_TEMPERATURE_THRESHOLD = 250.0
+_JAXGCM_OUTPUT_GRID_FIELD_NAMES = (
+    "u_velocity",
+    "v_velocity",
+    "temperature",
+    "specific_humidity",
+    "sensible_heat_flux",
+    "latent_heat_flux",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+    "density",
+    "potential_temperature",
+    "model_level_height",
+)
+_JAXGCM_REQUIRED_GRID_FIELD_NAMES = (
+    "land_surface_temperature",
+    "sea_surface_temperature",
+    "total_surface_temperature",
+    *_JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+)
+
+
+def _default_jax_gcm_grid_fields(
+    grid_shape: tuple[int, int],
+    *,
+    include_total_surface_temperature: bool,
+) -> dict[str, RuntimeArray]:
+    """Return default grid-shaped JAXGCM runtime fields."""
+
+    zeros = jnp.zeros(grid_shape, dtype=jnp.float_)
+    fields: dict[str, RuntimeArray] = {
+        field_name: zeros for field_name in _JAXGCM_OUTPUT_GRID_FIELD_NAMES
+    }
+    fields["land_surface_temperature"] = zeros
+    fields["sea_surface_temperature"] = jnp.full(
+        grid_shape,
+        _REFERENCE_SURFACE_TEMPERATURE,
+        dtype=jnp.float_,
+    )
+    if include_total_surface_temperature:
+        fields["total_surface_temperature"] = zeros
+    return fields
+
+
+def _prefill_jax_gcm_grid_fields(
+    data: dict[str, RuntimeArray],
+    grid_shape: tuple[int, int],
+) -> None:
+    """Fill missing JAXGCM runtime fields without overwriting component seed data."""
+
+    for field_name, value in _default_jax_gcm_grid_fields(
+        grid_shape,
+        include_total_surface_temperature=True,
+    ).items():
+        data.setdefault(field_name, value)
 
 
 @jax.jit
@@ -367,24 +421,12 @@ class JAXGCM(Component):
 
         self._step_function = self._generate_step_function(jitted=self.jitted)
 
-        grid_shape = self.grid.shape
-
-        zeros = jnp.zeros(grid_shape, dtype=jnp.float_)
-        self.data["specific_humidity"] = zeros
-        self.data["net_shortwave_radiation_flux"] = zeros
-        self.data["downward_longwave_radiation_flux"] = zeros
-        self.data["sea_surface_temperature"] = jnp.full(
-            grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float_
+        self.data.update(
+            _default_jax_gcm_grid_fields(
+                self.grid.shape,
+                include_total_surface_temperature=False,
+            )
         )
-        self.data["land_surface_temperature"] = zeros
-        self.data["u_velocity"] = zeros
-        self.data["v_velocity"] = zeros
-        self.data["temperature"] = zeros
-        self.data["potential_temperature"] = zeros
-        self.data["density"] = zeros
-        self.data["latent_heat_flux"] = zeros
-        self.data["sensible_heat_flux"] = zeros
-        self.data["model_level_height"] = zeros
 
         self._predictions_list = []
 
@@ -426,22 +468,7 @@ class JAXGCM(Component):
     ) -> None:
         """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
-        zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
-        data.setdefault("total_surface_temperature", zeros)
-        for field_name in (
-            "u_velocity",
-            "v_velocity",
-            "temperature",
-            "specific_humidity",
-            "sensible_heat_flux",
-            "latent_heat_flux",
-            "net_shortwave_radiation_flux",
-            "downward_longwave_radiation_flux",
-            "density",
-            "potential_temperature",
-            "model_level_height",
-        ):
-            data.setdefault(field_name, zeros)
+        _prefill_jax_gcm_grid_fields(data, self.grid.shape)
         sigma_levels = jnp.asarray(self.sigma_levels)
         data.setdefault(
             "pressure",
@@ -463,23 +490,7 @@ class JAXGCM(Component):
                 f"for component '{self.name}'"
             )
 
-        grid_fields = (
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-            "u_velocity",
-            "v_velocity",
-            "temperature",
-            "specific_humidity",
-            "sensible_heat_flux",
-            "latent_heat_flux",
-            "net_shortwave_radiation_flux",
-            "downward_longwave_radiation_flux",
-            "density",
-            "potential_temperature",
-            "model_level_height",
-        )
-        for field_name in grid_fields:
+        for field_name in _JAXGCM_REQUIRED_GRID_FIELD_NAMES:
             validate_runtime_grid_data_field(
                 self,
                 component_state,

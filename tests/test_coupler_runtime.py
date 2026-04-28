@@ -563,9 +563,13 @@ def _with_ocean_sst(
 def _without_store_field(
     store: RuntimeFieldStore, field_name: str
 ) -> RuntimeFieldStore:
-    values = store.to_mapping()
-    values.pop(field_name)
-    return RuntimeFieldStore.from_mapping(values)
+    return RuntimeFieldStore.from_mapping(
+        {
+            name: value
+            for name, value in zip(store.field_names, store.values)
+            if name != field_name
+        }
+    )
 
 
 def test_run_supports_jit_grad_and_jvp() -> None:

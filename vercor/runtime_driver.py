@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger
 from typing import Any
@@ -18,6 +19,18 @@ from vercor.runtime_components import receive_runtime_fields, send_runtime_field
 from vercor.settings import VercorSettings
 
 
+@dataclass(frozen=True)
+class RuntimeDispatchContext:
+    """Static runtime plumbing shared by per-component dispatch helpers."""
+
+    components: Mapping[str, Component]
+    exchanges: Sequence[Exchange]
+    regridders: Mapping[tuple[str, str, str], Any]
+    contracts: Mapping[str, RuntimeComponentContract]
+    dt_seconds: float
+    settings: VercorSettings
+
+
 def host_component_names(components: Mapping[str, Component]) -> list[str]:
     """Return names of components that require the Python host runtime."""
 
@@ -33,12 +46,7 @@ def _step_component_runtime_state(
     component_name: str,
     step_info: RuntimeStepInfo,
     *,
-    components: Mapping[str, Component],
-    exchanges: Sequence[Exchange],
-    regridders: Mapping[tuple[str, str, str], Any],
-    contracts: Mapping[str, RuntimeComponentContract],
-    dt_seconds: float,
-    settings: VercorSettings,
+    dispatch_context: RuntimeDispatchContext,
     host_enabled: bool,
     time: datetime | ModelDateTime | None,
     logger: Logger | None,
@@ -48,12 +56,12 @@ def _step_component_runtime_state(
     runtime_state = dispatch_component_exchanges(
         runtime_state,
         component_name,
-        exchanges,
-        regridders,
+        dispatch_context.exchanges,
+        dispatch_context.regridders,
     )
     component_state = runtime_state.get_component_state(component_name)
-    component = components[component_name]
-    contract = contracts.get(
+    component = dispatch_context.components[component_name]
+    contract = dispatch_context.contracts.get(
         component_name,
         RuntimeComponentContract.empty(),
     )
@@ -62,8 +70,8 @@ def _step_component_runtime_state(
         contract,
     )
     step_context = RuntimeStepContext(
-        dt_seconds=dt_seconds,
-        settings=settings,
+        dt_seconds=dispatch_context.dt_seconds,
+        settings=dispatch_context.settings,
         time=time,
         logger=logger,
     )
@@ -94,12 +102,7 @@ def step_runtime_component_pure(
     component_name: str,
     step_info: RuntimeStepInfo,
     *,
-    components: Mapping[str, Component],
-    exchanges: Sequence[Exchange],
-    regridders: Mapping[tuple[str, str, str], Any],
-    contracts: Mapping[str, RuntimeComponentContract],
-    dt_seconds: float,
-    settings: VercorSettings,
+    dispatch_context: RuntimeDispatchContext,
 ) -> RuntimeCouplerState:
     """Advance one differentiable component on the pure scanned runtime path."""
 
@@ -107,12 +110,7 @@ def step_runtime_component_pure(
         runtime_state,
         component_name,
         step_info,
-        components=components,
-        exchanges=exchanges,
-        regridders=regridders,
-        contracts=contracts,
-        dt_seconds=dt_seconds,
-        settings=settings,
+        dispatch_context=dispatch_context,
         host_enabled=False,
         time=None,
         logger=None,
@@ -123,8 +121,7 @@ def prime_runtime_outgoing(
     runtime_state: RuntimeCouplerState,
     run_sequence: Sequence[str],
     *,
-    components: Mapping[str, Component],
-    contracts: Mapping[str, RuntimeComponentContract],
+    dispatch_context: RuntimeDispatchContext,
     step_info: RuntimeStepInfo,
 ) -> RuntimeCouplerState:
     """Populate outgoing stores once before the first exchange dispatch."""
@@ -132,10 +129,10 @@ def prime_runtime_outgoing(
     for component_name in run_sequence:
         component_state = runtime_state.get_component_state(component_name)
         component_state = send_runtime_fields(
-            components[component_name],
+            dispatch_context.components[component_name],
             component_state,
             step_info,
-            contract=contracts[component_name],
+            contract=dispatch_context.contracts[component_name],
         )
         runtime_state = runtime_state.set_component_state(
             component_name,
@@ -149,12 +146,7 @@ def step_runtime_component_host_enabled(
     component_name: str,
     step_info: RuntimeStepInfo,
     *,
-    components: Mapping[str, Component],
-    exchanges: Sequence[Exchange],
-    regridders: Mapping[tuple[str, str, str], Any],
-    contracts: Mapping[str, RuntimeComponentContract],
-    dt_seconds: float,
-    settings: VercorSettings,
+    dispatch_context: RuntimeDispatchContext,
     time: datetime | ModelDateTime,
     logger: Logger,
 ) -> RuntimeCouplerState:
@@ -164,12 +156,7 @@ def step_runtime_component_host_enabled(
         runtime_state,
         component_name,
         step_info,
-        components=components,
-        exchanges=exchanges,
-        regridders=regridders,
-        contracts=contracts,
-        dt_seconds=dt_seconds,
-        settings=settings,
+        dispatch_context=dispatch_context,
         host_enabled=True,
         time=time,
         logger=logger,

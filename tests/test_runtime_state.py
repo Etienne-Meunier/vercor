@@ -69,6 +69,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     camulator_land_source = Path("vercor/components/data/camulator_land.py").read_text(
         encoding="utf-8"
     )
+    windpp_source = Path("vercor/components/external/windpp.py").read_text(
+        encoding="utf-8"
+    )
 
     forbidden_component_markers = (
         "step_slab_component_state",
@@ -111,6 +114,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def send_runtime_fields" in runtime_components_source
     assert "def validate_component_runtime_state" in runtime_components_source
     assert "RuntimeComponentContract" in runtime_source
+    assert "def build_runtime_contracts_for_components" not in runtime_contracts_source
+    assert "build_runtime_contracts_for_components" not in coupler_source
+    assert "RuntimeDispatchContext" in runtime_driver_source
+    assert "dispatch_context: RuntimeDispatchContext" in runtime_driver_source
+    assert "def subset(" not in runtime_source
+    assert "def to_mapping(" not in runtime_source
     assert "_runtime_contracts" in coupler_source
     assert "ComponentInitContext" in base_source
     assert "RuntimeStepContext" in base_source
@@ -142,6 +151,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "component_state.data.to_mapping()" not in veros_source
     assert "component_state.data.to_mapping()" not in camulator_source
     assert "component_state.data.to_mapping()" not in camulator_land_source
+    assert "post_process_wind_artifacts_deprecated" not in windpp_source
 
 
 def test_examples_use_coupler_runtime_component_view_factory() -> None:
@@ -194,7 +204,7 @@ def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> Non
 
     assert updated.field_names == ("a", "b")
     assert_allclose_compact(updated.get("a"), np.asarray([2.0, 4.0]))
-    assert_allclose_compact(updated.to_mapping()["b"], np.asarray([4.0, 5.0]))
+    assert_allclose_compact(updated.get("b"), np.asarray([4.0, 5.0]))
 
 
 def test_runtime_component_and_coupler_state_are_pytrees() -> None:

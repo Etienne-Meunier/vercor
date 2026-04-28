@@ -27,7 +27,7 @@ from vercor.runtime import (
     RuntimeStepInfo,
     exchange_key_name,
 )
-from vercor.runtime_contracts import build_runtime_contracts_for_components
+from vercor.runtime_contracts import build_runtime_contracts
 from vercor.runtime_components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
@@ -35,6 +35,7 @@ from vercor.runtime_components import (
     validate_component_runtime_state,
 )
 from vercor.runtime_driver import (
+    RuntimeDispatchContext,
     host_component_names,
     prime_runtime_outgoing,
     step_runtime_component_host_enabled,
@@ -215,8 +216,8 @@ class Coupler:
 
             self.logger.info(f" Initialized {name}")
 
-        self._runtime_contracts = build_runtime_contracts_for_components(
-            self.components,
+        self._runtime_contracts = build_runtime_contracts(
+            tuple(self.components),
             self.exchanges,
             validate_endpoints=True,
         )
@@ -332,8 +333,8 @@ class Coupler:
     def _runtime_state_from_components(
         self, *, prefill_missing: bool = False
     ) -> RuntimeCouplerState:
-        self._runtime_contracts = build_runtime_contracts_for_components(
-            self.components,
+        self._runtime_contracts = build_runtime_contracts(
+            tuple(self.components),
             self.exchanges,
             validate_endpoints=False,
         )
@@ -361,8 +362,8 @@ class Coupler:
 
     def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
         if set(self._runtime_contracts) != set(self.components):
-            self._runtime_contracts = build_runtime_contracts_for_components(
-                self.components,
+            self._runtime_contracts = build_runtime_contracts(
+                tuple(self.components),
                 self.exchanges,
                 validate_endpoints=False,
             )
@@ -447,8 +448,7 @@ class Coupler:
             runtime_state = prime_runtime_outgoing(
                 runtime_state,
                 tuple(self.run_sequence),
-                components=self.components,
-                contracts=self._runtime_contracts,
+                dispatch_context=self._runtime_dispatch_context(),
                 step_info=initial_runtime_step_info(self.clock, self.settings),
             )
         self._validate_runtime_state(runtime_state)
@@ -470,6 +470,18 @@ class Coupler:
             masks["bmask_" + source_destination_name] = self._binary_masks[key]
             masks["fmask_" + source_destination_name] = self._fractional_masks[key]
         return masks
+
+    def _runtime_dispatch_context(self) -> RuntimeDispatchContext:
+        """Return static runtime dispatch plumbing for the current coupler state."""
+
+        return RuntimeDispatchContext(
+            components=self.components,
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            contracts=self._runtime_contracts,
+            dt_seconds=self.clock.dt_seconds,
+            settings=self.settings,
+        )
 
     def runtime_component_view(
         self,
@@ -555,12 +567,7 @@ class Coupler:
                     runtime_state,
                     cname,
                     step_info,
-                    components=self.components,
-                    exchanges=self.exchanges,
-                    regridders=self._regridders,
-                    contracts=self._runtime_contracts,
-                    dt_seconds=self.clock.dt_seconds,
-                    settings=self.settings,
+                    dispatch_context=self._runtime_dispatch_context(),
                     time=time,
                     logger=self.logger,
                 )
@@ -627,12 +634,7 @@ class Coupler:
                     state,
                     cname,
                     step_info,
-                    components=self.components,
-                    exchanges=self.exchanges,
-                    regridders=self._regridders,
-                    contracts=self._runtime_contracts,
-                    dt_seconds=self.clock.dt_seconds,
-                    settings=self.settings,
+                    dispatch_context=self._runtime_dispatch_context(),
                 )
             return state, None
 

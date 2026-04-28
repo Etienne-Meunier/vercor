@@ -1,5 +1,38 @@
 # 2026-04-28
 
+## Runtime Bridge Boundary Simplification
+
+- Removed redundant runtime contract construction over component objects:
+  - `Coupler` now builds contracts directly from component-name order
+  - deleted the `build_runtime_contracts_for_components()` wrapper
+- Reduced repeated runtime driver plumbing:
+  - added immutable `RuntimeDispatchContext` for static dispatch inputs
+  - pure, host-enabled, and outgoing-prime runtime helpers now receive one dispatch context
+- Removed stale compatibility surfaces:
+  - deleted unused `RuntimeFieldStore.subset()` and `RuntimeFieldStore.to_mapping()`
+  - deleted unused deprecated CAMulator wind post-processing wrapper
+- Consolidated JAXGCM runtime field ownership:
+  - added one set of runtime field constants/helpers for initialization, prefill, and validation
+- Added architecture regression coverage so redundant contract wrappers, mapping-style field-store helpers, and deprecated wind wrapper are not reintroduced.
+- Updated `DEPENDENCIES.md` to document the name-sequence contract builder and dispatch context.
+- Note: mypy initially flagged the JAXGCM default-field helper dict inference; fixed with an explicit `dict[str, RuntimeArray]` annotation.
+
+## Validation (Runtime Bridge Boundary Simplification, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_external_tools_coverage.py tests/test_external_components_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 90 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Boundary Helper Refactor
 
 - Extracted remaining runtime-only orchestration out of `Coupler`:
