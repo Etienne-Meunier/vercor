@@ -14,7 +14,7 @@ from vercor.components.base import (
     HostRuntimeComponent,
     RuntimeStepContext,
 )
-from vercor.tools import create_lnd_mask_from_ocn
+from vercor.grid_masks import create_lnd_mask_from_ocn
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentState
@@ -128,7 +128,7 @@ class CAMulatorLand(HostRuntimeComponent):
             self.grid.shape, 283.0, dtype=jnp.float32
         )
 
-    def _step_host_runtime_state(
+    def step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         context: RuntimeStepContext,

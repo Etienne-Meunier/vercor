@@ -14,25 +14,29 @@ from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.runtime_views import RuntimeComponentView
-from vercor.tools import (
-    _append_unique,
-    _flatten_fields,
-    get_component,
-    grids_identical,
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
     safe_component_nanmean,
+)
+from vercor.grid_masks import (
+    get_component,
+    grids_identical,
+)
+from vercor.runtime_contracts import (
+    append_unique_runtime_fields,
+    flatten_exchange_fields,
 )
 
 matplotlib.use("Agg")
 
 
 def test_flatten_fields_and_append_unique() -> None:
-    flattened = _flatten_fields(["a", ("b", "c"), "d"])
+    flattened = flatten_exchange_fields(["a", ("b", "c"), "d"])
     assert flattened == ["a", "b", "c", "d"]
 
     target = ["a", "b"]
-    _append_unique(target, ["b", "c", "d", "a"])
+    append_unique_runtime_fields(target, ["b", "c", "d", "a"])
     assert target == ["a", "b", "c", "d"]
 
 

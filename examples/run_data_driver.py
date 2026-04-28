@@ -8,7 +8,7 @@ from vercor import Clock, Coupler, Exchange
 from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
 from vercor.coupler import RunSequence
 from vercor.regridders import bilinear, conservative
-from vercor.tools import (
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )

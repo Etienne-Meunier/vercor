@@ -18,7 +18,11 @@ import vercor.components.external.veros_gcm as veros_gcm_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.base import ComponentInitContext, RuntimeStepContext
-from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime import (
+    RuntimeComponentContract,
+    RuntimeComponentState,
+    RuntimeFieldStore,
+)
 from vercor.runtime_components import create_runtime_component_state
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
@@ -682,7 +686,11 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         dt_seconds=3600.0, run_order=["ATM"], settings=VercorSettings()
     )
     component_state = component.step_runtime_state(
-        create_runtime_component_state(component, prefill_missing=True),
+        create_runtime_component_state(
+            component,
+            prefill_missing=True,
+            contract=RuntimeComponentContract.empty(),
+        ),
         RuntimeStepContext(
             dt_seconds=timedelta(days=1).total_seconds(),
             settings=coupler.settings,
@@ -1178,7 +1186,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component._step_function = fake_step_function
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component_state = component._step_host_runtime_state(
+    component_state = component.step_host_runtime_state(
         _runtime_component_state("OCN", component.data),
         RuntimeStepContext(
             dt_seconds=20.0,
@@ -1235,7 +1243,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     component._step_function = lambda state: state
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component._step_host_runtime_state(
+    component.step_host_runtime_state(
         _runtime_component_state("OCN", component.data),
         RuntimeStepContext(
             dt_seconds=20.0,

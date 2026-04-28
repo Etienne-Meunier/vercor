@@ -9,7 +9,7 @@ import jax
 from vercor.clock import Clock, ModelDateTime
 from vercor.runtime import RuntimeStepInfo
 from vercor.settings import VercorSettings
-from vercor.tools import (
+from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
     is_leap_year,

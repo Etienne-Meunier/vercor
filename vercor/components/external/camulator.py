@@ -43,7 +43,7 @@ from vercor.components.base import (
     RuntimeStepContext,
 )
 from vercor.grid import RectilinearGrid
-from vercor.tools import _runtime_array_to_host
+from vercor.host_arrays import runtime_array_to_host
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -133,7 +133,7 @@ def _torch_tensor_from_jax_array(
 ) -> torch.Tensor:
     """Transfer a JAX-compatible array through an explicit host-to-Torch boundary."""
 
-    tensor = torch.as_tensor(_runtime_array_to_host(array).copy())
+    tensor = torch.as_tensor(runtime_array_to_host(array).copy())
     if pin_memory and device != "cpu" and torch.cuda.is_available():
         tensor = tensor.pin_memory()
     return tensor.to(device, non_blocking=True)
@@ -472,7 +472,7 @@ class CAMulatorGCM(HostRuntimeComponent):
 
         self.data.update(_initialize_camulator_runtime_fields(self.grid.shape))
 
-    def _step_host_runtime_state(
+    def step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         context: RuntimeStepContext,
@@ -639,32 +639,32 @@ class CAMulatorGCM(HostRuntimeComponent):
             settings.cappa,
             settings.stefBoltz,
             self.P0,
-            _runtime_array_to_host(self.hyai.cpu().numpy()).squeeze(),
-            _runtime_array_to_host(self.hybi.cpu().numpy()).squeeze(),
-            _runtime_array_to_host(self.hyam.cpu().numpy()).squeeze(),
-            _runtime_array_to_host(self.hybm.cpu().numpy()).squeeze(),
-            _runtime_array_to_host(
+            runtime_array_to_host(self.hyai.cpu().numpy()).squeeze(),
+            runtime_array_to_host(self.hybi.cpu().numpy()).squeeze(),
+            runtime_array_to_host(self.hyam.cpu().numpy()).squeeze(),
+            runtime_array_to_host(self.hybm.cpu().numpy()).squeeze(),
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "U").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "V").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "TS").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "T").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "Qtot").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "FSNS").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "FLNS").cpu().numpy()
             ),
-            _runtime_array_to_host(
+            runtime_array_to_host(
                 self.accessor_output.get_state_var(prediction_out, "PS").cpu().numpy()
             ),
         )

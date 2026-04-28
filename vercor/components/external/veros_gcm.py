@@ -22,7 +22,7 @@ from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
 from vercor.runtime import RuntimeFieldStore
 from vercor.settings import VercorSettings
-from vercor.tools import _runtime_array_to_host
+from vercor.host_arrays import runtime_array_to_host
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -309,7 +309,7 @@ def set_variable(
     with n_state.variables.unlock():
         var = getattr(vs, variable_name)
         updated_var = _update_veros_interior(var, variable_value)
-        setattr(vs, variable_name, _runtime_array_to_host(updated_var))
+        setattr(vs, variable_name, runtime_array_to_host(updated_var))
 
     return n_state
 
@@ -394,7 +394,7 @@ class VerosGCM(HostRuntimeComponent):
             self._veros_state.variables.tau,
         )
 
-    def _step_host_runtime_state(
+    def step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         context: RuntimeStepContext,

@@ -48,7 +48,7 @@ from vercor.runtime_time import (
 )
 from vercor.runtime_views import RuntimeComponentView
 from vercor.settings import VercorSettings
-from vercor.tools import (
+from vercor.grid_masks import (
     check_total_lnd_ocn_mask_sum,
     get_component,
     grids_identical,

@@ -76,7 +76,7 @@ def _step_component_runtime_state(
         logger=logger,
     )
     if host_enabled and isinstance(component, HostRuntimeComponent):
-        component_state = component._step_host_runtime_state(
+        component_state = component.step_host_runtime_state(
             component_state,
             step_context,
         )

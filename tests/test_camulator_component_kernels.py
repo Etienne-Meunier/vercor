@@ -25,7 +25,11 @@ from vercor.components.external.camulator import (
     _torch_tensor_from_jax_array,
 )
 from vercor.grid import RectilinearGrid
-from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime import (
+    RuntimeComponentContract,
+    RuntimeComponentState,
+    RuntimeFieldStore,
+)
 from vercor.runtime_components import create_runtime_component_state
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
@@ -336,8 +340,12 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     coupler = _make_coupler(start)
-    component_state = component._step_host_runtime_state(
-        create_runtime_component_state(component, prefill_missing=True),
+    component_state = component.step_host_runtime_state(
+        create_runtime_component_state(
+            component,
+            prefill_missing=True,
+            contract=RuntimeComponentContract.empty(),
+        ),
         RuntimeStepContext(
             dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
             settings=coupler.settings,
@@ -477,7 +485,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
     )
 
-    component_state = component._step_host_runtime_state(
+    component_state = component.step_host_runtime_state(
         _runtime_component_state("ATM", component.data),
         RuntimeStepContext(
             dt_seconds=float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),

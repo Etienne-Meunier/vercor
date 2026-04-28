@@ -56,7 +56,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     components_source = Path("vercor/components/__init__.py").read_text(
         encoding="utf-8"
     )
-    tools_source = Path("vercor/tools.py").read_text(encoding="utf-8")
+    diagnostics_source = Path("vercor/diagnostics.py").read_text(encoding="utf-8")
     jax_gcm_source = Path("vercor/components/external/jax_gcm.py").read_text(
         encoding="utf-8"
     )
@@ -87,7 +87,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     for marker in forbidden_component_markers:
         assert marker not in runtime_source
     assert "import_fields" not in coupler_source
-    assert 'hasattr(component, "_step_host_runtime_state")' not in coupler_source
+    assert 'hasattr(component, "step_host_runtime_state")' not in coupler_source
     assert "isinstance(component, HostRuntimeComponent)" not in coupler_source
     assert "isinstance(component, HostRuntimeComponent)" in runtime_driver_source
     assert "time is not None and isinstance" not in runtime_driver_source
@@ -128,17 +128,22 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def write_runtime_component_to_netcdf" not in base_source
     assert "write_runtime_component_to_netcdf" not in components_source
     assert "write_runtime_component_view_to_netcdf" not in components_source
-    assert "class RuntimeComponentView" not in tools_source
-    assert "RuntimeComponentView =" not in tools_source
-    assert "RuntimeComponentView" in tools_source
-    assert 'hasattr(store, "field_names")' not in tools_source
-    assert "elif field_name in store" not in tools_source
+    assert not Path("vercor/tools.py").exists()
+    assert "class RuntimeComponentView" not in diagnostics_source
+    assert "RuntimeComponentView =" not in diagnostics_source
+    assert "RuntimeComponentView" in diagnostics_source
+    assert 'hasattr(store, "field_names")' not in diagnostics_source
+    assert "elif field_name in store" not in diagnostics_source
+    assert "def runtime_contract" not in runtime_components_source
+    assert "RuntimeComponentContract | None" not in runtime_components_source
     assert "def step_runtime_state" in jax_gcm_source
-    assert "def _step_host_runtime_state" in veros_source
-    assert "def _step_host_runtime_state" in camulator_source
-    assert "def _step_host_runtime_state" in camulator_land_source
+    assert "def step_host_runtime_state" in veros_source
+    assert "def step_host_runtime_state" in camulator_source
+    assert "def step_host_runtime_state" in camulator_land_source
+    assert "def _step_host_runtime_state" not in base_source
+    assert "_step_host_runtime_state" not in runtime_driver_source
     for source in (veros_source, camulator_source, camulator_land_source):
-        signature = source.split("def _step_host_runtime_state", 1)[1].split(") ->", 1)[
+        signature = source.split("def step_host_runtime_state", 1)[1].split(") ->", 1)[
             0
         ]
         assert "coupler" not in signature

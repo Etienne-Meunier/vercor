@@ -9,18 +9,18 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-import vercor.tools as tools_module
+import vercor.assets as assets_module
 
 from tests._tools_support import make_coupler
 from tests.assertions import assert_allclose_compact
 from tests.conftest import SelectFastCases
 from vercor.clock import DateTime360, DateTime365
+from vercor.assets import get_forcing_data
 from vercor.exceptions import AssetError
-from vercor.tools import (
+from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_field_at_specific_time,
     get_field_time_slice,
-    get_forcing_data,
     get_periodic_interval,
     is_leap_year,
 )
@@ -305,9 +305,9 @@ def test_get_forcing_data_valid_and_invalid_file_type(
     (tmp_path / model_name).write_bytes(model_bytes)
     (tmp_path / surface_name).write_bytes(surface_bytes)
 
-    monkeypatch.setattr(tools_module, "_ASSETS_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(assets_module, "_ASSETS_CACHE_DIR", tmp_path)
     monkeypatch.setattr(
-        tools_module,
+        assets_module,
         "_FORCING_ASSETS",
         {
             "era5_model_levels": {

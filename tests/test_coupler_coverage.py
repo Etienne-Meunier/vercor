@@ -66,7 +66,7 @@ class _HostRunComponent(HostRuntimeComponent):
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.data["temperature"] = np.ones((2, 2))
 
-    def _step_host_runtime_state(
+    def step_host_runtime_state(
         self,
         component_state: Any,
         context: RuntimeStepContext,

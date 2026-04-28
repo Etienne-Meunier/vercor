@@ -84,7 +84,7 @@ class Component:
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
-        contract: RuntimeComponentContract | None = None,
+        contract: RuntimeComponentContract,
     ) -> None:
         """Pre-seed component-specific fields required by runtime execution."""
 
@@ -93,7 +93,7 @@ class Component:
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        contract: RuntimeComponentContract | None = None,
+        contract: RuntimeComponentContract,
     ) -> None:
         """Validate component-specific runtime fields before execution."""
 
@@ -125,7 +125,7 @@ class Component:
 class HostRuntimeComponent(Component):
     """Base class for host-backed adapters that cannot run inside JAX scan."""
 
-    def _step_host_runtime_state(
+    def step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         context: RuntimeStepContext,

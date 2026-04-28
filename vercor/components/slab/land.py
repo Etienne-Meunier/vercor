@@ -42,7 +42,7 @@ class Land(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract | None" = None,
+        contract: "RuntimeComponentContract",
     ) -> None:
         """Validate slab-land runtime fields."""
 

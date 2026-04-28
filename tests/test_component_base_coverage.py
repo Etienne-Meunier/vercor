@@ -122,7 +122,7 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
     component = DummyComponent(name="ATM", grid=make_test_grid())
 
     with pytest.raises(ComponentError, match="no fields to import"):
-        check_not_empty_import_export_lists(component)
+        check_not_empty_import_export_lists(component, RuntimeComponentContract.empty())
 
     import_only = RuntimeComponentContract(imports=("temperature",))
     with pytest.raises(ComponentError, match="no fields to export"):
@@ -206,7 +206,9 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
 
     component_state = send_runtime_fields(
         component,
-        create_runtime_component_state(component),
+        create_runtime_component_state(
+            component, contract=RuntimeComponentContract.empty()
+        ),
         contract=contract,
     )
     assert_allclose_compact(
@@ -225,7 +227,9 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component.data["temperature"] = monthly
     component_state = send_runtime_fields(
         component,
-        create_runtime_component_state(component),
+        create_runtime_component_state(
+            component, contract=RuntimeComponentContract.empty()
+        ),
         scalar_runtime_step_info(
             timestamp, runtime_coupler.clock, runtime_coupler.settings
         ),
@@ -245,7 +249,9 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component.data["temperature"] = daily
     component_state = send_runtime_fields(
         component,
-        create_runtime_component_state(component),
+        create_runtime_component_state(
+            component, contract=RuntimeComponentContract.empty()
+        ),
         scalar_runtime_step_info(
             runtime_coupler.clock.start,
             runtime_coupler.clock,

@@ -7,7 +7,7 @@ from jax.typing import ArrayLike
 
 from vercor.components.base import Component, ComponentForcingData
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_forcing_data
+from vercor.assets import get_forcing_data
 
 
 def _prepare_era5_land_runtime_fields(

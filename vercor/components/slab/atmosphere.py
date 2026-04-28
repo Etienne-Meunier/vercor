@@ -76,7 +76,7 @@ class Atmosphere(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract | None" = None,
+        contract: "RuntimeComponentContract",
     ) -> None:
         """Validate slab-atmosphere runtime fields."""
 

@@ -464,7 +464,7 @@ class JAXGCM(Component):
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
-        contract: "RuntimeComponentContract | None" = None,
+        contract: "RuntimeComponentContract",
     ) -> None:
         """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
@@ -479,7 +479,7 @@ class JAXGCM(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract | None" = None,
+        contract: "RuntimeComponentContract",
     ) -> None:
         """Validate JAXGCM runtime payload and pre-seeded output fields."""
 

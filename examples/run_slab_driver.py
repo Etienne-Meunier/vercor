@@ -12,7 +12,7 @@ from vercor.regridders import (
     bilinear,
     conservative,
 )
-from vercor.tools import (
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )

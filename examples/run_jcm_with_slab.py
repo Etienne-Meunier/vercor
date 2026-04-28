@@ -8,7 +8,7 @@ from vercor.components import JAXGCM, Land, Ocean
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
 from vercor.regridders import bilinear, conservative
-from vercor.tools import (
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )

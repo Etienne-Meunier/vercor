@@ -20,7 +20,7 @@ from vercor.fluxes.utilities import (
 from vercor.grid import RectilinearGrid
 from vercor.runtime_components import validate_runtime_grid_data_field
 from vercor.settings import VercorSettings
-from vercor.tools import get_forcing_data
+from vercor.assets import get_forcing_data
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -223,7 +223,7 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
-        contract: "RuntimeComponentContract | None" = None,
+        contract: "RuntimeComponentContract",
     ) -> None:
         """Pre-seed ERA5 atmosphere diagnostics for stable runtime state."""
 
@@ -234,7 +234,7 @@ class ERA5Atmosphere(Component, ComponentForcingData):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract | None" = None,
+        contract: "RuntimeComponentContract",
     ) -> None:
         """Validate ERA5 atmosphere runtime diagnostic fields."""
 

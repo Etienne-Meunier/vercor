@@ -7,7 +7,7 @@ from jcm.forcing import ForcingData
 
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
-from vercor.tools import create_lnd_mask_from_ocn
+from vercor.grid_masks import create_lnd_mask_from_ocn
 
 
 def _coordinates_in_degrees(

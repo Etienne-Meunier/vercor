@@ -27,6 +27,7 @@ from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
+from vercor.runtime import RuntimeComponentContract
 from vercor.runtime_components import create_runtime_component_state
 from vercor.types import RuntimeArray
 
@@ -40,7 +41,11 @@ def _step_component(
     """Advance one component through the runtime-state API."""
 
     return component.step_runtime_state(
-        create_runtime_component_state(component, prefill_missing=True),
+        create_runtime_component_state(
+            component,
+            prefill_missing=True,
+            contract=RuntimeComponentContract.empty(),
+        ),
         RuntimeStepContext(
             dt_seconds=dt.total_seconds(),
             settings=coupler.settings,

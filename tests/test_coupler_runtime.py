@@ -32,7 +32,7 @@ from vercor.regridders import bilinear, conservative
 from vercor.run_sequence import RunSequence
 from vercor.runtime import RuntimeComponentState, RuntimeCouplerState, RuntimeFieldStore
 from vercor.settings import ComponentSettings
-from vercor.tools import (
+from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_field_time_slice,
     get_periodic_interval,

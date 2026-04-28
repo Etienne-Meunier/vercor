@@ -1,5 +1,38 @@
 # 2026-04-28
 
+## Runtime Utility Ownership Simplification
+
+- Split the mixed `vercor.tools` module into focused ownership boundaries:
+  - `vercor.assets` for forcing asset resolution/download/checksum validation
+  - `vercor.diagnostics` for runtime-view tables and plotting
+  - `vercor.host_arrays` for explicit JAX-to-host array transfer
+  - `vercor.time_selection` for calendar/time-slice interpolation helpers
+  - `vercor.grid_masks` for grid lookup, land/ocean mask creation, and remap checks
+- Deleted `vercor/tools.py` instead of keeping a compatibility re-export layer.
+- Made the host runtime bridge public:
+  - `HostRuntimeComponent.step_host_runtime_state()` is now the explicit CAMulator/Veros bridge
+  - runtime dispatch still selects it only after `isinstance(component, HostRuntimeComponent)`
+- Removed implicit empty-contract compatibility in generic runtime helpers:
+  - runtime helper functions now require a concrete `RuntimeComponentContract`
+  - tests use `RuntimeComponentContract.empty()` where an empty contract is intentional
+- Updated architecture regression coverage for the deleted tools module, public host bridge, and explicit runtime contracts.
+- Updated `DEPENDENCIES.md` with focused utility modules and the public host bridge boundary.
+- No failed implementation approaches. The cleanup stayed mechanical after the initial module split and preserved the canonical runtime state interfaces.
+
+## Validation (Runtime Utility Ownership Simplification, 2026-04-28)
+
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 94 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Bridge Boundary Simplification
 
 - Removed redundant runtime contract construction over component objects:

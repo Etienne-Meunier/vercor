@@ -1,20 +1,9 @@
 from pathlib import Path
-from typing import Any
-
-import jax
-import jax.numpy as jnp
-import numpy as np
-from numpy.typing import NDArray
 import xarray as xr
 
+from vercor.host_arrays import runtime_array_to_host
 from vercor.runtime_views import RuntimeComponentView
 from vercor.types import RuntimeArray
-
-
-def _runtime_array_to_host(array: RuntimeArray) -> NDArray[Any]:
-    """Transfer a runtime array to host memory for xarray output."""
-
-    return np.asarray(jax.device_get(jnp.asarray(array)))
 
 
 def _write_runtime_component_to_netcdf(
@@ -32,10 +21,10 @@ def _write_runtime_component_to_netcdf(
     """
 
     lat = xr.DataArray(
-        _runtime_array_to_host(view.grid.latitude), dims=("nlat",), name="latitude"
+        runtime_array_to_host(view.grid.latitude), dims=("nlat",), name="latitude"
     )
     lon = xr.DataArray(
-        _runtime_array_to_host(view.grid.longitude), dims=("nlon",), name="longitude"
+        runtime_array_to_host(view.grid.longitude), dims=("nlon",), name="longitude"
     )
 
     data_vars = {}
@@ -45,7 +34,7 @@ def _write_runtime_component_to_netcdf(
     ):
         for name, value in zip(store.field_names, store.values):
             data_vars[f"{store_name}_{name}"] = xr.DataArray(
-                data=_runtime_array_to_host(value),
+                data=runtime_array_to_host(value),
                 dims=("nlat", "nlon"),
                 coords={"latitude": lat, "longitude": lon},
                 attrs={
@@ -57,7 +46,7 @@ def _write_runtime_component_to_netcdf(
 
     for name, value in (masks or {}).items():
         data_vars[name] = xr.DataArray(
-            data=_runtime_array_to_host(value),
+            data=runtime_array_to_host(value),
             dims=("nlat", "nlon"),
             coords={"latitude": lat, "longitude": lon},
             attrs={
