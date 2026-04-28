@@ -35,6 +35,10 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.grid import RectilinearGrid
+from vercor.runtime_components import (
+    validate_runtime_data_field_exists,
+    validate_runtime_grid_data_field,
+)
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -443,7 +447,7 @@ class JAXGCM(Component):
             "pressure",
             jnp.zeros((sigma_levels.shape[0], *self.grid.shape), dtype=jnp.float_),
         )
-        super().prefill_runtime_state_fields(data, incoming, outgoing, contract)
+        _ = incoming, outgoing, contract
 
     def validate_runtime_state(
         self,
@@ -452,7 +456,7 @@ class JAXGCM(Component):
     ) -> None:
         """Validate JAXGCM runtime payload and pre-seeded output fields."""
 
-        super().validate_runtime_state(component_state, contract)
+        _ = contract
         if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
             raise ComponentError(
                 "JAXGCM runtime requires an initialized immutable runtime payload "
@@ -476,12 +480,13 @@ class JAXGCM(Component):
             "model_level_height",
         )
         for field_name in grid_fields:
-            self._validate_runtime_grid_data_field(
+            validate_runtime_grid_data_field(
+                self,
                 component_state,
                 field_name,
             )
 
-        self._validate_runtime_data_field_exists(component_state, "pressure")
+        validate_runtime_data_field_exists(self, component_state, "pressure")
         pressure_shape = jnp.asarray(component_state.data.get("pressure")).shape
         sigma_levels = jnp.asarray(self.sigma_levels)
         expected_pressure_shape = (sigma_levels.shape[0], *self.grid.shape)

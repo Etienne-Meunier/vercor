@@ -1,0 +1,259 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import jax.numpy as jnp
+
+from vercor.exceptions import ComponentError, CouplerError
+from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
+from vercor.runtime import (
+    RuntimeComponentContract,
+    RuntimeComponentState,
+    RuntimeFieldStore,
+    RuntimeStepInfo,
+)
+from vercor.types import RuntimeArray
+
+if TYPE_CHECKING:
+    from vercor.components.base import Component
+
+
+def runtime_contract(
+    contract: RuntimeComponentContract | None,
+) -> RuntimeComponentContract:
+    """Return an explicit runtime contract, defaulting to no import/export fields."""
+
+    return RuntimeComponentContract.empty() if contract is None else contract
+
+
+def prefill_runtime_contract_fields(
+    component: "Component",
+    data: dict[str, RuntimeArray],
+    incoming: dict[str, RuntimeArray],
+    outgoing: dict[str, RuntimeArray],
+    contract: RuntimeComponentContract | None = None,
+) -> None:
+    """Add generic import/export fields required for stable runtime execution."""
+
+    active_contract = runtime_contract(contract)
+    zeros = jnp.zeros(component.grid.shape, dtype=jnp.float_)
+    for field_name in active_contract.imports:
+        incoming.setdefault(field_name, zeros)
+        data.setdefault(field_name, zeros)
+    for field_name in active_contract.exports:
+        outgoing.setdefault(field_name, data.get(field_name, zeros))
+        data.setdefault(field_name, zeros)
+
+
+def create_runtime_component_state(
+    component: "Component",
+    *,
+    prefill_missing: bool = False,
+    contract: RuntimeComponentContract | None = None,
+) -> RuntimeComponentState:
+    """Create immutable runtime state from a component's seed data."""
+
+    data = dict(component.data)
+    incoming: dict[str, RuntimeArray] = {}
+    outgoing: dict[str, RuntimeArray] = {}
+    if prefill_missing:
+        component.prefill_runtime_state_fields(data, incoming, outgoing, contract)
+        prefill_runtime_contract_fields(component, data, incoming, outgoing, contract)
+
+    return RuntimeComponentState(
+        data=RuntimeFieldStore.from_mapping(data),
+        incoming=RuntimeFieldStore.from_mapping(incoming),
+        outgoing=RuntimeFieldStore.from_mapping(outgoing),
+        runtime_payload=component.create_runtime_payload(),
+    )
+
+
+def validate_runtime_store_field(
+    component: "Component",
+    store: RuntimeFieldStore,
+    field_name: str,
+    store_description: str,
+) -> None:
+    """Validate that a named runtime store field exists and matches the component grid."""
+
+    expected_shape = component.grid.shape
+    if field_name not in store.field_names:
+        raise CouplerError(
+            "Runtime missing "
+            f"{store_description} field '{field_name}' for component '{component.name}'"
+        )
+
+    field_shape = jnp.asarray(store.get(field_name)).shape
+    if field_shape != expected_shape:
+        raise CouplerError(
+            "Runtime "
+            f"{store_description} field '{field_name}' for component '{component.name}' "
+            f"has shape {field_shape}, expected {expected_shape}"
+        )
+
+
+def validate_runtime_data_field_exists(
+    component: "Component",
+    component_state: RuntimeComponentState,
+    field_name: str,
+) -> None:
+    """Validate that a named component data field exists in runtime state."""
+
+    if field_name not in component_state.data.field_names:
+        raise CouplerError(
+            "Runtime missing required data field "
+            f"'{field_name}' for component '{component.name}'"
+        )
+
+
+def validate_runtime_grid_data_field(
+    component: "Component",
+    component_state: RuntimeComponentState,
+    field_name: str,
+) -> None:
+    """Validate that a runtime data field exists and matches the component grid."""
+
+    validate_runtime_data_field_exists(component, component_state, field_name)
+    validate_runtime_store_field(
+        component,
+        component_state.data,
+        field_name,
+        "required data",
+    )
+
+
+def validate_component_runtime_state(
+    component: "Component",
+    component_state: RuntimeComponentState,
+    contract: RuntimeComponentContract | None = None,
+) -> None:
+    """Validate generic runtime contract fields before component-specific checks."""
+
+    active_contract = runtime_contract(contract)
+    for field_name in active_contract.imports:
+        validate_runtime_store_field(
+            component,
+            component_state.incoming,
+            field_name,
+            "imported incoming",
+        )
+        validate_runtime_grid_data_field(
+            component,
+            component_state,
+            field_name,
+        )
+    for field_name in active_contract.exports:
+        validate_runtime_data_field_exists(component, component_state, field_name)
+        validate_runtime_store_field(
+            component,
+            component_state.outgoing,
+            field_name,
+            "exported source",
+        )
+    for field_name in component_state.incoming.field_names:
+        validate_runtime_store_field(
+            component,
+            component_state.incoming,
+            field_name,
+            "incoming",
+        )
+
+
+def receive_runtime_fields(
+    component_state: RuntimeComponentState,
+    contract: RuntimeComponentContract | None = None,
+) -> RuntimeComponentState:
+    """Move imported incoming runtime fields into component data."""
+
+    active_contract = runtime_contract(contract)
+    data = component_state.data
+    for field_name in active_contract.imports:
+        data = data.set(field_name, component_state.incoming.get(field_name))
+    return component_state.with_data(data)
+
+
+def _select_runtime_field_for_send(
+    component: "Component",
+    component_state: RuntimeComponentState,
+    field_name: str,
+    step_info: RuntimeStepInfo | None,
+) -> RuntimeArray:
+    field = component_state.data.get(field_name)
+    if step_info is None:
+        return field
+
+    if component.settings.apply_time_interpolation:
+        arr = jnp.asarray(field)
+        left = jnp.take(arr, step_info.monthly_index_left, axis=-1)
+        right = jnp.take(arr, step_info.monthly_index_right, axis=-1)
+        return (
+            step_info.monthly_weight_left * left
+            + step_info.monthly_weight_right * right
+        ).swapaxes(-2, -1)
+
+    if component.settings.get_field_time_slice:
+        return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
+
+    return field
+
+
+def send_runtime_fields(
+    component: "Component",
+    component_state: RuntimeComponentState,
+    step_info: RuntimeStepInfo | None = None,
+    *,
+    contract: RuntimeComponentContract | None = None,
+) -> RuntimeComponentState:
+    """Move exported component data into outgoing runtime fields."""
+
+    active_contract = runtime_contract(contract)
+    outgoing = component_state.outgoing
+    for field_name in active_contract.exports:
+        outgoing = outgoing.set(
+            field_name,
+            _select_runtime_field_for_send(
+                component,
+                component_state,
+                field_name,
+                step_info,
+            ),
+        )
+    return component_state.with_outgoing(outgoing)
+
+
+def check_not_empty_import_export_lists(
+    component: "Component",
+    contract: RuntimeComponentContract | None = None,
+) -> None:
+    """Check that a component's runtime contract has valid field ownership."""
+
+    active_contract = runtime_contract(contract)
+    if not active_contract.imports:
+        raise ComponentError(
+            f"Component '{component.name}' has no fields to import defined."
+        )
+    if not active_contract.exports:
+        raise ComponentError(
+            f"Component '{component.name}' has no fields to export defined."
+        )
+
+    all_fields = set(active_contract.all_fields)
+    if len(all_fields) < len(active_contract.all_fields):
+        raise ComponentError(
+            f"Component '{component.name}' has overlapping fields in import/export lists."
+        )
+
+
+def check_valid_exchange_field_names(
+    component: "Component",
+    contract: RuntimeComponentContract | None = None,
+) -> None:
+    """Check that a component's runtime contract uses supported exchange fields."""
+
+    active_contract = runtime_contract(contract)
+    for field_name in set(active_contract.all_fields):
+        if field_name not in VALID_EXCHANGE_FIELD_NAMES:
+            raise ComponentError(
+                f"Field name '{field_name}' in component '{component.name}' is not a recognized exchange variable.\n"
+                f"Replace field name '{field_name}' with one of the supported names: {VALID_EXCHANGE_FIELD_NAMES}"
+            )

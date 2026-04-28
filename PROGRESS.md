@@ -1,5 +1,38 @@
 # 2026-04-28
 
+## Internal Runtime Responsibility Cleanup
+
+- Moved generic runtime/component operations out of `Component`:
+  - added `vercor.runtime_components` for runtime state creation, contract prefill/validation, receive/send, and monthly/daily send selection
+  - `Component` now keeps only seed data plus component-specific init, prefill, validation, and step hooks
+  - concrete components now use runtime helper validation for component-specific required fields instead of calling generic base validation
+- Kept the public model import surface stable:
+  - `vercor.components` still exports component classes and base context/bridge types
+  - `Coupler` imports base contracts directly from `vercor.components.base`
+- Preserved the explicit non-differentiable bridge:
+  - CAMulator atmosphere, CAMulator land, and Veros remain `HostRuntimeComponent` adapters
+  - scanned/compiled runtime still rejects host-backed adapters
+- Added/updated architecture regression coverage so generic runtime helpers stay out of `Component` and compatibility APIs remain absent.
+- Updated `DEPENDENCIES.md` to document the new runtime-components helper layer.
+
+## Validation (Internal Runtime Responsibility Cleanup, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_runtime_state.py tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_runtime_compile_cache.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py tests/test_component_models_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 87 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Targeted Runtime Boundary Cleanup
 
 - Replaced remaining broad component runtime signatures with explicit context objects:

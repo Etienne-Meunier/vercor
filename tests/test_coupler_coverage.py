@@ -667,9 +667,9 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         events.append(f"dispatch:{component_name}")
         return state
 
-    def fake_receive(component: Any, component_state: Any, *args: Any) -> Any:
+    def fake_receive(component_state: Any, *args: Any) -> Any:
         _ = component_state, args
-        events.append(f"receive:{component.name}")
+        events.append("receive")
         return component_state
 
     def fake_send(
@@ -683,8 +683,8 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         return component_state
 
     monkeypatch.setattr("vercor.coupler.dispatch_component_exchanges", fake_dispatch)
-    monkeypatch.setattr(_RunComponent, "receive_runtime_fields", fake_receive)
-    monkeypatch.setattr(_RunComponent, "send_runtime_fields", fake_send)
+    monkeypatch.setattr("vercor.coupler.receive_runtime_fields", fake_receive)
+    monkeypatch.setattr("vercor.coupler.send_runtime_fields", fake_send)
 
     coupler.run()
 
@@ -692,11 +692,11 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         "send:ATM",
         "send:OCN",
         "dispatch:ATM",
-        "receive:ATM",
+        "receive",
         "step_runtime:ATM:2000-01-01T00:00:00:60.0",
         "send:ATM",
         "dispatch:OCN",
-        "receive:OCN",
+        "receive",
         "step_runtime:OCN:2000-01-01T00:00:00:60.0",
         "send:OCN",
     ]

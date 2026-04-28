@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.grid import RectilinearGrid
+from vercor.runtime_components import validate_runtime_grid_data_field
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
@@ -40,9 +41,10 @@ class SeaIce(Component):
     ) -> None:
         """Validate slab-sea-ice runtime fields."""
 
-        super().validate_runtime_state(component_state, contract)
+        _ = contract
         for field_name in ("ice_fraction", "sea_surface_temperature"):
-            self._validate_runtime_grid_data_field(
+            validate_runtime_grid_data_field(
+                self,
                 component_state,
                 field_name,
             )

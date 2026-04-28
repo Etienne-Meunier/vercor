@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.grid import RectilinearGrid
+from vercor.runtime_components import validate_runtime_grid_data_field
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
@@ -79,7 +80,7 @@ class Atmosphere(Component):
     ) -> None:
         """Validate slab-atmosphere runtime fields."""
 
-        super().validate_runtime_state(component_state, contract)
+        _ = contract
         for field_name in (
             "temperature_2m",
             "sensible_heat_flux",
@@ -87,7 +88,8 @@ class Atmosphere(Component):
             "u_velocity_10m",
             "v_velocity_10m",
         ):
-            self._validate_runtime_grid_data_field(
+            validate_runtime_grid_data_field(
+                self,
                 component_state,
                 field_name,
             )

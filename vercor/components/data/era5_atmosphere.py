@@ -18,6 +18,7 @@ from vercor.fluxes.utilities import (
     compute_potential_temperature,
 )
 from vercor.grid import RectilinearGrid
+from vercor.runtime_components import validate_runtime_grid_data_field
 from vercor.settings import VercorSettings
 from vercor.tools import get_forcing_data
 from vercor.types import RuntimeArray
@@ -228,7 +229,7 @@ class ERA5Atmosphere(Component, ComponentForcingData):
 
         zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
         data.setdefault("total_surface_temperature", zeros)
-        super().prefill_runtime_state_fields(data, incoming, outgoing, contract)
+        _ = incoming, outgoing, contract
 
     def validate_runtime_state(
         self,
@@ -237,13 +238,14 @@ class ERA5Atmosphere(Component, ComponentForcingData):
     ) -> None:
         """Validate ERA5 atmosphere runtime diagnostic fields."""
 
-        super().validate_runtime_state(component_state, contract)
+        _ = contract
         for field_name in (
             "land_surface_temperature",
             "sea_surface_temperature",
             "total_surface_temperature",
         ):
-            self._validate_runtime_grid_data_field(
+            validate_runtime_grid_data_field(
+                self,
                 component_state,
                 field_name,
             )

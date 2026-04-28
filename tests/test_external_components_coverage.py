@@ -19,6 +19,7 @@ from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.base import ComponentInitContext, RuntimeStepContext
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime_components import create_runtime_component_state
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 
@@ -681,7 +682,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         dt_seconds=3600.0, run_order=["ATM"], settings=VercorSettings()
     )
     component_state = component.step_runtime_state(
-        component.to_runtime_component_state(prefill_missing=True),
+        create_runtime_component_state(component, prefill_missing=True),
         RuntimeStepContext(
             dt_seconds=timedelta(days=1).total_seconds(),
             settings=coupler.settings,

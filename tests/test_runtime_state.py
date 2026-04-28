@@ -21,6 +21,7 @@ from vercor.runtime import (
     RuntimeFieldStore,
     RuntimeStepInfo,
 )
+from vercor.runtime_components import send_runtime_fields
 
 
 class _RuntimeSendComponent(Component):
@@ -42,6 +43,9 @@ class _RuntimeSendComponent(Component):
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_source = Path("vercor/runtime.py").read_text(encoding="utf-8")
+    runtime_components_source = Path("vercor/runtime_components.py").read_text(
+        encoding="utf-8"
+    )
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
     components_source = Path("vercor/components/__init__.py").read_text(
@@ -82,6 +86,15 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "_fields2export" not in base_source
     assert "_fields2import" not in coupler_source
     assert "_fields2export" not in coupler_source
+    assert "def to_runtime_component_state" not in base_source
+    assert "def receive_runtime_fields" not in base_source
+    assert "def send_runtime_fields" not in base_source
+    assert "def check_not_empty_import_export_lists" not in base_source
+    assert "def check_valid_exchange_field_names" not in base_source
+    assert "def create_runtime_component_state" in runtime_components_source
+    assert "def receive_runtime_fields" in runtime_components_source
+    assert "def send_runtime_fields" in runtime_components_source
+    assert "def validate_component_runtime_state" in runtime_components_source
     assert "RuntimeComponentContract" in runtime_source
     assert "_runtime_contracts" in coupler_source
     assert "ComponentInitContext" in base_source
@@ -249,11 +262,12 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
             incoming=RuntimeFieldStore.empty(),
             outgoing=RuntimeFieldStore.empty(),
         )
-        sent = component.send_runtime_fields(state, step_info, contract=contract)
+        sent = send_runtime_fields(component, state, step_info, contract=contract)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     sent_state = jax.jit(
-        lambda field: component.send_runtime_fields(
+        lambda field: send_runtime_fields(
+            component,
             RuntimeComponentState(
                 data=RuntimeFieldStore.from_mapping({"temperature": field}),
                 incoming=RuntimeFieldStore.empty(),
@@ -288,7 +302,7 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
             incoming=RuntimeFieldStore.empty(),
             outgoing=RuntimeFieldStore.empty(),
         )
-        sent = component.send_runtime_fields(state, step_info, contract=contract)
+        sent = send_runtime_fields(component, state, step_info, contract=contract)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     state = RuntimeComponentState(
@@ -297,7 +311,8 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
         outgoing=RuntimeFieldStore.empty(),
     )
     sent_state = jax.jit(
-        lambda value: component.send_runtime_fields(
+        lambda value: send_runtime_fields(
+            component,
             value,
             step_info,
             contract=contract,

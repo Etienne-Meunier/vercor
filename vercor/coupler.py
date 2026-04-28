@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
-from vercor.components import (
+from vercor.components.base import (
     ComponentInitContext,
     HostRuntimeComponent,
     RuntimeStepContext,
@@ -32,6 +32,14 @@ from vercor.runtime import (
     RuntimeStepInfo,
     dispatch_component_exchanges,
     exchange_key_name,
+)
+from vercor.runtime_components import (
+    check_not_empty_import_export_lists,
+    check_valid_exchange_field_names,
+    create_runtime_component_state,
+    receive_runtime_fields,
+    send_runtime_fields,
+    validate_component_runtime_state,
 )
 from vercor.runtime_views import RuntimeComponentView
 from vercor.settings import VercorSettings
@@ -212,8 +220,8 @@ class Coupler:
 
         for name, component in self.components.items():
             contract = self._runtime_contracts[name]
-            component.check_not_empty_import_export_lists(contract)
-            component.check_valid_exchange_field_names(contract)
+            check_not_empty_import_export_lists(component, contract)
+            check_valid_exchange_field_names(component, contract)
 
         self._create_exchange_masks()
         self._validate_land_mask_consistency()
@@ -325,7 +333,8 @@ class Coupler:
             validate_endpoints=False
         )
         components = tuple(
-            component.to_runtime_component_state(
+            create_runtime_component_state(
+                component,
                 prefill_missing=prefill_missing,
                 contract=self._runtime_contracts[name],
             )
@@ -470,7 +479,8 @@ class Coupler:
         step_info = self._initial_runtime_step_info()
         for cname in self.run_sequence:
             component_state = runtime_state.get_component_state(cname)
-            component_state = self.components[cname].send_runtime_fields(
+            component_state = send_runtime_fields(
+                self.components[cname],
                 component_state,
                 step_info,
                 contract=self._runtime_contracts[cname],
@@ -504,6 +514,14 @@ class Coupler:
 
             component = self.components[cname]
             component_state = runtime_state.get_component_state(cname)
+            validate_component_runtime_state(
+                component,
+                component_state,
+                self._runtime_contracts.get(
+                    cname,
+                    RuntimeComponentContract.empty(),
+                ),
+            )
             component.validate_runtime_state(
                 component_state,
                 self._runtime_contracts.get(
@@ -587,7 +605,7 @@ class Coupler:
             component_name,
             RuntimeComponentContract.empty(),
         )
-        component_state = component.receive_runtime_fields(
+        component_state = receive_runtime_fields(
             component_state,
             contract,
         )
@@ -607,7 +625,8 @@ class Coupler:
                 component_state,
                 step_context,
             )
-        component_state = component.send_runtime_fields(
+        component_state = send_runtime_fields(
+            component,
             component_state,
             step_info,
             contract=contract,
