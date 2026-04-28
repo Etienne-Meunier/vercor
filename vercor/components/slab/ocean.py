@@ -10,7 +10,7 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState
+    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -68,10 +68,11 @@ class Ocean(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Validate slab-ocean runtime fields."""
 
-        super().validate_runtime_state(component_state)
+        super().validate_runtime_state(component_state, contract)
         self._validate_runtime_grid_data_field(
             component_state,
             "sea_surface_temperature",

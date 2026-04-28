@@ -10,7 +10,7 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState
+    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -77,10 +77,11 @@ class Atmosphere(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Validate slab-atmosphere runtime fields."""
 
-        super().validate_runtime_state(component_state)
+        super().validate_runtime_state(component_state, contract)
         for field_name in (
             "temperature_2m",
             "sensible_heat_flux",

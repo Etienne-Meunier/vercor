@@ -161,7 +161,7 @@ def _flatten_fields(
 def _append_unique(target: list[str], exchange_items: list[str]) -> None:
     """
     Arguments:
-        target: list of field names in _fields2export & _fields2import
+        target: runtime contract field names
                 in the component's exchange variable lists.
         exchange_items: list of field names from exchange rules (exchanger).
     """

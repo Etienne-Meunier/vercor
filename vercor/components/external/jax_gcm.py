@@ -39,7 +39,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState
+    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
 try:
@@ -419,6 +419,7 @@ class JAXGCM(Component):
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
@@ -443,15 +444,16 @@ class JAXGCM(Component):
             "pressure",
             jnp.zeros((sigma_levels.shape[0], *self.grid.shape), dtype=jnp.float_),
         )
-        super().prefill_runtime_state_fields(data, incoming, outgoing)
+        super().prefill_runtime_state_fields(data, incoming, outgoing, contract)
 
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Validate JAXGCM runtime payload and pre-seeded output fields."""
 
-        super().validate_runtime_state(component_state)
+        super().validate_runtime_state(component_state, contract)
         if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
             raise ComponentError(
                 "JAXGCM runtime requires an initialized immutable runtime payload "

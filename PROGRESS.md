@@ -1,5 +1,34 @@
 # 2026-04-28
 
+## Runtime Component Contract Cleanup
+
+- Moved runtime import/export field ownership out of component instances:
+  - added immutable `RuntimeComponentContract` metadata in `vercor.runtime`
+  - `Coupler` now derives per-component contracts from exchanges
+  - `Component` no longer stores `_fields2import` / `_fields2export`
+- Made `Component.data` a seed-state surface:
+  - runtime state creation copies seed fields into `RuntimeComponentState`
+  - runtime receive/send/validation now use explicit coupler-owned contracts
+  - tests assert production code does not reintroduce component-owned private field lists
+- Kept non-differentiable host bridges explicit:
+  - CAMulator and Veros remain `HostRuntimeComponent` adapters
+  - host stepping still receives runtime state, settings, time, and logger only
+- Updated `DEPENDENCIES.md` to document contract ownership and seed-state responsibilities.
+
+## Validation (Runtime Component Contract Cleanup, 2026-04-28)
+
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 86 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Bridge Compatibility Surface Simplification
 
 - Removed remaining compatibility aliases:

@@ -19,7 +19,11 @@ from vercor.components.base import ComponentForcingData
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.output import write_runtime_component_view_to_netcdf
-from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime import (
+    RuntimeComponentContract,
+    RuntimeComponentState,
+    RuntimeFieldStore,
+)
 from vercor.runtime_views import RuntimeComponentView
 
 
@@ -66,23 +70,31 @@ def test_legacy_wrapper_api_is_removed() -> None:
 def test_runtime_state_creation_receive_and_send() -> None:
     grid = make_test_grid(name="atm")
     component = _RuntimeOnlyComponent(name="ATM", grid=grid)
-    component._fields2import = ["temperature"]
-    component._fields2export = ["sensible_heat_flux"]
+    contract = RuntimeComponentContract(
+        imports=("temperature",),
+        exports=("sensible_heat_flux",),
+    )
     component.data["sensible_heat_flux"] = jnp.full(grid.shape, 2.0)
 
-    state = component.to_runtime_component_state(prefill_missing=True)
+    state = component.to_runtime_component_state(
+        prefill_missing=True,
+        contract=contract,
+    )
     assert set(state.incoming.field_names) == {"temperature"}
     assert set(state.outgoing.field_names) == {"sensible_heat_flux"}
     assert isinstance(state.incoming.get("temperature"), jax.Array)
 
     incoming = state.incoming.set("temperature", jnp.full(grid.shape, 5.0))
-    state = component.receive_runtime_fields(state.with_incoming(incoming))
+    state = component.receive_runtime_fields(
+        state.with_incoming(incoming),
+        contract,
+    )
     assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 5.0))
 
     stepped = component.step_runtime_state(state, 3.0)
     assert_allclose_compact(stepped.data.get("temperature"), np.full(grid.shape, 8.0))
 
-    sent = component.send_runtime_fields(stepped)
+    sent = component.send_runtime_fields(stepped, contract=contract)
     assert_allclose_compact(
         sent.outgoing.get("sensible_heat_flux"),
         np.full(grid.shape, 2.0),
@@ -95,24 +107,36 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
     with pytest.raises(ComponentError, match="no fields to import"):
         component.check_not_empty_import_export_lists()
 
-    component._fields2import = ["temperature"]
+    import_only = RuntimeComponentContract(imports=("temperature",))
     with pytest.raises(ComponentError, match="no fields to export"):
-        component.check_not_empty_import_export_lists()
+        component.check_not_empty_import_export_lists(import_only)
 
-    component._fields2export = ["temperature"]
+    overlapping = RuntimeComponentContract(
+        imports=("temperature",),
+        exports=("temperature",),
+    )
     with pytest.raises(ComponentError, match="overlapping fields"):
-        component.check_not_empty_import_export_lists()
+        component.check_not_empty_import_export_lists(overlapping)
 
-    component._fields2export = ["not_supported"]
+    invalid = RuntimeComponentContract(
+        imports=("temperature",),
+        exports=("not_supported",),
+    )
     with pytest.raises(ComponentError, match="not a recognized exchange variable"):
-        component.check_valid_exchange_field_names()
+        component.check_valid_exchange_field_names(invalid)
 
-    component._fields2export = ["sensible_heat_flux"]
-    state = component.to_runtime_component_state(prefill_missing=True)
+    contract = RuntimeComponentContract(
+        imports=("temperature",),
+        exports=("sensible_heat_flux",),
+    )
+    state = component.to_runtime_component_state(
+        prefill_missing=True,
+        contract=contract,
+    )
     state = state.with_incoming(
         state.incoming.set("temperature", np.ones(component.grid.shape))
     )
-    received = component.receive_runtime_fields(state)
+    received = component.receive_runtime_fields(state, contract)
     assert_allclose_compact(
         received.data.get("temperature"), np.ones(component.grid.shape)
     )
@@ -125,6 +149,10 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
         latitude=np.asarray([-1.0, 1.0]),
     )
     component = DummyComponent(name="ATM", grid=grid)
+    contract = RuntimeComponentContract(
+        imports=("temperature",),
+        exports=("sensible_heat_flux",),
+    )
     valid_state = RuntimeComponentState(
         data=RuntimeFieldStore.from_mapping(
             {
@@ -138,7 +166,7 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
         ),
     )
 
-    component.validate_runtime_state(valid_state)
+    component.validate_runtime_state(valid_state, contract)
 
     bad_state = valid_state.with_incoming(
         RuntimeFieldStore.from_mapping({"temperature": jnp.ones((1, 3))})
@@ -147,18 +175,19 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
         CouplerError,
         match=r"has shape \(1, 3\), expected \(2, 3\)",
     ):
-        component.validate_runtime_state(bad_state)
+        component.validate_runtime_state(bad_state, contract)
 
 
 def test_send_runtime_fields_updates_outgoing_store() -> None:
     grid = make_test_grid()
     component = DummyComponent(name="ATM", grid=grid)
     timestamp = datetime(2000, 1, 1)
-    component._fields2export = ["temperature"]
+    contract = RuntimeComponentContract(exports=("temperature",))
     component.data["temperature"] = jnp.full(grid.shape, 1.0)
 
     component_state = component.send_runtime_fields(
         component.to_runtime_component_state(),
+        contract=contract,
     )
     assert_allclose_compact(
         component_state.outgoing.get("temperature"),
@@ -177,6 +206,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component_state = component.send_runtime_fields(
         component.to_runtime_component_state(),
         runtime_coupler._scalar_runtime_step_info(timestamp),
+        contract=contract,
     )
     assert_allclose_compact(
         component_state.outgoing.get("temperature"),
@@ -193,6 +223,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component_state = component.send_runtime_fields(
         component.to_runtime_component_state(),
         runtime_coupler._scalar_runtime_step_info(runtime_coupler.clock.start),
+        contract=contract,
     )
     assert_allclose_compact(
         component_state.outgoing.get("temperature"),

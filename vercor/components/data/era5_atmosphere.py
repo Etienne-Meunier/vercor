@@ -21,7 +21,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState
+    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
 def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
@@ -220,20 +220,22 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Pre-seed ERA5 atmosphere diagnostics for stable runtime state."""
 
         zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
         data.setdefault("total_surface_temperature", zeros)
-        super().prefill_runtime_state_fields(data, incoming, outgoing)
+        super().prefill_runtime_state_fields(data, incoming, outgoing, contract)
 
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Validate ERA5 atmosphere runtime diagnostic fields."""
 
-        super().validate_runtime_state(component_state)
+        super().validate_runtime_state(component_state, contract)
         for field_name in (
             "land_surface_temperature",
             "sea_surface_temperature",

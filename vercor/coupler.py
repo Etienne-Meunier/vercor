@@ -22,6 +22,7 @@ from vercor.regridders import (
 from vercor.run_sequence import RunSequence
 from vercor.output import write_runtime_component_view_to_netcdf
 from vercor.runtime import (
+    RuntimeComponentContract,
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
@@ -82,6 +83,9 @@ class Coupler:
         default_factory=dict
     )
     _fractional_masks: dict[tuple[str, str, str], RuntimeArray] = field(
+        default_factory=dict
+    )
+    _runtime_contracts: dict[str, RuntimeComponentContract] = field(
         default_factory=dict
     )
 
@@ -192,27 +196,12 @@ class Coupler:
 
             self.logger.info(f" Initialized {name}")
 
-        # Setup components' import/export field lists based on exchanges
-        for exchange in self.exchanges:
-            if exchange.source not in self.components:
-                raise CouplerError(
-                    f"Source component '{exchange.source}' not registered in coupler"
-                )
-            if exchange.destination not in self.components:
-                raise CouplerError(
-                    f"Destination component '{exchange.destination}' not registered in coupler"
-                )
-
-            source_component = self.components[exchange.source]
-            destination_component = self.components[exchange.destination]
-
-            flattened_fields = _flatten_fields(exchange.field_names)
-            _append_unique(source_component._fields2export, flattened_fields)
-            _append_unique(destination_component._fields2import, flattened_fields)
+        self._runtime_contracts = self._build_runtime_contracts(validate_endpoints=True)
 
         for name, component in self.components.items():
-            component.check_not_empty_import_export_lists()
-            component.check_valid_exchange_field_names()
+            contract = self._runtime_contracts[name]
+            component.check_not_empty_import_export_lists(contract)
+            component.check_valid_exchange_field_names(contract)
 
         self._create_exchange_masks()
         self._validate_land_mask_consistency()
@@ -320,9 +309,15 @@ class Coupler:
     def _runtime_state_from_components(
         self, *, prefill_missing: bool = False
     ) -> RuntimeCouplerState:
+        self._runtime_contracts = self._build_runtime_contracts(
+            validate_endpoints=False
+        )
         components = tuple(
-            component.to_runtime_component_state(prefill_missing=prefill_missing)
-            for component in self.components.values()
+            component.to_runtime_component_state(
+                prefill_missing=prefill_missing,
+                contract=self._runtime_contracts[name],
+            )
+            for name, component in self.components.items()
         )
         fractional_masks = {
             exchange_key_name(*key): value
@@ -337,6 +332,58 @@ class Coupler:
             fractional_masks=RuntimeFieldStore.from_mapping(fractional_masks),
             binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
         )
+
+    def _extend_contract_fields(
+        self,
+        fields: tuple[str, ...],
+        new_fields: list[str],
+    ) -> tuple[str, ...]:
+        """Return ``fields`` extended by new unique field names."""
+
+        updated = list(fields)
+        _append_unique(updated, new_fields)
+        return tuple(updated)
+
+    def _build_runtime_contracts(
+        self,
+        *,
+        validate_endpoints: bool,
+    ) -> dict[str, RuntimeComponentContract]:
+        """Build coupler-owned runtime field contracts from exchanges."""
+
+        contracts = {name: RuntimeComponentContract.empty() for name in self.components}
+        for exchange in self.exchanges:
+            if exchange.source not in self.components:
+                if validate_endpoints:
+                    raise CouplerError(
+                        f"Source component '{exchange.source}' not registered in coupler"
+                    )
+                continue
+            if exchange.destination not in self.components:
+                if validate_endpoints:
+                    raise CouplerError(
+                        f"Destination component '{exchange.destination}' not registered in coupler"
+                    )
+                continue
+
+            flattened_fields = _flatten_fields(exchange.field_names)
+            source_contract = contracts[exchange.source]
+            destination_contract = contracts[exchange.destination]
+            contracts[exchange.source] = RuntimeComponentContract(
+                imports=source_contract.imports,
+                exports=self._extend_contract_fields(
+                    source_contract.exports,
+                    flattened_fields,
+                ),
+            )
+            contracts[exchange.destination] = RuntimeComponentContract(
+                imports=self._extend_contract_fields(
+                    destination_contract.imports,
+                    flattened_fields,
+                ),
+                exports=destination_contract.exports,
+            )
+        return contracts
 
     def _runtime_step_info_from_times(
         self,
@@ -414,11 +461,17 @@ class Coupler:
             component_state = self.components[cname].send_runtime_fields(
                 component_state,
                 step_info,
+                contract=self._runtime_contracts[cname],
             )
             runtime_state = runtime_state.set_component_state(cname, component_state)
         return runtime_state
 
     def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
+        if set(self._runtime_contracts) != set(self.components):
+            self._runtime_contracts = self._build_runtime_contracts(
+                validate_endpoints=False
+            )
+
         if not hasattr(self, "run_sequence"):
             raise CouplerError("Runtime requires a configured component run sequence")
 
@@ -439,7 +492,13 @@ class Coupler:
 
             component = self.components[cname]
             component_state = runtime_state.get_component_state(cname)
-            component.validate_runtime_state(component_state)
+            component.validate_runtime_state(
+                component_state,
+                self._runtime_contracts.get(
+                    cname,
+                    RuntimeComponentContract.empty(),
+                ),
+            )
 
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination, exchange.interpolation_type)
@@ -512,7 +571,14 @@ class Coupler:
         )
         component_state = runtime_state.get_component_state(component_name)
         component = self.components[component_name]
-        component_state = component.receive_runtime_fields(component_state)
+        contract = self._runtime_contracts.get(
+            component_name,
+            RuntimeComponentContract.empty(),
+        )
+        component_state = component.receive_runtime_fields(
+            component_state,
+            contract,
+        )
         if time is not None and isinstance(component, HostRuntimeComponent):
             component_state = component._step_host_runtime_state(
                 component_state,
@@ -532,6 +598,7 @@ class Coupler:
         component_state = component.send_runtime_fields(
             component_state,
             step_info,
+            contract=contract,
         )
         runtime_state = runtime_state.set_component_state(
             component_name,

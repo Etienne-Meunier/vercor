@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from logging import Logger
@@ -16,7 +18,21 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState, RuntimeStepInfo
+    from vercor.runtime import (
+        RuntimeComponentContract,
+        RuntimeComponentState,
+        RuntimeStepInfo,
+    )
+
+
+def _runtime_contract(
+    contract: RuntimeComponentContract | None,
+) -> RuntimeComponentContract:
+    """Return an explicit runtime contract, defaulting to no import/export fields."""
+
+    from vercor.runtime import RuntimeComponentContract
+
+    return RuntimeComponentContract.empty() if contract is None else contract
 
 
 @dataclass
@@ -25,8 +41,6 @@ class Component:
     grid: RectilinearGrid
     data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: ComponentSettings = field(default_factory=ComponentSettings)
-    _fields2import: list[str] = field(default_factory=list)
-    _fields2export: list[str] = field(default_factory=list)
     """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
 
     Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
@@ -43,10 +57,8 @@ class Component:
         name: component name
         grid: component grid
         data: internal storage for component data arrays to/from which fields
-                        are imported/exported
+                        seed the runtime state during initialization
         settings: component-specific settings
-        _fields2import: list of field names to import from other components to data
-        _fields2export: list of field names to export to other components from data
     """
 
     def initialize(self, coupler: "Coupler") -> None:
@@ -64,14 +76,16 @@ class Component:
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
+        contract: RuntimeComponentContract | None = None,
     ) -> None:
         """Add missing fields required for stable runtime-state execution."""
 
+        runtime_contract = _runtime_contract(contract)
         zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
-        for field_name in self._fields2import:
+        for field_name in runtime_contract.imports:
             incoming.setdefault(field_name, zeros)
             data.setdefault(field_name, zeros)
-        for field_name in self._fields2export:
+        for field_name in runtime_contract.exports:
             outgoing.setdefault(field_name, data.get(field_name, zeros))
             data.setdefault(field_name, zeros)
 
@@ -122,6 +136,7 @@ class Component:
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
+        contract: RuntimeComponentContract | None = None,
     ) -> None:
         """Validate generic runtime fields before execution.
 
@@ -130,7 +145,8 @@ class Component:
         component.
         """
 
-        for field_name in self._fields2import:
+        runtime_contract = _runtime_contract(contract)
+        for field_name in runtime_contract.imports:
             self._validate_runtime_store_field(
                 component_state.incoming,
                 field_name,
@@ -140,7 +156,7 @@ class Component:
                 component_state,
                 field_name,
             )
-        for field_name in self._fields2export:
+        for field_name in runtime_contract.exports:
             self._validate_runtime_data_field_exists(component_state, field_name)
             self._validate_runtime_store_field(
                 component_state.outgoing,
@@ -155,7 +171,10 @@ class Component:
             )
 
     def to_runtime_component_state(
-        self, *, prefill_missing: bool = False
+        self,
+        *,
+        prefill_missing: bool = False,
+        contract: RuntimeComponentContract | None = None,
     ) -> "RuntimeComponentState":
         """Create a runtime component state from this component's data."""
 
@@ -165,7 +184,7 @@ class Component:
         incoming: dict[str, RuntimeArray] = {}
         outgoing: dict[str, RuntimeArray] = {}
         if prefill_missing:
-            self.prefill_runtime_state_fields(data, incoming, outgoing)
+            self.prefill_runtime_state_fields(data, incoming, outgoing, contract)
 
         return RuntimeComponentState(
             data=RuntimeFieldStore.from_mapping(data),
@@ -177,11 +196,13 @@ class Component:
     def receive_runtime_fields(
         self,
         component_state: "RuntimeComponentState",
+        contract: RuntimeComponentContract | None = None,
     ) -> "RuntimeComponentState":
         """Move imported incoming runtime fields into component data."""
 
+        runtime_contract = _runtime_contract(contract)
         data = component_state.data
-        for field_name in self._fields2import:
+        for field_name in runtime_contract.imports:
             data = data.set(field_name, component_state.incoming.get(field_name))
         return component_state.with_data(data)
 
@@ -213,11 +234,14 @@ class Component:
         self,
         component_state: "RuntimeComponentState",
         step_info: "RuntimeStepInfo | None" = None,
+        *,
+        contract: RuntimeComponentContract | None = None,
     ) -> "RuntimeComponentState":
         """Move exported component data into outgoing runtime fields."""
 
+        runtime_contract = _runtime_contract(contract)
         outgoing = component_state.outgoing
-        for field_name in self._fields2export:
+        for field_name in runtime_contract.exports:
             outgoing = outgoing.set(
                 field_name,
                 self._select_runtime_field_for_send(
@@ -242,28 +266,36 @@ class Component:
         _ = dt_seconds, runtime_settings, time, logger
         return component_state
 
-    def check_not_empty_import_export_lists(self) -> None:
+    def check_not_empty_import_export_lists(
+        self,
+        contract: RuntimeComponentContract | None = None,
+    ) -> None:
         """Check that the component has non-empty and non-overlapping
         import and export fields.
         """
 
-        if not self._fields2import:
+        runtime_contract = _runtime_contract(contract)
+        if not runtime_contract.imports:
             raise ComponentError(
                 f"Component '{self.name}' has no fields to import defined."
             )
-        if not self._fields2export:
+        if not runtime_contract.exports:
             raise ComponentError(
                 f"Component '{self.name}' has no fields to export defined."
             )
 
-        all_fields = set(self._fields2import + self._fields2export)
-        if len(all_fields) < len(self._fields2import) + len(self._fields2export):
+        all_fields = set(runtime_contract.all_fields)
+        if len(all_fields) < len(runtime_contract.all_fields):
             raise ComponentError(
                 f"Component '{self.name}' has overlapping fields in import/export lists."
             )
 
-    def check_valid_exchange_field_names(self) -> None:
-        for fld in set(self._fields2import + self._fields2export):
+    def check_valid_exchange_field_names(
+        self,
+        contract: RuntimeComponentContract | None = None,
+    ) -> None:
+        runtime_contract = _runtime_contract(contract)
+        for fld in set(runtime_contract.all_fields):
             if fld not in VALID_EXCHANGE_FIELD_NAMES:
                 raise ComponentError(
                     f"Field name '{fld}' in component '{self.name}' is not a recognized exchange variable.\n"
@@ -271,13 +303,10 @@ class Component:
                 )
 
     def __str__(self) -> str:
-        field_names = sorted(set(self._fields2import + self._fields2export))
-        field_names_string = ", ".join(field_names)
-
         return (
             f"{self.__class__.__name__}:\n"
             f" ├── Name: {self.name}\n"
-            f" ├── Runtime fields: {field_names_string if field_names else 'Not provided'}\n"
+            f" ├── Runtime fields: Configured by Coupler runtime contract\n"
             f" └── Grid name: {self.grid.name}\n"
             f"     └── Shape: {self.grid.shape}\n"
         )

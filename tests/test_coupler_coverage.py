@@ -21,7 +21,7 @@ from vercor.exchange import Exchange
 from vercor.regridders.bilinear import bilinear
 from vercor.regridders.conservative import conservative
 from vercor.run_sequence import RunSequence
-from vercor.runtime import dispatch_component_exchanges
+from vercor.runtime import RuntimeComponentContract, dispatch_component_exchanges
 
 
 class _RecordingLogger:
@@ -46,7 +46,6 @@ class _RunComponent(DummyComponent):
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
         self.data["temperature"] = np.ones((2, 2))
-        self._fields2export = ["temperature"]
 
     def step_runtime_state(
         self,
@@ -67,7 +66,6 @@ class _HostRunComponent(HostRuntimeComponent):
     def __init__(self, name: str) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.data["temperature"] = np.ones((2, 2))
-        self._fields2export = ["temperature"]
 
     def _step_host_runtime_state(
         self,
@@ -279,17 +277,19 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     assert isinstance(
         coupler._fractional_masks[("ATM", "OCN", "conservative")], jax.Array
     )
-    assert components["ATM"]._fields2import == [
-        "temperature",
-        "specific_humidity",
-        "soil_moisture",
-        "ice_fraction",
-    ]
-    assert components["ATM"]._fields2export == [
-        "downward_longwave_radiation_flux",
-        "temperature_2m",
-        "sensible_heat_flux",
-    ]
+    assert coupler._runtime_contracts["ATM"] == RuntimeComponentContract(
+        imports=(
+            "temperature",
+            "specific_humidity",
+            "soil_moisture",
+            "ice_fraction",
+        ),
+        exports=(
+            "downward_longwave_radiation_flux",
+            "temperature_2m",
+            "sensible_heat_flux",
+        ),
+    )
     assert_allclose_compact(
         coupler._fractional_masks[("OCN", "ATM", "bilinear")],
         np.full((2, 2), 0.4),
@@ -448,7 +448,6 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     source.data["temperature"] = jnp.full((2, 2), 5.0)
     source.data["u_velocity"] = np.full((2, 2), 1.0)
     source.data["v_velocity"] = np.full((2, 2), -1.0)
-    source._fields2export = ["temperature", "u_velocity", "v_velocity"]
 
     scalar_exchange = Exchange(
         source="OCN",
@@ -510,7 +509,6 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     source.data["temperature"] = np.full((2, 2), 5.0)
-    source._fields2export = ["temperature"]
 
     exchange = Exchange(
         source="OCN",
@@ -568,14 +566,13 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     with pytest.raises(ExchangerError, match="Field temperature not present"):
         _dispatch_runtime_fields(
             coupler,
-            coupler._runtime_state_from_components(prefill_missing=True),
+            coupler._runtime_state_from_components(prefill_missing=False),
             scalar_destination.name,
         )
 
     vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     vector_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     vector_source.data["u_velocity"] = np.ones((2, 2))
-    vector_source._fields2export = ["u_velocity"]
     vector_exchange = Exchange(
         source="OCN",
         destination="ATM",
@@ -597,7 +594,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     with pytest.raises(ExchangerError, match="Not all fields in vector"):
         _dispatch_runtime_fields(
             coupler,
-            coupler._runtime_state_from_components(prefill_missing=True),
+            coupler._runtime_state_from_components(prefill_missing=False),
             vector_destination.name,
         )
 
@@ -677,13 +674,18 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         events.append(f"dispatch:{component_name}")
         return state
 
-    def fake_receive(component: Any, component_state: Any) -> Any:
-        _ = component_state
+    def fake_receive(component: Any, component_state: Any, *args: Any) -> Any:
+        _ = component_state, args
         events.append(f"receive:{component.name}")
         return component_state
 
-    def fake_send(component: Any, component_state: Any, *args: Any) -> Any:
-        _ = component_state, args
+    def fake_send(
+        component: Any,
+        component_state: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        _ = component_state, args, kwargs
         events.append(f"send:{component.name}")
         return component_state
 

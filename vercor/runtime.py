@@ -11,6 +11,26 @@ from vercor.exchange import Exchange
 from vercor.types import RuntimeArray
 
 
+@dataclass(frozen=True)
+class RuntimeComponentContract:
+    """Coupler-owned runtime import/export metadata for one component."""
+
+    imports: tuple[str, ...] = ()
+    exports: tuple[str, ...] = ()
+
+    @classmethod
+    def empty(cls) -> "RuntimeComponentContract":
+        """Return an empty runtime field contract."""
+
+        return cls()
+
+    @property
+    def all_fields(self) -> tuple[str, ...]:
+        """Return all import/export fields while preserving contract order."""
+
+        return (*self.imports, *self.exports)
+
+
 def exchange_key_name(source: str, destination: str, interpolation_type: str) -> str:
     """Return a stable field-store key for exchange metadata arrays."""
 

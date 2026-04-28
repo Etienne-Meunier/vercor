@@ -108,8 +108,7 @@ def _make_data_component(
     component.grid = grid
     component.data = data
     component.settings = settings or ComponentSettings()
-    component._fields2import = list(imports)
-    component._fields2export = list(exports)
+    _ = imports, exports
     return component
 
 
@@ -182,8 +181,6 @@ def _make_jax_gcm_component(grid: RectilinearGrid) -> JAXGCM:
         "sea_surface_temperature": jnp.full(grid.shape, 281.0, dtype=jnp.float64),
         "land_surface_temperature": jnp.full(grid.shape, 3.0, dtype=jnp.float64),
     }
-    component._fields2import = []
-    component._fields2export = ["temperature", "sensible_heat_flux"]
     component_any.model = type(
         "_FakeJCMModel",
         (),
@@ -247,26 +244,6 @@ def _make_coupler(steps: int) -> Coupler:
         "LND": Land(grid),
         "ICE": SeaIce(grid),
     }
-    coupler.components["ATM"]._fields2import = ["sea_surface_temperature"]
-    coupler.components["ATM"]._fields2export = [
-        "temperature_2m",
-        "sensible_heat_flux",
-        "latent_heat_flux",
-        "u_velocity_10m",
-        "v_velocity_10m",
-    ]
-    coupler.components["OCN"]._fields2import = [
-        "sensible_heat_flux",
-        "latent_heat_flux",
-    ]
-    coupler.components["OCN"]._fields2export = ["sea_surface_temperature"]
-    coupler.components["LND"]._fields2import = ["latent_heat_flux"]
-    coupler.components["LND"]._fields2export = [
-        "soil_moisture",
-        "land_surface_temperature",
-    ]
-    coupler.components["ICE"]._fields2import = ["sea_surface_temperature"]
-    coupler.components["ICE"]._fields2export = ["ice_fraction"]
     coupler.run_sequence = RunSequence(order=["ATM", "OCN", "LND", "ICE"])
     coupler.exchanges = [
         Exchange(
@@ -876,14 +853,6 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
     key = ("OCN", "ATM", "bilinear")
     coupler._regridders = cast(Any, {key: bilinear(grid, grid)})
     coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
-    atmosphere._fields2import = ["sea_surface_temperature"]
-    atmosphere._fields2export = [
-        "temperature_2m",
-        "sensible_heat_flux",
-        "latent_heat_flux",
-        "u_velocity_10m",
-        "v_velocity_10m",
-    ]
     atmosphere.data = {
         "temperature_2m": jnp.full(grid.shape, 288.15, dtype=jnp.float64),
         "sensible_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
@@ -953,14 +922,6 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
     regridder = bilinear(ocean_grid, atmosphere_grid)
     coupler._regridders = cast(Any, {key: regridder})
     coupler._fractional_masks = {key: jnp.ones(atmosphere_grid.shape)}
-    atmosphere._fields2import = ["sea_surface_temperature"]
-    atmosphere._fields2export = [
-        "temperature_2m",
-        "sensible_heat_flux",
-        "latent_heat_flux",
-        "u_velocity_10m",
-        "v_velocity_10m",
-    ]
     atmosphere.data = {
         "temperature_2m": jnp.full(atmosphere_grid.shape, 288.15, dtype=jnp.float64),
         "sensible_heat_flux": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
@@ -1375,7 +1336,6 @@ def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> N
         exports=("sea_surface_temperature",),
     )
     atmosphere = _make_jax_gcm_component(grid)
-    atmosphere._fields2import = ["sea_surface_temperature"]
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
@@ -1613,12 +1573,12 @@ def test_run_validates_missing_import_data_before_scan() -> None:
 def test_run_validates_missing_export_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    land = state.get_component_state("LND")
-    land = land.with_data(_without_store_field(land.data, "land_surface_temperature"))
-    state = state.set_component_state("LND", land)
+    ocean = state.get_component_state("OCN")
+    ocean = ocean.with_data(_without_store_field(ocean.data, "sea_surface_temperature"))
+    state = state.set_component_state("OCN", ocean)
 
     with pytest.raises(
-        CouplerError, match="required data field 'land_surface_temperature'"
+        CouplerError, match="required data field 'sea_surface_temperature'"
     ):
         coupler._run_scanned_runtime(state)
 

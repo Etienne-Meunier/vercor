@@ -10,7 +10,7 @@ from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
-    from vercor.runtime import RuntimeComponentState
+    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
 @jax.jit
@@ -43,10 +43,11 @@ class Land(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
+        contract: "RuntimeComponentContract | None" = None,
     ) -> None:
         """Validate slab-land runtime fields."""
 
-        super().validate_runtime_state(component_state)
+        super().validate_runtime_state(component_state, contract)
         self._validate_runtime_grid_data_field(
             component_state,
             "soil_moisture",

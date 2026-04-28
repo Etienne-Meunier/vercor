@@ -15,6 +15,7 @@ from vercor.components.base import Component
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
+    RuntimeComponentContract,
     RuntimeComponentState,
     RuntimeCouplerState,
     RuntimeFieldStore,
@@ -77,6 +78,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert 'hasattr(component, "_step_host_runtime_state")' not in coupler_source
     assert "isinstance(component, HostRuntimeComponent)" in coupler_source
     assert "_sync_data_from_runtime_state" not in base_source
+    assert "_fields2import" not in base_source
+    assert "_fields2export" not in base_source
+    assert "_fields2import" not in coupler_source
+    assert "_fields2export" not in coupler_source
+    assert "RuntimeComponentContract" in runtime_source
+    assert "_runtime_contracts" in coupler_source
     assert "def write_runtime_component_to_netcdf" not in base_source
     assert "write_runtime_component_to_netcdf" not in components_source
     assert "write_runtime_component_view_to_netcdf" not in components_source
@@ -221,7 +228,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(ComponentSettings(apply_time_interpolation=True))
-    component._fields2export = ["temperature"]
+    contract = RuntimeComponentContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [0.75], [0.25], [0]),
@@ -236,7 +243,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
             incoming=RuntimeFieldStore.empty(),
             outgoing=RuntimeFieldStore.empty(),
         )
-        sent = component.send_runtime_fields(state, step_info)
+        sent = component.send_runtime_fields(state, step_info, contract=contract)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     sent_state = jax.jit(
@@ -247,6 +254,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
                 outgoing=RuntimeFieldStore.empty(),
             ),
             step_info,
+            contract=contract,
         )
     )(forcing)
     out = sent_state.outgoing.get("temperature")
@@ -261,7 +269,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(ComponentSettings(get_field_time_slice=True))
-    component._fields2export = ["temperature"]
+    contract = RuntimeComponentContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [1.0], [0.0], [2]),
@@ -274,7 +282,7 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
             incoming=RuntimeFieldStore.empty(),
             outgoing=RuntimeFieldStore.empty(),
         )
-        sent = component.send_runtime_fields(state, step_info)
+        sent = component.send_runtime_fields(state, step_info, contract=contract)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     state = RuntimeComponentState(
@@ -282,9 +290,13 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
     )
-    sent_state = jax.jit(lambda value: component.send_runtime_fields(value, step_info))(
-        state
-    )
+    sent_state = jax.jit(
+        lambda value: component.send_runtime_fields(
+            value,
+            step_info,
+            contract=contract,
+        )
+    )(state)
     gradient = jax.grad(send_loss)(forcing)
 
     assert_allclose_compact(

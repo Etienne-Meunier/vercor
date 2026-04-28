@@ -584,8 +584,6 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
     component.name = "ATM"
     component.grid = make_test_grid(name="atm")
-    component._fields2import = []
-    component._fields2export = []
     component.data = {
         "sea_surface_temperature": np.asarray([[np.nan, 281.0], [282.0, 283.0]]),
         "land_surface_temperature": np.asarray([[270.0, np.nan], [0.0, 284.0]]),
