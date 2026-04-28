@@ -1,5 +1,37 @@
 # 2026-04-28
 
+## Targeted Runtime Boundary Cleanup
+
+- Replaced remaining broad component runtime signatures with explicit context objects:
+  - added immutable `ComponentInitContext` and `RuntimeStepContext`
+  - `Coupler.initialize()` now passes only start time, timestep, run sequence, settings, and logger to components
+  - runtime stepping now passes one context object to pure and host-backed component step boundaries
+- Kept non-differentiable host bridges explicit:
+  - CAMulator atmosphere, CAMulator land, and Veros still inherit `HostRuntimeComponent`
+  - host stepping remains restricted to `Coupler.run()`; scanned/compiled runtime still rejects host-backed components
+- Removed residual duplicated metadata:
+  - runtime NetCDF output private writer now reads component name/grid from `RuntimeComponentView`
+  - data component constructors no longer assign `self.grid` before base initialization when a local grid is sufficient
+  - component modules prefer direct `vercor.components.base` imports for base contracts
+- Added architecture regression coverage for context-based signatures and removed duplicated writer metadata.
+- Updated `DEPENDENCIES.md` to document the context boundary.
+
+## Validation (Targeted Runtime Boundary Cleanup, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_coupler_coverage.py tests/test_runtime_state.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 86 files unchanged on the final run
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Component Contract Cleanup
 
 - Moved runtime import/export field ownership out of component instances:
