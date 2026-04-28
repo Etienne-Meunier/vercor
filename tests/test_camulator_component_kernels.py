@@ -335,7 +335,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
         (datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
         None,
         time=start,
-        coupler=coupler,
+        logger=coupler.logger,
     )
     land_surface_temperature = component_state.data.get("land_surface_temperature")
     assert isinstance(land_surface_temperature, jax.Array)
@@ -474,7 +474,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
         VercorSettings(),
         time=start,
-        coupler=SimpleNamespace(settings=VercorSettings(), logger=_RecordingLogger()),
+        logger=_RecordingLogger(),
     )
 
     assert captured["dynamic_forcing"].shape == (1, 2, 1, 2, 2)

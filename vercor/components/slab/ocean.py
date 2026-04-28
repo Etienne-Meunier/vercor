@@ -84,11 +84,11 @@ class Ocean(Component):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance the slab ocean on immutable runtime state."""
 
-        _ = runtime_settings, time, coupler
+        _ = runtime_settings, time, logger
         data = component_state.data
         try:
             sea_surface_temperature = data.get("sea_surface_temperature")

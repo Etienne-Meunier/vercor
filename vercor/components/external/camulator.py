@@ -477,16 +477,17 @@ class CAMulatorGCM(HostRuntimeComponent):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance the private host-backed CAMulator atmosphere boundary."""
 
-        _ = dt_seconds, runtime_settings
-        if time is None or coupler is None:
+        _ = dt_seconds
+        if time is None:
             return component_state
+        if runtime_settings is None:
+            raise ValueError("CAMulator host runtime settings are not initialized")
 
-        settings = coupler.settings
-        logger = coupler.logger
+        settings = runtime_settings
         data = component_state.data
 
         prediction = None
@@ -530,9 +531,10 @@ class CAMulatorGCM(HostRuntimeComponent):
                     time_obj.second,
                 )
 
-            logger.info(
-                f"    CAMulator step: {self.timestep_counter + 1:05}, time: {utc_datetime}"
-            )
+            if logger is not None:
+                logger.info(
+                    f"    CAMulator step: {self.timestep_counter + 1:05}, time: {utc_datetime}"
+                )
 
             dynamic_forcing_t = gpu_forcing_chunk[t].unsqueeze(0)
 
@@ -560,11 +562,12 @@ class CAMulatorGCM(HostRuntimeComponent):
             data = data.set("total_surface_temperature", total_ts)
 
             # Land surface temperature is already rescaled in the same way as sst
-            logger.info(
-                "    Rescaled ts stats - max: "
-                f"{float(jnp.max(rescaled_total_ts)):.4f}, min: "
-                f"{float(jnp.min(rescaled_total_ts)):.4f}"
-            )
+            if logger is not None:
+                logger.info(
+                    "    Rescaled ts stats - max: "
+                    f"{float(jnp.max(rescaled_total_ts)):.4f}, min: "
+                    f"{float(jnp.min(rescaled_total_ts)):.4f}"
+                )
 
             self.accessor_input.set_state_var(
                 model_input,

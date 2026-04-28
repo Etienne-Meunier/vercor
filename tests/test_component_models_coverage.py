@@ -34,17 +34,16 @@ def _step_component(
     dt: timedelta,
     time: datetime,
     coupler: Any,
-) -> None:
-    """Advance one component through the runtime-state API for legacy assertions."""
+) -> Any:
+    """Advance one component through the runtime-state API."""
 
-    component_state = component.step_runtime_state(
+    return component.step_runtime_state(
         component.to_runtime_component_state(prefill_missing=True),
         dt.total_seconds(),
         getattr(coupler, "settings", None),
         time=time,
-        coupler=coupler,
+        logger=getattr(coupler, "logger", None),
     )
-    component.data = component_state.data.to_mapping()
 
 
 @pytest.mark.fast_always
@@ -60,13 +59,13 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
 
     atmosphere = Atmosphere(grid=grid)
     atmosphere.initialize(coupler)
-    _step_component(atmosphere, dt, timestamp, coupler)
+    atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
-        atmosphere.data["sensible_heat_flux"],
+        atmosphere_state.data.get("sensible_heat_flux"),
         np.zeros(grid.shape),
     )
     assert_allclose_compact(
-        atmosphere.data["latent_heat_flux"],
+        atmosphere_state.data.get("latent_heat_flux"),
         np.zeros(grid.shape),
     )
 
@@ -74,49 +73,55 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
         [[280.0, 281.0], [282.0, 283.0]]
     )
     initial_temperature_2m = np.asarray(atmosphere.data["temperature_2m"]).copy()
-    _step_component(atmosphere, dt, timestamp, coupler)
-    assert atmosphere.data["sensible_heat_flux"].shape == grid.shape
-    assert atmosphere.data["latent_heat_flux"].shape == grid.shape
-    assert atmosphere.data["u_velocity_10m"].shape == grid.shape
-    assert atmosphere.data["v_velocity_10m"].shape == grid.shape
-    assert np.all(np.asarray(atmosphere.data["sensible_heat_flux"]) < 0.0)
-    assert np.all(np.asarray(atmosphere.data["latent_heat_flux"]) > 0.0)
-    assert np.any(np.asarray(atmosphere.data["u_velocity_10m"]) != 0.0)
-    assert np.any(np.asarray(atmosphere.data["v_velocity_10m"]) != 0.0)
+    atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
+    atmosphere_data = atmosphere_state.data
+    assert atmosphere_data.get("sensible_heat_flux").shape == grid.shape
+    assert atmosphere_data.get("latent_heat_flux").shape == grid.shape
+    assert atmosphere_data.get("u_velocity_10m").shape == grid.shape
+    assert atmosphere_data.get("v_velocity_10m").shape == grid.shape
+    assert np.all(np.asarray(atmosphere_data.get("sensible_heat_flux")) < 0.0)
+    assert np.all(np.asarray(atmosphere_data.get("latent_heat_flux")) > 0.0)
+    assert np.any(np.asarray(atmosphere_data.get("u_velocity_10m")) != 0.0)
+    assert np.any(np.asarray(atmosphere_data.get("v_velocity_10m")) != 0.0)
     assert np.all(
-        np.asarray(atmosphere.data["temperature_2m"]) < initial_temperature_2m
+        np.asarray(atmosphere_data.get("temperature_2m")) < initial_temperature_2m
     )
 
     ocean = Ocean(grid=grid)
-    _step_component(ocean, dt, timestamp, coupler)
+    ocean_state = _step_component(ocean, dt, timestamp, coupler)
     assert ocean.data == {}
+    assert ocean_state.data.field_names == ()
 
     ocean.initialize(coupler)
     ocean.data["sensible_heat_flux"] = np.full(grid.shape, 20.0)
     ocean.data["latent_heat_flux"] = np.full(grid.shape, 10.0)
     starting_sst = ocean.data["sea_surface_temperature"].copy()
-    _step_component(ocean, dt, timestamp, coupler)
-    assert ocean.data["sea_surface_temperature"].shape == grid.shape
-    assert np.all(np.asarray(ocean.data["sea_surface_temperature"]) > starting_sst)
+    ocean_state = _step_component(ocean, dt, timestamp, coupler)
+    ocean_sst = ocean_state.data.get("sea_surface_temperature")
+    assert ocean_sst.shape == grid.shape
+    assert np.all(np.asarray(ocean_sst) > starting_sst)
 
     land = Land(grid=grid)
     land.initialize(coupler)
     land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
-    _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
-    assert land.data["soil_moisture"].shape == grid.shape
-    assert np.all(np.asarray(land.data["soil_moisture"]) < 0.3)
+    land_state = _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
+    soil_moisture = land_state.data.get("soil_moisture")
+    assert soil_moisture.shape == grid.shape
+    assert np.all(np.asarray(soil_moisture) < 0.3)
 
     seaice = SeaIce(grid=grid)
-    _step_component(seaice, dt, timestamp, coupler)
+    seaice_state = _step_component(seaice, dt, timestamp, coupler)
     assert seaice.data == {}
+    assert seaice_state.data.field_names == ()
 
     seaice.initialize(coupler)
     seaice.data["sea_surface_temperature"] = np.asarray(
         [[270.0, 272.0], [274.0, 276.0]]
     )
-    _step_component(seaice, dt, timestamp, coupler)
-    cold = seaice.data["ice_fraction"][0, 0]
-    warm = seaice.data["ice_fraction"][1, 1]
+    seaice_state = _step_component(seaice, dt, timestamp, coupler)
+    ice_fraction = seaice_state.data.get("ice_fraction")
+    cold = ice_fraction[0, 0]
+    warm = ice_fraction[1, 1]
     assert cold > warm
     assert 0.0 < warm < 1.0
 
@@ -462,13 +467,17 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         [[274.0, np.nan, 275.0], [276.0, 277.0, np.nan]]
     )
 
-    _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
+    component_state = _step_component(
+        component, timedelta(hours=1), datetime(2000, 1, 1), coupler
+    )
 
     expected_total = np.asarray(
         [[274.0, 270.0, 546.0], [548.0, 277.0, 273.0]],
         dtype=float,
     )
-    assert_allclose_compact(component.data["total_surface_temperature"], expected_total)
+    assert_allclose_compact(
+        component_state.data.get("total_surface_temperature"), expected_total
+    )
 
 
 def test_jcm_land_constructor_converts_coords_and_preserves_data(

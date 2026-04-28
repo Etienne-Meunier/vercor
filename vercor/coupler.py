@@ -519,7 +519,7 @@ class Coupler:
                 self.clock.dt_seconds,
                 self.settings,
                 time=time,
-                coupler=self,
+                logger=self.logger,
             )
         else:
             component_state = component.step_runtime_state(
@@ -527,7 +527,7 @@ class Coupler:
                 self.clock.dt_seconds,
                 self.settings,
                 time=time,
-                coupler=self if time is not None else None,
+                logger=self.logger if time is not None else None,
             )
         component_state = component.send_runtime_fields(
             component_state,
@@ -564,7 +564,11 @@ class Coupler:
     ) -> RuntimeComponentView:
         """Return a single object containing component metadata and runtime fields."""
 
-        return RuntimeComponentView.from_coupler_state(self, runtime_state, name)
+        return RuntimeComponentView.from_component_state(
+            name,
+            self.components[name].grid,
+            runtime_state.get_component_state(name),
+        )
 
     def finalize(
         self,

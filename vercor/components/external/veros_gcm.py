@@ -399,20 +399,22 @@ class VerosGCM(HostRuntimeComponent):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance the private host-backed Veros boundary."""
 
-        _ = dt_seconds, runtime_settings
-        if time is None or coupler is None:
+        _ = dt_seconds
+        if time is None:
             return component_state
+        if runtime_settings is None:
+            raise ValueError("Veros host runtime settings are not initialized")
 
         runtime_fields = component_state.data
 
         taux, tauy, qnet, qnec = compute_fluxes(
             self._veros_state,
             runtime_fields,
-            coupler.settings,
+            runtime_settings,
         )
         forcing_fields = _prepare_surface_forcing_fields(
             taux, tauy, qnet, qnec, self.restore_to_climatology
@@ -430,7 +432,8 @@ class VerosGCM(HostRuntimeComponent):
             )
 
         for i in range(self.model_substeps):
-            coupler.logger.info(f" Veros sub-step {i+1} / {self.model_substeps}")
+            if logger is not None:
+                logger.info(f" Veros sub-step {i+1} / {self.model_substeps}")
             self._veros_state = self._step_function(self._veros_state)
 
         data = component_state.data.set(

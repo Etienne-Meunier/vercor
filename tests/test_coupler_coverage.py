@@ -55,9 +55,9 @@ class _RunComponent(DummyComponent):
         runtime_settings: Any | None = None,
         *,
         time: Any | None = None,
-        coupler: Any | None = None,
+        logger: Any | None = None,
     ) -> Any:
-        _ = runtime_settings, coupler
+        _ = runtime_settings, logger
         time_label = "none" if time is None else time.isoformat()
         self.events.append(f"step_runtime:{self.name}:{time_label}:{dt_seconds}")
         return component_state
@@ -76,9 +76,9 @@ class _HostRunComponent(HostRuntimeComponent):
         runtime_settings: Any | None = None,
         *,
         time: Any | None = None,
-        coupler: Any | None = None,
+        logger: Any | None = None,
     ) -> Any:
-        _ = runtime_settings, time, coupler
+        _ = runtime_settings, time, logger
         data = component_state.data.set(
             "temperature",
             component_state.data.get("temperature") + dt_seconds,

@@ -573,13 +573,13 @@ class JAXGCM(Component):
         runtime_settings: Any | None = None,
         *,
         time: ModelDateTime | datetime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance JAXGCM on immutable runtime state."""
 
         _ = dt_seconds
-        if coupler is not None:
-            coupler.logger.info(
+        if logger is not None:
+            logger.info(
                 " Mean of SST: {}".format(
                     float(
                         jnp.nanmean(
@@ -596,7 +596,7 @@ class JAXGCM(Component):
             runtime_settings,
         )
 
-        if time is None or coupler is None:
+        if time is None:
             return stepped_state
 
         payload = stepped_state.runtime_payload
@@ -609,11 +609,12 @@ class JAXGCM(Component):
             stepped_state.data.get("land_surface_temperature"),
             stepped_state.data.get("sea_surface_temperature"),
         )
-        coupler.logger.info(
-            " Number of cells with (SST + SKT) less than 250.0 K: {}".format(
-                int(jnp.sum(cold_surface_cells))
-            ),
-        )
+        if logger is not None:
+            logger.info(
+                " Number of cells with (SST + SKT) less than 250.0 K: {}".format(
+                    int(jnp.sum(cold_surface_cells))
+                ),
+            )
 
         if self._should_write_output(time=time, dt=timedelta(seconds=dt_seconds)):
             date_time = time.strftime("%Y-%m-%d")

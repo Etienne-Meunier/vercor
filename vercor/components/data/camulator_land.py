@@ -133,12 +133,12 @@ class CAMulatorLand(HostRuntimeComponent):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance the private host-backed CAMulator land forcing boundary."""
 
-        _ = dt_seconds, runtime_settings
-        if time is None or coupler is None:
+        _ = dt_seconds, runtime_settings, logger
+        if time is None:
             return component_state
 
         data = component_state.data

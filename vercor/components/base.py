@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from logging import Logger
 from typing import TYPE_CHECKING, Any
 
 import h5netcdf
 import jax.numpy as jnp
 import numpy as np
-import vercor.output as _runtime_output
 
 from vercor.clock import ModelDateTime
 from vercor.exceptions import ComponentError, CouplerError
@@ -17,11 +17,6 @@ from vercor.types import RuntimeArray
 if TYPE_CHECKING:
     from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentState, RuntimeStepInfo
-
-write_runtime_component_to_netcdf = _runtime_output.write_runtime_component_to_netcdf
-write_runtime_component_view_to_netcdf = (
-    _runtime_output.write_runtime_component_view_to_netcdf
-)
 
 
 @dataclass
@@ -240,11 +235,11 @@ class Component:
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Logger | None = None,
     ) -> "RuntimeComponentState":
         """Return this component advanced by one runtime step."""
 
-        _ = dt_seconds, runtime_settings, time, coupler
+        _ = dt_seconds, runtime_settings, time, logger
         return component_state
 
     def check_not_empty_import_export_lists(self) -> None:
@@ -301,7 +296,7 @@ class HostRuntimeComponent(Component):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Logger | None = None,
     ) -> "RuntimeComponentState":
         """Advance this non-differentiable host adapter by one runtime step."""
 

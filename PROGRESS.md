@@ -1,5 +1,38 @@
 # 2026-04-28
 
+## Runtime Bridge Compatibility Surface Simplification
+
+- Removed remaining compatibility aliases:
+  - runtime output writers are no longer re-exported from `vercor.components` or `vercor.components.base`
+  - `RuntimeComponentView` is no longer re-exported from `vercor.tools`
+  - tests now import runtime output and view helpers from `vercor.output` and `vercor.runtime_views`
+- Simplified runtime diagnostics/output:
+  - `RuntimeComponentView` now stores typed `RuntimeFieldStore` objects
+  - view construction now takes explicit `name`, `grid`, and `RuntimeComponentState`
+  - runtime NetCDF output iterates field stores directly instead of converting stores back to dictionaries
+- Simplified component stepping context:
+  - `Component.step_runtime_state()` and `HostRuntimeComponent._step_host_runtime_state()` no longer receive the full coupler object
+  - runtime stepping passes settings, optional time, and optional logger only
+  - CAMulator, CAMulator land, Veros, JAXGCM, slab components, and tests were updated to the slimmer signature
+- Tightened runtime-state authority in tests by removing a stale helper that copied stepped runtime fields back into `component.data`.
+- Added architecture regressions for removed aliases and host bridge signatures.
+
+## Validation (Runtime Bridge Compatibility Surface Simplification, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_external_components_coverage.py tests/test_tools_components_and_plotting.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and reformatted 2 test files
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Residual Runtime Bridge Cleanup
 
 - Split remaining mixed runtime responsibilities into focused modules:

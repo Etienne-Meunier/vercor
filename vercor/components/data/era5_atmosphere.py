@@ -251,11 +251,11 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Update ERA5 atmosphere surface-temperature diagnostics."""
 
-        _ = dt_seconds, runtime_settings, time, coupler
+        _ = dt_seconds, runtime_settings, time, logger
         data = component_state.data
         total_surface_temperature = _combine_surface_temperatures(
             data.get("land_surface_temperature"),

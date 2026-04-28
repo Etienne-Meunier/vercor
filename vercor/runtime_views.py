@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from vercor.grid import RectilinearGrid
+from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 
 
 @dataclass(frozen=True)
@@ -12,38 +12,23 @@ class RuntimeComponentView:
 
     name: str
     grid: RectilinearGrid
-    data: Any = field(default_factory=dict)
-    incoming: Any = field(default_factory=dict)
-    outgoing: Any = field(default_factory=dict)
+    data: RuntimeFieldStore = field(default_factory=RuntimeFieldStore.empty)
+    incoming: RuntimeFieldStore = field(default_factory=RuntimeFieldStore.empty)
+    outgoing: RuntimeFieldStore = field(default_factory=RuntimeFieldStore.empty)
 
     @classmethod
-    def from_runtime_state(
+    def from_component_state(
         cls,
         name: str,
-        component: Any,
-        component_state: Any,
+        grid: RectilinearGrid,
+        component_state: RuntimeComponentState,
     ) -> "RuntimeComponentView":
-        """Create a field view from a component and its runtime state."""
+        """Create a field view from component metadata and runtime state."""
 
         return cls(
             name=name,
-            grid=component.grid,
+            grid=grid,
             data=component_state.data,
             incoming=component_state.incoming,
             outgoing=component_state.outgoing,
-        )
-
-    @classmethod
-    def from_coupler_state(
-        cls,
-        coupler: Any,
-        runtime_state: Any,
-        name: str,
-    ) -> "RuntimeComponentView":
-        """Create a field view from a coupler-owned component runtime state."""
-
-        return cls.from_runtime_state(
-            name,
-            coupler.components[name],
-            runtime_state.get_component_state(name),
         )

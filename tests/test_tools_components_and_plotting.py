@@ -13,8 +13,8 @@ from tests.assertions import assert_allclose_compact
 from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime_views import RuntimeComponentView
 from vercor.tools import (
-    RuntimeComponentView,
     _append_unique,
     _flatten_fields,
     get_component,
@@ -188,7 +188,6 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         longitude=jnp.asarray([0.0, 1.0, 2.0]),
         latitude=jnp.asarray([-1.0, 1.0]),
     )
-    component = DummyGridComponent(grid=grid, fields={})
     runtime_state = RuntimeComponentState(
         data=RuntimeFieldStore.from_mapping(
             {
@@ -212,9 +211,7 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         rows=[
             (
                 "ATM",
-                RuntimeComponentView.from_runtime_state(
-                    "ATM", component, runtime_state
-                ),
+                RuntimeComponentView.from_component_state("ATM", grid, runtime_state),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",

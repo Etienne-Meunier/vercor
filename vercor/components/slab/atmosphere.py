@@ -100,11 +100,11 @@ class Atmosphere(Component):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance the slab atmosphere on immutable runtime state."""
 
-        _ = dt_seconds, runtime_settings, time, coupler
+        _ = dt_seconds, runtime_settings, time, logger
         data = component_state.data
         temperature_2m = data.get("temperature_2m")
         try:

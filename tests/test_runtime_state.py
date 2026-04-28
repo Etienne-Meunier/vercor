@@ -43,6 +43,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_source = Path("vercor/runtime.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+    components_source = Path("vercor/components/__init__.py").read_text(
+        encoding="utf-8"
+    )
     tools_source = Path("vercor/tools.py").read_text(encoding="utf-8")
     jax_gcm_source = Path("vercor/components/external/jax_gcm.py").read_text(
         encoding="utf-8"
@@ -75,11 +78,20 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "isinstance(component, HostRuntimeComponent)" in coupler_source
     assert "_sync_data_from_runtime_state" not in base_source
     assert "def write_runtime_component_to_netcdf" not in base_source
+    assert "write_runtime_component_to_netcdf" not in components_source
+    assert "write_runtime_component_view_to_netcdf" not in components_source
     assert "class RuntimeComponentView" not in tools_source
+    assert "RuntimeComponentView =" not in tools_source
     assert "def step_runtime_state" in jax_gcm_source
     assert "def _step_host_runtime_state" in veros_source
     assert "def _step_host_runtime_state" in camulator_source
     assert "def _step_host_runtime_state" in camulator_land_source
+    for source in (veros_source, camulator_source, camulator_land_source):
+        signature = source.split("def _step_host_runtime_state", 1)[1].split(") ->", 1)[
+            0
+        ]
+        assert "coupler" not in signature
+        assert "logger" in signature
     assert "def step_runtime_state" not in veros_source
     assert "def step_runtime_state" not in camulator_source
     assert "def step_runtime_state" not in camulator_land_source

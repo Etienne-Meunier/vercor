@@ -59,11 +59,11 @@ class Land(Component):
         runtime_settings: Any | None = None,
         *,
         time: datetime | ModelDateTime | None = None,
-        coupler: "Coupler | None" = None,
+        logger: Any | None = None,
     ) -> "RuntimeComponentState":
         """Advance the slab land component on immutable runtime state."""
 
-        _ = runtime_settings, time, coupler
+        _ = runtime_settings, time, logger
         data = component_state.data
         soil_moisture = data.get("soil_moisture")
         try:

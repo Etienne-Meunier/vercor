@@ -9,7 +9,6 @@ from urllib.request import urlopen
 import jax
 import jax.numpy as jnp
 import numpy as np
-import vercor.runtime_views as _runtime_views
 from numpy.typing import NDArray
 
 from vercor.clock import (
@@ -34,8 +33,6 @@ VERCOR_ASSETS_BASE_URL = (
 )
 
 _ASSETS_CACHE_DIR = Path.home() / ".vercor" / "assets"
-
-RuntimeComponentView = _runtime_views.RuntimeComponentView
 
 _FORCING_ASSETS: dict[str, dict[str, str]] = {
     "era5_model_levels": {

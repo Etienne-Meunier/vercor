@@ -15,15 +15,12 @@ import vercor.components.base as base_module
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components.base import (
-    ComponentForcingData,
-    write_runtime_component_to_netcdf,
-    write_runtime_component_view_to_netcdf,
-)
+from vercor.components.base import ComponentForcingData
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
+from vercor.output import write_runtime_component_view_to_netcdf
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
-from vercor.tools import RuntimeComponentView
+from vercor.runtime_views import RuntimeComponentView
 
 
 class _RuntimeOnlyComponent(base_module.Component):
@@ -34,9 +31,9 @@ class _RuntimeOnlyComponent(base_module.Component):
         runtime_settings: Any | None = None,
         *,
         time: Any | None = None,
-        coupler: Any | None = None,
+        logger: Any | None = None,
     ) -> RuntimeComponentState:
-        _ = runtime_settings, time, coupler
+        _ = runtime_settings, time, logger
         data = component_state.data.set(
             "temperature",
             component_state.data.get("temperature") + dt_seconds,
@@ -53,6 +50,10 @@ def test_legacy_wrapper_api_is_removed() -> None:
     assert not hasattr(base_module, "Shared")
     assert not hasattr(base_module, "TimedNamedArray")
     assert not hasattr(base_module, "write_shared_to_netcdf")
+    assert not hasattr(base_module, "write_runtime_component_to_netcdf")
+    assert not hasattr(base_module, "write_runtime_component_view_to_netcdf")
+    assert not hasattr(components_module, "write_runtime_component_to_netcdf")
+    assert not hasattr(components_module, "write_runtime_component_view_to_netcdf")
     assert not hasattr(component, "incoming_fields")
     assert not hasattr(component, "outgoing_fields")
     assert not hasattr(component, "commit_runtime_state")
@@ -244,10 +245,8 @@ def test_component_forcing_data_read_and_runtime_write_round_trip(
     )
     output = tmp_path / "runtime.nc"
 
-    write_runtime_component_to_netcdf(
-        "ATM",
-        state,
-        make_test_grid(),
+    write_runtime_component_view_to_netcdf(
+        RuntimeComponentView.from_component_state("ATM", make_test_grid(), state),
         output,
         masks={"fmask_OCN_ATM_bilinear": jnp.ones((2, 2))},
     )
@@ -269,9 +268,9 @@ def test_component_forcing_data_read_and_runtime_write_round_trip(
 
     view_output = tmp_path / "runtime-view.nc"
     write_runtime_component_view_to_netcdf(
-        RuntimeComponentView.from_runtime_state(
+        RuntimeComponentView.from_component_state(
             "ATM",
-            DummyComponent(name="ATM", grid=make_test_grid()),
+            make_test_grid(),
             state,
         ),
         view_output,

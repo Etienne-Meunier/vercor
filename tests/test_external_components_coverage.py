@@ -684,7 +684,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         timedelta(days=1).total_seconds(),
         coupler.settings,
         time=datetime(2000, 1, 2),
-        coupler=coupler,
+        logger=coupler.logger,
     )
     forcing_call = component.forcing.copy_calls[-1]
     assert isinstance(forcing_call["stl_am"], jax.Array)
@@ -1179,7 +1179,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         20.0,
         coupler.settings,
         time=datetime(2000, 1, 1),
-        coupler=coupler,
+        logger=coupler.logger,
     )
 
     expected_names = ["taux", "tauy", "qnet", "qnec"]
@@ -1234,7 +1234,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
         20.0,
         coupler.settings,
         time=datetime(2000, 1, 1),
-        coupler=coupler,
+        logger=coupler.logger,
     )
 
     assert [name for name, _ in set_calls] == ["taux", "tauy", "qnet", "qnec"]
