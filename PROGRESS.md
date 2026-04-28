@@ -9,7 +9,7 @@
   - plotting still preserves normal field lookup order for scalar/table helpers
   - plot-specific lookup now selects a 2D field when one is available, which handles ERA5 fields where monthly 3D forcing remains in `data` and the runtime-selected 2D field is in `outgoing`
 - Added regression coverage for `(component, RuntimeComponentState)` plotting with 3D data-store winds and 2D outgoing winds.
-- Commit: `693af7dfc79d897c7a4ed1e293f38f4e7726f663`
+- Commit: `daf9382edf7eaf20d1f3e7156e08e0ed43575013`
 
 ## Validation (Data Driver Runtime-State Plotting Fix, 2026-04-28)
 
