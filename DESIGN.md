@@ -35,6 +35,32 @@ All functions are pure, jitted with `jax.jit` decorator and stateless. No mutabl
 This is critical for JAX compatibility and makes reasoning about the code easier.
 Each function takes explicit inputs and returns explicit outputs, which can be easily tested and debugged.
 
+### Compile cache hits and safe buffer donation
+
+To ensure good performance, we need to design the code to maximize JIT cache hits and enable safe buffer donation.
+This means avoiding dynamic shapes, using static arguments for control parameters, and ensuring that arrays are not mutated in-place.
+
+**Keep JIT compile keys stable (avoid surprise recompiles):**
+- Define model/containers at module top‑level so identities don’t change between runs.
+- Mark non‑array metadata as static so it isn’t traced.
+- Keep argument pytrees small and consistent (e.g., NamedTuple with fixed fields).
+- If you pass constants/flags, make them static args.
+
+**Anti‑pattern to avoid:** constructing fresh containers every call with changing non‑array fields (e.g., dicts with varying keys or dataclasses whose __eq__ changes) → recompiles.
+
+**Donate buffers safely (lower peak memory, speed up):**
+Donation lets XLA reuse input buffers for outputs.
+- Rule of thumb: donate only arrays you won’t read again after the call.
+- Practical boundary: donate at the outer step (not deep internals) so the contract is easy to respect.
+
+**Small patterns that add up**
+1) Stable run‑state wrapper
+Keep “run‑level” scalars (step, time, dt) in a fixed NamedTuple; keep big arrays (model params) in plain pytrees (tuples/dicts) with stable keys.
+2) Keep non‑array metadata out of traces
+3) Reduce variant explosion: prefer fixed‑shape boundary tuples over dicts whose keys appear/disappear:
+4) Donation audit at the callsite.
+5) Deterministic RNG: split once per step at the boundary; don’t split inside inner kernels (helps compile stability).
+
 ### Input / Output
 
 All I/O is handled by a dedicated module that reads/writes from/to disk.
