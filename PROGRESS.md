@@ -1621,3 +1621,40 @@
 ## Notes / Failed Approaches (Test-Only Coupler Runtime Wrapper Removal)
 
 - No failed implementation approaches. The cleanup stayed limited to private test-only compatibility wrappers and kept public/protocol/lifecycle APIs intact.
+
+## Compile Cache and Safe Donation Runtime Audit
+
+- Added `Coupler.compile_runtime(donate_state=True)` as an explicit reusable compiled scanned-runtime helper:
+  - keeps `Coupler.run()` and `create_runtime_state()` behavior unchanged
+  - wraps `run(state, commit_wrappers=False)` in `jax.jit`
+  - donates the outer `RuntimeCouplerState` only when requested
+  - documents that donated input states are consumed and must not be read after invocation
+- Hardened runtime field stores for donation safety:
+  - `RuntimeFieldStore.from_mapping()` and `RuntimeFieldStore.set()` now materialize stored leaves with `jnp.array(..., copy=True)`
+  - this prevents repeated field references from producing duplicate donated buffers
+- Added `tests/test_runtime_compile_cache.py`:
+  - verifies repeated compiled runtime calls with the same treedef/shapes reuse the JIT cache
+  - verifies changed runtime array values do not trigger a new compile
+  - verifies donated runtime execution succeeds with fresh consumed states
+  - verifies non-donating compiled runs preserve runtime-state treedef and static field names
+
+## Validation (Compile Cache and Safe Donation Runtime Audit, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_runtime_compile_cache.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 84 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Compile Cache and Safe Donation Runtime Audit)
+
+- The first donation test failed with XLA's duplicate donated-buffer error because several runtime fields reused the same JAX buffer. The runtime field store now copies leaves on insertion so canonical runtime states can be donated safely.
+- The first `mypy` run rejected direct equality checks on JAX `PyTreeDef` objects in the new test. The final assertion compares the stable treedef representation instead.

@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from logging import Logger
 from pathlib import Path
-from typing import Optional, cast
+from typing import Callable, Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -639,6 +639,37 @@ class Coupler:
                 )
 
         return runtime_state
+
+    def compile_runtime(
+        self, *, donate_state: bool = True
+    ) -> Callable[[RuntimeCouplerState], RuntimeCouplerState]:
+        """Return a reusable compiled scanned-runtime callable.
+
+        The returned callable runs ``self.run(state, commit_wrappers=False)`` under
+        ``jax.jit``. Reuse the same compiled callable for repeated runs with the
+        same runtime-state PyTree structure and array shapes to maximize compile
+        cache hits.
+
+        If ``donate_state`` is true, the input ``RuntimeCouplerState`` is donated
+        to XLA at the outer runtime boundary. Callers must treat the donated input
+        state as consumed and must not read it after invoking the compiled
+        callable.
+        """
+
+        def scanned_runtime(
+            state: RuntimeCouplerState,
+        ) -> RuntimeCouplerState:
+            return self.run(state, commit_wrappers=False)
+
+        if donate_state:
+            return cast(
+                Callable[[RuntimeCouplerState], RuntimeCouplerState],
+                jax.jit(scanned_runtime, donate_argnums=(0,)),
+            )
+        return cast(
+            Callable[[RuntimeCouplerState], RuntimeCouplerState],
+            jax.jit(scanned_runtime),
+        )
 
     def _run_scanned_runtime(
         self, initial_state: RuntimeCouplerState | None = None

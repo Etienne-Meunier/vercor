@@ -100,7 +100,7 @@ class RuntimeFieldStore:
 
         return cls(
             field_names=tuple(fields.keys()),
-            values=tuple(jnp.asarray(value) for value in fields.values()),
+            values=tuple(jnp.array(value, copy=True) for value in fields.values()),
         )
 
     def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], tuple[str, ...]]:
@@ -124,7 +124,7 @@ class RuntimeFieldStore:
     def set(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
         """Return a new store with ``name`` replaced or appended."""
 
-        value_array = jnp.asarray(value)
+        value_array = jnp.array(value, copy=True)
         if name not in self.field_names:
             return RuntimeFieldStore(
                 field_names=(*self.field_names, name),
