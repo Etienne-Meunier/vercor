@@ -1,14 +1,49 @@
 # 2026-04-28
 
+## Runtime Metadata De-Compatibility Cleanup
+
+- Removed duplicated component metadata from `RuntimeComponentState`:
+  - component names now live once in `RuntimeCouplerState.component_names`
+  - import/export field lists now stay on registered component instances
+  - runtime state helpers now replace component states by explicit name
+- Kept non-differentiable host bridges explicit and private:
+  - Veros, CAMulator atmosphere, and CAMulator land now expose `_step_host_runtime_state()`
+  - scanned runtime continues through pure `step_runtime_state()` and does not execute those host mutations
+- Replaced loose plotting `(component, runtime_state)` tuples with `ComponentFieldView`.
+- Updated final runtime NetCDF output metadata so `write_runtime_component_to_netcdf()` receives the component name explicitly.
+- Updated `DEPENDENCIES.md` to describe the new runtime/base/coupler responsibility split.
+
+## Validation (Runtime Metadata De-Compatibility Cleanup, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_runtime_exchange.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py tests/test_tools_components_and_plotting.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 84 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
+## Notes / Failed Approaches
+
+- The first full-suite run after moving import/export metadata off `RuntimeComponentState` exposed manual slab runtime fixtures whose registered components did not own equivalent field metadata. The fix updated those fixtures to declare component-owned import/export lists instead of reintroducing runtime-state duplication.
+
 ## Data Driver Runtime-State Plotting Fix
 
 - Fixed `examples/run_data_driver.py` plotting after the runtime API de-compatibility refactor:
-  - plot rows now pass `(component, final_state.get_component_state(...))` pairs
+  - plot rows use explicit component/runtime-state views rather than stale component object fields
   - plotting now reads `total_surface_temperature` from the returned runtime state instead of the stale component object
 - Hardened component plotting helpers for runtime states with multiple stores:
   - plotting still preserves normal field lookup order for scalar/table helpers
   - plot-specific lookup now selects a 2D field when one is available, which handles ERA5 fields where monthly 3D forcing remains in `data` and the runtime-selected 2D field is in `outgoing`
-- Added regression coverage for `(component, RuntimeComponentState)` plotting with 3D data-store winds and 2D outgoing winds.
+- Added regression coverage for explicit runtime-state plotting views with 3D data-store winds and 2D outgoing winds.
 - Commit: `daf9382edf7eaf20d1f3e7156e08e0ed43575013`
 
 ## Validation (Data Driver Runtime-State Plotting Fix, 2026-04-28)

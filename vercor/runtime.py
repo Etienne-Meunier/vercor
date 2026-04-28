@@ -161,28 +161,24 @@ class RuntimeFieldStore:
 class RuntimeComponentState:
     """Immutable runtime state for one component."""
 
-    name: str
     data: RuntimeFieldStore
     incoming: RuntimeFieldStore
     outgoing: RuntimeFieldStore
-    fields_to_import: tuple[str, ...]
-    fields_to_export: tuple[str, ...]
     runtime_payload: Any | None = None
 
     def tree_flatten(
         self,
     ) -> tuple[
         tuple[RuntimeFieldStore, RuntimeFieldStore, RuntimeFieldStore, Any | None],
-        tuple[str, tuple[str, ...], tuple[str, ...]],
+        None,
     ]:
         children = (self.data, self.incoming, self.outgoing, self.runtime_payload)
-        aux_data = (self.name, self.fields_to_import, self.fields_to_export)
-        return children, aux_data
+        return children, None
 
     @classmethod
     def tree_unflatten(
         cls,
-        aux_data: tuple[str, tuple[str, ...], tuple[str, ...]],
+        aux_data: None,
         children: tuple[
             RuntimeFieldStore,
             RuntimeFieldStore,
@@ -190,15 +186,12 @@ class RuntimeComponentState:
             Any | None,
         ],
     ) -> "RuntimeComponentState":
-        name, fields_to_import, fields_to_export = aux_data
+        _ = aux_data
         data, incoming, outgoing, runtime_payload = children
         return cls(
-            name=name,
             data=data,
             incoming=incoming,
             outgoing=outgoing,
-            fields_to_import=fields_to_import,
-            fields_to_export=fields_to_export,
             runtime_payload=runtime_payload,
         )
 
@@ -206,12 +199,9 @@ class RuntimeComponentState:
         """Return this component state with replaced data."""
 
         return RuntimeComponentState(
-            name=self.name,
             data=data,
             incoming=self.incoming,
             outgoing=self.outgoing,
-            fields_to_import=self.fields_to_import,
-            fields_to_export=self.fields_to_export,
             runtime_payload=self.runtime_payload,
         )
 
@@ -219,12 +209,9 @@ class RuntimeComponentState:
         """Return this component state with replaced incoming fields."""
 
         return RuntimeComponentState(
-            name=self.name,
             data=self.data,
             incoming=incoming,
             outgoing=self.outgoing,
-            fields_to_import=self.fields_to_import,
-            fields_to_export=self.fields_to_export,
             runtime_payload=self.runtime_payload,
         )
 
@@ -232,12 +219,9 @@ class RuntimeComponentState:
         """Return this component state with replaced outgoing fields."""
 
         return RuntimeComponentState(
-            name=self.name,
             data=self.data,
             incoming=self.incoming,
             outgoing=outgoing,
-            fields_to_import=self.fields_to_import,
-            fields_to_export=self.fields_to_export,
             runtime_payload=self.runtime_payload,
         )
 
@@ -247,12 +231,9 @@ class RuntimeComponentState:
         """Return this component state with replaced runtime payload."""
 
         return RuntimeComponentState(
-            name=self.name,
             data=self.data,
             incoming=self.incoming,
             outgoing=self.outgoing,
-            fields_to_import=self.fields_to_import,
-            fields_to_export=self.fields_to_export,
             runtime_payload=runtime_payload,
         )
 
@@ -262,35 +243,39 @@ class RuntimeComponentState:
 class RuntimeCouplerState:
     """Immutable runtime state for the VerCOR runtime core."""
 
+    component_names: tuple[str, ...]
     components: tuple[RuntimeComponentState, ...]
     fractional_masks: RuntimeFieldStore
     binary_masks: RuntimeFieldStore
 
-    @property
-    def component_names(self) -> tuple[str, ...]:
-        """Return component names in runtime-state order."""
+    def __post_init__(self) -> None:
+        """Validate that component names and states stay aligned."""
 
-        return tuple(component.name for component in self.components)
+        if len(self.component_names) != len(self.components):
+            raise ValueError("component_names and components must have equal length")
 
     def tree_flatten(
         self,
     ) -> tuple[
         tuple[tuple[RuntimeComponentState, ...], RuntimeFieldStore, RuntimeFieldStore],
-        None,
+        tuple[str, ...],
     ]:
-        return (self.components, self.fractional_masks, self.binary_masks), None
+        return (
+            (self.components, self.fractional_masks, self.binary_masks),
+            self.component_names,
+        )
 
     @classmethod
     def tree_unflatten(
         cls,
-        aux_data: None,
+        aux_data: tuple[str, ...],
         children: tuple[
             tuple[RuntimeComponentState, ...], RuntimeFieldStore, RuntimeFieldStore
         ],
     ) -> "RuntimeCouplerState":
-        _ = aux_data
         components, fractional_masks, binary_masks = children
         return cls(
+            component_names=aux_data,
             components=components,
             fractional_masks=fractional_masks,
             binary_masks=binary_masks,
@@ -299,21 +284,25 @@ class RuntimeCouplerState:
     def get_component_state(self, name: str) -> RuntimeComponentState:
         """Return one component state by name."""
 
-        for component in self.components:
-            if component.name == name:
-                return component
-        raise KeyError(f"Runtime component {name!r} not found")
+        try:
+            index = self.component_names.index(name)
+        except ValueError as exc:
+            raise KeyError(f"Runtime component {name!r} not found") from exc
+        return self.components[index]
 
     def set_component_state(
-        self, component_state: RuntimeComponentState
+        self, name: str, component_state: RuntimeComponentState
     ) -> "RuntimeCouplerState":
         """Return a new coupler state with one component replaced."""
 
+        if name not in self.component_names:
+            raise KeyError(f"Runtime component {name!r} not found")
         components = tuple(
-            component_state if component.name == component_state.name else component
-            for component in self.components
+            component_state if component_name == name else component
+            for component_name, component in zip(self.component_names, self.components)
         )
         return RuntimeCouplerState(
+            component_names=self.component_names,
             components=components,
             fractional_masks=self.fractional_masks,
             binary_masks=self.binary_masks,
@@ -371,4 +360,4 @@ def dispatch_component_exchanges(
                 destination_incoming = destination_incoming.set(field_name, scalar)
 
     destination_component = destination_component.with_incoming(destination_incoming)
-    return state.set_component_state(destination_component)
+    return state.set_component_state(destination_name, destination_component)

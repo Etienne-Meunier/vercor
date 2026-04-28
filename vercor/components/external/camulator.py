@@ -470,7 +470,7 @@ class CAMulatorGCM(Component):
 
         self.data.update(_initialize_camulator_runtime_fields(self.grid.shape))
 
-    def step_runtime_state(
+    def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         dt_seconds: float,
@@ -479,7 +479,7 @@ class CAMulatorGCM(Component):
         time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
-        """Advance the host-backed CAMulator atmosphere boundary."""
+        """Advance the private host-backed CAMulator atmosphere boundary."""
 
         _ = dt_seconds, runtime_settings
         if time is None or coupler is None:

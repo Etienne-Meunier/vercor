@@ -330,6 +330,7 @@ class Coupler:
             exchange_key_name(*key): value for key, value in self._binary_masks.items()
         }
         return RuntimeCouplerState(
+            component_names=tuple(self.components.keys()),
             components=components,
             fractional_masks=RuntimeFieldStore.from_mapping(fractional_masks),
             binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
@@ -412,7 +413,7 @@ class Coupler:
                 component_state,
                 step_info,
             )
-            runtime_state = runtime_state.set_component_state(component_state)
+            runtime_state = runtime_state.set_component_state(cname, component_state)
         return runtime_state
 
     def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
@@ -510,18 +511,30 @@ class Coupler:
         component_state = runtime_state.get_component_state(component_name)
         component = self.components[component_name]
         component_state = component.receive_runtime_fields(component_state)
-        component_state = component.step_runtime_state(
-            component_state,
-            self.clock.dt_seconds,
-            self.settings,
-            time=time,
-            coupler=self if time is not None else None,
-        )
+        if time is not None and hasattr(component, "_step_host_runtime_state"):
+            component_state = component._step_host_runtime_state(  # type: ignore[attr-defined]
+                component_state,
+                self.clock.dt_seconds,
+                self.settings,
+                time=time,
+                coupler=self,
+            )
+        else:
+            component_state = component.step_runtime_state(
+                component_state,
+                self.clock.dt_seconds,
+                self.settings,
+                time=time,
+                coupler=self if time is not None else None,
+            )
         component_state = component.send_runtime_fields(
             component_state,
             step_info,
         )
-        runtime_state = runtime_state.set_component_state(component_state)
+        runtime_state = runtime_state.set_component_state(
+            component_name,
+            component_state,
+        )
 
         return runtime_state
 
@@ -562,6 +575,7 @@ class Coupler:
             else:
                 filepath = Path(f"{name.lower()}_{output_file_mask}.nc")
             write_runtime_component_to_netcdf(
+                name,
                 final_state.get_component_state(name),
                 component.grid,
                 filepath,

@@ -27,7 +27,6 @@ def test_transposed_host_array_transfers_transposed_runtime_array() -> None:
 
 def test_component_vector_speed_uses_jax_arrays() -> None:
     state = RuntimeComponentState(
-        name="ATM",
         data=RuntimeFieldStore.from_mapping(
             {
                 "u": jnp.asarray([[3.0, 0.0], [4.0, 0.0]]),
@@ -36,8 +35,6 @@ def test_component_vector_speed_uses_jax_arrays() -> None:
         ),
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
-        fields_to_import=(),
-        fields_to_export=(),
     )
     speed = component_vector_speed(state, "u", "v")
 

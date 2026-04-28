@@ -14,6 +14,7 @@ from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.tools import (
+    ComponentFieldView,
     _append_unique,
     _flatten_fields,
     get_component,
@@ -189,7 +190,6 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
     )
     component = DummyGridComponent(grid=grid, fields={})
     runtime_state = RuntimeComponentState(
-        name="ATM",
         data=RuntimeFieldStore.from_mapping(
             {
                 "total_surface_temperature": jnp.array(
@@ -206,15 +206,13 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
                 "v_velocity": jnp.zeros((2, 3)),
             }
         ),
-        fields_to_import=(),
-        fields_to_export=(),
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
             (
                 "ATM",
-                (component, runtime_state),
+                ComponentFieldView.from_component_state(component, runtime_state),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",

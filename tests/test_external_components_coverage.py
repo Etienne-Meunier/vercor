@@ -33,13 +33,11 @@ def _runtime_component_state(
     name: str,
     data: dict[str, Any] | None = None,
 ) -> RuntimeComponentState:
+    _ = name
     return RuntimeComponentState(
-        name=name,
         data=RuntimeFieldStore.from_mapping(data or {}),
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
-        fields_to_import=(),
-        fields_to_export=(),
     )
 
 
@@ -1179,7 +1177,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component._step_function = fake_step_function
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component.step_runtime_state(
+    component._step_host_runtime_state(
         _runtime_component_state("OCN", component.data),
         20.0,
         coupler.settings,
@@ -1234,7 +1232,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     component._step_function = lambda state: state
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component.step_runtime_state(
+    component._step_host_runtime_state(
         _runtime_component_state("OCN", component.data),
         20.0,
         coupler.settings,

@@ -126,7 +126,7 @@ class CAMulatorLand(Component):
             self.grid.shape, 283.0, dtype=jnp.float32
         )
 
-    def step_runtime_state(
+    def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         dt_seconds: float,
@@ -135,7 +135,7 @@ class CAMulatorLand(Component):
         time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
-        """Advance the host-backed CAMulator land forcing boundary."""
+        """Advance the private host-backed CAMulator land forcing boundary."""
 
         _ = dt_seconds, runtime_settings
         if time is None or coupler is None:

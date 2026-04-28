@@ -13,6 +13,7 @@ from vercor.regridders import (
     conservative,
 )
 from vercor.tools import (
+    ComponentFieldView,
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
@@ -127,9 +128,9 @@ if __name__ == "__main__":
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(
         components={
-            "ATM": (atm, final_state.get_component_state("ATM")),
-            "OCN": (ocn, final_state.get_component_state("OCN")),
-            "LND": (lnd, final_state.get_component_state("LND")),
+            "ATM": final_state.get_component_state("ATM"),
+            "OCN": final_state.get_component_state("OCN"),
+            "LND": final_state.get_component_state("LND"),
         },
         fields=[
             ("sea_surface_temperature", "sst"),
@@ -156,14 +157,20 @@ if __name__ == "__main__":
         rows=[
             (
                 "ATM",
-                (atm, final_state.get_component_state("ATM")),
+                ComponentFieldView.from_component_state(
+                    atm,
+                    final_state.get_component_state("ATM"),
+                ),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",
             ),
             (
                 "OCN",
-                (ocn, final_state.get_component_state("OCN")),
+                ComponentFieldView.from_component_state(
+                    ocn,
+                    final_state.get_component_state("OCN"),
+                ),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",

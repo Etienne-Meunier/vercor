@@ -590,15 +590,14 @@ def test_coupler_finalize_writes_runtime_outputs_for_all_components(
     captured: list[tuple[str, Any, Any, Path, dict[str, Any]]] = []
 
     def fake_write(
+        component_name: str,
         component_state: Any,
         grid: Any,
         filename: Path,
         *,
         masks: dict[str, Any] | None = None,
     ) -> None:
-        captured.append(
-            (component_state.name, component_state, grid, filename, masks or {})
-        )
+        captured.append((component_name, component_state, grid, filename, masks or {}))
 
     monkeypatch.setattr("vercor.coupler.write_runtime_component_to_netcdf", fake_write)
 
@@ -654,13 +653,13 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         return state
 
     def fake_receive(component: Any, component_state: Any) -> Any:
-        _ = component
-        events.append(f"receive:{component_state.name}")
+        _ = component_state
+        events.append(f"receive:{component.name}")
         return component_state
 
     def fake_send(component: Any, component_state: Any, *args: Any) -> Any:
-        _ = component, args
-        events.append(f"send:{component_state.name}")
+        _ = component_state, args
+        events.append(f"send:{component.name}")
         return component_state
 
     monkeypatch.setattr("vercor.coupler.dispatch_component_exchanges", fake_dispatch)

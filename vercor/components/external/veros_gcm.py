@@ -385,7 +385,7 @@ class VerosGCM(Component):
             self._veros_state.variables.tau,
         )
 
-    def step_runtime_state(
+    def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
         dt_seconds: float,
@@ -394,7 +394,7 @@ class VerosGCM(Component):
         time: datetime | ModelDateTime | None = None,
         coupler: "Coupler | None" = None,
     ) -> "RuntimeComponentState":
-        """Advance the host-backed Veros boundary."""
+        """Advance the private host-backed Veros boundary."""
 
         _ = dt_seconds, runtime_settings
         if time is None or coupler is None:

@@ -51,6 +51,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     camulator_source = Path("vercor/components/external/camulator.py").read_text(
         encoding="utf-8"
     )
+    camulator_land_source = Path("vercor/components/data/camulator_land.py").read_text(
+        encoding="utf-8"
+    )
 
     forbidden_component_markers = (
         "step_slab_component_state",
@@ -67,8 +70,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         assert marker not in runtime_source
     assert "import_fields" not in coupler_source
     assert "def step_runtime_state" in jax_gcm_source
-    assert "def step_runtime_state" in veros_source
-    assert "def step_runtime_state" in camulator_source
+    assert "def _step_host_runtime_state" in veros_source
+    assert "def _step_host_runtime_state" in camulator_source
+    assert "def _step_host_runtime_state" in camulator_land_source
+    assert "def step_runtime_state" not in veros_source
+    assert "def step_runtime_state" not in camulator_source
+    assert "def step_runtime_state" not in camulator_land_source
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:
@@ -116,16 +123,17 @@ def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> Non
 
 def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     component = RuntimeComponentState(
-        name="ATM",
         data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
         incoming=RuntimeFieldStore.from_mapping(
             {"sea_surface_temperature": jnp.zeros((2, 2))}
         ),
         outgoing=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
-        fields_to_import=("sea_surface_temperature",),
-        fields_to_export=("temperature",),
     )
+    assert not hasattr(component, "name")
+    assert not hasattr(component, "fields_to_import")
+    assert not hasattr(component, "fields_to_export")
     state = RuntimeCouplerState(
+        component_names=("ATM",),
         components=(component,),
         fractional_masks=RuntimeFieldStore.from_mapping(
             {"OCN|ATM|bilinear": jnp.ones((2, 2))}
@@ -138,7 +146,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
         atm = atm.with_data(
             atm.data.set("temperature", atm.data.get("temperature") + 2.0)
         )
-        return value.set_component_state(atm)
+        return value.set_component_state("ATM", atm)
 
     updated = jax.jit(update)(state)
 
@@ -155,12 +163,9 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
         forcing={"surface_temperature": jnp.asarray([[2.0, 3.0]])},
     )
     component = RuntimeComponentState(
-        name="ATM",
         data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((1, 2))}),
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
-        fields_to_import=(),
-        fields_to_export=(),
         runtime_payload=payload,
     )
 
@@ -185,6 +190,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(ComponentSettings(apply_time_interpolation=True))
+    component._fields2export = ["temperature"]
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [0.75], [0.25], [0]),
@@ -195,12 +201,9 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
     def send_loss(field: jax.Array) -> jax.Array:
         state = RuntimeComponentState(
-            name="DATA",
             data=RuntimeFieldStore.from_mapping({"temperature": field}),
             incoming=RuntimeFieldStore.empty(),
             outgoing=RuntimeFieldStore.empty(),
-            fields_to_import=(),
-            fields_to_export=("temperature",),
         )
         sent = component.send_runtime_fields(state, step_info)
         return jnp.sum(sent.outgoing.get("temperature"))
@@ -208,12 +211,9 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
     sent_state = jax.jit(
         lambda field: component.send_runtime_fields(
             RuntimeComponentState(
-                name="DATA",
                 data=RuntimeFieldStore.from_mapping({"temperature": field}),
                 incoming=RuntimeFieldStore.empty(),
                 outgoing=RuntimeFieldStore.empty(),
-                fields_to_import=(),
-                fields_to_export=("temperature",),
             ),
             step_info,
         )
@@ -230,6 +230,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(ComponentSettings(get_field_time_slice=True))
+    component._fields2export = ["temperature"]
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [1.0], [0.0], [2]),
@@ -238,23 +239,17 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
 
     def send_loss(field: jax.Array) -> jax.Array:
         state = RuntimeComponentState(
-            name="DATA",
             data=RuntimeFieldStore.from_mapping({"temperature": field}),
             incoming=RuntimeFieldStore.empty(),
             outgoing=RuntimeFieldStore.empty(),
-            fields_to_import=(),
-            fields_to_export=("temperature",),
         )
         sent = component.send_runtime_fields(state, step_info)
         return jnp.sum(sent.outgoing.get("temperature"))
 
     state = RuntimeComponentState(
-        name="DATA",
         data=RuntimeFieldStore.from_mapping({"temperature": forcing}),
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
-        fields_to_import=(),
-        fields_to_export=("temperature",),
     )
     sent_state = jax.jit(lambda value: component.send_runtime_fields(value, step_info))(
         state

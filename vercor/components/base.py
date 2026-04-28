@@ -132,7 +132,7 @@ class Component:
         component.
         """
 
-        for field_name in component_state.fields_to_import:
+        for field_name in self._fields2import:
             self._validate_runtime_store_field(
                 component_state.incoming,
                 field_name,
@@ -142,7 +142,7 @@ class Component:
                 component_state,
                 field_name,
             )
-        for field_name in component_state.fields_to_export:
+        for field_name in self._fields2export:
             self._validate_runtime_data_field_exists(component_state, field_name)
             self._validate_runtime_store_field(
                 component_state.outgoing,
@@ -170,12 +170,9 @@ class Component:
             self.prefill_runtime_state_fields(data, incoming, outgoing)
 
         return RuntimeComponentState(
-            name=self.name,
             data=RuntimeFieldStore.from_mapping(data),
             incoming=RuntimeFieldStore.from_mapping(incoming),
             outgoing=RuntimeFieldStore.from_mapping(outgoing),
-            fields_to_import=tuple(self._fields2import),
-            fields_to_export=tuple(self._fields2export),
             runtime_payload=self.create_runtime_payload(),
         )
 
@@ -194,7 +191,7 @@ class Component:
         """Move imported incoming runtime fields into component data."""
 
         data = component_state.data
-        for field_name in component_state.fields_to_import:
+        for field_name in self._fields2import:
             data = data.set(field_name, component_state.incoming.get(field_name))
         return component_state.with_data(data)
 
@@ -230,7 +227,7 @@ class Component:
         """Move exported component data into outgoing runtime fields."""
 
         outgoing = component_state.outgoing
-        for field_name in component_state.fields_to_export:
+        for field_name in self._fields2export:
             outgoing = outgoing.set(
                 field_name,
                 self._select_runtime_field_for_send(
@@ -344,6 +341,7 @@ class ComponentForcingData:
 
 
 def write_runtime_component_to_netcdf(
+    component_name: str,
     component_state: "RuntimeComponentState",
     grid: RectilinearGrid,
     filename: Path,
@@ -353,6 +351,7 @@ def write_runtime_component_to_netcdf(
     """Write final runtime component fields to a netCDF file.
 
     Arguments:
+        component_name: component name to write as output metadata
         component_state: runtime component state containing fields to write
         grid: Grid object defining the grid
         filename: path to the output netCDF file
@@ -377,7 +376,7 @@ def write_runtime_component_to_netcdf(
                 dims=("nlat", "nlon"),
                 coords={"latitude": lat, "longitude": lon},
                 attrs={
-                    "component": component_state.name,
+                    "component": component_name,
                     "runtime_store": store_name,
                     "field_name": name,
                 },
@@ -389,7 +388,7 @@ def write_runtime_component_to_netcdf(
             dims=("nlat", "nlon"),
             coords={"latitude": lat, "longitude": lon},
             attrs={
-                "component": component_state.name,
+                "component": component_name,
                 "runtime_store": "mask",
                 "field_name": name,
             },

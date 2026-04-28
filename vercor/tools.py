@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import os
@@ -82,6 +83,31 @@ class SupportsFieldTimeLookup(Protocol):
 
     @property
     def settings(self) -> _SettingsWithYearInSeconds: ...
+
+
+@dataclass(frozen=True)
+class ComponentFieldView:
+    """Explicit grid plus runtime-field view for plotting and diagnostics."""
+
+    grid: RectilinearGrid
+    data: Any = field(default_factory=dict)
+    incoming: Any = field(default_factory=dict)
+    outgoing: Any = field(default_factory=dict)
+
+    @classmethod
+    def from_component_state(
+        cls,
+        component: Any,
+        component_state: Any,
+    ) -> "ComponentFieldView":
+        """Create a field view from a component and its runtime state."""
+
+        return cls(
+            grid=component.grid,
+            data=component_state.data,
+            incoming=component_state.incoming,
+            outgoing=component_state.outgoing,
+        )
 
 
 def _md5sum(path: Path) -> str:
@@ -187,9 +213,8 @@ def _component_field_candidates(component: Any, field_name: str) -> list[Runtime
     """Return matching fields from a runtime state or component data store."""
 
     candidates: list[RuntimeArray] = []
-    source = component[1] if isinstance(component, tuple) else component
     for store_name in ("data", "incoming", "outgoing"):
-        store = getattr(source, store_name, None)
+        store = getattr(component, store_name, None)
         if store is None:
             continue
         if hasattr(store, "field_names"):
@@ -197,16 +222,7 @@ def _component_field_candidates(component: Any, field_name: str) -> list[Runtime
                 candidates.append(cast(RuntimeArray, store.get(field_name)))
         elif field_name in store:
             candidates.append(cast(RuntimeArray, store[field_name]))
-    fields = getattr(source, "fields", None)
-    if fields is not None and field_name in fields:
-        candidates.append(cast(RuntimeArray, fields[field_name]))
-    if candidates:
-        return candidates
-
-    getter = getattr(source, "get", None)
-    if getter is not None:
-        return [cast(RuntimeArray, getter(field_name))]
-    return []
+    return candidates
 
 
 def _component_field(component: Any, field_name: str) -> RuntimeArray:
@@ -231,9 +247,9 @@ def _component_plot_field(component: Any, field_name: str) -> RuntimeArray:
 
 
 def _component_grid(component: Any) -> Any:
-    """Return the grid from a component or ``(component, runtime_state)`` pair."""
+    """Return the grid from a component or explicit component field view."""
 
-    return component[0].grid if isinstance(component, tuple) else component.grid
+    return component.grid
 
 
 def _safe_component_metric_mean(

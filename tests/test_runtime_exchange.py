@@ -37,13 +37,11 @@ def _component(
     outgoing: dict[str, jax.Array],
     incoming: dict[str, jax.Array] | None = None,
 ) -> RuntimeComponentState:
+    _ = name
     return RuntimeComponentState(
-        name=name,
         data=RuntimeFieldStore.from_mapping({}),
         incoming=RuntimeFieldStore.from_mapping(incoming or {}),
         outgoing=RuntimeFieldStore.from_mapping(outgoing),
-        fields_to_import=tuple((incoming or {}).keys()),
-        fields_to_export=tuple(outgoing.keys()),
     )
 
 
@@ -58,6 +56,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
 
     def loss(source: jax.Array, mask: jax.Array) -> jax.Array:
         state = RuntimeCouplerState(
+            component_names=("OCN", "ATM"),
             components=(
                 _component("OCN", outgoing={"temperature": source}),
                 _component(
@@ -102,6 +101,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     u_velocity = jnp.full((2, 2), 5.0)
     v_velocity = jnp.full((2, 2), -2.0)
     state = RuntimeCouplerState(
+        component_names=("OCN", "ATM"),
         components=(
             _component(
                 "OCN",

@@ -125,7 +125,6 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
     )
     component = DummyComponent(name="ATM", grid=grid)
     valid_state = RuntimeComponentState(
-        name="ATM",
         data=RuntimeFieldStore.from_mapping(
             {
                 "temperature": jnp.ones(grid.shape),
@@ -136,8 +135,6 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
         outgoing=RuntimeFieldStore.from_mapping(
             {"sensible_heat_flux": jnp.zeros(grid.shape)}
         ),
-        fields_to_import=("temperature",),
-        fields_to_export=("sensible_heat_flux",),
     )
 
     component.validate_runtime_state(valid_state)
@@ -237,7 +234,6 @@ def test_component_forcing_data_read_and_runtime_write_round_trip(
         reader._read_forcing("foo", "broken")
 
     state = RuntimeComponentState(
-        name="ATM",
         data=RuntimeFieldStore.empty(),
         incoming=RuntimeFieldStore.from_mapping(
             {"temperature": jnp.asarray([[10.0, 11.0], [12.0, 13.0]])}
@@ -245,12 +241,11 @@ def test_component_forcing_data_read_and_runtime_write_round_trip(
         outgoing=RuntimeFieldStore.from_mapping(
             {"humidity": jnp.asarray([[0.1, 0.2], [0.3, 0.4]])}
         ),
-        fields_to_import=("temperature",),
-        fields_to_export=("humidity",),
     )
     output = tmp_path / "runtime.nc"
 
     write_runtime_component_to_netcdf(
+        "ATM",
         state,
         make_test_grid(),
         output,

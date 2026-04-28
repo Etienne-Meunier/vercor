@@ -43,13 +43,11 @@ def _runtime_component_state(
     name: str,
     data: dict[str, Any] | None = None,
 ) -> RuntimeComponentState:
+    _ = name
     return RuntimeComponentState(
-        name=name,
         data=RuntimeFieldStore.from_mapping(data or {}),
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
-        fields_to_import=(),
-        fields_to_export=(),
     )
 
 
@@ -332,7 +330,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     coupler = _make_coupler(start)
-    component_state = component.step_runtime_state(
+    component_state = component._step_host_runtime_state(
         component.to_runtime_component_state(prefill_missing=True),
         (datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
         None,
@@ -471,7 +469,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
     )
 
-    component.step_runtime_state(
+    component._step_host_runtime_state(
         _runtime_component_state("ATM", component.data),
         float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
         VercorSettings(),

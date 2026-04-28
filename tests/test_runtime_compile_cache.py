@@ -37,9 +37,9 @@ def _component_state(
     imports: tuple[str, ...],
     exports: tuple[str, ...],
 ) -> RuntimeComponentState:
+    _ = name
     zeros = jnp.zeros((2, 2), dtype=jnp.float64)
     return RuntimeComponentState(
-        name=name,
         data=RuntimeFieldStore.from_mapping(
             {
                 field: data.get(field, zeros)
@@ -52,8 +52,6 @@ def _component_state(
         outgoing=RuntimeFieldStore.from_mapping(
             {field: data.get(field, zeros) for field in exports}
         ),
-        fields_to_import=imports,
-        fields_to_export=exports,
     )
 
 
@@ -164,6 +162,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
         ),
     )
     return RuntimeCouplerState(
+        component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
         fractional_masks=RuntimeFieldStore.from_mapping(
             {
@@ -248,9 +247,9 @@ def test_non_donating_compiled_runtime_preserves_runtime_treedef() -> None:
     assert _runtime_treedef_repr(second_state) == expected_treedef
     assert _runtime_treedef_repr(first_final) == expected_treedef
     assert _runtime_treedef_repr(second_final) == expected_treedef
+    assert first_final.component_names == first_state.component_names
 
     for before, after in zip(first_state.components, first_final.components):
-        assert after.name == before.name
         assert after.data.field_names == before.data.field_names
         assert after.incoming.field_names == before.incoming.field_names
         assert after.outgoing.field_names == before.outgoing.field_names
