@@ -485,7 +485,7 @@ class CAMulatorGCM(Component):
         if time is None or coupler is None:
             return component_state
 
-        self.commit_runtime_state(component_state, time)
+        self._sync_data_from_runtime_state(component_state)
 
         settings = coupler.settings
         logger = coupler.logger

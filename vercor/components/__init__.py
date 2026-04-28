@@ -1,9 +1,7 @@
 from vercor.components.base import (
     Component,
-    TimedNamedArray,
-    Shared,
     ComponentForcingData,
-    write_shared_to_netcdf,
+    write_runtime_component_to_netcdf,
 )
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_ocean import ERA5Ocean
@@ -20,10 +18,8 @@ from vercor.components.external.veros_gcm import VerosGCM
 from vercor.components.external.camulator import CAMulatorGCM
 
 __all__ = [
-    "TimedNamedArray",
-    "Shared",
     "ComponentForcingData",
-    "write_shared_to_netcdf",
+    "write_runtime_component_to_netcdf",
     "Component",
     "Atmosphere",
     "Ocean",

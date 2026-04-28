@@ -1,3 +1,55 @@
+# 2026-04-28
+
+## Runtime API De-Compatibility Refactor
+
+- Removed the legacy component wrapper compatibility surface from production code:
+  - deleted public `Shared`, `TimedNamedArray`, `write_shared_to_netcdf`, `Component.step()`, wrapper field attributes, wrapper commits, and wrapper merge/get helpers
+  - removed `Shared` / `TimedNamedArray` from `vercor.components` exports
+  - made `RuntimeFieldStore`, `RuntimeComponentState`, and `RuntimeCouplerState` the only integration-state containers
+- Simplified runtime execution:
+  - `Coupler.run()` now always returns a runtime state and no longer accepts `commit_wrappers`
+  - `Coupler.compile_runtime()` calls the scanned runtime directly
+  - wrapper initialization checks and runtime commit side effects were removed from the coupler loop
+- Replaced wrapper output with runtime-state output:
+  - added `write_runtime_component_to_netcdf()` for final incoming/outgoing runtime fields and masks
+  - changed `Coupler.finalize(final_state, ...)` to write outputs from the returned runtime state
+- Kept host-backed adapter synchronization explicit and private:
+  - added `Component._sync_data_from_runtime_state()`
+  - updated Veros, CAMulator, and CAMulatorLand to synchronize only their adapter-owned mutable `data` before host-side stepping
+- Updated examples, plotting/table helpers, and tests to read from runtime states instead of wrapper fields.
+- `DEPENDENCIES.md` did not require an update because the output writer stayed in the existing component base module and no dependency order changed.
+
+## Tests Added / Updated
+
+- Replaced wrapper coverage with runtime-state regression coverage in component/coupler tests.
+- Added assertions that `Shared`, `TimedNamedArray`, and `write_shared_to_netcdf` are no longer public APIs.
+- Added runtime NetCDF writer coverage for JAX-backed incoming/outgoing fields and mask fields.
+- Updated adapter tests to call `step_runtime_state()` with explicit runtime states.
+- Updated example helper tests to use `RuntimeComponentState`.
+
+## Validation (Runtime API De-Compatibility Refactor, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_component_models_coverage.py tests/test_tools_components_and_plotting.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 84 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
+## Notes / Failed Approaches
+
+- The first focused test run exposed stale test fixtures that still constructed wrapper fields by hand; those were replaced with explicit runtime states.
+- The first full-suite run exposed one example helper test still passing a fake wrapper-style component; the helper test now uses `RuntimeComponentState`.
+
 # 2026-04-23
 
 ## Coupler / Veros / Clock Coverage Expansion

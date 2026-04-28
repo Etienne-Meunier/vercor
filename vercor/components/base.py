@@ -1,15 +1,14 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import h5netcdf
 import jax.numpy as jnp
 import numpy as np
 import xarray as xr
-from numpy.typing import DTypeLike, NDArray
 
-from vercor.clock import ModelDateTime, CustomDateTime
+from vercor.clock import ModelDateTime
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.settings import ComponentSettings
@@ -23,145 +22,9 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class TimedNamedArray:
-    """Host wrapper metadata for an array exchanged outside scanned runtime state.
-
-    ``RuntimeFieldStore`` is the canonical container used by the JAX runtime.
-    This class is kept for wrapper inspection, compatibility, and output paths
-    that need timestamp and component-origin metadata.
-    """
-
-    data: RuntimeArray
-    timestamp: datetime | ModelDateTime
-    component_name: str
-
-    def __array__(self, dtype: Optional[DTypeLike] = None) -> NDArray[Any]:
-        """Let NumPy see this as an array transparently."""
-        return np.asarray(_runtime_array_to_host(self.data), dtype=dtype)
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"├── Component name: {self.component_name!r}\n"
-            f"├── Shape: {self.data.shape}\n"
-            f"└── Timestamp: {self.timestamp!r}"
-        )
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(component_name={self.component_name!r}, "
-            f"shape={self.data.shape}, timestamp={self.timestamp!r})"
-        )
-
-
-@dataclass
-class Shared:
-    """Mutable host-side field collection used by wrapper and output APIs.
-
-    The scanned runtime does not use ``Shared`` directly. Runtime integration
-    state is represented by immutable ``RuntimeFieldStore`` instances; ``Shared``
-    only preserves the legacy component wrapper surface and NetCDF output
-    metadata.
-    """
-
-    _fields: dict[str, TimedNamedArray] = field(default_factory=dict, init=False)
-
-    def _assign_field(self, name: str, value: Any) -> None:
-        # internal attributes
-        if name.startswith("_"):
-            return super().__setattr__(name, value)
-
-        if isinstance(value, TimedNamedArray):
-            self._fields[name] = value
-            return
-
-        if isinstance(value, tuple):
-            if len(value) == 3:
-                data, timestamp, component_name = value
-            else:
-                raise ValueError(
-                    f"Expected tuple of length 3 for field assignment, got length {len(value)}"
-                )
-
-            if not isinstance(timestamp, datetime | ModelDateTime):
-                raise TypeError(
-                    f"When assigning a tuple, the second element must be a datetime, got {type(timestamp)}"
-                )
-
-        else:
-            raise TypeError(
-                "When assigning a field, provide a tuple (data, timestamp, component name)"
-            )
-
-        self._fields[name] = TimedNamedArray(
-            data=data,
-            timestamp=timestamp,
-            component_name=component_name,
-        )
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        self._assign_field(name, value)
-
-    def __setitem__(self, name: str, value: Any) -> None:
-        self._assign_field(name, value)
-
-    def __getattr__(self, name: str) -> TimedNamedArray:
-        try:
-            return self._fields[name]
-        except KeyError:
-            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
-
-    def __getitem__(self, name: str) -> TimedNamedArray | None:
-        try:
-            return self._fields[name]
-        except KeyError:
-            print(f"{type(self).__name__!s} has no item {name!r}")
-            return None
-
-    def __str__(self) -> str:
-        field_descriptions = ", ".join(
-            f"{name}({value.component_name})" for name, value in self._fields.items()
-        )
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"└── Fields: {field_descriptions if field_descriptions else 'No fields assigned'}"
-        )
-
-    def __repr__(self) -> str:
-        field_reprs = ", ".join(
-            f"{name}={repr(value)}" for name, value in self._fields.items()
-        )
-        return f"{self.__class__.__name__}({field_reprs})"
-
-    @property
-    def is_empty(self) -> bool:
-        """Check if the Shared object has no fields."""
-        return len(self._fields) == 0
-
-    @property
-    def field_names(self) -> list[str]:
-        """Return a list of all field names in the Shared object."""
-        return list(self._fields.keys())
-
-    def fields(self) -> dict[str, RuntimeArray]:
-        """Return a dictionary of all fields' data arrays."""
-        return {k: v.data for k, v in self._fields.items()}
-
-    def timestamps(self) -> dict[str, datetime | CustomDateTime]:
-        """Return a dictionary of all fields' timestamps."""
-        return {k: v.timestamp for k, v in self._fields.items()}
-
-    def component_names(self) -> dict[str, str]:
-        """Return a dictionary of all fields' component names."""
-        return {k: v.component_name for k, v in self._fields.items()}
-
-
-@dataclass
 class Component:
     name: str
     grid: RectilinearGrid
-    incoming_fields: Shared = field(default_factory=Shared)
-    outgoing_fields: Shared = field(default_factory=Shared)
     data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: ComponentSettings = field(default_factory=ComponentSettings)
     _fields2import: list[str] = field(default_factory=list)
@@ -181,12 +44,6 @@ class Component:
     Attributes:
         name: component name
         grid: component grid
-        incoming_fields: host wrapper fields received by the current component
-                         from another component(s). Runtime integration uses
-                         RuntimeFieldStore instead.
-        outgoing_fields: host wrapper fields to be sent from the current component
-                         to another component(s). Runtime integration uses
-                         RuntimeFieldStore instead.
         data: internal storage for component data arrays to/from which fields
                         are imported/exported
         settings: component-specific settings
@@ -198,23 +55,6 @@ class Component:
         """Initialize component-owned runtime data before coupling."""
 
         _ = coupler
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        """Compatibility wrapper around the runtime-state step implementation."""
-
-        component_state = self.step_runtime_state(
-            self.to_runtime_component_state(prefill_missing=True),
-            float(dt.total_seconds()),
-            getattr(coupler, "settings", None),
-            time=time,
-            coupler=coupler,
-        )
-        self.commit_runtime_state(component_state, time)
 
     def create_runtime_payload(self) -> Any | None:
         """Return optional immutable payload carried by runtime component state."""
@@ -319,13 +159,13 @@ class Component:
     def to_runtime_component_state(
         self, *, prefill_missing: bool = False
     ) -> "RuntimeComponentState":
-        """Create a runtime component state from this wrapper's current fields."""
+        """Create a runtime component state from this component's data."""
 
         from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 
         data = dict(self.data)
-        incoming = self.incoming_fields.fields()
-        outgoing = self.outgoing_fields.fields()
+        incoming: dict[str, RuntimeArray] = {}
+        outgoing: dict[str, RuntimeArray] = {}
         if prefill_missing:
             self.prefill_runtime_state_fields(data, incoming, outgoing)
 
@@ -339,26 +179,13 @@ class Component:
             runtime_payload=self.create_runtime_payload(),
         )
 
-    def commit_runtime_state(
+    def _sync_data_from_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        timestamp: datetime | ModelDateTime | None = None,
     ) -> None:
-        """Copy runtime state fields back to this compatibility wrapper."""
+        """Synchronize mutable host-adapter storage from runtime state data."""
 
         self.data = component_state.data.to_mapping()
-        if timestamp is None:
-            return
-
-        incoming_fields = Shared()
-        for field_name, field_value in component_state.incoming.to_mapping().items():
-            incoming_fields[field_name] = (field_value, timestamp, self.name)
-        self.incoming_fields = incoming_fields
-
-        outgoing_fields = Shared()
-        for field_name, field_value in component_state.outgoing.to_mapping().items():
-            outgoing_fields[field_name] = (field_value, timestamp, self.name)
-        self.outgoing_fields = outgoing_fields
 
     def receive_runtime_fields(
         self,
@@ -428,26 +255,6 @@ class Component:
         _ = dt_seconds, runtime_settings, time, coupler
         return component_state
 
-    def finalize(
-        self, coupler: "Coupler", output_file_mask: Optional[Path] = None
-    ) -> None:
-        """Finalize the component by writing its all shared fields (incoming and outgoing)
-        to a netCDF file.
-
-        Arguments:
-            output_file_mask: optional mask to include in the output filename
-        """
-
-        if output_file_mask is None:
-            filepath = Path(f"{self.name.lower()}_component_shared_fields.nc")
-        else:
-            filepath = Path(f"{self.name.lower()}_{output_file_mask}.nc")
-
-        merged_fields = self.merge_incoming_outgoing_fields()
-        coupler.append_masks_to_output(self.name, merged_fields)
-
-        write_shared_to_netcdf(merged_fields, self.grid, filepath)
-
     def check_not_empty_import_export_lists(self) -> None:
         """Check that the component has non-empty and non-overlapping
         import and export fields.
@@ -476,73 +283,20 @@ class Component:
                     f"Replace field name '{fld}' with one of the supported names: {VALID_EXCHANGE_FIELD_NAMES}"
                 )
 
-    def get(self, field_name: str) -> RuntimeArray:
-        """
-        Returns the data array of the specified field from either
-        incoming_fields or outgoing_fields.
-
-        Arguments:
-            field_name (str): name of the field to retrieve
-        """
-
-        in_fields = self.incoming_fields.fields()
-        out_fields = self.outgoing_fields.fields()
-
-        if field_name in in_fields and field_name in out_fields:
-            raise ComponentError(
-                f"Field name '{field_name}' found in both incoming and outgoing fields."
-            )
-
-        if field_name in in_fields:
-            return in_fields[field_name]
-
-        if field_name in out_fields:
-            return out_fields[field_name]
-
-        if field_name in self.data:
-            return self.data[field_name]
-
-        raise ComponentError(
-            f"Field name '{field_name}' not found in incoming, outgoing or internal pool of fields"
-        )
-
-    def merge_incoming_outgoing_fields(self) -> Shared:
-        """
-        Merge incoming_fields and outgoing_fields into a single Shared object for further output.
-        """
-
-        output_fields = Shared()
-
-        for name, tna in self.incoming_fields._fields.items():
-            output_fields[name] = tna
-        for name, tna in self.outgoing_fields._fields.items():
-            output_fields[name] = tna
-
-        return output_fields
-
     def __str__(self) -> str:
-        shared_fields_list = []
-        shared_fields_string = ""
-
-        if self.incoming_fields or self.outgoing_fields:
-            shared_fields_list = list(self.incoming_fields.fields().keys()) + list(
-                self.outgoing_fields.fields().keys()
-            )
-            shared_fields_string = ", ".join(shared_fields_list)
+        field_names = sorted(set(self._fields2import + self._fields2export))
+        field_names_string = ", ".join(field_names)
 
         return (
             f"{self.__class__.__name__}:\n"
             f" ├── Name: {self.name}\n"
-            f" ├── Shared fields: {shared_fields_string if len(shared_fields_list) > 0 else 'Not provided'}\n"
+            f" ├── Runtime fields: {field_names_string if field_names else 'Not provided'}\n"
             f" └── Grid name: {self.grid.name}\n"
             f"     └── Shape: {self.grid.shape}\n"
         )
 
     def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)},"
-            f" incoming_fields={repr(self.incoming_fields)}, outgoing_fields={repr(self.outgoing_fields)})"
-        )
+        return f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)})"
 
 
 class ComponentForcingData:
@@ -589,14 +343,20 @@ class ComponentForcingData:
         return f"{self.__class__.__name__}(DATA_FILES={self.DATA_FILES})"
 
 
-def write_shared_to_netcdf(
-    shared: Shared, grid: RectilinearGrid, filename: Path
+def write_runtime_component_to_netcdf(
+    component_state: "RuntimeComponentState",
+    grid: RectilinearGrid,
+    filename: Path,
+    *,
+    masks: dict[str, RuntimeArray] | None = None,
 ) -> None:
-    """Write the contents of a Shared object to a netCDF file.
+    """Write final runtime component fields to a netCDF file.
+
     Arguments:
-        shared: Shared object containing fields to write
+        component_state: runtime component state containing fields to write
         grid: Grid object defining the grid
         filename: path to the output netCDF file
+        masks: optional mask fields to include in the same output
     """
 
     lat = xr.DataArray(
@@ -607,14 +367,31 @@ def write_shared_to_netcdf(
     )
 
     data_vars = {}
-    for name, tna in shared._fields.items():
+    for store_name, store in (
+        ("incoming", component_state.incoming),
+        ("outgoing", component_state.outgoing),
+    ):
+        for name, value in store.to_mapping().items():
+            data_vars[f"{store_name}_{name}"] = xr.DataArray(
+                data=_runtime_array_to_host(value),
+                dims=("nlat", "nlon"),
+                coords={"latitude": lat, "longitude": lon},
+                attrs={
+                    "component": component_state.name,
+                    "runtime_store": store_name,
+                    "field_name": name,
+                },
+            )
+
+    for name, value in (masks or {}).items():
         data_vars[name] = xr.DataArray(
-            data=_runtime_array_to_host(tna.data),
+            data=_runtime_array_to_host(value),
             dims=("nlat", "nlon"),
             coords={"latitude": lat, "longitude": lon},
             attrs={
-                "timestamp": tna.timestamp.isoformat(),
-                "component": tna.component_name,
+                "component": component_state.name,
+                "runtime_store": "mask",
+                "field_name": name,
             },
         )
 

@@ -29,6 +29,24 @@ from vercor.components.slab.seaice import SeaIce
 from vercor.types import RuntimeArray
 
 
+def _step_component(
+    component: Any,
+    dt: timedelta,
+    time: datetime,
+    coupler: Any,
+) -> None:
+    """Advance one component through the runtime-state API and sync test storage."""
+
+    component_state = component.step_runtime_state(
+        component.to_runtime_component_state(prefill_missing=True),
+        dt.total_seconds(),
+        getattr(coupler, "settings", None),
+        time=time,
+        coupler=coupler,
+    )
+    component._sync_data_from_runtime_state(component_state)
+
+
 @pytest.mark.fast_always
 def test_slab_component_initialize_and_step_behaviors() -> None:
     coupler = cast(Any, CoverageCouplerStub())
@@ -42,7 +60,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
 
     atmosphere = Atmosphere(grid=grid)
     atmosphere.initialize(coupler)
-    atmosphere.step(dt, timestamp, coupler)
+    _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
         atmosphere.data["sensible_heat_flux"],
         np.zeros(grid.shape),
@@ -56,7 +74,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
         [[280.0, 281.0], [282.0, 283.0]]
     )
     initial_temperature_2m = np.asarray(atmosphere.data["temperature_2m"]).copy()
-    atmosphere.step(dt, timestamp, coupler)
+    _step_component(atmosphere, dt, timestamp, coupler)
     assert atmosphere.data["sensible_heat_flux"].shape == grid.shape
     assert atmosphere.data["latent_heat_flux"].shape == grid.shape
     assert atmosphere.data["u_velocity_10m"].shape == grid.shape
@@ -70,33 +88,33 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     ocean = Ocean(grid=grid)
-    ocean.step(dt, timestamp, coupler)
+    _step_component(ocean, dt, timestamp, coupler)
     assert ocean.data == {}
 
     ocean.initialize(coupler)
     ocean.data["sensible_heat_flux"] = np.full(grid.shape, 20.0)
     ocean.data["latent_heat_flux"] = np.full(grid.shape, 10.0)
     starting_sst = ocean.data["sea_surface_temperature"].copy()
-    ocean.step(dt, timestamp, coupler)
+    _step_component(ocean, dt, timestamp, coupler)
     assert ocean.data["sea_surface_temperature"].shape == grid.shape
     assert np.all(np.asarray(ocean.data["sea_surface_temperature"]) > starting_sst)
 
     land = Land(grid=grid)
     land.initialize(coupler)
     land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
-    land.step(timedelta(seconds=10.0), timestamp, coupler)
+    _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
     assert land.data["soil_moisture"].shape == grid.shape
     assert np.all(np.asarray(land.data["soil_moisture"]) < 0.3)
 
     seaice = SeaIce(grid=grid)
-    seaice.step(dt, timestamp, coupler)
+    _step_component(seaice, dt, timestamp, coupler)
     assert seaice.data == {}
 
     seaice.initialize(coupler)
     seaice.data["sea_surface_temperature"] = np.asarray(
         [[270.0, 272.0], [274.0, 276.0]]
     )
-    seaice.step(dt, timestamp, coupler)
+    _step_component(seaice, dt, timestamp, coupler)
     cold = seaice.data["ice_fraction"][0, 0]
     warm = seaice.data["ice_fraction"][1, 1]
     assert cold > warm
@@ -134,7 +152,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
     coupler = cast(Any, CoverageCouplerStub())
     component = ERA5Land()
     component.initialize(coupler)
-    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+    _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.DATA_FILES["surface"] == str(fake_path)
     assert component.settings.apply_time_interpolation
@@ -188,7 +206,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
     coupler = cast(Any, CoverageCouplerStub())
     component = ERA5Ocean()
     component.initialize(coupler)
-    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+    _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.DATA_FILES["surface"] == str(fake_path)
     assert component.settings.apply_time_interpolation
@@ -241,7 +259,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
     coupler = cast(Any, CoverageCouplerStub())
     component = ERAInterimOcean(resolution="4deg")
     component.initialize(coupler)
-    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+    _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.DATA_FILES["model_level"] == str(fake_path)
     assert component.settings.apply_time_interpolation
@@ -444,7 +462,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         [[274.0, np.nan, 275.0], [276.0, 277.0, np.nan]]
     )
 
-    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+    _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     expected_total = np.asarray(
         [[274.0, 270.0, 546.0], [548.0, 277.0, 273.0]],
@@ -494,7 +512,7 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
     )
     coupler = cast(Any, CoverageCouplerStub())
     component.initialize(coupler)
-    component.step(timedelta(hours=1), datetime(2000, 1, 1), coupler)
+    _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.settings.get_field_time_slice
     assert isinstance(component.grid.longitude, jax.Array)

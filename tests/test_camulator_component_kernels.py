@@ -331,11 +331,15 @@ def test_camulator_land_stores_jax_runtime_arrays(
         component.data["land_surface_temperature"], np.full((2, 2), 283.0)
     )
 
-    component.step(
-        dt=datetime(2000, 1, 1, 6, 0, 0) - start,
+    coupler = _make_coupler(start)
+    component_state = component.step_runtime_state(
+        component.to_runtime_component_state(prefill_missing=True),
+        (datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
+        None,
         time=start,
-        coupler=_make_coupler(start),
+        coupler=coupler,
     )
+    component._sync_data_from_runtime_state(component_state)
     assert isinstance(component.data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(
         component.data["land_surface_temperature"],

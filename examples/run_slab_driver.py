@@ -121,12 +121,16 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(
-        components={"ATM": atm, "OCN": ocn, "LND": lnd},
+        components={
+            "ATM": (atm, final_state.get_component_state("ATM")),
+            "OCN": (ocn, final_state.get_component_state("OCN")),
+            "LND": (lnd, final_state.get_component_state("LND")),
+        },
         fields=[
             ("sea_surface_temperature", "sst"),
             ("temperature_2m", "temperature_2m"),
@@ -139,21 +143,27 @@ if __name__ == "__main__":
     )
     print(
         "ICE ice_fraction mean:",
-        float(jnp.nanmean(jnp.asarray(ice.get("ice_fraction")))),
+        float(
+            jnp.nanmean(
+                jnp.asarray(
+                    final_state.get_component_state("ICE").data.get("ice_fraction")
+                )
+            )
+        ),
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
             (
                 "ATM",
-                atm,
+                (atm, final_state.get_component_state("ATM")),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",
             ),
             (
                 "OCN",
-                ocn,
+                (ocn, final_state.get_component_state("OCN")),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",

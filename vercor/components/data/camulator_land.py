@@ -141,7 +141,7 @@ class CAMulatorLand(Component):
         if time is None or coupler is None:
             return component_state
 
-        self.commit_runtime_state(component_state, time)
+        self._sync_data_from_runtime_state(component_state)
 
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()

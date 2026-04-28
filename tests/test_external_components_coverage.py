@@ -17,7 +17,6 @@ import vercor.components.external.jax_gcm as jax_gcm_module
 import vercor.components.external.veros_gcm as veros_gcm_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.components.base import Shared
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.settings import VercorSettings
 
@@ -587,8 +586,6 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
     component.name = "ATM"
     component.grid = make_test_grid(name="atm")
-    component.incoming_fields = Shared()
-    component.outgoing_fields = Shared()
     component._fields2import = []
     component._fields2export = []
     component.data = {
@@ -684,7 +681,14 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     coupler = _make_coupler(
         dt_seconds=3600.0, run_order=["ATM"], settings=VercorSettings()
     )
-    component.step(timedelta(days=1), datetime(2000, 1, 2), coupler)
+    component_state = component.step_runtime_state(
+        component.to_runtime_component_state(prefill_missing=True),
+        timedelta(days=1).total_seconds(),
+        coupler.settings,
+        time=datetime(2000, 1, 2),
+        coupler=coupler,
+    )
+    component._sync_data_from_runtime_state(component_state)
 
     forcing_call = component.forcing.copy_calls[-1]
     assert isinstance(forcing_call["stl_am"], jax.Array)

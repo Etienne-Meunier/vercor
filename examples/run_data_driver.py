@@ -112,8 +112,8 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)
 
     Metric = str | Callable[[Any], jax.Array | float]
 
@@ -129,7 +129,10 @@ if __name__ == "__main__":
     ]
 
     print_component_field_means_table(
-        components={"ATM": atm, "OCN": ocn},
+        components={
+            "ATM": final_state.get_component_state("ATM"),
+            "OCN": final_state.get_component_state("OCN"),
+        },
         fields=variables,
         component_order=["ATM", "OCN"],
     )

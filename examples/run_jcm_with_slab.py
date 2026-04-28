@@ -113,8 +113,8 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(

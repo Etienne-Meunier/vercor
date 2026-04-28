@@ -8,17 +8,7 @@ from examples.jax_array_helpers import (
     transposed_host_array,
 )
 from tests.assertions import assert_allclose_compact
-
-
-class _ComponentWithVectors:
-    def __init__(self) -> None:
-        self._fields = {
-            "u": jnp.asarray([[3.0, 0.0], [4.0, 0.0]]),
-            "v": jnp.asarray([[4.0, 0.0], [3.0, 0.0]]),
-        }
-
-    def get(self, field_name: str) -> jax.Array:
-        return self._fields[field_name]
+from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 
 
 def test_to_host_array_transfers_jax_array_to_host_array() -> None:
@@ -36,7 +26,20 @@ def test_transposed_host_array_transfers_transposed_runtime_array() -> None:
 
 
 def test_component_vector_speed_uses_jax_arrays() -> None:
-    speed = component_vector_speed(_ComponentWithVectors(), "u", "v")
+    state = RuntimeComponentState(
+        name="ATM",
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "u": jnp.asarray([[3.0, 0.0], [4.0, 0.0]]),
+                "v": jnp.asarray([[4.0, 0.0], [3.0, 0.0]]),
+            }
+        ),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+        fields_to_import=(),
+        fields_to_export=(),
+    )
+    speed = component_vector_speed(state, "u", "v")
 
     assert isinstance(speed, jax.Array)
     assert_allclose_compact(speed, np.asarray([[5.0, 0.0], [5.0, 0.0]]))

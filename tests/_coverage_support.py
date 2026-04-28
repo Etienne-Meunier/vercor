@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from vercor.clock import Clock, ModelDateTime
-from vercor.components.base import Component, Shared
+from vercor.clock import Clock
+from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
@@ -49,29 +49,11 @@ class CoverageCouplerStub:
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("coverage-tests")
     )
-    appended_components: list[str] = field(default_factory=list)
-
-    def append_masks_to_output(self, name: str, shared_fields: Shared) -> None:
-        self.appended_components.append(name)
-        shared_fields[f"mask_for_{name.lower()}"] = (
-            np.ones((1, 1), dtype=float),
-            self.clock.start,
-            name,
-        )
 
 
 class DummyComponent(Component):
     def initialize(self, coupler: Any) -> None:
         self.data.setdefault("temperature", np.zeros(self.grid.shape, dtype=float))
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: Any,
-    ) -> None:
-        self.data["step_seconds"] = np.asarray(dt.total_seconds(), dtype=float)
-        self.data["step_marker"] = np.full(self.grid.shape, 1.0, dtype=float)
 
 
 class RecordingRegridder:

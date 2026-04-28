@@ -19,10 +19,10 @@ def transposed_host_array(array: RuntimeArray) -> Any:
 
 
 def component_vector_speed(
-    component: Any, u_field: str = "u_velocity", v_field: str = "v_velocity"
+    component_state: Any, u_field: str = "u_velocity", v_field: str = "v_velocity"
 ) -> jax.Array:
-    """Return vector speed from component fields using JAX array math."""
+    """Return vector speed from runtime component state using JAX array math."""
 
-    u = jnp.asarray(component.get(u_field))
-    v = jnp.asarray(component.get(v_field))
+    u = jnp.asarray(component_state.data.get(u_field))
+    v = jnp.asarray(component_state.data.get(v_field))
     return jnp.sqrt(u**2 + v**2)

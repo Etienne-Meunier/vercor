@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
-from vercor.components import Shared
+from vercor.components import write_runtime_component_to_netcdf
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -211,13 +211,6 @@ class Coupler:
         for name, component in self.components.items():
             component.check_not_empty_import_export_lists()
             component.check_valid_exchange_field_names()
-            # Deposit initial data to be sent from component to coupler
-            step_info = self._initial_runtime_step_info()
-            component_state = component.send_runtime_fields(
-                component.to_runtime_component_state(),
-                step_info,
-            )
-            component.commit_runtime_state(component_state, self.clock.start)
 
         self._create_exchange_masks()
         self._validate_land_mask_consistency()
@@ -530,54 +523,50 @@ class Coupler:
         )
         runtime_state = runtime_state.set_component_state(component_state)
 
-        if time is not None:
-            self.components[component_name].commit_runtime_state(component_state, time)
-
         return runtime_state
 
-    def append_masks_to_output(
+    def _output_masks_for_component(
         self,
         name: str,
-        shared_fields: Shared,
-    ) -> None:
-        """
-        Append binary and fractional masks to the output shared fields of component 'name'.
+    ) -> dict[str, RuntimeArray]:
+        """Return runtime output mask fields for one destination component."""
 
-        Arguments:
-            name: component name
-            shared_fields: Shared instance containing fields to be written to output
-        """
-
+        masks = {}
         for exchange in self.exchanges:
             if name != exchange.destination:
                 continue
 
             key = (exchange.source, name, exchange.interpolation_type)
             source_destination_name = "_".join(key)
+            masks["bmask_" + source_destination_name] = self._binary_masks[key]
+            masks["fmask_" + source_destination_name] = self._fractional_masks[key]
+        return masks
 
-            shared_fields["bmask_" + source_destination_name] = (
-                self._binary_masks[key],
-                datetime.now(),
-                name,
-            )
-
-            shared_fields["fmask_" + source_destination_name] = (
-                self._fractional_masks[key],
-                datetime.now(),
-                name,
-            )
-
-    def finalize(self, output_file_mask: Optional[Path] = None) -> None:
+    def finalize(
+        self,
+        final_state: RuntimeCouplerState,
+        output_file_mask: Optional[Path] = None,
+    ) -> None:
         """
-        Finalize the coupler and all registered components.
+        Write final runtime component state to component output files.
 
         Arguments:
+            final_state: runtime state returned by run/create_runtime_state
             output_file_mask: optional path mask for output files
         """
 
         self.logger.info(" ------------ Finalizing coupler and components ------------")
         for name, component in self.components.items():
-            component.finalize(self, output_file_mask)
+            if output_file_mask is None:
+                filepath = Path(f"{name.lower()}_component_runtime_fields.nc")
+            else:
+                filepath = Path(f"{name.lower()}_{output_file_mask}.nc")
+            write_runtime_component_to_netcdf(
+                final_state.get_component_state(name),
+                component.grid,
+                filepath,
+                masks=self._output_masks_for_component(name),
+            )
             self.logger.info(f" Finalized {name}")
 
     def __str__(self) -> str:
@@ -600,21 +589,10 @@ class Coupler:
     def run(
         self,
         initial_state: RuntimeCouplerState | None = None,
-        *,
-        commit_wrappers: bool = True,
     ) -> RuntimeCouplerState:
         """
         Run the coupler and all registered components according to the run sequence.
         """
-
-        if not commit_wrappers:
-            return self._run_scanned_runtime(initial_state)
-
-        for cname in self.run_sequence:
-            if self.components[cname].outgoing_fields.is_empty:
-                raise ComponentError(
-                    f"Component {cname} outgoing fields were not initialized properly."
-                )
 
         runtime_state = (
             self.create_runtime_state(prefill_missing=True)
@@ -645,10 +623,11 @@ class Coupler:
     ) -> Callable[[RuntimeCouplerState], RuntimeCouplerState]:
         """Return a reusable compiled scanned-runtime callable.
 
-        The returned callable runs ``self.run(state, commit_wrappers=False)`` under
-        ``jax.jit``. Reuse the same compiled callable for repeated runs with the
-        same runtime-state PyTree structure and array shapes to maximize compile
-        cache hits.
+        The returned callable runs the pure scanned runtime under ``jax.jit``.
+        Reuse the same compiled callable for repeated runs with the same
+        runtime-state PyTree structure and array shapes to maximize compile
+        cache hits. Host-backed adapters that require Python object mutation
+        should use ``run()`` instead of the scanned runtime.
 
         If ``donate_state`` is true, the input ``RuntimeCouplerState`` is donated
         to XLA at the outer runtime boundary. Callers must treat the donated input
@@ -659,7 +638,7 @@ class Coupler:
         def scanned_runtime(
             state: RuntimeCouplerState,
         ) -> RuntimeCouplerState:
-            return self.run(state, commit_wrappers=False)
+            return self._run_scanned_runtime(state)
 
         if donate_state:
             return cast(

@@ -14,7 +14,6 @@ import pytest
 from tests._coverage_support import DummyComponent, RecordingRegridder, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components.base import Shared
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
@@ -22,7 +21,6 @@ from vercor.regridders.bilinear import bilinear
 from vercor.regridders.conservative import conservative
 from vercor.run_sequence import RunSequence
 from vercor.runtime import dispatch_component_exchanges
-from vercor.tools import _flatten_fields
 
 
 class _RecordingLogger:
@@ -41,23 +39,13 @@ class _RecordingLogger:
         self.debug_messages.append(message)
 
 
-class _FinalizeComponent(DummyComponent):
-    def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.finalize_calls: list[Path | None] = []
-
-    def finalize(self, coupler: Any, output_file_mask: Path | None = None) -> None:
-        _ = coupler
-        self.finalize_calls.append(output_file_mask)
-
-
 class _RunComponent(DummyComponent):
     def __init__(self, name: str, events: list[str], timestamp: datetime) -> None:
+        _ = timestamp
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
         self.data["temperature"] = np.ones((2, 2))
         self._fields2export = ["temperature"]
-        self.outgoing_fields["temperature"] = (np.ones((2, 2)), timestamp, name)
 
     def step_runtime_state(
         self,
@@ -89,34 +77,6 @@ def _dispatch_runtime_fields(
         coupler.exchanges,
         coupler._regridders,
     )
-
-
-def _commit_runtime_incoming_fields(
-    coupler: Coupler,
-    component: Any,
-    component_state: Any,
-    timestamp: datetime,
-) -> None:
-    source_by_field: dict[str, str] = {}
-    for exchange in coupler.exchanges:
-        if exchange.destination != component.name:
-            continue
-        for field_name in _flatten_fields(exchange.field_names):
-            source_by_field[field_name] = exchange.source
-
-    destination_fields = Shared()
-    for field_name, field_value in component_state.incoming.to_mapping().items():
-        destination_fields[field_name] = (
-            field_value,
-            timestamp,
-            source_by_field.get(field_name, component.name),
-        )
-
-    if not destination_fields.is_empty:
-        component.incoming_fields = destination_fields
-        coupler.logger.debug(
-            f" Exchanged {destination_fields.field_names}" f" to {component.name}"
-        )
 
 
 @pytest.mark.fast_always
@@ -421,7 +381,7 @@ def test_create_exchange_masks_rejects_missing_ocean_binary_mask() -> None:
         coupler._create_exchange_masks()
 
 
-def test_append_masks_to_output_appends_destination_exchange_masks() -> None:
+def test_output_masks_for_component_returns_destination_exchange_masks() -> None:
     coupler = make_coupler()
     ocn_exchange = Exchange(
         source="OCN",
@@ -445,39 +405,25 @@ def test_append_masks_to_output_appends_destination_exchange_masks() -> None:
         ("LND", "ATM", "bilinear"): np.full((2, 2), 0.75),
     }
 
-    shared = Shared()
-    coupler.append_masks_to_output("ATM", shared)
+    masks = coupler._output_masks_for_component("ATM")
 
-    assert set(shared.field_names) == {
+    assert set(masks) == {
         "bmask_OCN_ATM_bilinear",
         "fmask_OCN_ATM_bilinear",
         "bmask_LND_ATM_bilinear",
         "fmask_LND_ATM_bilinear",
     }
-    assert shared.component_names()["fmask_LND_ATM_bilinear"] == "ATM"
+    assert_allclose_compact(masks["fmask_LND_ATM_bilinear"], np.full((2, 2), 0.75))
 
 
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     coupler = make_coupler()
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    timestamp = coupler.clock.start
-
-    source.outgoing_fields["temperature"] = (
-        jnp.full((2, 2), 5.0),
-        timestamp,
-        "OCN",
-    )
-    source.outgoing_fields["u_velocity"] = (
-        np.full((2, 2), 1.0),
-        timestamp,
-        "OCN",
-    )
-    source.outgoing_fields["v_velocity"] = (
-        np.full((2, 2), -1.0),
-        timestamp,
-        "OCN",
-    )
+    source.data["temperature"] = jnp.full((2, 2), 5.0)
+    source.data["u_velocity"] = np.full((2, 2), 1.0)
+    source.data["v_velocity"] = np.full((2, 2), -1.0)
+    source._fields2export = ["temperature", "u_velocity", "v_velocity"]
 
     scalar_exchange = Exchange(
         source="OCN",
@@ -518,24 +464,18 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         "ATM",
     )
     destination_state = runtime_state.get_component_state("ATM")
-    _commit_runtime_incoming_fields(
-        coupler,
-        cast(Any, destination),
-        destination_state,
-        timestamp,
-    )
 
     assert_allclose_compact(
-        destination.incoming_fields.temperature.data,
+        destination_state.incoming.get("temperature"),
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
-    assert isinstance(destination.incoming_fields.temperature.data, jax.Array)
+    assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
     assert_allclose_compact(
-        destination.incoming_fields.u_velocity.data,
+        destination_state.incoming.get("u_velocity"),
         np.full((2, 2), 9.0),
     )
     assert_allclose_compact(
-        destination.incoming_fields.v_velocity.data,
+        destination_state.incoming.get("v_velocity"),
         np.full((2, 2), -9.0),
     )
 
@@ -544,13 +484,8 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     coupler = make_coupler()
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    timestamp = coupler.clock.start
-
-    source.outgoing_fields["temperature"] = (
-        np.full((2, 2), 5.0),
-        timestamp,
-        "OCN",
-    )
+    source.data["temperature"] = np.full((2, 2), 5.0)
+    source._fields2export = ["temperature"]
 
     exchange = Exchange(
         source="OCN",
@@ -578,23 +513,16 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         "ATM",
     )
     destination_state = runtime_state.get_component_state("ATM")
-    _commit_runtime_incoming_fields(
-        coupler,
-        cast(Any, destination),
-        destination_state,
-        timestamp,
-    )
 
-    assert isinstance(destination.incoming_fields.temperature.data, jax.Array)
+    assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
     assert_allclose_compact(
-        destination.incoming_fields.temperature.data,
+        destination_state.incoming.get("temperature"),
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
 
 
 def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> None:
     coupler = make_coupler()
-    timestamp = coupler.clock.start
 
     scalar_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     scalar_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
@@ -621,11 +549,8 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
 
     vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     vector_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    vector_source.outgoing_fields["u_velocity"] = (
-        np.ones((2, 2)),
-        timestamp,
-        "OCN",
-    )
+    vector_source.data["u_velocity"] = np.ones((2, 2))
+    vector_source._fields2export = ["u_velocity"]
     vector_exchange = Exchange(
         source="OCN",
         destination="ATM",
@@ -652,28 +577,37 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         )
 
 
-def test_coupler_run_rejects_components_with_empty_outgoing_fields() -> None:
-    coupler = make_coupler()
-    atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    coupler.components = cast(Any, {"ATM": atmosphere})
-    coupler.run_sequence = RunSequence(order=["ATM"])
-
-    with pytest.raises(ComponentError, match="outgoing fields were not initialized"):
-        coupler.run()
-
-
-def test_coupler_finalize_calls_finalize_on_all_components() -> None:
+def test_coupler_finalize_writes_runtime_outputs_for_all_components(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     coupler = make_coupler()
     components = {
-        "ATM": _FinalizeComponent("ATM"),
-        "OCN": _FinalizeComponent("OCN"),
+        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
+        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
     }
     coupler.components = cast(Any, components)
+    state = coupler._runtime_state_from_components(prefill_missing=True)
+    captured: list[tuple[str, Any, Any, Path, dict[str, Any]]] = []
 
-    coupler.finalize(Path("snapshot"))
+    def fake_write(
+        component_state: Any,
+        grid: Any,
+        filename: Path,
+        *,
+        masks: dict[str, Any] | None = None,
+    ) -> None:
+        captured.append(
+            (component_state.name, component_state, grid, filename, masks or {})
+        )
 
-    assert components["ATM"].finalize_calls == [Path("snapshot")]
-    assert components["OCN"].finalize_calls == [Path("snapshot")]
+    monkeypatch.setattr("vercor.coupler.write_runtime_component_to_netcdf", fake_write)
+
+    coupler.finalize(state, Path("snapshot"))
+
+    assert [item[0] for item in captured] == ["ATM", "OCN"]
+    assert captured[0][2] is components["ATM"].grid
+    assert captured[0][3] == Path("atm_snapshot.nc")
+    assert captured[1][3] == Path("ocn_snapshot.nc")
 
 
 def test_coupler_string_representations_include_registered_state() -> None:
@@ -785,7 +719,7 @@ def test_host_and_scanned_run_use_runtime_component_helper(
     run_events = list(events)
     events.clear()
 
-    coupler.run(commit_wrappers=False)
+    coupler._run_scanned_runtime()
 
     assert run_events == ["run:ATM", "run:OCN"]
     assert events == ["scan:ATM", "scan:OCN"]

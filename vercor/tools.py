@@ -3,7 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
-from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, cast
 from urllib.request import urlopen
 
 import jax
@@ -178,9 +178,37 @@ def safe_component_nanmean(component: Any, field_name: str) -> float:
     """Return a robust NaN-aware mean for a component field."""
 
     try:
-        return float(jnp.nanmean(jnp.asarray(component.get(field_name))))
+        return float(jnp.nanmean(jnp.asarray(_component_field(component, field_name))))
     except Exception:
         return float("nan")
+
+
+def _component_field(component: Any, field_name: str) -> RuntimeArray:
+    """Return a field from a runtime state or component data store."""
+
+    source = component[1] if isinstance(component, tuple) else component
+    for store_name in ("data", "incoming", "outgoing"):
+        store = getattr(source, store_name, None)
+        if store is None:
+            continue
+        if hasattr(store, "field_names"):
+            if field_name in store.field_names:
+                return cast(RuntimeArray, store.get(field_name))
+        elif field_name in store:
+            return cast(RuntimeArray, store[field_name])
+    fields = getattr(source, "fields", None)
+    if fields is not None and field_name in fields:
+        return cast(RuntimeArray, fields[field_name])
+    getter = getattr(source, "get", None)
+    if getter is not None:
+        return cast(RuntimeArray, getter(field_name))
+    raise KeyError(f"Field {field_name!r} not found")
+
+
+def _component_grid(component: Any) -> Any:
+    """Return the grid from a component or ``(component, runtime_state)`` pair."""
+
+    return component[0].grid if isinstance(component, tuple) else component.grid
 
 
 def _safe_component_metric_mean(
@@ -241,14 +269,19 @@ def _get_component_plot_data(
 ) -> tuple[NDArray, NDArray, NDArray, NDArray, NDArray]:
     """Return lon/lat grids and scalar/vector fields for one component."""
 
-    lon = _runtime_array_to_host(component.grid.longitude)
-    lat = _runtime_array_to_host(component.grid.latitude)
+    grid = _component_grid(component)
+    lon = _runtime_array_to_host(grid.longitude)
+    lat = _runtime_array_to_host(grid.latitude)
     lon_2d, lat_2d = np.meshgrid(lon, lat, indexing="ij")
     scalar_field = _runtime_array_to_host(
-        jnp.asarray(component.get(scalar_field_name)).T
+        jnp.asarray(_component_field(component, scalar_field_name)).T
     )
-    u_field = _runtime_array_to_host(jnp.asarray(component.get(u_field_name)).T)
-    v_field = _runtime_array_to_host(jnp.asarray(component.get(v_field_name)).T)
+    u_field = _runtime_array_to_host(
+        jnp.asarray(_component_field(component, u_field_name)).T
+    )
+    v_field = _runtime_array_to_host(
+        jnp.asarray(_component_field(component, v_field_name)).T
+    )
     return lon_2d, lat_2d, scalar_field, u_field, v_field
 
 

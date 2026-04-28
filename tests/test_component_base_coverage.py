@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -10,15 +10,14 @@ import numpy as np
 import pytest
 import xarray as xr
 
+import vercor.components as components_module
 import vercor.components.base as base_module
-from tests._coverage_support import CoverageCouplerStub, DummyComponent, make_test_grid
+from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 from vercor.components.base import (
     ComponentForcingData,
-    Shared,
-    TimedNamedArray,
-    write_shared_to_netcdf,
+    write_runtime_component_to_netcdf,
 )
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
@@ -44,141 +43,49 @@ class _RuntimeOnlyComponent(base_module.Component):
 
 
 @pytest.mark.fast_always
-def test_timed_named_array_and_shared_accessors(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    timestamp = datetime(2001, 2, 3, 4, 5, 6)
-    data = np.asarray([[1.0, 2.0], [3.0, 4.0]])
-    timed = TimedNamedArray(data=data, timestamp=timestamp, component_name="ATM")
-    jax_timed = TimedNamedArray(
-        data=jnp.asarray(data), timestamp=timestamp, component_name="ATM"
-    )
+def test_legacy_wrapper_api_is_removed() -> None:
+    component = DummyComponent(name="ATM", grid=make_test_grid())
 
-    assert_allclose_compact(np.asarray(timed), data)
-    assert_allclose_compact(np.asarray(jax_timed), data)
-    assert isinstance(jax_timed.data, jax.Array)
-    assert "ATM" in str(timed)
-    assert "shape=(2, 2)" in repr(timed)
-
-    shared = Shared()
-    assert shared.is_empty
-    shared.temperature = (data, timestamp, "ATM")
-    shared["humidity"] = TimedNamedArray(
-        data=jnp.asarray([[0.5, 0.6], [0.7, 0.8]]),
-        timestamp=timestamp,
-        component_name="OCN",
-    )
-
-    assert shared.field_names == ["temperature", "humidity"]
-    assert_allclose_compact(shared.fields()["temperature"], data)
-    assert shared.timestamps()["temperature"] == timestamp
-    assert shared.component_names()["humidity"] == "OCN"
-    assert "temperature(ATM)" in str(shared)
-    assert "humidity=" in repr(shared)
-    assert shared.temperature.component_name == "ATM"
-    assert isinstance(shared.humidity.data, jax.Array)
-
-    assert shared["missing"] is None
-    assert "has no item 'missing'" in capsys.readouterr().out
-
-    with pytest.raises(AttributeError, match="has no attribute 'missing'"):
-        _ = shared.missing
+    assert not hasattr(components_module, "Shared")
+    assert not hasattr(components_module, "TimedNamedArray")
+    assert not hasattr(base_module, "Shared")
+    assert not hasattr(base_module, "TimedNamedArray")
+    assert not hasattr(base_module, "write_shared_to_netcdf")
+    assert not hasattr(component, "incoming_fields")
+    assert not hasattr(component, "outgoing_fields")
+    assert not hasattr(component, "commit_runtime_state")
+    assert not hasattr(component, "merge_incoming_outgoing_fields")
+    assert not hasattr(component, "get")
+    assert not hasattr(component, "step")
 
 
-def test_shared_rejects_invalid_assignments() -> None:
-    shared = Shared()
-
-    with pytest.raises(ValueError, match="tuple of length 3"):
-        shared.temperature = (np.asarray([1.0]), datetime(2000, 1, 1))
-
-    with pytest.raises(TypeError, match="second element must be a datetime"):
-        shared.temperature = (np.asarray([1.0]), "2000-01-01", "ATM")
-
-    with pytest.raises(TypeError, match="provide a tuple"):
-        shared.temperature = np.asarray([1.0])
-
-
-def test_component_get_receive_merge_and_finalize(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_runtime_state_creation_receive_send_and_sync_bridge() -> None:
     grid = make_test_grid(name="atm")
-    component = DummyComponent(name="ATM", grid=grid)
-    coupler = CoverageCouplerStub()
-    timestamp = coupler.clock.start
-
-    incoming = Shared()
-    incoming["temperature"] = (jnp.ones(grid.shape), timestamp, "OCN")
-    component.incoming_fields = incoming
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
     component._fields2import = ["temperature"]
-    component_state = component.receive_runtime_fields(
-        component.to_runtime_component_state()
-    )
-    component.commit_runtime_state(component_state, timestamp)
+    component._fields2export = ["sensible_heat_flux"]
+    component.data["sensible_heat_flux"] = jnp.full(grid.shape, 2.0)
 
-    assert_allclose_compact(component.get("temperature"), np.ones(grid.shape))
-    assert isinstance(component.get("temperature"), jax.Array)
+    state = component.to_runtime_component_state(prefill_missing=True)
+    assert set(state.incoming.field_names) == {"temperature"}
+    assert set(state.outgoing.field_names) == {"sensible_heat_flux"}
+    assert isinstance(state.incoming.get("temperature"), jax.Array)
 
-    component.data["specific_humidity"] = jnp.full(grid.shape, 0.5)
+    incoming = state.incoming.set("temperature", jnp.full(grid.shape, 5.0))
+    state = component.receive_runtime_fields(state.with_incoming(incoming))
+    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 5.0))
+
+    stepped = component.step_runtime_state(state, 3.0)
+    assert_allclose_compact(stepped.data.get("temperature"), np.full(grid.shape, 8.0))
+
+    sent = component.send_runtime_fields(stepped)
     assert_allclose_compact(
-        component.get("specific_humidity"), np.full(grid.shape, 0.5)
+        sent.outgoing.get("sensible_heat_flux"),
+        np.full(grid.shape, 2.0),
     )
-    assert isinstance(component.get("specific_humidity"), jax.Array)
 
-    component.outgoing_fields["latent_heat_flux"] = (
-        jnp.full(grid.shape, 2.0),
-        timestamp,
-        "ATM",
-    )
-    assert_allclose_compact(component.get("latent_heat_flux"), np.full(grid.shape, 2.0))
-    assert isinstance(component.get("latent_heat_flux"), jax.Array)
-
-    merged = component.merge_incoming_outgoing_fields()
-    assert set(merged.field_names) == {"temperature", "latent_heat_flux"}
-
-    component.outgoing_fields["temperature"] = (np.zeros(grid.shape), timestamp, "ATM")
-    with pytest.raises(ComponentError, match="found in both incoming and outgoing"):
-        component.get("temperature")
-
-    component.outgoing_fields._fields.pop("temperature")
-
-    captured: dict[str, Any] = {}
-
-    def fake_write(shared: Shared, out_grid: Any, filename: Path) -> None:
-        captured["shared"] = shared
-        captured["grid"] = out_grid
-        captured["filename"] = filename
-
-    monkeypatch.setattr(base_module, "write_shared_to_netcdf", fake_write)
-
-    component.finalize(cast(Any, coupler), Path("snapshot"))
-
-    assert captured["grid"] is grid
-    assert captured["filename"] == Path("atm_snapshot.nc")
-    assert "mask_for_atm" in captured["shared"].field_names
-    assert coupler.appended_components == ["ATM"]
-
-
-def test_component_removed_import_export_api_and_base_step_delegate() -> None:
-    grid = make_test_grid(name="runtime-only")
-    coupler = CoverageCouplerStub()
-    timestamp = coupler.clock.start
-
-    plain_component = base_module.Component(name="ATM", grid=grid)
-    assert not hasattr(plain_component, "import_fields")
-    assert not hasattr(plain_component, "export_fields")
-
-    plain_component.initialize(cast(Any, coupler))
-    plain_component.data["temperature"] = jnp.ones(grid.shape)
-    plain_component.step(timedelta(seconds=5.0), timestamp, cast(Any, coupler))
-    assert_allclose_compact(plain_component.data["temperature"], np.ones(grid.shape))
-
-    runtime_component = _RuntimeOnlyComponent(name="ATM", grid=grid)
-    runtime_component.data["temperature"] = jnp.ones(grid.shape)
-    runtime_component.step(timedelta(seconds=5.0), timestamp, cast(Any, coupler))
-    assert_allclose_compact(
-        runtime_component.data["temperature"],
-        np.full(grid.shape, 6.0),
-    )
+    component._sync_data_from_runtime_state(stepped)
+    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 8.0))
 
 
 def test_component_validation_and_runtime_receive_delegate() -> None:
@@ -199,25 +106,15 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
     with pytest.raises(ComponentError, match="not a recognized exchange variable"):
         component.check_valid_exchange_field_names()
 
-    timestamp = datetime(2000, 1, 1, 0, 0, 0)
-    component._fields2import = ["temperature"]
-    component.incoming_fields["temperature"] = (
-        np.ones(component.grid.shape),
-        datetime(2000, 1, 1, 1, 0, 0),
-        "OCN",
+    component._fields2export = ["sensible_heat_flux"]
+    state = component.to_runtime_component_state(prefill_missing=True)
+    state = state.with_incoming(
+        state.incoming.set("temperature", np.ones(component.grid.shape))
     )
-    component_state = component.receive_runtime_fields(
-        component.to_runtime_component_state()
-    )
-    component.commit_runtime_state(component_state, timestamp)
+    received = component.receive_runtime_fields(state)
     assert_allclose_compact(
-        component.data["temperature"], np.ones(component.grid.shape)
+        received.data.get("temperature"), np.ones(component.grid.shape)
     )
-
-    with pytest.raises(
-        ComponentError, match="not found in incoming, outgoing or internal"
-    ):
-        component.get("missing")
 
 
 def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -> None:
@@ -258,20 +155,18 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
 def test_send_runtime_fields_updates_outgoing_store() -> None:
     grid = make_test_grid()
     component = DummyComponent(name="ATM", grid=grid)
-    coupler = CoverageCouplerStub()
-    timestamp = coupler.clock.start
+    timestamp = datetime(2000, 1, 1)
     component._fields2export = ["temperature"]
     component.data["temperature"] = jnp.full(grid.shape, 1.0)
 
     component_state = component.send_runtime_fields(
         component.to_runtime_component_state(),
     )
-    component.commit_runtime_state(component_state, timestamp)
     assert_allclose_compact(
-        component.outgoing_fields.temperature.data,
+        component_state.outgoing.get("temperature"),
         np.full(grid.shape, 1.0),
     )
-    assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
+    assert isinstance(component_state.outgoing.get("temperature"), jax.Array)
 
     runtime_coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
@@ -285,12 +180,10 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
         component.to_runtime_component_state(),
         runtime_coupler._scalar_runtime_step_info(timestamp),
     )
-    component.commit_runtime_state(component_state, timestamp)
     assert_allclose_compact(
-        component.outgoing_fields.temperature.data,
+        component_state.outgoing.get("temperature"),
         np.asarray(monthly[:, :, 0]).T,
     )
-    assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
     runtime_coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1)
@@ -303,15 +196,15 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
         component.to_runtime_component_state(),
         runtime_coupler._scalar_runtime_step_info(runtime_coupler.clock.start),
     )
-    component.commit_runtime_state(component_state, runtime_coupler.clock.start)
     assert_allclose_compact(
-        component.outgoing_fields.temperature.data,
+        component_state.outgoing.get("temperature"),
         np.asarray(daily[2]),
     )
-    assert isinstance(component.outgoing_fields.temperature.data, jax.Array)
 
 
-def test_component_forcing_data_read_and_write_round_trip(tmp_path: Path) -> None:
+def test_component_forcing_data_read_and_runtime_write_round_trip(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "forcing.nc"
     source = np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     xr.Dataset({"foo": (("x", "y"), source)}).to_netcdf(path)
@@ -343,20 +236,38 @@ def test_component_forcing_data_read_and_write_round_trip(tmp_path: Path) -> Non
     with pytest.raises(RuntimeError, match="Error reading variable 'foo'"):
         reader._read_forcing("foo", "broken")
 
-    shared = Shared()
-    timestamp = datetime(2000, 1, 1, 12, 0, 0)
-    shared["temperature"] = (
-        jnp.asarray([[10.0, 11.0], [12.0, 13.0]]),
-        timestamp,
-        "ATM",
+    state = RuntimeComponentState(
+        name="ATM",
+        data=RuntimeFieldStore.empty(),
+        incoming=RuntimeFieldStore.from_mapping(
+            {"temperature": jnp.asarray([[10.0, 11.0], [12.0, 13.0]])}
+        ),
+        outgoing=RuntimeFieldStore.from_mapping(
+            {"humidity": jnp.asarray([[0.1, 0.2], [0.3, 0.4]])}
+        ),
+        fields_to_import=("temperature",),
+        fields_to_export=("humidity",),
     )
-    output = tmp_path / "shared.nc"
+    output = tmp_path / "runtime.nc"
 
-    write_shared_to_netcdf(shared, make_test_grid(), output)
+    write_runtime_component_to_netcdf(
+        state,
+        make_test_grid(),
+        output,
+        masks={"fmask_OCN_ATM_bilinear": jnp.ones((2, 2))},
+    )
 
     with xr.open_dataset(output) as dataset:
-        assert_allclose_compact(dataset["temperature"].values, shared.temperature.data)
+        assert_allclose_compact(
+            dataset["incoming_temperature"].values,
+            state.incoming.get("temperature"),
+        )
+        assert_allclose_compact(
+            dataset["outgoing_humidity"].values,
+            state.outgoing.get("humidity"),
+        )
         assert_allclose_compact(dataset["latitude"].values, np.asarray([-1.0, 1.0]))
         assert_allclose_compact(dataset["longitude"].values, np.asarray([0.0, 1.0]))
-        assert dataset["temperature"].attrs["component"] == "ATM"
-        assert dataset["temperature"].attrs["timestamp"] == timestamp.isoformat()
+        assert dataset["incoming_temperature"].attrs["component"] == "ATM"
+        assert dataset["incoming_temperature"].attrs["runtime_store"] == "incoming"
+        assert "fmask_OCN_ATM_bilinear" in dataset

@@ -400,7 +400,7 @@ class VerosGCM(Component):
         if time is None or coupler is None:
             return component_state
 
-        self.commit_runtime_state(component_state, time)
+        self._sync_data_from_runtime_state(component_state)
 
         taux, tauy, qnet, qnec = compute_fluxes(self, coupler.settings)
         forcing_fields = _prepare_surface_forcing_fields(
