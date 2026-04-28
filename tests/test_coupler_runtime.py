@@ -677,6 +677,27 @@ def test_initialized_slab_coupler_wrapper_run_prefills_missing_imports() -> None
     assert "latent_heat_flux" in ocean.incoming_fields.field_names
 
 
+def test_scanned_runtime_state_uses_runtime_field_stores() -> None:
+    coupler = _make_initialized_slab_coupler(steps=1)
+    initial_state = coupler.create_runtime_state()
+
+    assert all(
+        isinstance(component_state.data, RuntimeFieldStore)
+        and isinstance(component_state.incoming, RuntimeFieldStore)
+        and isinstance(component_state.outgoing, RuntimeFieldStore)
+        for component_state in initial_state.components
+    )
+
+    final_state = coupler.run(initial_state, commit_wrappers=False)
+
+    assert all(
+        isinstance(component_state.data, RuntimeFieldStore)
+        and isinstance(component_state.incoming, RuntimeFieldStore)
+        and isinstance(component_state.outgoing, RuntimeFieldStore)
+        for component_state in final_state.components
+    )
+
+
 def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jvp() -> (
     None
 ):

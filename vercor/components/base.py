@@ -24,7 +24,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class TimedNamedArray:
-    """Container class for a field (array), its timestamp, and its component name."""
+    """Host wrapper metadata for an array exchanged outside scanned runtime state.
+
+    ``RuntimeFieldStore`` is the canonical container used by the JAX runtime.
+    This class is kept for wrapper inspection, compatibility, and output paths
+    that need timestamp and component-origin metadata.
+    """
 
     data: RuntimeArray
     timestamp: datetime | ModelDateTime
@@ -51,6 +56,14 @@ class TimedNamedArray:
 
 @dataclass
 class Shared:
+    """Mutable host-side field collection used by wrapper and output APIs.
+
+    The scanned runtime does not use ``Shared`` directly. Runtime integration
+    state is represented by immutable ``RuntimeFieldStore`` instances; ``Shared``
+    only preserves the legacy component wrapper surface and NetCDF output
+    metadata.
+    """
+
     _fields: dict[str, TimedNamedArray] = field(default_factory=dict, init=False)
 
     def _assign_field(self, name: str, value: Any) -> None:
@@ -168,10 +181,12 @@ class Component:
     Attributes:
         name: component name
         grid: component grid
-        incoming_fields: shared fields received by the current component
-                         from another component(s)
-        outgoing_fields: shared fields to be sent from the current component
-                         to another component(s)
+        incoming_fields: host wrapper fields received by the current component
+                         from another component(s). Runtime integration uses
+                         RuntimeFieldStore instead.
+        outgoing_fields: host wrapper fields to be sent from the current component
+                         to another component(s). Runtime integration uses
+                         RuntimeFieldStore instead.
         data: internal storage for component data arrays to/from which fields
                         are imported/exported
         settings: component-specific settings
@@ -227,8 +242,8 @@ class Component:
         store: Any,
         field_name: str,
         store_description: str,
-        expected_shape: tuple[int, int],
     ) -> None:
+        expected_shape = self.grid.shape
         if field_name not in store.field_names:
             raise CouplerError(
                 "Runtime missing "
@@ -258,34 +273,34 @@ class Component:
         self,
         component_state: "RuntimeComponentState",
         field_name: str,
-        expected_shape: tuple[int, int],
     ) -> None:
         self._validate_runtime_data_field_exists(component_state, field_name)
         self._validate_runtime_store_field(
             component_state.data,
             field_name,
             "required data",
-            expected_shape,
         )
 
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        expected_shape: tuple[int, int],
     ) -> None:
-        """Validate generic runtime fields before execution."""
+        """Validate generic runtime fields before execution.
+
+        Validation derives expected 2D field shapes from ``self.grid.shape`` so
+        callers do not need to pass shape metadata already owned by the
+        component.
+        """
 
         for field_name in component_state.fields_to_import:
             self._validate_runtime_store_field(
                 component_state.incoming,
                 field_name,
                 "imported incoming",
-                expected_shape,
             )
             self._validate_runtime_grid_data_field(
                 component_state,
                 field_name,
-                expected_shape,
             )
         for field_name in component_state.fields_to_export:
             self._validate_runtime_data_field_exists(component_state, field_name)
@@ -293,14 +308,12 @@ class Component:
                 component_state.outgoing,
                 field_name,
                 "exported source",
-                expected_shape,
             )
         for field_name in component_state.incoming.field_names:
             self._validate_runtime_store_field(
                 component_state.incoming,
                 field_name,
                 "incoming",
-                expected_shape,
             )
 
     def to_runtime_component_state(

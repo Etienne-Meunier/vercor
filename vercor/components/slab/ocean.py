@@ -68,15 +68,13 @@ class Ocean(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        expected_shape: tuple[int, int],
     ) -> None:
         """Validate slab-ocean runtime fields."""
 
-        super().validate_runtime_state(component_state, expected_shape)
+        super().validate_runtime_state(component_state)
         self._validate_runtime_grid_data_field(
             component_state,
             "sea_surface_temperature",
-            expected_shape,
         )
 
     def step_runtime_state(

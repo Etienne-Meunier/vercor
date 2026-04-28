@@ -448,11 +448,10 @@ class JAXGCM(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        expected_shape: tuple[int, int],
     ) -> None:
         """Validate JAXGCM runtime payload and pre-seeded output fields."""
 
-        super().validate_runtime_state(component_state, expected_shape)
+        super().validate_runtime_state(component_state)
         if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
             raise ComponentError(
                 "JAXGCM runtime requires an initialized immutable runtime payload "
@@ -479,13 +478,12 @@ class JAXGCM(Component):
             self._validate_runtime_grid_data_field(
                 component_state,
                 field_name,
-                expected_shape,
             )
 
         self._validate_runtime_data_field_exists(component_state, "pressure")
         pressure_shape = jnp.asarray(component_state.data.get("pressure")).shape
         sigma_levels = jnp.asarray(self.sigma_levels)
-        expected_pressure_shape = (sigma_levels.shape[0], *expected_shape)
+        expected_pressure_shape = (sigma_levels.shape[0], *self.grid.shape)
         if pressure_shape != expected_pressure_shape:
             raise CouplerError(
                 "Runtime required data field 'pressure' "

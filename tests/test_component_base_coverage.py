@@ -21,8 +21,8 @@ from vercor.components.base import (
     write_shared_to_netcdf,
 )
 from vercor.coupler import Coupler
-from vercor.exceptions import ComponentError
-from vercor.runtime import RuntimeComponentState
+from vercor.exceptions import ComponentError, CouplerError
+from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 
 
 class _RuntimeOnlyComponent(base_module.Component):
@@ -218,6 +218,41 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
         ComponentError, match="not found in incoming, outgoing or internal"
     ):
         component.get("missing")
+
+
+def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -> None:
+    grid = make_test_grid(
+        name="atm",
+        longitude=np.asarray([0.0, 1.0, 2.0]),
+        latitude=np.asarray([-1.0, 1.0]),
+    )
+    component = DummyComponent(name="ATM", grid=grid)
+    valid_state = RuntimeComponentState(
+        name="ATM",
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "temperature": jnp.ones(grid.shape),
+                "sensible_heat_flux": jnp.zeros(grid.shape),
+            }
+        ),
+        incoming=RuntimeFieldStore.from_mapping({"temperature": jnp.ones(grid.shape)}),
+        outgoing=RuntimeFieldStore.from_mapping(
+            {"sensible_heat_flux": jnp.zeros(grid.shape)}
+        ),
+        fields_to_import=("temperature",),
+        fields_to_export=("sensible_heat_flux",),
+    )
+
+    component.validate_runtime_state(valid_state)
+
+    bad_state = valid_state.with_incoming(
+        RuntimeFieldStore.from_mapping({"temperature": jnp.ones((1, 3))})
+    )
+    with pytest.raises(
+        CouplerError,
+        match=r"has shape \(1, 3\), expected \(2, 3\)",
+    ):
+        component.validate_runtime_state(bad_state)
 
 
 def test_send_runtime_fields_updates_outgoing_store() -> None:

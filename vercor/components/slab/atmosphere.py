@@ -77,11 +77,10 @@ class Atmosphere(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        expected_shape: tuple[int, int],
     ) -> None:
         """Validate slab-atmosphere runtime fields."""
 
-        super().validate_runtime_state(component_state, expected_shape)
+        super().validate_runtime_state(component_state)
         for field_name in (
             "temperature_2m",
             "sensible_heat_flux",
@@ -92,7 +91,6 @@ class Atmosphere(Component):
             self._validate_runtime_grid_data_field(
                 component_state,
                 field_name,
-                expected_shape,
             )
 
     def step_runtime_state(

@@ -43,15 +43,13 @@ class Land(Component):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        expected_shape: tuple[int, int],
     ) -> None:
         """Validate slab-land runtime fields."""
 
-        super().validate_runtime_state(component_state, expected_shape)
+        super().validate_runtime_state(component_state)
         self._validate_runtime_grid_data_field(
             component_state,
             "soil_moisture",
-            expected_shape,
         )
 
     def step_runtime_state(

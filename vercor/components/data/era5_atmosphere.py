@@ -230,11 +230,10 @@ class ERA5Atmosphere(Component, ComponentForcingData):
     def validate_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        expected_shape: tuple[int, int],
     ) -> None:
         """Validate ERA5 atmosphere runtime diagnostic fields."""
 
-        super().validate_runtime_state(component_state, expected_shape)
+        super().validate_runtime_state(component_state)
         for field_name in (
             "land_surface_temperature",
             "sea_surface_temperature",
@@ -243,7 +242,6 @@ class ERA5Atmosphere(Component, ComponentForcingData):
             self._validate_runtime_grid_data_field(
                 component_state,
                 field_name,
-                expected_shape,
             )
 
     def step_runtime_state(

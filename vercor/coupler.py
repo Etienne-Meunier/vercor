@@ -443,7 +443,7 @@ class Coupler:
 
             component = self.components[cname]
             component_state = runtime_state.get_component_state(cname)
-            component.validate_runtime_state(component_state, component.grid.shape)
+            component.validate_runtime_state(component_state)
 
         for exchange in self.exchanges:
             key = (exchange.source, exchange.destination, exchange.interpolation_type)

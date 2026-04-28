@@ -1658,3 +1658,37 @@
 
 - The first donation test failed with XLA's duplicate donated-buffer error because several runtime fields reused the same JAX buffer. The runtime field store now copies leaves on insertion so canonical runtime states can be donated safely.
 - The first `mypy` run rejected direct equality checks on JAX `PyTreeDef` objects in the new test. The final assertion compares the stable treedef representation instead.
+
+## Runtime API Simplification Audit
+
+- Completed the conservative runtime API cleanup:
+  - confirmed `Shared` and `TimedNamedArray` are host wrapper / output metadata containers, not scanned-runtime integration state
+  - documented that wrapper boundary in `vercor/components/base.py` while keeping both classes exported for compatibility
+  - made `Component.validate_runtime_state()` and its helper methods derive expected 2D field shapes from `self.grid.shape`
+  - removed the redundant `expected_shape` argument from slab, ERA5 atmosphere, and JAXGCM validation overrides
+  - updated `Coupler._validate_runtime_state()` to call component validation without passing shape metadata already owned by the component
+- Added regression coverage for:
+  - direct component runtime validation without caller-provided shape metadata
+  - shape errors using the component's own grid shape
+  - scanned runtime states continuing to use `RuntimeFieldStore` for data, incoming, and outgoing fields
+- `DEPENDENCIES.md` did not require changes because no module dependency edge changed.
+
+## Validation (Runtime API Simplification Audit, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_coupler_runtime.py tests/test_runtime_state.py -q`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 84 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q`
+  - passed
+
+## Notes / Failed Approaches (Runtime API Simplification Audit)
+
+- No failed implementation approaches. The cleanup stayed conservative and did not remove the public `Shared` / `TimedNamedArray` compatibility surface.
