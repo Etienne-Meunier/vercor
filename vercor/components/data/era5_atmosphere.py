@@ -1,13 +1,16 @@
-from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.clock import ModelDateTime
-from vercor.components import Component, ComponentForcingData
+from vercor.components.base import (
+    Component,
+    ComponentForcingData,
+    ComponentInitContext,
+    RuntimeStepContext,
+)
 from vercor.fluxes.utilities import (
     compute_air_density,
     get_altitudes_hybrid_sigma_levels,
@@ -20,7 +23,6 @@ from vercor.tools import get_forcing_data
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
@@ -190,10 +192,10 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         # Units: [K]
         self.data["temperature"] = self.data["temperature_3d"][..., 0, :]  # L136
 
-    def initialize(self, coupler: "Coupler") -> None:
+    def initialize(self, context: ComponentInitContext) -> None:
         diagnostics = [
             _compute_monthly_diagnostics(
-                coupler.settings,
+                context.settings,
                 self.data["surface_pressure"][..., month_index],
                 self.data["hyai"],
                 self.data["hybi"],
@@ -249,15 +251,11 @@ class ERA5Atmosphere(Component, ComponentForcingData):
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Update ERA5 atmosphere surface-temperature diagnostics."""
 
-        _ = dt_seconds, runtime_settings, time, logger
+        _ = context
         data = component_state.data
         total_surface_temperature = _combine_surface_temperatures(
             data.get("land_surface_temperature"),

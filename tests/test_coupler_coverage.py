@@ -14,7 +14,7 @@ import pytest
 from tests._coverage_support import DummyComponent, RecordingRegridder, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components import HostRuntimeComponent
+from vercor.components import HostRuntimeComponent, RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
@@ -50,15 +50,13 @@ class _RunComponent(DummyComponent):
     def step_runtime_state(
         self,
         component_state: Any,
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: Any | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> Any:
-        _ = runtime_settings, logger
+        time = context.time
         time_label = "none" if time is None else time.isoformat()
-        self.events.append(f"step_runtime:{self.name}:{time_label}:{dt_seconds}")
+        self.events.append(
+            f"step_runtime:{self.name}:{time_label}:{context.dt_seconds}"
+        )
         return component_state
 
 
@@ -70,18 +68,13 @@ class _HostRunComponent(HostRuntimeComponent):
     def _step_host_runtime_state(
         self,
         component_state: Any,
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: Any | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> Any:
-        _ = runtime_settings, time, logger
         data = component_state.data.set(
             "temperature",
-            component_state.data.get("temperature") + dt_seconds,
+            component_state.data.get("temperature") + context.dt_seconds,
         )
-        self.data["host_event"] = np.asarray(dt_seconds)
+        self.data["host_event"] = np.asarray(context.dt_seconds)
         return component_state.with_data(data.set("host_time_seen", np.asarray(1.0)))
 
 

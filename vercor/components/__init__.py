@@ -1,7 +1,9 @@
 from vercor.components.base import (
     Component,
     ComponentForcingData,
+    ComponentInitContext,
     HostRuntimeComponent,
+    RuntimeStepContext,
 )
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_ocean import ERA5Ocean
@@ -20,7 +22,9 @@ from vercor.components.external.camulator import CAMulatorGCM
 __all__ = [
     "ComponentForcingData",
     "Component",
+    "ComponentInitContext",
     "HostRuntimeComponent",
+    "RuntimeStepContext",
     "Atmosphere",
     "Ocean",
     "SeaIce",

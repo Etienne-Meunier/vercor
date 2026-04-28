@@ -12,12 +12,12 @@ import numpy as np
 from vercor.clock import ModelDateTime
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.grid import RectilinearGrid
-from vercor.settings import ComponentSettings
+from vercor.run_sequence import RunSequence
+from vercor.settings import ComponentSettings, VercorSettings
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import (
         RuntimeComponentContract,
         RuntimeComponentState,
@@ -33,6 +33,27 @@ def _runtime_contract(
     from vercor.runtime import RuntimeComponentContract
 
     return RuntimeComponentContract.empty() if contract is None else contract
+
+
+@dataclass(frozen=True)
+class ComponentInitContext:
+    """Minimal component initialization context owned by the coupler."""
+
+    start: datetime | ModelDateTime
+    dt_seconds: float
+    run_sequence: RunSequence
+    settings: VercorSettings
+    logger: Logger
+
+
+@dataclass(frozen=True)
+class RuntimeStepContext:
+    """Minimal runtime step context passed to component step boundaries."""
+
+    dt_seconds: float
+    settings: VercorSettings
+    time: datetime | ModelDateTime | None = None
+    logger: Logger | None = None
 
 
 @dataclass
@@ -61,10 +82,10 @@ class Component:
         settings: component-specific settings
     """
 
-    def initialize(self, coupler: "Coupler") -> None:
+    def initialize(self, context: ComponentInitContext) -> None:
         """Initialize component-owned runtime data before coupling."""
 
-        _ = coupler
+        _ = context
 
     def create_runtime_payload(self) -> Any | None:
         """Return optional immutable payload carried by runtime component state."""
@@ -255,15 +276,11 @@ class Component:
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Logger | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Return this component advanced by one runtime step."""
 
-        _ = dt_seconds, runtime_settings, time, logger
+        _ = context
         return component_state
 
     def check_not_empty_import_export_lists(
@@ -321,14 +338,11 @@ class HostRuntimeComponent(Component):
     def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Logger | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance this non-differentiable host adapter by one runtime step."""
 
+        _ = component_state, context
         raise NotImplementedError
 
 

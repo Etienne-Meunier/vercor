@@ -1,15 +1,12 @@
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import ModelDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
@@ -62,7 +59,8 @@ class Atmosphere(Component):
     def __init__(self, grid: RectilinearGrid, name: str = "ATM") -> None:
         super().__init__(name, grid)
 
-    def initialize(self, coupler: "Coupler") -> None:
+    def initialize(self, context: ComponentInitContext) -> None:
+        _ = context
         grid_shape = self.grid.shape
         zeros = jnp.zeros(grid_shape, dtype=jnp.float64)
 
@@ -97,15 +95,11 @@ class Atmosphere(Component):
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance the slab atmosphere on immutable runtime state."""
 
-        _ = dt_seconds, runtime_settings, time, logger
+        _ = context
         data = component_state.data
         temperature_2m = data.get("temperature_2m")
         try:

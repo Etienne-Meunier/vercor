@@ -1,15 +1,12 @@
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import ModelDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
@@ -32,7 +29,8 @@ class SeaIce(Component):
     def __init__(self, grid: RectilinearGrid, name: str = "ICE") -> None:
         super().__init__(name, grid)
 
-    def initialize(self, coupler: "Coupler") -> None:
+    def initialize(self, context: ComponentInitContext) -> None:
+        _ = context
         self.data["ice_fraction"] = jnp.zeros(self.grid.shape, dtype=jnp.float64)
 
     def validate_runtime_state(
@@ -52,15 +50,11 @@ class SeaIce(Component):
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Diagnose slab sea-ice fraction on immutable runtime state."""
 
-        _ = dt_seconds, runtime_settings, time, logger
+        _ = context
         data = component_state.data
         try:
             sea_surface_temperature = data.get("sea_surface_temperature")

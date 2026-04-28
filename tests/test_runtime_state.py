@@ -11,7 +11,7 @@ import numpy as np
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import ModelDateTime
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentInitContext
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
@@ -28,8 +28,8 @@ class _RuntimeSendComponent(Component):
         super().__init__("DATA", make_test_grid(name="runtime-send"))
         self.settings = settings
 
-    def initialize(self, coupler: Any) -> None:
-        _ = coupler
+    def initialize(self, context: ComponentInitContext) -> None:
+        _ = context
 
     def step(
         self,
@@ -84,6 +84,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "_fields2export" not in coupler_source
     assert "RuntimeComponentContract" in runtime_source
     assert "_runtime_contracts" in coupler_source
+    assert "ComponentInitContext" in base_source
+    assert "RuntimeStepContext" in base_source
+    assert "component.initialize(self)" not in coupler_source
+    assert "dt_seconds: float,\n        runtime_settings" not in base_source
     assert "def write_runtime_component_to_netcdf" not in base_source
     assert "write_runtime_component_to_netcdf" not in components_source
     assert "write_runtime_component_view_to_netcdf" not in components_source
@@ -98,7 +102,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
             0
         ]
         assert "coupler" not in signature
-        assert "logger" in signature
+        assert "context" in signature
+        assert "logger" not in signature
+        assert "runtime_settings" not in signature
     assert "def step_runtime_state" not in veros_source
     assert "def step_runtime_state" not in camulator_source
     assert "def step_runtime_state" not in camulator_land_source

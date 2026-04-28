@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -9,12 +9,14 @@ from vercor.components.external.camulator import parse_datetime_from_config
 from vercor.components.external.camulator_state import initialize_camulator
 
 from vercor.grid import RectilinearGrid
-from vercor.components.base import HostRuntimeComponent
+from vercor.components.base import (
+    ComponentInitContext,
+    HostRuntimeComponent,
+    RuntimeStepContext,
+)
 from vercor.tools import create_lnd_mask_from_ocn
-from vercor.clock import ModelDateTime
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentState
 
 
@@ -78,10 +80,10 @@ class CAMulatorLand(HostRuntimeComponent):
 
         super().__init__(name, grid=grid)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        logger = coupler.logger
-        self.coupler_start_datetime = coupler.clock.start
-        self.coupling_timestep = timedelta(seconds=coupler.clock.dt_seconds)
+    def initialize(self, context: ComponentInitContext) -> None:
+        logger = context.logger
+        self.coupler_start_datetime = context.start
+        self.coupling_timestep = timedelta(seconds=context.dt_seconds)
 
         self.model_timestep = timedelta(hours=self.lead_time_periods)
         self.model_substeps = int(
@@ -129,15 +131,11 @@ class CAMulatorLand(HostRuntimeComponent):
     def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance the private host-backed CAMulator land forcing boundary."""
 
-        _ = dt_seconds, runtime_settings, logger
+        time = context.time
         if time is None:
             return component_state
 

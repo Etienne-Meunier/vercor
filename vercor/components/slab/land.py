@@ -1,15 +1,12 @@
-from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import ModelDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.grid import RectilinearGrid
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
@@ -34,7 +31,8 @@ class Land(Component):
     def __init__(self, grid: RectilinearGrid, name: str = "LND") -> None:
         super().__init__(name, grid)
 
-    def initialize(self, coupler: "Coupler") -> None:
+    def initialize(self, context: ComponentInitContext) -> None:
+        _ = context
         self.data["soil_moisture"] = jnp.full(self.grid.shape, 0.3, dtype=jnp.float64)
         self.data["land_surface_temperature"] = jnp.full(
             self.grid.shape, 288.15, dtype=jnp.float64
@@ -56,15 +54,11 @@ class Land(Component):
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance the slab land component on immutable runtime state."""
 
-        _ = runtime_settings, time, logger
+        dt_seconds = context.dt_seconds
         data = component_state.data
         soil_moisture = data.get("soil_moisture")
         try:

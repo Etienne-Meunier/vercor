@@ -14,6 +14,7 @@ import vercor.components.data.camulator_land as camulator_land_module
 import vercor.components.external.camulator as camulator_module
 import vercor.components.external.camulator_state as camulator_state_module
 from tests.assertions import assert_allclose_compact
+from vercor.components.base import ComponentInitContext, RuntimeStepContext
 from vercor.components.external.camulator import (
     CAMulatorGCM,
     _initialize_camulator_runtime_fields,
@@ -25,6 +26,7 @@ from vercor.components.external.camulator import (
 )
 from vercor.grid import RectilinearGrid
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 
 
@@ -51,10 +53,13 @@ def _runtime_component_state(
     )
 
 
-def _make_coupler(start: datetime) -> Any:
-    return SimpleNamespace(
-        clock=SimpleNamespace(start=start, dt_seconds=21600),
-        logger=_RecordingLogger(),
+def _make_coupler(start: datetime) -> ComponentInitContext:
+    return ComponentInitContext(
+        start=start,
+        dt_seconds=21600,
+        run_sequence=RunSequence(order=[]),
+        settings=VercorSettings(),
+        logger=cast(Any, _RecordingLogger()),
     )
 
 
@@ -332,10 +337,12 @@ def test_camulator_land_stores_jax_runtime_arrays(
     coupler = _make_coupler(start)
     component_state = component._step_host_runtime_state(
         component.to_runtime_component_state(prefill_missing=True),
-        (datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
-        None,
-        time=start,
-        logger=coupler.logger,
+        RuntimeStepContext(
+            dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
+            settings=coupler.settings,
+            time=start,
+            logger=coupler.logger,
+        ),
     )
     land_surface_temperature = component_state.data.get("land_surface_temperature")
     assert isinstance(land_surface_temperature, jax.Array)
@@ -471,10 +478,12 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
 
     component_state = component._step_host_runtime_state(
         _runtime_component_state("ATM", component.data),
-        float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
-        VercorSettings(),
-        time=start,
-        logger=_RecordingLogger(),
+        RuntimeStepContext(
+            dt_seconds=float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
+            settings=VercorSettings(),
+            time=start,
+            logger=cast(Any, _RecordingLogger()),
+        ),
     )
 
     assert captured["dynamic_forcing"].shape == (1, 2, 1, 2, 2)

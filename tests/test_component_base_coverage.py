@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -15,7 +14,7 @@ import vercor.components.base as base_module
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components.base import ComponentForcingData
+from vercor.components.base import ComponentForcingData, RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.output import write_runtime_component_view_to_netcdf
@@ -25,22 +24,18 @@ from vercor.runtime import (
     RuntimeFieldStore,
 )
 from vercor.runtime_views import RuntimeComponentView
+from vercor.settings import VercorSettings
 
 
 class _RuntimeOnlyComponent(base_module.Component):
     def step_runtime_state(
         self,
         component_state: RuntimeComponentState,
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: Any | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> RuntimeComponentState:
-        _ = runtime_settings, time, logger
         data = component_state.data.set(
             "temperature",
-            component_state.data.get("temperature") + dt_seconds,
+            component_state.data.get("temperature") + context.dt_seconds,
         )
         return component_state.with_data(data)
 
@@ -91,7 +86,13 @@ def test_runtime_state_creation_receive_and_send() -> None:
     )
     assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 5.0))
 
-    stepped = component.step_runtime_state(state, 3.0)
+    stepped = component.step_runtime_state(
+        state,
+        RuntimeStepContext(
+            dt_seconds=3.0,
+            settings=VercorSettings(),
+        ),
+    )
     assert_allclose_compact(stepped.data.get("temperature"), np.full(grid.shape, 8.0))
 
     sent = component.send_runtime_fields(stepped, contract=contract)

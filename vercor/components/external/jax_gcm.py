@@ -24,7 +24,7 @@ from jcm.physics_interface import (
 )
 
 from vercor.clock import ModelDateTime
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.components.external.jax_gcm_tools import (
     change_jcm_parameter_values,
@@ -38,7 +38,6 @@ from vercor.grid import RectilinearGrid
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
@@ -333,8 +332,8 @@ class JAXGCM(Component):
 
         return _avg_predictions.physics, _avg_predictions.dynamics
 
-    def initialize(self, coupler: "Coupler") -> None:
-        self.coupling_timestep = timedelta(seconds=coupler.clock.dt_seconds)
+    def initialize(self, context: ComponentInitContext) -> None:
+        self.coupling_timestep = timedelta(seconds=context.dt_seconds)
         self.spinup_steps = int(
             self.spinup_time.total_seconds() // self.coupling_timestep.total_seconds()
         )
@@ -385,13 +384,13 @@ class JAXGCM(Component):
 
         self._predictions_list = []
 
-        if self.do_spinup and "OCN" in coupler.run_sequence.order:
-            coupler.logger.info(
+        if self.do_spinup and "OCN" in context.run_sequence.order:
+            context.logger.info(
                 f" Performing JCM spinup for {self.spinup_time} day(s)..."
             )
             # Spin-up from the default JCM forcing
             for i in range(self.spinup_steps):
-                coupler.logger.info(f" JCM spinup step {i+1} / {self.spinup_steps}")
+                context.logger.info(f" JCM spinup step {i+1} / {self.spinup_steps}")
                 _, _ = self.do_jcm_steps()
 
     def create_runtime_payload(self) -> JAXGCMRuntimePayload:
@@ -496,12 +495,9 @@ class JAXGCM(Component):
     def _step_jax_gcm_component_state(
         self,
         component_state: "RuntimeComponentState",
-        runtime_settings: Any | None,
+        settings: Any,
     ) -> tuple["RuntimeComponentState", Predictions]:
         """Advance JAXGCM runtime state and return the raw prediction."""
-
-        if runtime_settings is None:
-            raise NotImplementedError("JAXGCM runtime settings are not initialized")
 
         payload = component_state.runtime_payload
         if not isinstance(payload, JAXGCMRuntimePayload):
@@ -537,13 +533,13 @@ class JAXGCM(Component):
         )
 
         mapped_fields = _map_jcm_output_fields(
-            runtime_settings.latvap,
+            settings.latvap,
             p0,
             self.sigma_levels,
-            runtime_settings.mwdair,
-            runtime_settings.rgas,
-            runtime_settings.p0,
-            runtime_settings.cappa,
+            settings.mwdair,
+            settings.rgas,
+            settings.p0,
+            settings.cappa,
             averaged_prediction.physics.surface_flux.shf,
             averaged_prediction.physics.surface_flux.evap,
             averaged_prediction.physics.surface_flux.rlds,
@@ -571,15 +567,12 @@ class JAXGCM(Component):
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: ModelDateTime | datetime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance JAXGCM on immutable runtime state."""
 
-        _ = dt_seconds
+        time = context.time
+        logger = context.logger
         if logger is not None:
             logger.info(
                 " Mean of SST: {}".format(
@@ -595,7 +588,7 @@ class JAXGCM(Component):
 
         stepped_state, prediction = self._step_jax_gcm_component_state(
             component_state,
-            runtime_settings,
+            context.settings,
         )
 
         if time is None:
@@ -618,7 +611,10 @@ class JAXGCM(Component):
                 ),
             )
 
-        if self._should_write_output(time=time, dt=timedelta(seconds=dt_seconds)):
+        if self._should_write_output(
+            time=time,
+            dt=timedelta(seconds=context.dt_seconds),
+        ):
             date_time = time.strftime("%Y-%m-%d")
             self._write_output(output=f"jcm.averages.{date_time}.nc")
 

@@ -13,7 +13,7 @@ Key improvements:
 
 import os
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 from pathlib import Path
 
 import jax
@@ -37,14 +37,16 @@ try:
 except ModuleNotFoundError:
     print("Credit module not found. Please install credit to use CAMulator.")
 
-from vercor.clock import ModelDateTime
-from vercor.components.base import HostRuntimeComponent
+from vercor.components.base import (
+    ComponentInitContext,
+    HostRuntimeComponent,
+    RuntimeStepContext,
+)
 from vercor.grid import RectilinearGrid
 from vercor.tools import _runtime_array_to_host
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentState
 
 
@@ -391,10 +393,10 @@ class CAMulatorGCM(HostRuntimeComponent):
 
         super().__init__(name, grid=grid)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        logger = coupler.logger
-        self.coupler_start_datetime = coupler.clock.start
-        self.coupling_timestep = timedelta(seconds=coupler.clock.dt_seconds)
+    def initialize(self, context: ComponentInitContext) -> None:
+        logger = context.logger
+        self.coupler_start_datetime = context.start
+        self.coupling_timestep = timedelta(seconds=context.dt_seconds)
         self.spinup_steps = int(
             self.spinup_time.total_seconds() // self.coupling_timestep.total_seconds()
         )
@@ -473,21 +475,16 @@ class CAMulatorGCM(HostRuntimeComponent):
     def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance the private host-backed CAMulator atmosphere boundary."""
 
-        _ = dt_seconds
+        time = context.time
+        logger = context.logger
         if time is None:
             return component_state
-        if runtime_settings is None:
-            raise ValueError("CAMulator host runtime settings are not initialized")
 
-        settings = runtime_settings
+        settings = context.settings
         data = component_state.data
 
         prediction = None

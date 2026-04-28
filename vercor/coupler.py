@@ -9,7 +9,11 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
-from vercor.components import HostRuntimeComponent
+from vercor.components import (
+    ComponentInitContext,
+    HostRuntimeComponent,
+    RuntimeStepContext,
+)
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -185,9 +189,17 @@ class Coupler:
 
             jax.config.update("jax_enable_x64", True)
 
+        init_context = ComponentInitContext(
+            start=self.clock.start,
+            dt_seconds=self.clock.dt_seconds,
+            run_sequence=getattr(self, "run_sequence", RunSequence(order=[])),
+            settings=self.settings,
+            logger=self.logger,
+        )
+
         # Initialize each component
         for name, component in self.components.items():
-            component.initialize(self)
+            component.initialize(init_context)
 
             if name not in ("ATM", "OCN", "LND", "ICE"):
                 raise ComponentError(
@@ -579,21 +591,21 @@ class Coupler:
             component_state,
             contract,
         )
+        step_context = RuntimeStepContext(
+            dt_seconds=self.clock.dt_seconds,
+            settings=self.settings,
+            time=time,
+            logger=self.logger if time is not None else None,
+        )
         if time is not None and isinstance(component, HostRuntimeComponent):
             component_state = component._step_host_runtime_state(
                 component_state,
-                self.clock.dt_seconds,
-                self.settings,
-                time=time,
-                logger=self.logger,
+                step_context,
             )
         else:
             component_state = component.step_runtime_state(
                 component_state,
-                self.clock.dt_seconds,
-                self.settings,
-                time=time,
-                logger=self.logger if time is not None else None,
+                step_context,
             )
         component_state = component.send_runtime_fields(
             component_state,

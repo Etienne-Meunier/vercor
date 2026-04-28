@@ -3,9 +3,8 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Callable
 import jax
 import jax.numpy as jnp
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from vercor.clock import ModelDateTime
 from vercor.components.external.veros_runtime_settings import *  # noqa: F403,F401
 
 from veros.setups.global_4deg import GlobalFourDegreeSetup
@@ -14,7 +13,11 @@ from veros.routines import veros_kernel, veros_routine
 from veros.state import KernelOutput, VerosState
 from veros.tools import get_periodic_interval
 
-from vercor.components.base import HostRuntimeComponent
+from vercor.components.base import (
+    ComponentInitContext,
+    HostRuntimeComponent,
+    RuntimeStepContext,
+)
 from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
 from vercor.runtime import RuntimeFieldStore
@@ -23,7 +26,6 @@ from vercor.tools import _runtime_array_to_host
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
     from vercor.runtime import RuntimeComponentState
 
 
@@ -368,8 +370,8 @@ class VerosGCM(HostRuntimeComponent):
 
         super().__init__(name, grid=grid)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        dt_seconds = coupler.clock.dt_seconds
+    def initialize(self, context: ComponentInitContext) -> None:
+        dt_seconds = context.dt_seconds
         self.model_substeps = int(dt_seconds // self.dt_tracer)
 
         if dt_seconds % self.dt_tracer != 0:
@@ -378,13 +380,13 @@ class VerosGCM(HostRuntimeComponent):
             )
 
         # Initial spinup is performed with ERA-Interim (default) atmospheric forcing
-        if self.do_spinup and "ATM" in coupler.run_sequence.order:
+        if self.do_spinup and "ATM" in context.run_sequence.order:
             # Do it similar to CESM spinup when coupling with atmosphere is on
-            coupler.logger.info(
+            context.logger.info(
                 f" Performing Veros spinup for {self.spinup_time} day(s)..."
             )
             for i in range(self.spinup_steps):
-                coupler.logger.info(f" Step {i+1} / {self.spinup_steps}")
+                context.logger.info(f" Step {i+1} / {self.spinup_steps}")
                 self._veros_state = self._step_function(self._veros_state)
 
         self.data["sea_surface_temperature"] = _extract_surface_temperature(
@@ -395,26 +397,21 @@ class VerosGCM(HostRuntimeComponent):
     def _step_host_runtime_state(
         self,
         component_state: "RuntimeComponentState",
-        dt_seconds: float,
-        runtime_settings: Any | None = None,
-        *,
-        time: datetime | ModelDateTime | None = None,
-        logger: Any | None = None,
+        context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance the private host-backed Veros boundary."""
 
-        _ = dt_seconds
+        time = context.time
+        logger = context.logger
         if time is None:
             return component_state
-        if runtime_settings is None:
-            raise ValueError("Veros host runtime settings are not initialized")
 
         runtime_fields = component_state.data
 
         taux, tauy, qnet, qnec = compute_fluxes(
             self._veros_state,
             runtime_fields,
-            runtime_settings,
+            context.settings,
         )
         forcing_fields = _prepare_surface_forcing_fields(
             taux, tauy, qnet, qnec, self.restore_to_climatology

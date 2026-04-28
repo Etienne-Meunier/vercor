@@ -17,6 +17,7 @@ import vercor.components.data.erainterim_ocean as erainterim_ocean_module
 import vercor.components.data.jcm_land as jcm_land_module
 from tests._coverage_support import CoverageCouplerStub, make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.components.base import RuntimeStepContext
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_land import ERA5Land
 from vercor.components.data.era5_ocean import ERA5Ocean
@@ -39,10 +40,12 @@ def _step_component(
 
     return component.step_runtime_state(
         component.to_runtime_component_state(prefill_missing=True),
-        dt.total_seconds(),
-        getattr(coupler, "settings", None),
-        time=time,
-        logger=getattr(coupler, "logger", None),
+        RuntimeStepContext(
+            dt_seconds=dt.total_seconds(),
+            settings=coupler.settings,
+            time=time,
+            logger=coupler.logger,
+        ),
     )
 
 
@@ -58,7 +61,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     atmosphere = Atmosphere(grid=grid)
-    atmosphere.initialize(coupler)
+    atmosphere.initialize(coupler.init_context())
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
         atmosphere_state.data.get("sensible_heat_flux"),
@@ -92,7 +95,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert ocean.data == {}
     assert ocean_state.data.field_names == ()
 
-    ocean.initialize(coupler)
+    ocean.initialize(coupler.init_context())
     ocean.data["sensible_heat_flux"] = np.full(grid.shape, 20.0)
     ocean.data["latent_heat_flux"] = np.full(grid.shape, 10.0)
     starting_sst = ocean.data["sea_surface_temperature"].copy()
@@ -102,7 +105,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert np.all(np.asarray(ocean_sst) > starting_sst)
 
     land = Land(grid=grid)
-    land.initialize(coupler)
+    land.initialize(coupler.init_context())
     land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
     land_state = _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
     soil_moisture = land_state.data.get("soil_moisture")
@@ -114,7 +117,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert seaice.data == {}
     assert seaice_state.data.field_names == ()
 
-    seaice.initialize(coupler)
+    seaice.initialize(coupler.init_context())
     seaice.data["sea_surface_temperature"] = np.asarray(
         [[270.0, 272.0], [274.0, 276.0]]
     )
@@ -156,7 +159,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
 
     coupler = cast(Any, CoverageCouplerStub())
     component = ERA5Land()
-    component.initialize(coupler)
+    component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.DATA_FILES["surface"] == str(fake_path)
@@ -210,7 +213,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
 
     coupler = cast(Any, CoverageCouplerStub())
     component = ERA5Ocean()
-    component.initialize(coupler)
+    component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.DATA_FILES["surface"] == str(fake_path)
@@ -263,7 +266,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
 
     coupler = cast(Any, CoverageCouplerStub())
     component = ERAInterimOcean(resolution="4deg")
-    component.initialize(coupler)
+    component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.DATA_FILES["model_level"] == str(fake_path)
@@ -449,7 +452,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
     assert component.data["u_velocity"].shape == (2, 3, 12)
     assert component.data["v_velocity"].shape == (2, 3, 12)
 
-    component.initialize(coupler)
+    component.initialize(coupler.init_context())
 
     assert len(physics_calls["pressure"]) == 24
     assert len(physics_calls["height"]) == 12
@@ -520,7 +523,7 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
         ocn_grid=ocn_grid,
     )
     coupler = cast(Any, CoverageCouplerStub())
-    component.initialize(coupler)
+    component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.settings.get_field_time_slice

@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import logging
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from vercor.clock import Clock
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
 from vercor.grid import RectilinearGrid
+from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
 
@@ -49,10 +49,31 @@ class CoverageCouplerStub:
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("coverage-tests")
     )
+    run_sequence: RunSequence = field(default_factory=lambda: RunSequence(order=[]))
+
+    def init_context(self) -> ComponentInitContext:
+        return ComponentInitContext(
+            start=self.clock.start,
+            dt_seconds=self.clock.dt_seconds,
+            run_sequence=self.run_sequence,
+            settings=self.settings,
+            logger=self.logger,
+        )
+
+    def step_context(
+        self, *, time: datetime | None = None, with_logger: bool = True
+    ) -> RuntimeStepContext:
+        return RuntimeStepContext(
+            dt_seconds=self.clock.dt_seconds,
+            settings=self.settings,
+            time=time,
+            logger=self.logger if with_logger else None,
+        )
 
 
 class DummyComponent(Component):
-    def initialize(self, coupler: Any) -> None:
+    def initialize(self, context: ComponentInitContext) -> None:
+        _ = context
         self.data.setdefault("temperature", np.zeros(self.grid.shape, dtype=float))
 
 
