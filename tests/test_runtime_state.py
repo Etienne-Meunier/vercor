@@ -46,6 +46,11 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_components_source = Path("vercor/runtime_components.py").read_text(
         encoding="utf-8"
     )
+    runtime_contracts_source = Path("vercor/runtime_contracts.py").read_text(
+        encoding="utf-8"
+    )
+    runtime_driver_source = Path("vercor/runtime_driver.py").read_text(encoding="utf-8")
+    runtime_time_source = Path("vercor/runtime_time.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
     components_source = Path("vercor/components/__init__.py").read_text(
@@ -80,7 +85,17 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         assert marker not in runtime_source
     assert "import_fields" not in coupler_source
     assert 'hasattr(component, "_step_host_runtime_state")' not in coupler_source
-    assert "isinstance(component, HostRuntimeComponent)" in coupler_source
+    assert "isinstance(component, HostRuntimeComponent)" not in coupler_source
+    assert "isinstance(component, HostRuntimeComponent)" in runtime_driver_source
+    assert "time is not None and isinstance" not in runtime_driver_source
+    assert "def _step_runtime_component" not in coupler_source
+    assert "def _runtime_step_info_from_times" not in coupler_source
+    assert "def _runtime_daily_index" not in coupler_source
+    assert "def _build_runtime_contracts" not in coupler_source
+    assert "def build_runtime_contracts" in runtime_contracts_source
+    assert "def runtime_step_info_from_times" in runtime_time_source
+    assert "def step_runtime_component_pure" in runtime_driver_source
+    assert "def step_runtime_component_host_enabled" in runtime_driver_source
     assert "_sync_data_from_runtime_state" not in base_source
     assert "_fields2import" not in base_source
     assert "_fields2export" not in base_source
@@ -106,6 +121,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "write_runtime_component_view_to_netcdf" not in components_source
     assert "class RuntimeComponentView" not in tools_source
     assert "RuntimeComponentView =" not in tools_source
+    assert "RuntimeComponentView" in tools_source
+    assert 'hasattr(store, "field_names")' not in tools_source
+    assert "elif field_name in store" not in tools_source
     assert "def step_runtime_state" in jax_gcm_source
     assert "def _step_host_runtime_state" in veros_source
     assert "def _step_host_runtime_state" in camulator_source
@@ -129,8 +147,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
 def test_examples_use_coupler_runtime_component_view_factory() -> None:
     slab_driver_source = Path("examples/run_slab_driver.py").read_text(encoding="utf-8")
     data_driver_source = Path("examples/run_data_driver.py").read_text(encoding="utf-8")
+    jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
 
-    for source in (slab_driver_source, data_driver_source):
+    for source in (slab_driver_source, data_driver_source, jcm_slab_source):
         assert "RuntimeComponentView.from_coupler_state" not in source
         assert "cpl.runtime_component_view(final_state," in source
 

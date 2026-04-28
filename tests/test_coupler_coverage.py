@@ -14,6 +14,7 @@ import pytest
 from tests._coverage_support import DummyComponent, RecordingRegridder, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
+import vercor.coupler as coupler_module
 from vercor.components import HostRuntimeComponent, RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
@@ -682,9 +683,11 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         events.append(f"send:{component.name}")
         return component_state
 
-    monkeypatch.setattr("vercor.coupler.dispatch_component_exchanges", fake_dispatch)
-    monkeypatch.setattr("vercor.coupler.receive_runtime_fields", fake_receive)
-    monkeypatch.setattr("vercor.coupler.send_runtime_fields", fake_send)
+    monkeypatch.setattr(
+        "vercor.runtime_driver.dispatch_component_exchanges", fake_dispatch
+    )
+    monkeypatch.setattr("vercor.runtime_driver.receive_runtime_fields", fake_receive)
+    monkeypatch.setattr("vercor.runtime_driver.send_runtime_fields", fake_send)
 
     coupler.run()
 
@@ -746,19 +749,39 @@ def test_host_and_scanned_run_use_runtime_component_helper(
 
     events: list[str] = []
 
-    def fake_runtime_step(
+    def fake_host_runtime_step(
         state: Any,
         component_name: str,
         step_info: Any,
         *,
-        time: Any | None = None,
+        time: Any,
+        logger: Any,
+        **kwargs: Any,
     ) -> Any:
-        _ = step_info
-        mode = "run" if time is not None else "scan"
-        events.append(f"{mode}:{component_name}")
+        _ = step_info, time, logger, kwargs
+        events.append(f"run:{component_name}")
         return state
 
-    monkeypatch.setattr(coupler, "_step_runtime_component", fake_runtime_step)
+    def fake_pure_runtime_step(
+        state: Any,
+        component_name: str,
+        step_info: Any,
+        **kwargs: Any,
+    ) -> Any:
+        _ = step_info, kwargs
+        events.append(f"scan:{component_name}")
+        return state
+
+    monkeypatch.setattr(
+        coupler_module,
+        "step_runtime_component_host_enabled",
+        fake_host_runtime_step,
+    )
+    monkeypatch.setattr(
+        coupler_module,
+        "step_runtime_component_pure",
+        fake_pure_runtime_step,
+    )
 
     coupler.run()
     run_events = list(events)

@@ -31,6 +31,7 @@ from vercor.runtime_components import (
     send_runtime_fields,
     validate_component_runtime_state,
 )
+from vercor.runtime_time import scalar_runtime_step_info
 from vercor.runtime_views import RuntimeComponentView
 from vercor.settings import VercorSettings
 
@@ -225,7 +226,9 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component_state = send_runtime_fields(
         component,
         create_runtime_component_state(component),
-        runtime_coupler._scalar_runtime_step_info(timestamp),
+        scalar_runtime_step_info(
+            timestamp, runtime_coupler.clock, runtime_coupler.settings
+        ),
         contract=contract,
     )
     assert_allclose_compact(
@@ -243,7 +246,11 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component_state = send_runtime_fields(
         component,
         create_runtime_component_state(component),
-        runtime_coupler._scalar_runtime_step_info(runtime_coupler.clock.start),
+        scalar_runtime_step_info(
+            runtime_coupler.clock.start,
+            runtime_coupler.clock,
+            runtime_coupler.settings,
+        ),
         contract=contract,
     )
     assert_allclose_compact(

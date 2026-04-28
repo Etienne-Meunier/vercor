@@ -1,5 +1,37 @@
 # 2026-04-28
 
+## Runtime Boundary Helper Refactor
+
+- Extracted remaining runtime-only orchestration out of `Coupler`:
+  - added `vercor.runtime_contracts` for exchange-field flattening and runtime contract construction
+  - added `vercor.runtime_time` for daily/monthly runtime step metadata
+  - added `vercor.runtime_driver` for outgoing priming, per-component dispatch/receive/step/send, and host-adapter detection
+- Kept public orchestration stable:
+  - `Coupler` remains the facade for registration, initialization, runtime-state creation, `run()`, `compile_runtime()`, runtime views, and final output
+  - scanned runtime still rejects CAMulator/Veros host-backed adapters before JIT execution
+  - CAMulator and Veros still use the explicit `HostRuntimeComponent` bridge
+- Tightened diagnostics around runtime views:
+  - plotting/table helpers now consume `RuntimeComponentView` instead of probing arbitrary component/runtime objects
+  - examples now pass `cpl.runtime_component_view(...)` into diagnostics helpers
+- Added architecture regression coverage for extracted runtime boundaries, explicit host dispatch ownership, and runtime-view-only diagnostics.
+- Updated `DEPENDENCIES.md` with the new runtime helper modules.
+
+## Validation (Runtime Boundary Helper Refactor, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_tools_components_and_plotting.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and reformatted 4 files
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Internal Runtime Responsibility Cleanup
 
 - Moved generic runtime/component operations out of `Component`:

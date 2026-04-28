@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 from logging import Logger
 from pathlib import Path
 from typing import Callable, Optional, cast
@@ -8,12 +7,8 @@ from typing import Callable, Optional, cast
 import jax
 import jax.numpy as jnp
 
-from vercor.clock import Clock, ModelDateTime
-from vercor.components.base import (
-    ComponentInitContext,
-    HostRuntimeComponent,
-    RuntimeStepContext,
-)
+from vercor.clock import Clock
+from vercor.components.base import ComponentInitContext
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -30,28 +25,32 @@ from vercor.runtime import (
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
-    dispatch_component_exchanges,
     exchange_key_name,
 )
+from vercor.runtime_contracts import build_runtime_contracts_for_components
 from vercor.runtime_components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
     create_runtime_component_state,
-    receive_runtime_fields,
-    send_runtime_fields,
     validate_component_runtime_state,
+)
+from vercor.runtime_driver import (
+    host_component_names,
+    prime_runtime_outgoing,
+    step_runtime_component_host_enabled,
+    step_runtime_component_pure,
+)
+from vercor.runtime_time import (
+    build_runtime_step_info,
+    initial_runtime_step_info,
+    scalar_runtime_step_info,
 )
 from vercor.runtime_views import RuntimeComponentView
 from vercor.settings import VercorSettings
 from vercor.tools import (
     check_total_lnd_ocn_mask_sum,
-    datetime_to_seconds_in_year,
-    get_periodic_interval,
     get_component,
     grids_identical,
-    is_leap_year,
-    _append_unique,
-    _flatten_fields,
     check_remap_conservation,
     compute_ocn_lnd_masks_on_atm_grid,
 )
@@ -216,7 +215,11 @@ class Coupler:
 
             self.logger.info(f" Initialized {name}")
 
-        self._runtime_contracts = self._build_runtime_contracts(validate_endpoints=True)
+        self._runtime_contracts = build_runtime_contracts_for_components(
+            self.components,
+            self.exchanges,
+            validate_endpoints=True,
+        )
 
         for name, component in self.components.items():
             contract = self._runtime_contracts[name]
@@ -329,8 +332,10 @@ class Coupler:
     def _runtime_state_from_components(
         self, *, prefill_missing: bool = False
     ) -> RuntimeCouplerState:
-        self._runtime_contracts = self._build_runtime_contracts(
-            validate_endpoints=False
+        self._runtime_contracts = build_runtime_contracts_for_components(
+            self.components,
+            self.exchanges,
+            validate_endpoints=False,
         )
         components = tuple(
             create_runtime_component_state(
@@ -354,144 +359,12 @@ class Coupler:
             binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
         )
 
-    def _extend_contract_fields(
-        self,
-        fields: tuple[str, ...],
-        new_fields: list[str],
-    ) -> tuple[str, ...]:
-        """Return ``fields`` extended by new unique field names."""
-
-        updated = list(fields)
-        _append_unique(updated, new_fields)
-        return tuple(updated)
-
-    def _build_runtime_contracts(
-        self,
-        *,
-        validate_endpoints: bool,
-    ) -> dict[str, RuntimeComponentContract]:
-        """Build coupler-owned runtime field contracts from exchanges."""
-
-        contracts = {name: RuntimeComponentContract.empty() for name in self.components}
-        for exchange in self.exchanges:
-            if exchange.source not in self.components:
-                if validate_endpoints:
-                    raise CouplerError(
-                        f"Source component '{exchange.source}' not registered in coupler"
-                    )
-                continue
-            if exchange.destination not in self.components:
-                if validate_endpoints:
-                    raise CouplerError(
-                        f"Destination component '{exchange.destination}' not registered in coupler"
-                    )
-                continue
-
-            flattened_fields = _flatten_fields(exchange.field_names)
-            source_contract = contracts[exchange.source]
-            destination_contract = contracts[exchange.destination]
-            contracts[exchange.source] = RuntimeComponentContract(
-                imports=source_contract.imports,
-                exports=self._extend_contract_fields(
-                    source_contract.exports,
-                    flattened_fields,
-                ),
-            )
-            contracts[exchange.destination] = RuntimeComponentContract(
-                imports=self._extend_contract_fields(
-                    destination_contract.imports,
-                    flattened_fields,
-                ),
-                exports=destination_contract.exports,
-            )
-        return contracts
-
-    def _runtime_step_info_from_times(
-        self,
-        times: list[datetime | ModelDateTime],
-    ) -> RuntimeStepInfo:
-        monthly_index_left: list[int] = []
-        monthly_index_right: list[int] = []
-        monthly_weight_left: list[float] = []
-        monthly_weight_right: list[float] = []
-        daily_index: list[int] = []
-
-        for time in times:
-            total_seconds = datetime_to_seconds_in_year(time)
-            (n1, f1), (n2, f2) = get_periodic_interval(
-                current_time=total_seconds,
-                cycle_length=self.settings.year_in_seconds,
-                rec_spacing=self.settings.year_in_seconds / 12.0,
-                n_rec=12,
-            )
-            monthly_index_left.append(n1)
-            monthly_index_right.append(n2)
-            monthly_weight_left.append(f1)
-            monthly_weight_right.append(f2)
-            daily_index.append(self._runtime_daily_index(time))
-
-        return RuntimeStepInfo.from_sequences(
-            monthly_index_left,
-            monthly_index_right,
-            monthly_weight_left,
-            monthly_weight_right,
-            daily_index,
-        )
-
-    def _runtime_daily_index(self, time: datetime | ModelDateTime) -> int:
-        if self.clock.year_type == "360":
-            month_lengths = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-            month_length = month_lengths[time.month - 1]
-            mapped_day = ((time.day - 1) * (month_length - 1)) // 29 + 1
-            day_of_year = sum(month_lengths[: time.month - 1]) + mapped_day
-        elif self.clock.year_type == "noleap":
-            model_day_of_year = getattr(time, "day_of_year", None)
-            if model_day_of_year is None:
-                raise ValueError("ModelDateTime.day_of_year is not initialized")
-            day_of_year = model_day_of_year
-        else:
-            day_of_year = time.timetuple().tm_yday
-            if is_leap_year(time.year) and day_of_year > 59:
-                day_of_year -= 1
-
-        return day_of_year - 1
-
-    def _build_runtime_step_info(self) -> RuntimeStepInfo:
-        times = [time for _, time, _ in self.clock.iter()]
-        return self._runtime_step_info_from_times(times)
-
-    def _initial_runtime_step_info(self) -> RuntimeStepInfo:
-        clock_iter = self.clock.iter()
-        try:
-            _, first_time, _ = next(clock_iter)
-        except StopIteration:
-            first_time = self.clock.start
-        batched_step_info = self._runtime_step_info_from_times([first_time])
-        return cast(
-            RuntimeStepInfo,
-            jax.tree_util.tree_map(lambda value: value[0], batched_step_info),
-        )
-
-    def _prime_runtime_outgoing(
-        self,
-        runtime_state: RuntimeCouplerState,
-    ) -> RuntimeCouplerState:
-        step_info = self._initial_runtime_step_info()
-        for cname in self.run_sequence:
-            component_state = runtime_state.get_component_state(cname)
-            component_state = send_runtime_fields(
-                self.components[cname],
-                component_state,
-                step_info,
-                contract=self._runtime_contracts[cname],
-            )
-            runtime_state = runtime_state.set_component_state(cname, component_state)
-        return runtime_state
-
     def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
         if set(self._runtime_contracts) != set(self.components):
-            self._runtime_contracts = self._build_runtime_contracts(
-                validate_endpoints=False
+            self._runtime_contracts = build_runtime_contracts_for_components(
+                self.components,
+                self.exchanges,
+                validate_endpoints=False,
             )
 
         if not hasattr(self, "run_sequence"):
@@ -571,71 +444,14 @@ class Coupler:
             prefill_missing=prefill_missing
         )
         if prefill_missing and hasattr(self, "run_sequence"):
-            runtime_state = self._prime_runtime_outgoing(runtime_state)
+            runtime_state = prime_runtime_outgoing(
+                runtime_state,
+                tuple(self.run_sequence),
+                components=self.components,
+                contracts=self._runtime_contracts,
+                step_info=initial_runtime_step_info(self.clock, self.settings),
+            )
         self._validate_runtime_state(runtime_state)
-        return runtime_state
-
-    def _scalar_runtime_step_info(
-        self,
-        time: datetime | ModelDateTime,
-    ) -> RuntimeStepInfo:
-        batched_step_info = self._runtime_step_info_from_times([time])
-        return cast(
-            RuntimeStepInfo,
-            jax.tree_util.tree_map(lambda value: value[0], batched_step_info),
-        )
-
-    def _step_runtime_component(
-        self,
-        runtime_state: RuntimeCouplerState,
-        component_name: str,
-        step_info: RuntimeStepInfo,
-        *,
-        time: datetime | ModelDateTime | None = None,
-    ) -> RuntimeCouplerState:
-        runtime_state = dispatch_component_exchanges(
-            runtime_state,
-            component_name,
-            self.exchanges,
-            self._regridders,
-        )
-        component_state = runtime_state.get_component_state(component_name)
-        component = self.components[component_name]
-        contract = self._runtime_contracts.get(
-            component_name,
-            RuntimeComponentContract.empty(),
-        )
-        component_state = receive_runtime_fields(
-            component_state,
-            contract,
-        )
-        step_context = RuntimeStepContext(
-            dt_seconds=self.clock.dt_seconds,
-            settings=self.settings,
-            time=time,
-            logger=self.logger if time is not None else None,
-        )
-        if time is not None and isinstance(component, HostRuntimeComponent):
-            component_state = component._step_host_runtime_state(
-                component_state,
-                step_context,
-            )
-        else:
-            component_state = component.step_runtime_state(
-                component_state,
-                step_context,
-            )
-        component_state = send_runtime_fields(
-            component,
-            component_state,
-            step_info,
-            contract=contract,
-        )
-        runtime_state = runtime_state.set_component_state(
-            component_name,
-            component_state,
-        )
-
         return runtime_state
 
     def _output_masks_for_component(
@@ -731,15 +547,22 @@ class Coupler:
             self.logger.info(
                 f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
             )
-            step_info = self._scalar_runtime_step_info(time)
+            step_info = scalar_runtime_step_info(time, self.clock, self.settings)
 
             for cname in self.run_sequence:
                 self.logger.info(f" Run component: {cname}")
-                runtime_state = self._step_runtime_component(
+                runtime_state = step_runtime_component_host_enabled(
                     runtime_state,
                     cname,
                     step_info,
+                    components=self.components,
+                    exchanges=self.exchanges,
+                    regridders=self._regridders,
+                    contracts=self._runtime_contracts,
+                    dt_seconds=self.clock.dt_seconds,
+                    settings=self.settings,
                     time=time,
+                    logger=self.logger,
                 )
 
         return runtime_state
@@ -760,13 +583,9 @@ class Coupler:
         state as consumed and must not read it after invoking the compiled
         callable.
         """
-        host_component_names = [
-            name
-            for name, component in self.components.items()
-            if isinstance(component, HostRuntimeComponent)
-        ]
-        if host_component_names:
-            names = ", ".join(host_component_names)
+        host_names = host_component_names(self.components)
+        if host_names:
+            names = ", ".join(host_names)
             raise CouplerError(
                 "compile_runtime() only supports differentiable runtime components; "
                 f"host-backed component(s) require run(): {names}"
@@ -798,16 +617,22 @@ class Coupler:
             else initial_state
         )
         self._validate_runtime_state(runtime_state)
-        step_infos = self._build_runtime_step_info()
+        step_infos = build_runtime_step_info(self.clock, self.settings)
 
         def step_all_components(
             state: RuntimeCouplerState, step_info: RuntimeStepInfo
         ) -> tuple[RuntimeCouplerState, None]:
             for cname in self.run_sequence:
-                state = self._step_runtime_component(
+                state = step_runtime_component_pure(
                     state,
                     cname,
                     step_info,
+                    components=self.components,
+                    exchanges=self.exchanges,
+                    regridders=self._regridders,
+                    contracts=self._runtime_contracts,
+                    dt_seconds=self.clock.dt_seconds,
+                    settings=self.settings,
                 )
             return state, None
 

@@ -3,7 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
-from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, cast
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 from urllib.request import urlopen
 
 import jax
@@ -25,6 +25,11 @@ from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.regridders.helpers import compute_land_mask
+from vercor.runtime_contracts import (
+    append_unique_runtime_fields,
+    flatten_exchange_fields,
+)
+from vercor.runtime_views import RuntimeComponentView
 from vercor.types import AllComponentsType, RuntimeArray
 
 VERCOR_ASSETS_BASE_URL = (
@@ -149,13 +154,7 @@ def _ensure_forcing_asset(asset_key: str) -> Path:
 def _flatten_fields(
     field_names: list[str | tuple[str, str]],
 ) -> list[str]:
-    flattened: list[str] = []
-    for item in field_names:
-        if isinstance(item, tuple):
-            flattened.extend(item)
-        else:
-            flattened.append(item)
-    return flattened
+    return flatten_exchange_fields(field_names)
 
 
 def _append_unique(target: list[str], exchange_items: list[str]) -> None:
@@ -165,7 +164,7 @@ def _append_unique(target: list[str], exchange_items: list[str]) -> None:
                 in the component's exchange variable lists.
         exchange_items: list of field names from exchange rules (exchanger).
     """
-    target.extend([item for item in exchange_items if item not in target])
+    append_unique_runtime_fields(target, exchange_items)
 
 
 def _runtime_array_to_host(array: RuntimeArray) -> NDArray[Any]:
@@ -174,44 +173,42 @@ def _runtime_array_to_host(array: RuntimeArray) -> NDArray[Any]:
     return np.asarray(jax.device_get(jnp.asarray(array)))
 
 
-def safe_component_nanmean(component: Any, field_name: str) -> float:
-    """Return a robust NaN-aware mean for a component field."""
+def safe_component_nanmean(component: RuntimeComponentView, field_name: str) -> float:
+    """Return a robust NaN-aware mean for a runtime component view field."""
 
     try:
-        return float(jnp.nanmean(jnp.asarray(_component_field(component, field_name))))
+        return float(jnp.nanmean(jnp.asarray(_view_field(component, field_name))))
     except Exception:
         return float("nan")
 
 
-def _component_field_candidates(component: Any, field_name: str) -> list[RuntimeArray]:
-    """Return matching fields from a runtime state or component data store."""
+def _view_field_candidates(
+    component: RuntimeComponentView, field_name: str
+) -> list[RuntimeArray]:
+    """Return matching fields from an explicit runtime component view."""
 
     candidates: list[RuntimeArray] = []
-    for store_name in ("data", "incoming", "outgoing"):
-        store = getattr(component, store_name, None)
-        if store is None:
-            continue
-        if hasattr(store, "field_names"):
-            if field_name in store.field_names:
-                candidates.append(cast(RuntimeArray, store.get(field_name)))
-        elif field_name in store:
-            candidates.append(cast(RuntimeArray, store[field_name]))
+    for store in (component.data, component.incoming, component.outgoing):
+        if field_name in store.field_names:
+            candidates.append(store.get(field_name))
     return candidates
 
 
-def _component_field(component: Any, field_name: str) -> RuntimeArray:
-    """Return a field from a runtime state or component data store."""
+def _view_field(component: RuntimeComponentView, field_name: str) -> RuntimeArray:
+    """Return a field from an explicit runtime component view."""
 
-    candidates = _component_field_candidates(component, field_name)
+    candidates = _view_field_candidates(component, field_name)
     if candidates:
         return candidates[0]
     raise KeyError(f"Field {field_name!r} not found")
 
 
-def _component_plot_field(component: Any, field_name: str) -> RuntimeArray:
+def _component_plot_field(
+    component: RuntimeComponentView, field_name: str
+) -> RuntimeArray:
     """Return a 2D field suitable for plotting when one is available."""
 
-    candidates = _component_field_candidates(component, field_name)
+    candidates = _view_field_candidates(component, field_name)
     for candidate in candidates:
         if jnp.asarray(candidate).ndim == 2:
             return candidate
@@ -220,15 +217,15 @@ def _component_plot_field(component: Any, field_name: str) -> RuntimeArray:
     raise KeyError(f"Field {field_name!r} not found")
 
 
-def _component_grid(component: Any) -> Any:
-    """Return the grid from a component or explicit component field view."""
+def _component_grid(component: RuntimeComponentView) -> Any:
+    """Return the grid from an explicit runtime component view."""
 
     return component.grid
 
 
 def _safe_component_metric_mean(
-    component: Any,
-    metric: str | Callable[[Any], RuntimeArray | float],
+    component: RuntimeComponentView,
+    metric: str | Callable[[RuntimeComponentView], RuntimeArray | float],
 ) -> float:
     """Resolve a metric and return a robust mean value as float."""
 
@@ -242,8 +239,10 @@ def _safe_component_metric_mean(
 
 
 def print_component_field_means_table(
-    components: Mapping[str, Any],
-    fields: Sequence[tuple[str | Callable[[Any], RuntimeArray | float], str]],
+    components: Mapping[str, RuntimeComponentView],
+    fields: Sequence[
+        tuple[str | Callable[[RuntimeComponentView], RuntimeArray | float], str]
+    ],
     component_order: Sequence[str] | None = None,
 ) -> None:
     """Print a means table for component fields with configurable column order.
@@ -277,7 +276,7 @@ def print_component_field_means_table(
 
 
 def _get_component_plot_data(
-    component: Any,
+    component: RuntimeComponentView,
     scalar_field_name: str,
     u_field_name: str,
     v_field_name: str,
@@ -301,7 +300,7 @@ def _get_component_plot_data(
 
 
 def plot_component_scalar_vector_comparison(
-    rows: Sequence[tuple[str, Any, str, str, str]],
+    rows: Sequence[tuple[str, RuntimeComponentView, str, str, str]],
     *,
     figsize: tuple[float, float] = (15.0, 10.0),
     quiver_scale: float = 100.0,

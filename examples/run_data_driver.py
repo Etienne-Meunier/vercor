@@ -130,8 +130,8 @@ if __name__ == "__main__":
 
     print_component_field_means_table(
         components={
-            "ATM": final_state.get_component_state("ATM"),
-            "OCN": final_state.get_component_state("OCN"),
+            "ATM": cpl.runtime_component_view(final_state, "ATM"),
+            "OCN": cpl.runtime_component_view(final_state, "OCN"),
         },
         fields=variables,
         component_order=["ATM", "OCN"],

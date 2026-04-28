@@ -127,9 +127,9 @@ if __name__ == "__main__":
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(
         components={
-            "ATM": final_state.get_component_state("ATM"),
-            "OCN": final_state.get_component_state("OCN"),
-            "LND": final_state.get_component_state("LND"),
+            "ATM": cpl.runtime_component_view(final_state, "ATM"),
+            "OCN": cpl.runtime_component_view(final_state, "OCN"),
+            "LND": cpl.runtime_component_view(final_state, "LND"),
         },
         fields=[
             ("sea_surface_temperature", "sst"),

@@ -118,7 +118,11 @@ if __name__ == "__main__":
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(
-        components={"ATM": atm, "OCN": ocn, "LND": lnd},
+        components={
+            "ATM": cpl.runtime_component_view(final_state, "ATM"),
+            "OCN": cpl.runtime_component_view(final_state, "OCN"),
+            "LND": cpl.runtime_component_view(final_state, "LND"),
+        },
         fields=[
             ("sea_surface_temperature", "sst"),
             ("temperature", "temp"),
@@ -132,8 +136,20 @@ if __name__ == "__main__":
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
-            ("ATM", atm, "sea_surface_temperature", "u_velocity", "v_velocity"),
-            ("OCN", ocn, "sea_surface_temperature", "u_velocity", "v_velocity"),
+            (
+                "ATM",
+                cpl.runtime_component_view(final_state, "ATM"),
+                "sea_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
+            (
+                "OCN",
+                cpl.runtime_component_view(final_state, "OCN"),
+                "sea_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
         ],
         figsize=(15, 10),
         quiver_scale=100,

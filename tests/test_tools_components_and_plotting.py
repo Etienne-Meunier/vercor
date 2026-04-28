@@ -8,7 +8,7 @@ import matplotlib
 import numpy as np
 import pytest
 
-from tests._tools_support import DummyComponentA, DummyComponentB, DummyGridComponent
+from tests._tools_support import DummyComponentA, DummyComponentB
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
@@ -78,8 +78,12 @@ def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    comp = DummyGridComponent(
-        grid=grid, fields={"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])}
+    comp = RuntimeComponentView(
+        name="DUMMY",
+        grid=grid,
+        data=RuntimeFieldStore.from_mapping(
+            {"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])}
+        ),
     )
 
     assert np.isclose(safe_component_nanmean(comp, "foo"), 3.0)
@@ -94,28 +98,37 @@ def test_print_component_field_means_table_with_callable_metric(
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    atm = DummyGridComponent(
+    atm = RuntimeComponentView(
+        name="ATM",
         grid=grid,
-        fields={
-            "u": np.array([[3.0, 4.0], [0.0, 0.0]]),
-            "v": np.array([[4.0, 3.0], [0.0, 0.0]]),
-            "temp": np.array([[280.0, 282.0], [284.0, 286.0]]),
-        },
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "u": np.array([[3.0, 4.0], [0.0, 0.0]]),
+                "v": np.array([[4.0, 3.0], [0.0, 0.0]]),
+                "temp": np.array([[280.0, 282.0], [284.0, 286.0]]),
+            }
+        ),
     )
-    ocn = DummyGridComponent(
+    ocn = RuntimeComponentView(
+        name="OCN",
         grid=grid,
-        fields={
-            "u": np.array([[1.0, 2.0], [0.0, 0.0]]),
-            "v": np.array([[2.0, 1.0], [0.0, 0.0]]),
-            "temp": np.array([[270.0, 271.0], [272.0, 273.0]]),
-        },
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "u": np.array([[1.0, 2.0], [0.0, 0.0]]),
+                "v": np.array([[2.0, 1.0], [0.0, 0.0]]),
+                "temp": np.array([[270.0, 271.0], [272.0, 273.0]]),
+            }
+        ),
     )
 
     print_component_field_means_table(
         components={"ATM": atm, "OCN": ocn},
         fields=[
             ("temp", "temp"),
-            (lambda c: np.sqrt(c.get("u") ** 2 + c.get("v") ** 2), "speed"),
+            (
+                lambda view: np.sqrt(view.data.get("u") ** 2 + view.data.get("v") ** 2),
+                "speed",
+            ),
         ],
         component_order=["ATM", "OCN"],
     )
@@ -143,21 +156,27 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
         latitude=np.array([-2.0, 0.0, 2.0]),
     )
 
-    atm = DummyGridComponent(
+    atm = RuntimeComponentView(
+        name="ATM",
         grid=atm_grid,
-        fields={
-            "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
-            "u": jnp.ones((2, 3)),
-            "v": jnp.zeros((2, 3)),
-        },
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
+                "u": jnp.ones((2, 3)),
+                "v": jnp.zeros((2, 3)),
+            }
+        ),
     )
-    ocn = DummyGridComponent(
+    ocn = RuntimeComponentView(
+        name="OCN",
         grid=ocn_grid,
-        fields={
-            "scalar": np.array([[7.0, 10.0], [8.0, 11.0], [9.0, 12.0]]),
-            "u": np.zeros((3, 2)),
-            "v": np.ones((3, 2)),
-        },
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "scalar": np.array([[7.0, 10.0], [8.0, 11.0], [9.0, 12.0]]),
+                "u": np.zeros((3, 2)),
+                "v": np.ones((3, 2)),
+            }
+        ),
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
@@ -170,7 +189,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     )
 
     assert axs.shape == (2, 2)
-    assert isinstance(atm.get("scalar"), jax.Array)
+    assert isinstance(atm.data.get("scalar"), jax.Array)
     assert scalar_mappable is not None
     assert_allclose_compact(axs[0, 0].get_xlim(), axs[1, 0].get_xlim())
     assert_allclose_compact(axs[0, 1].get_xlim(), axs[1, 1].get_xlim())
