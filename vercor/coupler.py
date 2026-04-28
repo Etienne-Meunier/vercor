@@ -9,10 +9,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock, ModelDateTime
-from vercor.components import (
-    HostRuntimeComponent,
-    write_runtime_component_view_to_netcdf,
-)
+from vercor.components import HostRuntimeComponent
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -23,6 +20,7 @@ from vercor.regridders import (
     ConservativeRectilinearRegridder,
 )
 from vercor.run_sequence import RunSequence
+from vercor.output import write_runtime_component_view_to_netcdf
 from vercor.runtime import (
     RuntimeCouplerState,
     RuntimeFieldStore,
@@ -30,6 +28,7 @@ from vercor.runtime import (
     dispatch_component_exchanges,
     exchange_key_name,
 )
+from vercor.runtime_views import RuntimeComponentView
 from vercor.settings import VercorSettings
 from vercor.tools import (
     check_total_lnd_ocn_mask_sum,
@@ -42,7 +41,6 @@ from vercor.tools import (
     _flatten_fields,
     check_remap_conservation,
     compute_ocn_lnd_masks_on_atm_grid,
-    RuntimeComponentView,
 )
 from vercor.types import AllComponentsType, RuntimeArray
 

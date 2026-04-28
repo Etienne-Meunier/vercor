@@ -8,6 +8,7 @@ VERCOR_ROOT = PROJECT_ROOT / "vercor"
 
 ALLOWED_NUMPY_BOUNDARIES = {
     "vercor/components/base.py",
+    "vercor/output.py",
     "vercor/tools.py",
     "vercor/types.py",
 }

@@ -841,7 +841,7 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
 
     taux, tauy, qnet, qnec = veros_gcm_module.compute_fluxes(
         component._veros_state,
-        component.data,
+        RuntimeFieldStore.from_mapping(component.data),
         VercorSettings(),
     )
 

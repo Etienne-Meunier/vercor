@@ -2,6 +2,8 @@ from vercor.components.base import (
     Component,
     ComponentForcingData,
     HostRuntimeComponent,
+)
+from vercor.output import (
     write_runtime_component_to_netcdf,
     write_runtime_component_view_to_netcdf,
 )

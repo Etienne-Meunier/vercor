@@ -141,16 +141,16 @@ class CAMulatorLand(HostRuntimeComponent):
         if time is None or coupler is None:
             return component_state
 
-        data = component_state.data.to_mapping()
+        data = component_state.data
 
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
 
-        data["land_surface_temperature"] = _prepare_camulator_land_surface_temperature(
-            ts["TS"].values
+        data = data.set(
+            "land_surface_temperature",
+            _prepare_camulator_land_surface_temperature(ts["TS"].values),
         )
 
         self.timestep_counter += 1
-        from vercor.runtime import RuntimeFieldStore
 
-        return component_state.with_data(RuntimeFieldStore.from_mapping(data))
+        return component_state.with_data(data)

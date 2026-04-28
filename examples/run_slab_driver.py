@@ -13,7 +13,6 @@ from vercor.regridders import (
     conservative,
 )
 from vercor.tools import (
-    RuntimeComponentView,
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
@@ -157,14 +156,14 @@ if __name__ == "__main__":
         rows=[
             (
                 "ATM",
-                RuntimeComponentView.from_coupler_state(cpl, final_state, "ATM"),
+                cpl.runtime_component_view(final_state, "ATM"),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",
             ),
             (
                 "OCN",
-                RuntimeComponentView.from_coupler_state(cpl, final_state, "OCN"),
+                cpl.runtime_component_view(final_state, "OCN"),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",

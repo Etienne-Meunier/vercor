@@ -42,6 +42,8 @@ class _RuntimeSendComponent(Component):
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_source = Path("vercor/runtime.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
+    base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+    tools_source = Path("vercor/tools.py").read_text(encoding="utf-8")
     jax_gcm_source = Path("vercor/components/external/jax_gcm.py").read_text(
         encoding="utf-8"
     )
@@ -71,9 +73,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "import_fields" not in coupler_source
     assert 'hasattr(component, "_step_host_runtime_state")' not in coupler_source
     assert "isinstance(component, HostRuntimeComponent)" in coupler_source
-    assert "_sync_data_from_runtime_state" not in Path(
-        "vercor/components/base.py"
-    ).read_text(encoding="utf-8")
+    assert "_sync_data_from_runtime_state" not in base_source
+    assert "def write_runtime_component_to_netcdf" not in base_source
+    assert "class RuntimeComponentView" not in tools_source
     assert "def step_runtime_state" in jax_gcm_source
     assert "def _step_host_runtime_state" in veros_source
     assert "def _step_host_runtime_state" in camulator_source
@@ -81,6 +83,18 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def step_runtime_state" not in veros_source
     assert "def step_runtime_state" not in camulator_source
     assert "def step_runtime_state" not in camulator_land_source
+    assert "component_state.data.to_mapping()" not in veros_source
+    assert "component_state.data.to_mapping()" not in camulator_source
+    assert "component_state.data.to_mapping()" not in camulator_land_source
+
+
+def test_examples_use_coupler_runtime_component_view_factory() -> None:
+    slab_driver_source = Path("examples/run_slab_driver.py").read_text(encoding="utf-8")
+    data_driver_source = Path("examples/run_data_driver.py").read_text(encoding="utf-8")
+
+    for source in (slab_driver_source, data_driver_source):
+        assert "RuntimeComponentView.from_coupler_state" not in source
+        assert "cpl.runtime_component_view(final_state," in source
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:

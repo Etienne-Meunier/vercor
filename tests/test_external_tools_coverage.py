@@ -13,6 +13,7 @@ import pytest
 import vercor.components.external.jax_gcm_tools as jax_gcm_tools_module
 import vercor.components.external.veros_gcm as veros_gcm_module
 from tests.assertions import assert_allclose_compact
+from vercor.runtime import RuntimeFieldStore
 from vercor.settings import VercorSettings
 
 
@@ -224,17 +225,19 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
         tau=0,
     )
     veros_state = SimpleNamespace(variables=variables)
-    runtime_fields = {
-        "model_level_height": np.full((4, 4), 10.0),
-        "u_velocity": np.full((4, 4), 11.0),
-        "v_velocity": np.full((4, 4), 12.0),
-        "potential_temperature": np.full((4, 4), 13.0),
-        "specific_humidity": np.full((4, 4), 14.0),
-        "density": np.full((4, 4), 15.0),
-        "temperature": np.full((4, 4), 16.0),
-        "net_shortwave_radiation_flux": np.full((4, 4), 20.0),
-        "downward_longwave_radiation_flux": np.full((4, 4), 30.0),
-    }
+    runtime_fields = RuntimeFieldStore.from_mapping(
+        {
+            "model_level_height": np.full((4, 4), 10.0),
+            "u_velocity": np.full((4, 4), 11.0),
+            "v_velocity": np.full((4, 4), 12.0),
+            "potential_temperature": np.full((4, 4), 13.0),
+            "specific_humidity": np.full((4, 4), 14.0),
+            "density": np.full((4, 4), 15.0),
+            "temperature": np.full((4, 4), 16.0),
+            "net_shortwave_radiation_flux": np.full((4, 4), 20.0),
+            "downward_longwave_radiation_flux": np.full((4, 4), 30.0),
+        }
+    )
 
     def fake_new_flux_atm_ocn(*args: Any) -> tuple[Any, ...]:
         _ = args

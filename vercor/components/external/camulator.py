@@ -487,7 +487,7 @@ class CAMulatorGCM(HostRuntimeComponent):
 
         settings = coupler.settings
         logger = coupler.logger
-        data = component_state.data.to_mapping()
+        data = component_state.data
 
         prediction = None
 
@@ -553,11 +553,11 @@ class CAMulatorGCM(HostRuntimeComponent):
                 model_input = self.state
 
             total_ts, rescaled_total_ts = _prepare_camulator_surface_forcing(
-                data["sea_surface_temperature"],
-                data["land_surface_temperature"],
+                data.get("sea_surface_temperature"),
+                data.get("land_surface_temperature"),
                 self.LANDM_COSLAT,
             )
-            data["total_surface_temperature"] = total_ts
+            data = data.set("total_surface_temperature", total_ts)
 
             # Land surface temperature is already rescaled in the same way as sst
             logger.info(
@@ -668,7 +668,7 @@ class CAMulatorGCM(HostRuntimeComponent):
                 self.accessor_output.get_state_var(prediction_out, "PS").cpu().numpy()
             ),
         )
-        data.update(mapped_fields)
-        from vercor.runtime import RuntimeFieldStore
+        for field_name, field_value in mapped_fields.items():
+            data = data.set(field_name, field_value)
 
-        return component_state.with_data(RuntimeFieldStore.from_mapping(data))
+        return component_state.with_data(data)

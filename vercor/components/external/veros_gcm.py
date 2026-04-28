@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from typing import TYPE_CHECKING, Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable
 import jax
 import jax.numpy as jnp
 from datetime import datetime, timedelta
@@ -17,6 +17,7 @@ from veros.tools import get_periodic_interval
 from vercor.components.base import HostRuntimeComponent
 from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
+from vercor.runtime import RuntimeFieldStore
 from vercor.settings import VercorSettings
 from vercor.tools import _runtime_array_to_host
 from vercor.types import RuntimeArray
@@ -182,7 +183,7 @@ def _extract_surface_temperature(
 
 def compute_fluxes(
     veros_state: VerosState,
-    runtime_fields: Mapping[str, RuntimeArray],
+    runtime_fields: RuntimeFieldStore,
     settings: VercorSettings,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """Compute atmosphere-ocean fluxes from explicit Veros and runtime fields."""
@@ -219,13 +220,13 @@ def compute_fluxes(
     ) = new_flux_atmOcn(
         settings,
         jnp.asarray(vs.maskT[2:-2, 2:-2, -1], dtype=jnp.float64).T,
-        jnp.asarray(runtime_fields["model_level_height"], dtype=jnp.float64),
-        jnp.asarray(runtime_fields["u_velocity"], dtype=jnp.float64),
-        jnp.asarray(runtime_fields["v_velocity"], dtype=jnp.float64),
-        jnp.asarray(runtime_fields["potential_temperature"], dtype=jnp.float64),
-        jnp.asarray(runtime_fields["specific_humidity"], dtype=jnp.float64),
-        jnp.asarray(runtime_fields["density"], dtype=jnp.float64),
-        jnp.asarray(runtime_fields["temperature"], dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("model_level_height"), dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("u_velocity"), dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("v_velocity"), dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("potential_temperature"), dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("specific_humidity"), dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("density"), dtype=jnp.float64),
+        jnp.asarray(runtime_fields.get("temperature"), dtype=jnp.float64),
         u_tgrid[1:-2, :].T,
         v_tgrid[:, 1:-2].T,
         temp,
@@ -236,9 +237,11 @@ def compute_fluxes(
     # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
 
     qnet = (
-        jnp.asarray(runtime_fields["net_shortwave_radiation_flux"], dtype=jnp.float64)
+        jnp.asarray(
+            runtime_fields.get("net_shortwave_radiation_flux"), dtype=jnp.float64
+        )
         + jnp.asarray(
-            runtime_fields["downward_longwave_radiation_flux"], dtype=jnp.float64
+            runtime_fields.get("downward_longwave_radiation_flux"), dtype=jnp.float64
         )
         + lwup
         + senf
@@ -404,7 +407,7 @@ class VerosGCM(HostRuntimeComponent):
         if time is None or coupler is None:
             return component_state
 
-        runtime_fields = component_state.data.to_mapping()
+        runtime_fields = component_state.data
 
         taux, tauy, qnet, qnec = compute_fluxes(
             self._veros_state,

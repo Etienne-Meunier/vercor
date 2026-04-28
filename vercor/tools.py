@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import os
@@ -10,6 +9,7 @@ from urllib.request import urlopen
 import jax
 import jax.numpy as jnp
 import numpy as np
+import vercor.runtime_views as _runtime_views
 from numpy.typing import NDArray
 
 from vercor.clock import (
@@ -34,6 +34,8 @@ VERCOR_ASSETS_BASE_URL = (
 )
 
 _ASSETS_CACHE_DIR = Path.home() / ".vercor" / "assets"
+
+RuntimeComponentView = _runtime_views.RuntimeComponentView
 
 _FORCING_ASSETS: dict[str, dict[str, str]] = {
     "era5_model_levels": {
@@ -83,49 +85,6 @@ class SupportsFieldTimeLookup(Protocol):
 
     @property
     def settings(self) -> _SettingsWithYearInSeconds: ...
-
-
-@dataclass(frozen=True)
-class RuntimeComponentView:
-    """Explicit component metadata plus runtime fields for diagnostics/output."""
-
-    name: str
-    grid: RectilinearGrid
-    data: Any = field(default_factory=dict)
-    incoming: Any = field(default_factory=dict)
-    outgoing: Any = field(default_factory=dict)
-
-    @classmethod
-    def from_runtime_state(
-        cls,
-        name: str,
-        component: Any,
-        component_state: Any,
-    ) -> "RuntimeComponentView":
-        """Create a field view from a component and its runtime state."""
-
-        return cls(
-            name=name,
-            grid=component.grid,
-            data=component_state.data,
-            incoming=component_state.incoming,
-            outgoing=component_state.outgoing,
-        )
-
-    @classmethod
-    def from_coupler_state(
-        cls,
-        coupler: Any,
-        runtime_state: Any,
-        name: str,
-    ) -> "RuntimeComponentView":
-        """Create a field view from a coupler-owned component runtime state."""
-
-        return cls.from_runtime_state(
-            name,
-            coupler.components[name],
-            runtime_state.get_component_state(name),
-        )
 
 
 def _md5sum(path: Path) -> str:

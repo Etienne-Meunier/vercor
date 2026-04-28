@@ -1,5 +1,35 @@
 # 2026-04-28
 
+## Residual Runtime Bridge Cleanup
+
+- Split remaining mixed runtime responsibilities into focused modules:
+  - added `RuntimeComponentView` in `vercor/runtime_views.py`
+  - moved runtime NetCDF writers to `vercor/output.py`
+  - kept compatibility imports from `vercor.tools`, `vercor.components`, and `vercor.components.base`
+  - `Component` no longer owns runtime output writer implementations
+- Tightened host-backed bridge data flow:
+  - CAMulator atmosphere and land update `RuntimeFieldStore` directly instead of round-tripping through dictionaries
+  - Veros flux coupling now consumes `RuntimeFieldStore` directly
+  - host adapters still isolate non-differentiable CAMulator/Veros mutation behind `HostRuntimeComponent`
+- Updated examples to request runtime views through `Coupler.runtime_component_view()`.
+- Added architecture regressions for focused runtime-view/output ownership, host adapter store access, and example view construction.
+
+## Validation (Residual Runtime Bridge Cleanup, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py tests/test_tools_components_and_plotting.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 86 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Incremental Runtime Bridge Simplification
 
 - Made the non-differentiable host boundary explicit:
