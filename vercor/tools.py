@@ -183,9 +183,10 @@ def safe_component_nanmean(component: Any, field_name: str) -> float:
         return float("nan")
 
 
-def _component_field(component: Any, field_name: str) -> RuntimeArray:
-    """Return a field from a runtime state or component data store."""
+def _component_field_candidates(component: Any, field_name: str) -> list[RuntimeArray]:
+    """Return matching fields from a runtime state or component data store."""
 
+    candidates: list[RuntimeArray] = []
     source = component[1] if isinstance(component, tuple) else component
     for store_name in ("data", "incoming", "outgoing"):
         store = getattr(source, store_name, None)
@@ -193,15 +194,39 @@ def _component_field(component: Any, field_name: str) -> RuntimeArray:
             continue
         if hasattr(store, "field_names"):
             if field_name in store.field_names:
-                return cast(RuntimeArray, store.get(field_name))
+                candidates.append(cast(RuntimeArray, store.get(field_name)))
         elif field_name in store:
-            return cast(RuntimeArray, store[field_name])
+            candidates.append(cast(RuntimeArray, store[field_name]))
     fields = getattr(source, "fields", None)
     if fields is not None and field_name in fields:
-        return cast(RuntimeArray, fields[field_name])
+        candidates.append(cast(RuntimeArray, fields[field_name]))
+    if candidates:
+        return candidates
+
     getter = getattr(source, "get", None)
     if getter is not None:
-        return cast(RuntimeArray, getter(field_name))
+        return [cast(RuntimeArray, getter(field_name))]
+    return []
+
+
+def _component_field(component: Any, field_name: str) -> RuntimeArray:
+    """Return a field from a runtime state or component data store."""
+
+    candidates = _component_field_candidates(component, field_name)
+    if candidates:
+        return candidates[0]
+    raise KeyError(f"Field {field_name!r} not found")
+
+
+def _component_plot_field(component: Any, field_name: str) -> RuntimeArray:
+    """Return a 2D field suitable for plotting when one is available."""
+
+    candidates = _component_field_candidates(component, field_name)
+    for candidate in candidates:
+        if jnp.asarray(candidate).ndim == 2:
+            return candidate
+    if candidates:
+        return candidates[0]
     raise KeyError(f"Field {field_name!r} not found")
 
 
@@ -274,13 +299,13 @@ def _get_component_plot_data(
     lat = _runtime_array_to_host(grid.latitude)
     lon_2d, lat_2d = np.meshgrid(lon, lat, indexing="ij")
     scalar_field = _runtime_array_to_host(
-        jnp.asarray(_component_field(component, scalar_field_name)).T
+        jnp.asarray(_component_plot_field(component, scalar_field_name)).T
     )
     u_field = _runtime_array_to_host(
-        jnp.asarray(_component_field(component, u_field_name)).T
+        jnp.asarray(_component_plot_field(component, u_field_name)).T
     )
     v_field = _runtime_array_to_host(
-        jnp.asarray(_component_field(component, v_field_name)).T
+        jnp.asarray(_component_plot_field(component, v_field_name)).T
     )
     return lon_2d, lat_2d, scalar_field, u_field, v_field
 

@@ -1,5 +1,38 @@
 # 2026-04-28
 
+## Data Driver Runtime-State Plotting Fix
+
+- Fixed `examples/run_data_driver.py` plotting after the runtime API de-compatibility refactor:
+  - plot rows now pass `(component, final_state.get_component_state(...))` pairs
+  - plotting now reads `total_surface_temperature` from the returned runtime state instead of the stale component object
+- Hardened component plotting helpers for runtime states with multiple stores:
+  - plotting still preserves normal field lookup order for scalar/table helpers
+  - plot-specific lookup now selects a 2D field when one is available, which handles ERA5 fields where monthly 3D forcing remains in `data` and the runtime-selected 2D field is in `outgoing`
+- Added regression coverage for `(component, RuntimeComponentState)` plotting with 3D data-store winds and 2D outgoing winds.
+- Commit: `693af7dfc79d897c7a4ed1e293f38f4e7726f663`
+
+## Validation (Data Driver Runtime-State Plotting Fix, 2026-04-28)
+
+- `conda run -n scipy pytest tests/test_tools_components_and_plotting.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 84 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+- `PYTHONPATH=/Users/romannuterman/Documents/Science/scodes/Python/VerCOR MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/vercor-mpl XDG_CACHE_HOME=/private/tmp/vercor-cache conda run -n scipy python /Users/romannuterman/Documents/Science/scodes/Python/VerCOR/examples/run_data_driver.py`
+  - passed from `/private/tmp/vercor-run-data-driver-smoke`
+
+## Notes / Failed Approaches
+
+- The first smoke test after switching `run_data_driver.py` to runtime-state plotting passed the original missing-field point but failed in Matplotlib quiver because ERA5 atmosphere `u_velocity` / `v_velocity` in runtime `data` are monthly 3D arrays. The final fix keeps the example on runtime states and teaches plotting to prefer plottable 2D runtime fields when available.
+
 ## Runtime API De-Compatibility Refactor
 
 - Removed the legacy component wrapper compatibility surface from production code:

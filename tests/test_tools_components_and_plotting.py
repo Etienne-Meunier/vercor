@@ -12,6 +12,7 @@ from tests._tools_support import DummyComponentA, DummyComponentB, DummyGridComp
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
+from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 from vercor.tools import (
     _append_unique,
     _flatten_fields,
@@ -173,6 +174,58 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     assert_allclose_compact(axs[0, 0].get_xlim(), axs[1, 0].get_xlim())
     assert_allclose_compact(axs[0, 1].get_xlim(), axs[1, 1].get_xlim())
     assert_allclose_compact(axs[0, 0].get_ylim(), axs[1, 0].get_ylim())
+
+    plt.close(fig)
+
+
+@pytest.mark.fast_always
+def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> None:
+    import matplotlib.pyplot as plt
+
+    grid = RectilinearGrid(
+        "atm",
+        longitude=jnp.asarray([0.0, 1.0, 2.0]),
+        latitude=jnp.asarray([-1.0, 1.0]),
+    )
+    component = DummyGridComponent(grid=grid, fields={})
+    runtime_state = RuntimeComponentState(
+        name="ATM",
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "total_surface_temperature": jnp.array(
+                    [[280.0, 281.0, 282.0], [283.0, 284.0, 285.0]]
+                ),
+                "u_velocity": jnp.ones((2, 3, 2)),
+                "v_velocity": jnp.zeros((2, 3, 2)),
+            }
+        ),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.from_mapping(
+            {
+                "u_velocity": jnp.ones((2, 3)),
+                "v_velocity": jnp.zeros((2, 3)),
+            }
+        ),
+        fields_to_import=(),
+        fields_to_export=(),
+    )
+
+    fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
+        rows=[
+            (
+                "ATM",
+                (component, runtime_state),
+                "total_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            )
+        ],
+        figsize=(6.0, 4.0),
+        quiver_scale=10.0,
+    )
+
+    assert axs.shape == (1, 2)
+    assert scalar_mappable is not None
 
     plt.close(fig)
 

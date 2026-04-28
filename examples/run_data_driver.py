@@ -139,8 +139,20 @@ if __name__ == "__main__":
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
-            ("ATM", atm, "total_surface_temperature", "u_velocity", "v_velocity"),
-            ("OCN", ocn, "sea_surface_temperature", "u_velocity", "v_velocity"),
+            (
+                "ATM",
+                (atm, final_state.get_component_state("ATM")),
+                "total_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
+            (
+                "OCN",
+                (ocn, final_state.get_component_state("OCN")),
+                "sea_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
         ],
         figsize=(15, 10),
         quiver_scale=150,
