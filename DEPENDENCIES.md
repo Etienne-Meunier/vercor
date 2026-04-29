@@ -31,7 +31,7 @@
 31. `vercor/runtime.py` - immutable runtime state, coupler-owned component-name metadata, runtime field stores, import/export contract construction, and pure exchange dispatch built on (9, 11, 12, 30)
 32. `vercor/runtime_time.py` - host-precomputed daily/monthly runtime step metadata built on clock/settings helpers and (17, 31)
 33. `vercor/runtime_components.py` - generic component runtime state creation, explicit contract prefill/validation, receive/send, and time-selection helpers built on (30, 31)
-34. `vercor/runtime_driver.py` - bundled runtime dispatch context, per-component dispatch, receive, pure/host step selection, outgoing priming, and host-adapter detection built on (30, 31, 33)
+34. `vercor/runtime_driver.py` - bundled runtime dispatch context, single per-component runtime step helper with explicit host-runtime allowance, outgoing priming, and host-adapter detection built on (30, 31, 33)
 35. `vercor/output.py` - runtime-view NetCDF output boundary built on (4, 9, 28, 31)
 36. `vercor/components/external/jax_gcm.py` runtime payload path - immutable JCM state/forcing runtime integration built on (6, 30, 31, 33)
 37. `vercor/coupler.py` unified runtime facade - canonical `run()` / `create_runtime_state()` path, component registration through the base component contract, exchange-mask/regridder setup, runtime component views, final output, and scanned-runtime rejection for host adapters built on (13, 14, 28, 31, 32, 33, 34, 35, 36)

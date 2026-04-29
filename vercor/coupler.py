@@ -38,8 +38,7 @@ from vercor.runtime_driver import (
     RuntimeDispatchContext,
     host_component_names,
     prime_runtime_outgoing,
-    step_runtime_component_host_enabled,
-    step_runtime_component_pure,
+    step_runtime_component,
 )
 from vercor.runtime_time import (
     build_runtime_step_info,
@@ -545,6 +544,7 @@ class Coupler:
             else initial_state
         )
         self._validate_runtime_state(runtime_state)
+        dispatch_context = self._runtime_dispatch_context()
 
         for n, time, dt in self.clock.iter():
             self.logger.info(
@@ -554,11 +554,12 @@ class Coupler:
 
             for cname in self.run_sequence:
                 self.logger.info(f" Run component: {cname}")
-                runtime_state = step_runtime_component_host_enabled(
+                runtime_state = step_runtime_component(
                     runtime_state,
                     cname,
                     step_info,
-                    dispatch_context=self._runtime_dispatch_context(),
+                    dispatch_context=dispatch_context,
+                    allow_host_runtime=True,
                     time=time,
                     logger=self.logger,
                 )
@@ -616,16 +617,18 @@ class Coupler:
         )
         self._validate_runtime_state(runtime_state)
         step_infos = build_runtime_step_info(self.clock, self.settings)
+        dispatch_context = self._runtime_dispatch_context()
 
         def step_all_components(
             state: RuntimeCouplerState, step_info: RuntimeStepInfo
         ) -> tuple[RuntimeCouplerState, None]:
             for cname in self.run_sequence:
-                state = step_runtime_component_pure(
+                state = step_runtime_component(
                     state,
                     cname,
                     step_info,
-                    dispatch_context=self._runtime_dispatch_context(),
+                    dispatch_context=dispatch_context,
+                    allow_host_runtime=False,
                 )
             return state, None
 

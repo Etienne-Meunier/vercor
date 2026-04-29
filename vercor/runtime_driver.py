@@ -41,15 +41,15 @@ def host_component_names(components: Mapping[str, Component]) -> list[str]:
     ]
 
 
-def _step_component_runtime_state(
+def step_runtime_component(
     runtime_state: RuntimeCouplerState,
     component_name: str,
     step_info: RuntimeStepInfo,
     *,
     dispatch_context: RuntimeDispatchContext,
-    host_enabled: bool,
-    time: datetime | ModelDateTime | None,
-    logger: Logger | None,
+    allow_host_runtime: bool,
+    time: datetime | ModelDateTime | None = None,
+    logger: Logger | None = None,
 ) -> RuntimeCouplerState:
     """Advance one component through dispatch, receive, step, and send phases."""
 
@@ -72,7 +72,7 @@ def _step_component_runtime_state(
         time=time,
         logger=logger,
     )
-    if host_enabled and isinstance(component, HostRuntimeComponent):
+    if allow_host_runtime and isinstance(component, HostRuntimeComponent):
         component_state = component.step_host_runtime_state(
             component_state,
             step_context,
@@ -91,26 +91,6 @@ def _step_component_runtime_state(
     return runtime_state.set_component_state(
         component_name,
         component_state,
-    )
-
-
-def step_runtime_component_pure(
-    runtime_state: RuntimeCouplerState,
-    component_name: str,
-    step_info: RuntimeStepInfo,
-    *,
-    dispatch_context: RuntimeDispatchContext,
-) -> RuntimeCouplerState:
-    """Advance one differentiable component on the pure scanned runtime path."""
-
-    return _step_component_runtime_state(
-        runtime_state,
-        component_name,
-        step_info,
-        dispatch_context=dispatch_context,
-        host_enabled=False,
-        time=None,
-        logger=None,
     )
 
 
@@ -136,25 +116,3 @@ def prime_runtime_outgoing(
             component_state,
         )
     return runtime_state
-
-
-def step_runtime_component_host_enabled(
-    runtime_state: RuntimeCouplerState,
-    component_name: str,
-    step_info: RuntimeStepInfo,
-    *,
-    dispatch_context: RuntimeDispatchContext,
-    time: datetime | ModelDateTime,
-    logger: Logger,
-) -> RuntimeCouplerState:
-    """Advance one component on the Python runtime path with host adapters enabled."""
-
-    return _step_component_runtime_state(
-        runtime_state,
-        component_name,
-        step_info,
-        dispatch_context=dispatch_context,
-        host_enabled=True,
-        time=time,
-        logger=logger,
-    )

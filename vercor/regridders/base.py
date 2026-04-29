@@ -1,4 +1,4 @@
-from typing import Any, Callable, Tuple, Union, cast
+from typing import Any, Tuple, Union, cast
 
 import jax.numpy as jnp
 
@@ -56,18 +56,6 @@ class Regridder:
         if len(args) not in (1, 2):
             raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
 
-    def _apply_scalar(self, args: Any) -> Any:
-        """A wrapper to call scalar interpolation."""
-        assert self.interpolator is not None
-        result = self.interpolator.apply_scalar(args)
-        return result
-
-    def _apply_vector(self, v0: Any, v1: Any) -> tuple[Any, Any]:
-        """A wrapper to call vector interpolation."""
-        assert self.interpolator is not None
-        result = self.interpolator.apply_vector(v0, v1)
-        return cast(tuple[Any, Any], result)
-
     def __call__(
         self,
         *args: Any,
@@ -85,12 +73,10 @@ class Regridder:
         if self.has_identical_grids:
             return args if len(args) == 2 else args[0]
 
-        handlers: dict[int, Callable[..., Any]] = {
-            1: self._apply_scalar,
-            2: self._apply_vector,
-        }
-
-        return handlers[len(args)](*args)
+        assert self.interpolator is not None
+        if len(args) == 1:
+            return self.interpolator.apply_scalar(args[0])
+        return cast(tuple[Any, Any], self.interpolator.apply_vector(args[0], args[1]))
 
     def __str__(self) -> str:
         return (

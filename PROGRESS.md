@@ -1,5 +1,39 @@
 # 2026-04-29
 
+## Source Simplification Audit
+
+- Consolidated runtime stepping into one explicit helper:
+  - replaced the separate pure and host-enabled runtime step wrappers with
+    `step_runtime_component(..., allow_host_runtime=...)`
+  - kept CAMulator and Veros behind the required `HostRuntimeComponent` bridge
+  - cached the runtime dispatch context once per `run()` / scanned-runtime call
+    instead of rebuilding it for every component step
+- Simplified `Regridder.__call__()` by removing scalar/vector wrapper methods
+  and the handler dictionary; scalar and vector calls now dispatch directly.
+- Updated architecture coverage to guard the single runtime helper, dispatch-context
+  reuse, and the removed regridder wrapper methods.
+- Updated `DEPENDENCIES.md` to document the single runtime step helper boundary.
+- No failed implementation approaches. The cleanup removed internal seams without
+  changing physics kernels, exchange behavior, or the required host adapters.
+
+## Validation (Source Simplification Audit, 2026-04-29)
+
+- `conda run -n scipy pytest tests/ -q --fast`
+  - passed before edits
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_coupler_coverage.py tests/test_bilinear_rectilinear_regridder.py tests/test_conservative_rectilinear_regridder.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and reformatted `vercor/runtime_driver.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Source Boundary Simplification
 
 - Slimmed `vercor.components` to export only the base component contracts.

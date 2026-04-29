@@ -48,6 +48,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     runtime_driver_source = Path("vercor/runtime_driver.py").read_text(encoding="utf-8")
     runtime_time_source = Path("vercor/runtime_time.py").read_text(encoding="utf-8")
+    regridder_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
     components_source = Path("vercor/components/__init__.py").read_text(
@@ -100,8 +101,17 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def build_runtime_contracts" in runtime_source
     assert not Path("vercor/runtime_contracts.py").exists()
     assert "def runtime_step_info_from_times" in runtime_time_source
-    assert "def step_runtime_component_pure" in runtime_driver_source
-    assert "def step_runtime_component_host_enabled" in runtime_driver_source
+    assert "def step_runtime_component(" in runtime_driver_source
+    assert "allow_host_runtime: bool" in runtime_driver_source
+    assert "def step_runtime_component_pure" not in runtime_driver_source
+    assert "def step_runtime_component_host_enabled" not in runtime_driver_source
+    run_body = coupler_source.split("def run", 1)[1].split("def compile_runtime", 1)[0]
+    scanned_body = coupler_source.split("def _run_scanned_runtime", 1)[1]
+    assert run_body.count("self._runtime_dispatch_context()") == 1
+    assert scanned_body.count("self._runtime_dispatch_context()") == 1
+    assert "def _apply_scalar" not in regridder_source
+    assert "def _apply_vector" not in regridder_source
+    assert "handlers: dict" not in regridder_source
     assert "_sync_data_from_runtime_state" not in base_source
     assert "_fields2import" not in base_source
     assert "_fields2export" not in base_source

@@ -749,38 +749,23 @@ def test_host_and_scanned_run_use_runtime_component_helper(
 
     events: list[str] = []
 
-    def fake_host_runtime_step(
+    def fake_runtime_step(
         state: Any,
         component_name: str,
         step_info: Any,
         *,
-        time: Any,
-        logger: Any,
-        **kwargs: Any,
-    ) -> Any:
-        _ = step_info, time, logger, kwargs
-        events.append(f"run:{component_name}")
-        return state
-
-    def fake_pure_runtime_step(
-        state: Any,
-        component_name: str,
-        step_info: Any,
+        allow_host_runtime: bool,
         **kwargs: Any,
     ) -> Any:
         _ = step_info, kwargs
-        events.append(f"scan:{component_name}")
+        mode = "run" if allow_host_runtime else "scan"
+        events.append(f"{mode}:{component_name}")
         return state
 
     monkeypatch.setattr(
         coupler_module,
-        "step_runtime_component_host_enabled",
-        fake_host_runtime_step,
-    )
-    monkeypatch.setattr(
-        coupler_module,
-        "step_runtime_component_pure",
-        fake_pure_runtime_step,
+        "step_runtime_component",
+        fake_runtime_step,
     )
 
     coupler.run()
