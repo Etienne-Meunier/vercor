@@ -151,14 +151,6 @@ class RuntimeFieldStore:
         )
         return RuntimeFieldStore(field_names=self.field_names, values=values)
 
-    def merge(self, other: "RuntimeFieldStore") -> "RuntimeFieldStore":
-        """Return a new store with fields from ``other`` replacing this store."""
-
-        out = self
-        for name, value in zip(other.field_names, other.values):
-            out = out.set(name, value)
-        return out
-
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)

@@ -1,5 +1,38 @@
 # 2026-04-29
 
+## Internal Runtime Compatibility Seam Cleanup
+
+- Removed remaining implicit runtime-contract fallbacks:
+  - runtime dispatch and coupler validation now use direct coupler-owned contract lookups
+  - architecture coverage now guards against reintroducing `.get(..., RuntimeComponentContract())` fallbacks
+- Trimmed the runtime field-store API:
+  - deleted unused `RuntimeFieldStore.merge()`
+  - kept `empty()`, `from_mapping()`, `get()`, and `set()` as the simple PyTree field-store surface
+- Made Veros runtime configuration explicit:
+  - replaced the wildcard runtime-settings side-effect import with `configure_veros_runtime()`
+  - kept the configuration call before Veros setup imports while moving ordinary imports above it
+- Simplified CAMulator bridge internals:
+  - removed stale old-source header/commentary and unused `num_ts` / chunk-size state
+  - added all host-written CAMulator data fields to the runtime-field initializer
+- Updated `DEPENDENCIES.md` to document the explicit Veros runtime-settings boundary.
+- The first flake8 pass exposed E402 warnings from the intentional Veros configure-before-import ordering; the final version keeps only the delayed Veros imports after configuration and marks those imports with targeted `noqa: E402`.
+
+## Validation (Internal Runtime Compatibility Seam Cleanup, 2026-04-29)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_camulator_component_kernels.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning; reformatted `tests/test_runtime_state.py`, then `vercor/components/external/veros_gcm.py` after the lint fix
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Compatibility Boundary Simplification
 
 - Moved forcing-file I/O out of `vercor.components.base`:

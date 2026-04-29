@@ -388,17 +388,11 @@ class Coupler:
             validate_component_runtime_state(
                 component,
                 component_state,
-                self._runtime_contracts.get(
-                    cname,
-                    RuntimeComponentContract(),
-                ),
+                self._runtime_contracts[cname],
             )
             component.validate_runtime_state(
                 component_state,
-                self._runtime_contracts.get(
-                    cname,
-                    RuntimeComponentContract(),
-                ),
+                self._runtime_contracts[cname],
             )
 
         for exchange in self.exchanges:

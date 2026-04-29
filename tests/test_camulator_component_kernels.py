@@ -73,6 +73,11 @@ def test_camulator_runtime_field_initializer_returns_jax_arrays() -> None:
 
     assert fields
     assert all(isinstance(value, jax.Array) for value in fields.values())
+    assert {
+        "total_surface_temperature",
+        "temperature_3d",
+        "specific_humidity_3d",
+    } <= set(fields)
     assert fields["temperature"].shape == (2, 3)
     assert_allclose_compact(fields["temperature"], np.zeros((2, 3)))
 

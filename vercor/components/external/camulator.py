@@ -1,15 +1,4 @@
-"""
-Quick_Climate_V02.py
---------------------
-Refactored CAMulator climate integration with clearer coupling interfaces.
-
-Key improvements:
-- Separated initialization from time-stepping
-- Clear CAMulatorStepper class for coupling
-- Documented state tensor structure
-- Removed dead code
-- Preserved async parallel I/O for performance
-"""
+"""CAMulator host-runtime adapter and JAX-backed exchange-field helpers."""
 
 import os
 
@@ -73,6 +62,9 @@ _CAMULATOR_RUNTIME_FIELD_NAMES = (
     "latent_heat_flux",
     "sensible_heat_flux",
     "model_level_height",
+    "total_surface_temperature",
+    "temperature_3d",
+    "specific_humidity_3d",
 )
 
 
@@ -369,14 +361,8 @@ class CAMulatorGCM(HostRuntimeComponent):
 
         # Setup for time-stepping
         self.df_vars = self.conf["data"]["dynamic_forcing_variables"]
-        # Total number of CAMulator steps to run (e.g., 40 for 10-day forecast with 6-hour steps)
-        self.num_ts = self.conf["predict"]["timesteps_fast_climate"]
         # Time step in hours (e.g., 6 for 6-hour steps)
         self.lead_time_periods = self.conf["data"]["lead_time_periods"]
-        # Maximum ???
-        self.chunk_size = self.conf["data"].get("forcing_chunk_size", 32)
-        # post_conf = self.conf["model"]["post_conf"]
-        # lon_lat_level_names = post_conf["global_mass_fixer"]["lon_lat_level_name"]
 
         grid = RectilinearGrid(
             name=name,
@@ -489,7 +475,6 @@ class CAMulatorGCM(HostRuntimeComponent):
 
         prediction = None
 
-        # block_end = min(block_start + self.chunk_size, self.start_ix + self.num_ts)
         block_start = self.start_ix + self.timestep_counter * self.model_substeps
         block_end = block_start + self.model_substeps
 
@@ -535,13 +520,8 @@ class CAMulatorGCM(HostRuntimeComponent):
 
             dynamic_forcing_t = gpu_forcing_chunk[t].unsqueeze(0)
 
-            # ================================================================
-            # CORE PHYSICS STEP
-            # This matches the original Quick_Climate.py logic exactly:
-            # - First step (timestep_counter=0): state already has forcing, run model as-is
-            # - Subsequent steps: add forcing to state, then run model
-            # ================================================================
-
+            # CAMulator's first state already contains forcing. Later states need
+            # the next forcing slice appended before inference.
             if self.timestep_counter != 0:
                 # Build forcing from dynamic + static
                 model_input = self.stepper.state_manager.build_input_with_forcing(

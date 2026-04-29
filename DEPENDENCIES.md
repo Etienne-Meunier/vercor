@@ -4,7 +4,7 @@
 4. `vercor/host_arrays.py` - explicit JAX/NumPy host-transfer boundary for non-differentiable adapters and output
 5. `vercor/components/external/jax_gcm_tools.py` - existing JAX helper layer used by the JCM adapter; validated for `jax.jit`
 6. `vercor/components/external/jax_gcm.py` - JCM adapter boundary that stores translated kernel outputs
-7. `vercor/components/external/veros_gcm.py` - Veros adapter boundary that converts translated flux outputs back to NumPy for Veros state updates
+7. `vercor/components/external/veros_runtime_settings.py` and `vercor/components/external/veros_gcm.py` - explicit Veros host-runtime configuration plus the Veros adapter boundary that converts translated flux outputs back to NumPy for Veros state updates
 8. `vercor/components/external/camulator.py` - CAMulator adapter boundary with JAX-backed runtime-field helpers and explicit Torch / xarray output boundaries
 9. `vercor/grid.py` - JAX-friendly `RectilinearGrid` holder with eager validation and PyTree registration
 10. `vercor/regridders/helpers.py` - JAX-native rectilinear helper kernels built on (9)

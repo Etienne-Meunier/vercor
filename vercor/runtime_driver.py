@@ -61,10 +61,7 @@ def _step_component_runtime_state(
     )
     component_state = runtime_state.get_component_state(component_name)
     component = dispatch_context.components[component_name]
-    contract = dispatch_context.contracts.get(
-        component_name,
-        RuntimeComponentContract(),
-    )
+    contract = dispatch_context.contracts[component_name]
     component_state = receive_runtime_fields(
         component_state,
         contract,

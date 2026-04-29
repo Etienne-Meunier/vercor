@@ -71,6 +71,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     camulator_land_source = Path("vercor/components/data/camulator_land.py").read_text(
         encoding="utf-8"
     )
+    veros_runtime_settings_source = Path(
+        "vercor/components/external/veros_runtime_settings.py"
+    ).read_text(encoding="utf-8")
     windpp_source = Path("vercor/components/external/windpp.py").read_text(
         encoding="utf-8"
     )
@@ -128,8 +131,11 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "build_runtime_contracts_for_components" not in coupler_source
     assert "RuntimeDispatchContext" in runtime_driver_source
     assert "dispatch_context: RuntimeDispatchContext" in runtime_driver_source
+    assert "contracts.get(" not in runtime_driver_source
+    assert "_runtime_contracts.get(" not in coupler_source
     assert "def subset(" not in runtime_source
     assert "def to_mapping(" not in runtime_source
+    assert "def merge(" not in runtime_source
     assert "_runtime_contracts" in coupler_source
     assert "ComponentInitContext" in base_source
     assert "RuntimeStepContext" in base_source
@@ -150,6 +156,18 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def step_host_runtime_state" in veros_source
     assert "def step_host_runtime_state" in camulator_source
     assert "def step_host_runtime_state" in camulator_land_source
+    assert (
+        "from vercor.components.external.veros_runtime_settings import *"
+        not in veros_source
+    )
+    assert (
+        "from vercor.components.external.veros_runtime_settings import configure_veros_runtime"
+        in veros_source
+    )
+    assert veros_source.index("configure_veros_runtime()") < veros_source.index(
+        "from veros.setups.global_4deg import GlobalFourDegreeSetup"
+    )
+    assert "def configure_veros_runtime" in veros_runtime_settings_source
     assert "def _step_host_runtime_state" not in base_source
     assert "_step_host_runtime_state" not in runtime_driver_source
     for source in (veros_source, camulator_source, camulator_land_source):
@@ -214,9 +232,7 @@ def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> Non
     )
 
     def update(value: RuntimeFieldStore) -> RuntimeFieldStore:
-        return value.set("a", value.get("a") * 2.0).merge(
-            RuntimeFieldStore.from_mapping({"b": value.get("b") + 1.0})
-        )
+        return value.set("a", value.get("a") * 2.0).set("b", value.get("b") + 1.0)
 
     updated = jax.jit(update)(store)
 
