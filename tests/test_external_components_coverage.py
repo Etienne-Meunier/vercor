@@ -374,39 +374,6 @@ def test_generate_step_function_non_jitted_averages_predictions() -> None:
     assert predictions.physics["temp"].shape == (2, 2)
 
 
-def test_do_jcm_steps_updates_state_and_appends_predictions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
-    prediction = SimpleNamespace(name="prediction")
-    initial_state = jax_gcm_module.JCMState(
-        prog={"u": jnp.asarray([0.0])},
-        phydata={"t": jnp.asarray([0.0])},
-        metadata="old-state",
-    )
-    updated_state = jax_gcm_module.JCMState(
-        prog={"u": jnp.asarray([1.0])},
-        phydata={"t": jnp.asarray([1.0])},
-        metadata="new-state",
-    )
-    component._state = initial_state
-    component.forcing = "forcing"
-    component._predictions_list = []
-    component._step_function = lambda state, forcing: (updated_state, prediction)
-
-    averaged = SimpleNamespace(physics="physics-mean", dynamics="dynamics-mean")
-    monkeypatch.setattr(jax_gcm_module, "stack_objects", lambda objs: objs)
-    monkeypatch.setattr(jax_gcm_module, "unwrap_leading_dims", lambda obj: obj)
-    monkeypatch.setattr(jax_gcm_module, "mean_leaf", lambda tree, axis: averaged)
-
-    physics, dynamics = component.do_jcm_steps()
-
-    assert component._state is updated_state
-    assert component._predictions_list == [prediction]
-    assert physics == "physics-mean"
-    assert dynamics == "dynamics-mean"
-
-
 def test_jax_gcm_constructor_builds_jax_backed_grid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -512,12 +479,6 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
         lambda jitted: (lambda state, forcing: (state, "unused")),
     )
 
-    def fake_do_jcm_steps() -> tuple[None, None]:
-        spinup_calls["count"] += 1
-        return (None, None)
-
-    monkeypatch.setattr(component, "do_jcm_steps", fake_do_jcm_steps)
-
     coupler = _make_coupler(dt_seconds=3600.0, run_order=["OCN"])
     component.initialize(coupler)
 
@@ -525,8 +486,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     assert component.spinup_steps == 2
     assert physics_calls["zeros"] == ((2, 3), 2)
     assert component.forcing == "provided-forcing"
-    assert component._predictions_list == []
-    assert spinup_calls["count"] == 2
+    assert len(component._predictions_list) == 2
     assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert component.data["sea_surface_temperature"].shape == component.grid.shape
 

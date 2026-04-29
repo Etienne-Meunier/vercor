@@ -30,7 +30,7 @@ from vercor.runtime_components import (
     create_runtime_component_state,
     receive_runtime_fields,
     send_runtime_fields,
-    validate_component_runtime_state,
+    validate_component_runtime_contract_fields,
 )
 from vercor.runtime_time import scalar_runtime_step_info
 from vercor.runtime_views import RuntimeComponentView
@@ -200,7 +200,7 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
         ),
     )
 
-    validate_component_runtime_state(component, valid_state, contract)
+    validate_component_runtime_contract_fields(component, valid_state, contract)
     component.validate_runtime_state(valid_state, contract)
 
     bad_state = valid_state.with_incoming(
@@ -210,7 +210,7 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
         CouplerError,
         match=r"has shape \(1, 3\), expected \(2, 3\)",
     ):
-        validate_component_runtime_state(component, bad_state, contract)
+        validate_component_runtime_contract_fields(component, bad_state, contract)
 
 
 def test_send_runtime_fields_updates_outgoing_store() -> None:

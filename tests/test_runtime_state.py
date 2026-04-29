@@ -129,7 +129,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def create_runtime_component_state" in runtime_components_source
     assert "def receive_runtime_fields" in runtime_components_source
     assert "def send_runtime_fields" in runtime_components_source
-    assert "def validate_component_runtime_state" in runtime_components_source
+    assert "def validate_component_runtime_contract_fields" in runtime_components_source
     assert "RuntimeComponentContract" in runtime_source
     assert 'def empty(cls) -> "RuntimeComponentContract"' not in runtime_source
     assert "RuntimeComponentContract.empty" not in coupler_source

@@ -113,7 +113,7 @@ def validate_runtime_grid_data_field(
     )
 
 
-def validate_component_runtime_state(
+def validate_component_runtime_contract_fields(
     component: "Component",
     component_state: RuntimeComponentState,
     contract: RuntimeComponentContract,

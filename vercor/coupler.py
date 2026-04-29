@@ -32,7 +32,7 @@ from vercor.runtime_components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
     create_runtime_component_state,
-    validate_component_runtime_state,
+    validate_component_runtime_contract_fields,
 )
 from vercor.runtime_driver import (
     RuntimeDispatchContext,
@@ -388,7 +388,7 @@ class Coupler:
 
             component = self.components[cname]
             component_state = runtime_state.get_component_state(cname)
-            validate_component_runtime_state(
+            validate_component_runtime_contract_fields(
                 component,
                 component_state,
                 self._runtime_contracts[cname],
