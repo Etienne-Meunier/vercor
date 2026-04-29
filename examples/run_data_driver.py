@@ -5,7 +5,9 @@ import jax
 
 from examples.jax_array_helpers import component_vector_speed
 from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
+from vercor.components.data.era5_atmosphere import ERA5Atmosphere
+from vercor.components.data.era5_land import ERA5Land
+from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.coupler import RunSequence
 from vercor.regridders import bilinear, conservative
 from vercor.diagnostics import (

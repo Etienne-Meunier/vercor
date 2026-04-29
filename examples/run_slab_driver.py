@@ -5,7 +5,10 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import Atmosphere, Land, Ocean, SeaIce
+from vercor.components.slab.atmosphere import Atmosphere
+from vercor.components.slab.land import Land
+from vercor.components.slab.ocean import Ocean
+from vercor.components.slab.seaice import SeaIce
 from vercor.coupler import RunSequence
 from vercor.regridders import (
     make_rectilinear_grid,

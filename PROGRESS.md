@@ -1,5 +1,44 @@
 # 2026-04-29
 
+## Source Boundary Simplification
+
+- Slimmed `vercor.components` to export only the base component contracts.
+  Concrete examples/tests now import slab, data, and external model components
+  from their owning modules, so optional Veros/CAMulator adapters are not loaded
+  by importing `vercor.components`.
+- Removed the thin `vercor.runtime_contracts` module:
+  - moved exchange-field flattening, unique field appending, and runtime contract
+    construction next to `RuntimeComponentContract` in `vercor.runtime`
+  - updated architecture coverage to guard the deleted module and direct example imports
+- Kept CAMulator and Veros as explicit host-runtime bridges while simplifying internals:
+  - Veros host stepping now delegates forcing writes, substeps, and SST refresh to
+    focused helpers
+  - CAMulator host stepping now delegates output writes and prediction-to-runtime
+    field mapping to focused helpers
+  - CAMulator land now loads only CAMulator config/raw forcing and no longer
+    imports the full CAMulator atmosphere adapter for land-surface temperature forcing
+- Updated `DEPENDENCIES.md` to document runtime contract ownership in `vercor.runtime`
+  and the forcing-only CAMulator land boundary.
+- No failed implementation approaches. The cleanup stayed at ownership/import
+  boundaries and host-adapter helper extraction; physics kernels and runtime behavior
+  were not intentionally changed.
+
+## Validation (Source Boundary Simplification, 2026-04-29)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_tools_components_and_plotting.py tests/test_camulator_component_kernels.py tests/test_external_components_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 94 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Internal Runtime Compatibility Seam Cleanup
 
 - Removed remaining implicit runtime-contract fallbacks:

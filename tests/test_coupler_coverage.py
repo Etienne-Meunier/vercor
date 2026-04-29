@@ -15,7 +15,7 @@ from tests._coverage_support import DummyComponent, RecordingRegridder, make_tes
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 import vercor.coupler as coupler_module
-from vercor.components import HostRuntimeComponent, RuntimeStepContext
+from vercor.components.base import HostRuntimeComponent, RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange

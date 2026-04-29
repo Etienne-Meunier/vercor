@@ -5,8 +5,10 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components.external.camulator import parse_datetime_from_config
-from vercor.components.external.camulator_state import initialize_camulator
+from vercor.components.external.camulator_state import (
+    load_camulator_forcing_context,
+    parse_datetime_from_config,
+)
 
 from vercor.grid import RectilinearGrid
 from vercor.components.base import (
@@ -34,7 +36,6 @@ class CAMulatorLand(HostRuntimeComponent):
         camulator_grid: RectilinearGrid,
         ocn_grid: RectilinearGrid,
         name: str = "LND",
-        model_weights_path: str = "checkpoint.pt00091.pt",
     ) -> None:
         """
         Read all necessary fields from the provided forcing files.
@@ -61,11 +62,7 @@ class CAMulatorLand(HostRuntimeComponent):
             ocn_grid=ocn_grid,
         )
 
-        context = initialize_camulator(
-            config_path=self.config_path,
-            model_name=model_weights_path,
-            device="cpu",
-        )
+        context = load_camulator_forcing_context(config_path=self.config_path)
 
         self.conf = context["conf"]
         self.forcing_ds = context["forcing_dataset_raw"]

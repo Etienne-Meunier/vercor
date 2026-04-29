@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import CAMulatorGCM, CAMulatorLand, VerosGCM
+from vercor.components.data.camulator_land import CAMulatorLand
+from vercor.components.external.camulator import CAMulatorGCM
+from vercor.components.external.veros_gcm import VerosGCM
 
 from vercor.coupler import RunSequence
 from vercor.regridders import bilinear
@@ -22,7 +24,6 @@ if __name__ == "__main__":
         config_path="/glade/u/home/rnuterman/veros_coupling/climate/camulator_land_config.yml",
         camulator_grid=atm.grid,
         ocn_grid=ocn.grid,
-        model_weights_path="/glade/u/home/rnuterman/veros_coupling/climate/checkpoint.pt00091.pt",
     )
 
     clock = Clock(

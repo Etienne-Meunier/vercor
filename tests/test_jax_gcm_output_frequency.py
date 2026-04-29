@@ -8,7 +8,7 @@ import pytest
 
 from tests.conftest import SelectFastCases
 from vercor.clock import DateTime360
-from vercor.components import JAXGCM
+from vercor.components.external.jax_gcm import JAXGCM
 
 
 @dataclass(frozen=True)

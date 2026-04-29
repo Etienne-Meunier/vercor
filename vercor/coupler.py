@@ -25,9 +25,9 @@ from vercor.runtime import (
     RuntimeCouplerState,
     RuntimeFieldStore,
     RuntimeStepInfo,
+    build_runtime_contracts,
     exchange_key_name,
 )
-from vercor.runtime_contracts import build_runtime_contracts
 from vercor.runtime_components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,

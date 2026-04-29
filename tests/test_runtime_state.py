@@ -46,9 +46,6 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_components_source = Path("vercor/runtime_components.py").read_text(
         encoding="utf-8"
     )
-    runtime_contracts_source = Path("vercor/runtime_contracts.py").read_text(
-        encoding="utf-8"
-    )
     runtime_driver_source = Path("vercor/runtime_driver.py").read_text(encoding="utf-8")
     runtime_time_source = Path("vercor/runtime_time.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
@@ -100,7 +97,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def _runtime_step_info_from_times" not in coupler_source
     assert "def _runtime_daily_index" not in coupler_source
     assert "def _build_runtime_contracts" not in coupler_source
-    assert "def build_runtime_contracts" in runtime_contracts_source
+    assert "def build_runtime_contracts" in runtime_source
+    assert not Path("vercor/runtime_contracts.py").exists()
     assert "def runtime_step_info_from_times" in runtime_time_source
     assert "def step_runtime_component_pure" in runtime_driver_source
     assert "def step_runtime_component_host_enabled" in runtime_driver_source
@@ -127,7 +125,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert 'def empty(cls) -> "RuntimeComponentContract"' not in runtime_source
     assert "RuntimeComponentContract.empty" not in coupler_source
     assert "RuntimeComponentContract.empty" not in runtime_driver_source
-    assert "def build_runtime_contracts_for_components" not in runtime_contracts_source
+    assert "def build_runtime_contracts_for_components" not in runtime_source
     assert "build_runtime_contracts_for_components" not in coupler_source
     assert "RuntimeDispatchContext" in runtime_driver_source
     assert "dispatch_context: RuntimeDispatchContext" in runtime_driver_source
@@ -156,6 +154,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def step_host_runtime_state" in veros_source
     assert "def step_host_runtime_state" in camulator_source
     assert "def step_host_runtime_state" in camulator_land_source
+    assert "load_camulator_forcing_context" in camulator_land_source
+    assert "initialize_camulator" not in camulator_land_source
+    assert "vercor.components.external.camulator import" not in camulator_land_source
     assert (
         "from vercor.components.external.veros_runtime_settings import *"
         not in veros_source
@@ -198,6 +199,12 @@ def test_examples_use_coupler_runtime_component_view_factory() -> None:
     for source in (slab_driver_source, data_driver_source, jcm_slab_source):
         assert "RuntimeComponentView.from_coupler_state" not in source
         assert "cpl.runtime_component_view(final_state," in source
+
+
+def test_examples_import_concrete_components_directly() -> None:
+    for path in Path("examples").glob("run_*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "from vercor.components import" not in source
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:

@@ -2,7 +2,9 @@ from datetime import datetime
 
 from examples.jax_array_helpers import transposed_host_array
 from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Ocean, JCMLand, JAXGCM
+from vercor.components.data.era5_ocean import ERA5Ocean
+from vercor.components.data.jcm_land import JCMLand
+from vercor.components.external.jax_gcm import JAXGCM
 from vercor.components.external.jax_gcm_tools import (
     generate_jcm_coords_forcing_topography_files,
 )

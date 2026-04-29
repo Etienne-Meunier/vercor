@@ -16,6 +16,7 @@ import os
 import yaml
 import torch
 import xarray as xr
+from datetime import datetime
 from typing import Any, Optional, Literal
 import logging
 
@@ -53,6 +54,54 @@ except ImportError:
     logging.warning("WindPP not available - wind artifact filtering disabled")
 
 logger = logging.getLogger(__name__)
+
+
+def load_camulator_forcing_context(config_path: str) -> dict[str, Any]:
+    """Load CAMulator config and raw forcing without constructing the model."""
+
+    if not CREDIT_AVAILABLE:
+        raise ImportError(
+            "CREDIT modules not available. Cannot initialize CAMulator forcing. "
+            "Please ensure credit package is installed and importable."
+        )
+
+    with open(config_path) as cf:
+        conf = yaml.load(cf, Loader=yaml.FullLoader)
+
+    conf = credit_main_parser(
+        conf, parse_training=False, parse_predict=True, print_summary=False
+    )
+    conf["predict"]["mode"] = None
+
+    forcing_file = conf["predict"]["forcing_file"]
+    if not os.path.exists(forcing_file):
+        raise FileNotFoundError(f"Forcing file not found: {forcing_file}")
+
+    chunk_size = conf["data"].get("forcing_chunk_size", 32)
+    forcing_ds = xr.open_dataset(forcing_file, chunks={"time": chunk_size})
+    return {
+        "conf": conf,
+        "forcing_dataset_raw": forcing_ds.chunk({"time": chunk_size}),
+    }
+
+
+def parse_datetime_from_config(conf: dict[str, Any]) -> datetime:
+    """Parse CAMulator start datetime values into Python ``datetime`` objects."""
+
+    raw_dt = conf["predict"]["start_datetime"]
+
+    if isinstance(raw_dt, str):
+        return datetime.strptime(raw_dt, "%Y-%m-%d %H:%M:%S")
+    if isinstance(raw_dt, datetime):
+        return raw_dt
+    return datetime(
+        raw_dt.year,
+        raw_dt.month,
+        raw_dt.day,
+        raw_dt.hour,
+        raw_dt.minute,
+        raw_dt.second,
+    )
 
 
 def _prepare_static_forcing_tensor(

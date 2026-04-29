@@ -311,7 +311,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
     monkeypatch.setattr(
         camulator_land_module,
-        "initialize_camulator",
+        "load_camulator_forcing_context",
         lambda **kwargs: {
             "conf": {
                 "data": {"lead_time_periods": 6},

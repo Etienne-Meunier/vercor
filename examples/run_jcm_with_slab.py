@@ -4,7 +4,9 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import JAXGCM, Land, Ocean
+from vercor.components.external.jax_gcm import JAXGCM
+from vercor.components.slab.land import Land
+from vercor.components.slab.ocean import Ocean
 from vercor.coupler import RunSequence
 from vercor.grid import RectilinearGrid
 from vercor.regridders import bilinear, conservative

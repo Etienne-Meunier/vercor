@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 import jax
 import jax.numpy as jnp
 from datetime import timedelta
@@ -277,9 +277,6 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
         state_copy._variables = deepcopy(tree._variables)
         state_copy.timers = deepcopy(tree.timers)
         state_copy.profile_timers = deepcopy(tree.profile_timers)
-
-        # Replace the above with the following line when Etienne put his fixes in Veros
-        # return tree_map(lambda x : x.copy(), tree)
     else:
         state_copy = tree
 
@@ -297,6 +294,18 @@ def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
     return n_state
 
 
+def _extract_veros_runtime_sst(state: VerosState) -> jax.Array:
+    """Return the Veros surface temperature field in VerCOR runtime layout."""
+
+    return cast(
+        jax.Array,
+        _extract_surface_temperature(
+            state.variables.temp,
+            state.variables.tau,
+        ),
+    )
+
+
 def set_variable(
     state: VerosState,
     variable_name: str,
@@ -312,6 +321,45 @@ def set_variable(
         setattr(vs, variable_name, runtime_array_to_host(updated_var))
 
     return n_state
+
+
+def _apply_veros_forcing_fields(
+    state: VerosState,
+    forcing_fields: tuple[jax.Array, jax.Array, jax.Array, jax.Array],
+    *,
+    jitted: bool,
+) -> VerosState:
+    """Write prepared VerCOR forcing fields into Veros state variables."""
+
+    updated_state = state
+    for variable_name, variable_value in zip(
+        ("taux", "tauy", "qnet", "qnec"),
+        forcing_fields,
+    ):
+        updated_state = set_variable(
+            updated_state,
+            variable_name,
+            variable_value,
+            jitted=jitted,
+        )
+    return updated_state
+
+
+def _advance_veros_substeps(
+    state: VerosState,
+    *,
+    step_function: Callable[[VerosState], VerosState],
+    model_substeps: int,
+    logger: Any | None,
+) -> VerosState:
+    """Advance Veros through the configured number of host substeps."""
+
+    updated_state = state
+    for i in range(model_substeps):
+        if logger is not None:
+            logger.info(f" Veros sub-step {i+1} / {model_substeps}")
+        updated_state = step_function(updated_state)
+    return updated_state
 
 
 class VerosGCM(HostRuntimeComponent):
@@ -389,9 +437,8 @@ class VerosGCM(HostRuntimeComponent):
                 context.logger.info(f" Step {i+1} / {self.spinup_steps}")
                 self._veros_state = self._step_function(self._veros_state)
 
-        self.data["sea_surface_temperature"] = _extract_surface_temperature(
-            self._veros_state.variables.temp,
-            self._veros_state.variables.tau,
+        self.data["sea_surface_temperature"] = _extract_veros_runtime_sst(
+            self._veros_state
         )
 
     def step_host_runtime_state(
@@ -417,27 +464,20 @@ class VerosGCM(HostRuntimeComponent):
             taux, tauy, qnet, qnec, self.restore_to_climatology
         )
 
-        for variable_name, variable_value in zip(
-            ("taux", "tauy", "qnet", "qnec"),
+        self._veros_state = _apply_veros_forcing_fields(
+            self._veros_state,
             forcing_fields,
-        ):
-            self._veros_state = set_variable(
-                self._veros_state,
-                variable_name,
-                variable_value,
-                jitted=self.jitted,
-            )
-
-        for i in range(self.model_substeps):
-            if logger is not None:
-                logger.info(f" Veros sub-step {i+1} / {self.model_substeps}")
-            self._veros_state = self._step_function(self._veros_state)
+            jitted=self.jitted,
+        )
+        self._veros_state = _advance_veros_substeps(
+            self._veros_state,
+            step_function=self._step_function,
+            model_substeps=self.model_substeps,
+            logger=logger,
+        )
 
         data = component_state.data.set(
             "sea_surface_temperature",
-            _extract_surface_temperature(
-                self._veros_state.variables.temp,
-                self._veros_state.variables.tau,
-            ),
+            _extract_veros_runtime_sst(self._veros_state),
         )
         return component_state.with_data(data)

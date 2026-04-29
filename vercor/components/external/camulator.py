@@ -2,7 +2,7 @@
 
 import os
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 from pathlib import Path
 
 import jax
@@ -10,6 +10,7 @@ import jax.numpy as jnp
 
 from vercor.components.external.camulator_state import (
     initialize_camulator,
+    parse_datetime_from_config,
     StateVariableAccessor,
 )
 
@@ -33,6 +34,7 @@ from vercor.components.base import (
 )
 from vercor.grid import RectilinearGrid
 from vercor.host_arrays import runtime_array_to_host
+from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -256,6 +258,93 @@ def _map_camulator_prediction_arrays(
     }
 
 
+def _write_camulator_prediction_output(
+    prediction: torch.Tensor,
+    utc_datetime: datetime,
+    *,
+    latitude: object,
+    longitude: object,
+    init_str: str,
+    lead_time_periods: int,
+    forecast_hour: int,
+    metadata: dict[str, Any],
+    conf: dict[str, Any],
+) -> None:
+    """Write one CAMulator prediction increment through the CREDIT output boundary."""
+
+    upper_air, single_level = make_xarray(
+        prediction.cpu(),
+        utc_datetime,
+        latitude,
+        longitude,
+        conf,
+    )
+    save_netcdf_increment(
+        upper_air,
+        single_level,
+        init_str,
+        lead_time_periods * forecast_hour,
+        metadata,
+        conf,
+    )
+
+
+def _camulator_output_array(
+    accessor: StateVariableAccessor,
+    prediction_out: torch.Tensor,
+    variable_name: str,
+) -> object:
+    """Return one inverse-transformed CAMulator output variable on the host."""
+
+    return runtime_array_to_host(
+        accessor.get_state_var(prediction_out, variable_name).cpu().numpy()
+    )
+
+
+def _map_camulator_prediction_to_runtime_fields(
+    settings: VercorSettings,
+    *,
+    camulator_reference_pressure: float,
+    hyai: torch.Tensor,
+    hybi: torch.Tensor,
+    hyam: torch.Tensor,
+    hybm: torch.Tensor,
+    accessor_output: StateVariableAccessor,
+    state_transformer: Any,
+    prediction: torch.Tensor,
+) -> dict[str, jax.Array]:
+    """Convert one CAMulator prediction into VerCOR runtime exchange fields."""
+
+    prediction_out = state_transformer.inverse_transform(prediction)
+    return cast(
+        dict[str, jax.Array],
+        _map_camulator_prediction_arrays(
+            settings.earth_radius,
+            settings.gravity,
+            settings.rdair,
+            settings.zvir,
+            settings.mwdair,
+            settings.rgas,
+            settings.p0,
+            settings.cappa,
+            settings.stefBoltz,
+            camulator_reference_pressure,
+            runtime_array_to_host(hyai.cpu().numpy()).squeeze(),
+            runtime_array_to_host(hybi.cpu().numpy()).squeeze(),
+            runtime_array_to_host(hyam.cpu().numpy()).squeeze(),
+            runtime_array_to_host(hybm.cpu().numpy()).squeeze(),
+            _camulator_output_array(accessor_output, prediction_out, "U"),
+            _camulator_output_array(accessor_output, prediction_out, "V"),
+            _camulator_output_array(accessor_output, prediction_out, "TS"),
+            _camulator_output_array(accessor_output, prediction_out, "T"),
+            _camulator_output_array(accessor_output, prediction_out, "Qtot"),
+            _camulator_output_array(accessor_output, prediction_out, "FSNS"),
+            _camulator_output_array(accessor_output, prediction_out, "FLNS"),
+            _camulator_output_array(accessor_output, prediction_out, "PS"),
+        ),
+    )
+
+
 def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor:
     """
     Add random noise to initial conditions for ensemble generation.
@@ -270,37 +359,6 @@ def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor
     print(f"Adding initial condition noise (std={noise_std})")
     noise = torch.randn_like(state) * noise_std
     return state + noise
-
-
-def parse_datetime_from_config(conf: dict) -> datetime:
-    """
-    Parse datetime from config, handling string, datetime, and cftime objects.
-
-    Args:
-        conf: Configuration dictionary
-
-    Returns:
-        init_dt: Python datetime object
-    """
-    raw_dt = conf["predict"]["start_datetime"]
-
-    if isinstance(raw_dt, str):
-        # Parse "YYYY-MM-DD HH:MM:SS" format
-        return datetime.strptime(raw_dt, "%Y-%m-%d %H:%M:%S")
-    elif isinstance(raw_dt, datetime):
-        # Already a Python datetime
-        return raw_dt
-    else:
-        # Assume it's a cftime object - convert to Python datetime
-        # cftime objects have year, month, day, hour, minute, second attributes
-        return datetime(
-            raw_dt.year,
-            raw_dt.month,
-            raw_dt.day,
-            raw_dt.hour,
-            raw_dt.minute,
-            raw_dt.second,
-        )
 
 
 # ============================================================================
@@ -561,27 +619,16 @@ class CAMulatorGCM(HostRuntimeComponent):
             # Apply post-processing
             prediction = self.stepper._apply_postprocessing(prediction, model_input)
 
-            # ================================================================
-            # OUTPUT GENERATION (runs in parallel via multiprocessing)
-            # ================================================================
-
-            # Convert prediction to xarray (fast, on CPU)
-            upper_air, single_level = make_xarray(
-                prediction.cpu(),
+            _write_camulator_prediction_output(
+                prediction,
                 utc_datetime,
-                self.latlons.latitude.values,
-                self.latlons.longitude.values,
-                self.conf,
-            )
-
-            # save to NetCDF (runs in background pool)
-            save_netcdf_increment(
-                upper_air,
-                single_level,
-                self.init_str,
-                self.lead_time_periods * self.forecast_hour,
-                self.metadata,
-                self.conf,
+                latitude=self.latlons.latitude.values,
+                longitude=self.latlons.longitude.values,
+                init_str=self.init_str,
+                lead_time_periods=self.lead_time_periods,
+                forecast_hour=self.forecast_hour,
+                metadata=self.metadata,
+                conf=self.conf,
             )
 
             # ================================================================
@@ -605,48 +652,16 @@ class CAMulatorGCM(HostRuntimeComponent):
                 "check forcing availability and coupling timestep alignment."
             )
 
-        # get all of the variables for coupling:
-        prediction_out = self.state_transformer.inverse_transform(prediction)
-
-        mapped_fields = _map_camulator_prediction_arrays(
-            settings.earth_radius,
-            settings.gravity,
-            settings.rdair,
-            settings.zvir,
-            settings.mwdair,
-            settings.rgas,
-            settings.p0,
-            settings.cappa,
-            settings.stefBoltz,
-            self.P0,
-            runtime_array_to_host(self.hyai.cpu().numpy()).squeeze(),
-            runtime_array_to_host(self.hybi.cpu().numpy()).squeeze(),
-            runtime_array_to_host(self.hyam.cpu().numpy()).squeeze(),
-            runtime_array_to_host(self.hybm.cpu().numpy()).squeeze(),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "U").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "V").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "TS").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "T").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "Qtot").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "FSNS").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "FLNS").cpu().numpy()
-            ),
-            runtime_array_to_host(
-                self.accessor_output.get_state_var(prediction_out, "PS").cpu().numpy()
-            ),
+        mapped_fields = _map_camulator_prediction_to_runtime_fields(
+            settings,
+            camulator_reference_pressure=self.P0,
+            hyai=self.hyai,
+            hybi=self.hybi,
+            hyam=self.hyam,
+            hybm=self.hybm,
+            accessor_output=self.accessor_output,
+            state_transformer=self.state_transformer,
+            prediction=prediction,
         )
         for field_name, field_value in mapped_fields.items():
             data = data.set(field_name, field_value)

@@ -12,7 +12,12 @@ from tests._tools_support import DummyComponentA, DummyComponentB
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
-from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime import (
+    RuntimeComponentState,
+    RuntimeFieldStore,
+    append_unique_runtime_fields,
+    flatten_exchange_fields,
+)
 from vercor.runtime_views import RuntimeComponentView
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
@@ -22,10 +27,6 @@ from vercor.diagnostics import (
 from vercor.grid_masks import (
     get_component,
     grids_identical,
-)
-from vercor.runtime_contracts import (
-    append_unique_runtime_fields,
-    flatten_exchange_fields,
 )
 
 matplotlib.use("Agg")
