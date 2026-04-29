@@ -369,27 +369,6 @@ class JAXGCM(Component):
 
         return jax.jit(step_function) if jitted else step_function
 
-    def do_jcm_steps(self) -> tuple[Any, Any]:
-        _avg_predictions = []
-        _predictions: Predictions
-
-        _new_state, _predictions = self._step_function(
-            self._state,
-            self.forcing,
-        )
-
-        self._state = _new_state
-
-        _avg_predictions.append(_predictions)
-
-        self._predictions_list.append(_predictions)
-
-        _avg_predictions = mean_leaf(
-            unwrap_leading_dims(stack_objects(_avg_predictions)), axis=0
-        )
-
-        return _avg_predictions.physics, _avg_predictions.dynamics
-
     def initialize(self, context: ComponentInitContext) -> None:
         self.coupling_timestep = timedelta(seconds=context.dt_seconds)
         self.spinup_steps = int(
@@ -437,7 +416,12 @@ class JAXGCM(Component):
             # Spin-up from the default JCM forcing
             for i in range(self.spinup_steps):
                 context.logger.info(f" JCM spinup step {i+1} / {self.spinup_steps}")
-                _, _ = self.do_jcm_steps()
+                _new_state, _predictions = self._step_function(
+                    self._state,
+                    self.forcing,
+                )
+                self._state = _new_state
+                self._predictions_list.append(_predictions)
 
     def create_runtime_payload(self) -> JAXGCMRuntimePayload:
         """Return immutable JCM state and forcing for runtime execution."""
