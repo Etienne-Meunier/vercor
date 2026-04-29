@@ -1,6 +1,5 @@
 from vercor.components.base import (
     Component,
-    ComponentForcingData,
     ComponentInitContext,
     HostRuntimeComponent,
     RuntimeStepContext,
@@ -20,7 +19,6 @@ from vercor.components.external.veros_gcm import VerosGCM
 from vercor.components.external.camulator import CAMulatorGCM
 
 __all__ = [
-    "ComponentForcingData",
     "Component",
     "ComponentInitContext",
     "HostRuntimeComponent",

@@ -1,3 +1,40 @@
+# 2026-04-29
+
+## Compatibility Boundary Simplification
+
+- Moved forcing-file I/O out of `vercor.components.base`:
+  - added `vercor.forcing_data.ComponentForcingData` as the focused NetCDF forcing read boundary
+  - updated ERA5 / ERA-Interim data components and tests to import the forcing reader directly
+  - removed the forcing-reader re-export from `vercor.components`
+- Removed old atmosphere-ocean flux compatibility naming:
+  - deleted `old_flux_atmOcn()`
+  - renamed the canonical JAX implementation to `compute_ocean_surface_fluxes()`
+  - updated Veros flux coupling and tests to use the canonical name
+  - replaced old/new comparison coverage with fixed reference-value regression coverage
+- Simplified component typing:
+  - `Coupler` and grid-mask helpers now type against the base `Component` contract instead of concrete component unions
+  - `vercor.types` now keeps only the shared runtime-array alias
+- Removed the `RuntimeComponentContract.empty()` convenience constructor; call sites now use `RuntimeComponentContract()` directly.
+- Added architecture regression coverage for the forcing-data boundary, removed legacy flux names, removed empty-contract helper, and preserved host-backed CAMulator/Veros bridge ownership.
+- Updated `DEPENDENCIES.md` with `vercor.forcing_data` and the simplified coupler component contract.
+- No failed implementation approaches. The cleanup stayed limited to compatibility surfaces and kept example-level `vercor.components` model imports stable.
+
+## Validation (Compatibility Boundary Simplification, 2026-04-29)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_fluxes_utilities.py tests/test_external_components_coverage.py tests/test_runtime_state.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 95 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-04-28
 
 ## Runtime Utility Ownership Simplification

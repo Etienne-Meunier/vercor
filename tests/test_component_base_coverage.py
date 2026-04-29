@@ -14,9 +14,10 @@ import vercor.components.base as base_module
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components.base import ComponentForcingData, RuntimeStepContext
+from vercor.components.base import RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
+from vercor.forcing_data import ComponentForcingData
 from vercor.output import write_runtime_component_view_to_netcdf
 from vercor.runtime import (
     RuntimeComponentContract,
@@ -60,6 +61,8 @@ def test_legacy_wrapper_api_is_removed() -> None:
     assert not hasattr(base_module, "write_shared_to_netcdf")
     assert not hasattr(base_module, "write_runtime_component_to_netcdf")
     assert not hasattr(base_module, "write_runtime_component_view_to_netcdf")
+    assert not hasattr(base_module, "ComponentForcingData")
+    assert not hasattr(components_module, "ComponentForcingData")
     assert not hasattr(components_module, "write_runtime_component_to_netcdf")
     assert not hasattr(components_module, "write_runtime_component_view_to_netcdf")
     assert not hasattr(component, "incoming_fields")
@@ -122,7 +125,7 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
     component = DummyComponent(name="ATM", grid=make_test_grid())
 
     with pytest.raises(ComponentError, match="no fields to import"):
-        check_not_empty_import_export_lists(component, RuntimeComponentContract.empty())
+        check_not_empty_import_export_lists(component, RuntimeComponentContract())
 
     import_only = RuntimeComponentContract(imports=("temperature",))
     with pytest.raises(ComponentError, match="no fields to export"):
@@ -206,9 +209,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
 
     component_state = send_runtime_fields(
         component,
-        create_runtime_component_state(
-            component, contract=RuntimeComponentContract.empty()
-        ),
+        create_runtime_component_state(component, contract=RuntimeComponentContract()),
         contract=contract,
     )
     assert_allclose_compact(
@@ -227,9 +228,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component.data["temperature"] = monthly
     component_state = send_runtime_fields(
         component,
-        create_runtime_component_state(
-            component, contract=RuntimeComponentContract.empty()
-        ),
+        create_runtime_component_state(component, contract=RuntimeComponentContract()),
         scalar_runtime_step_info(
             timestamp, runtime_coupler.clock, runtime_coupler.settings
         ),
@@ -249,9 +248,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component.data["temperature"] = daily
     component_state = send_runtime_fields(
         component,
-        create_runtime_component_state(
-            component, contract=RuntimeComponentContract.empty()
-        ),
+        create_runtime_component_state(component, contract=RuntimeComponentContract()),
         scalar_runtime_step_info(
             runtime_coupler.clock.start,
             runtime_coupler.clock,

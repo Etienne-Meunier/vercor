@@ -5,10 +5,6 @@ from datetime import datetime
 from logging import Logger
 from typing import TYPE_CHECKING, Any
 
-import h5netcdf
-import jax.numpy as jnp
-import numpy as np
-
 from vercor.clock import ModelDateTime
 from vercor.grid import RectilinearGrid
 from vercor.run_sequence import RunSequence
@@ -134,47 +130,3 @@ class HostRuntimeComponent(Component):
 
         _ = component_state, context
         raise NotImplementedError
-
-
-class ComponentForcingData:
-    def __init__(self) -> None:
-        self.DATA_FILES: dict[str, str] = {}
-
-    def _read_forcing(
-        self, variable: str, where: str, flip_y: bool = False
-    ) -> RuntimeArray:
-        """Read a variable from the specified forcing file.
-
-        Arguments:
-            variable (str): variable name to read from a file
-            where (str): key to identify which file to read from DATA_FILES
-            flip_y (bool): whether to flip the variable along the latitude axis
-
-        Returns:
-            RuntimeArray: the requested variable data as a JAX-backed array.
-        """
-
-        try:
-            with h5netcdf.File(self.DATA_FILES[where], "r") as infile:
-                var_obj = jnp.asarray(np.array(infile.variables[variable]).T)
-                if flip_y:
-                    return jnp.flip(var_obj, axis=1)
-                else:
-                    return var_obj
-        except KeyError as e:
-            raise KeyError(
-                f"Provided 'where' key '{where}' not found in DATA_FILES"
-            ) from e
-        except Exception as e:
-            raise RuntimeError(
-                f"Error reading variable '{variable}' from forcing file '{self.DATA_FILES[where]}'"
-            ) from e
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"└── Forcing files: {self.DATA_FILES if self.DATA_FILES else 'No files assigned'}"
-        )
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(DATA_FILES={self.DATA_FILES})"

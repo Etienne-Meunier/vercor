@@ -47,7 +47,7 @@ def build_runtime_contracts(
     """Build coupler-owned import/export contracts from exchange declarations."""
 
     known_components = set(component_names)
-    contracts = {name: RuntimeComponentContract.empty() for name in component_names}
+    contracts = {name: RuntimeComponentContract() for name in component_names}
     for exchange in exchanges:
         if exchange.source not in known_components:
             if validate_endpoints:

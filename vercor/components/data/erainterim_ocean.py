@@ -5,7 +5,8 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components.base import Component, ComponentForcingData
+from vercor.components.base import Component
+from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
 

@@ -239,7 +239,7 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
         }
     )
 
-    def fake_new_flux_atm_ocn(*args: Any) -> tuple[Any, ...]:
+    def fake_compute_ocean_surface_fluxes(*args: Any) -> tuple[Any, ...]:
         _ = args
         return (
             np.full((4, 4), 1.0),
@@ -266,8 +266,8 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
 
     monkeypatch.setattr(
         veros_gcm_module,
-        "new_flux_atmOcn",
-        fake_new_flux_atm_ocn,
+        "compute_ocean_surface_fluxes",
+        fake_compute_ocean_surface_fluxes,
     )
 
     taux, tauy, qnet, qnec = veros_gcm_module.compute_fluxes(

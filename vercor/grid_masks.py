@@ -3,13 +3,14 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 from vercor.exceptions import CouplerError, RegridderError
+from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.regridders.conservative import ConservativeRectilinearRegridder
 from vercor.regridders.helpers import compute_land_mask
-from vercor.types import AllComponentsType, RuntimeArray
+from vercor.types import RuntimeArray
 
 
 def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
@@ -28,12 +29,10 @@ def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
     )
 
 
-def get_component(
-    allcomponents: dict[str, AllComponentsType], types: str
-) -> AllComponentsType:
+def get_component(allcomponents: dict[str, Component], types: str) -> Component:
     """Return the registered component with the requested VerCOR component name."""
 
-    components: list[AllComponentsType] = [
+    components: list[Component] = [
         component for component in allcomponents.values() if component.name == types
     ]
 

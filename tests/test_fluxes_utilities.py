@@ -8,8 +8,7 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 from vercor.fluxes.bulk_formula_cesm import (
-    new_flux_atmOcn,
-    old_flux_atmOcn,
+    compute_ocean_surface_fluxes,
     shr_flux_atmIce,
 )
 from vercor.fluxes.utilities import (
@@ -193,11 +192,13 @@ def test_flux_utility_kernels_support_jit() -> None:
     )
 
 
-def test_new_flux_atmOcn_produces_finite_and_physically_consistent_signs() -> None:
+def test_compute_ocean_surface_fluxes_produces_finite_and_physically_consistent_signs() -> (
+    None
+):
     settings = VercorSettings()
     state = _ocean_state()
 
-    sen, lat, lwup, evap, taux, tauy, *_ = new_flux_atmOcn(
+    sen, lat, lwup, evap, taux, tauy, *_ = compute_ocean_surface_fluxes(
         settings,
         state["mask"],
         state["zbot"],
@@ -225,25 +226,11 @@ def test_new_flux_atmOcn_produces_finite_and_physically_consistent_signs() -> No
     assert np.mean(tauy) > 0.0
 
 
-def test_old_and_new_flux_atmOcn_agree_for_reference_state() -> None:
+def test_compute_ocean_surface_fluxes_matches_reference_state() -> None:
     settings = VercorSettings()
     state = _ocean_state()
 
-    old_out = old_flux_atmOcn(
-        settings,
-        state["mask"],
-        state["rbot"],
-        state["zbot"],
-        state["ubot"],
-        state["vbot"],
-        state["qbot"],
-        state["tbot"],
-        state["thbot"],
-        state["us"],
-        state["vs"],
-        state["ts"],
-    )
-    new_out = new_flux_atmOcn(
+    out = compute_ocean_surface_fluxes(
         settings,
         state["mask"],
         state["zbot"],
@@ -257,17 +244,38 @@ def test_old_and_new_flux_atmOcn_agree_for_reference_state() -> None:
         state["vs"],
         state["ts"],
     )
+    expected_values = np.asarray(
+        [
+            -11.501394048985748,
+            -332.8244500213005,
+            -459.27,
+            -0.0001330765493887647,
+            0.08261268009451078,
+            0.022030048025202875,
+            299.069981902988,
+            0.01106368351883935,
+            65.17383383111927,
+            0.2669262983914628,
+            -0.03514565688237375,
+            -0.00041545971737861595,
+            -55.307247258870916,
+        ]
+    )
 
-    for old_arr, new_arr in zip(old_out, new_out):
-        assert_allclose_compact(old_arr, new_arr)
+    assert_allclose_compact(
+        np.asarray([np.asarray(arr)[0, 0] for arr in out]),
+        expected_values,
+    )
 
 
-def test_new_flux_atmOcn_respects_mask_for_surface_exchange_outputs() -> None:
+def test_compute_ocean_surface_fluxes_respects_mask_for_surface_exchange_outputs() -> (
+    None
+):
     settings = VercorSettings()
     state = _ocean_state(shape=(2, 3))
     state["mask"] = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
 
-    out = new_flux_atmOcn(
+    out = compute_ocean_surface_fluxes(
         settings,
         state["mask"],
         state["zbot"],
@@ -302,7 +310,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
     vs = state["vs"]
 
     jitted_ocean_flux = jax.jit(
-        lambda ts: new_flux_atmOcn(
+        lambda ts: compute_ocean_surface_fluxes(
             settings,
             mask,
             zbot,
@@ -333,7 +341,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
     )
 
     ts = jnp.asarray([[300.0]])
-    eager_ocean = new_flux_atmOcn(
+    eager_ocean = compute_ocean_surface_fluxes(
         settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, us, vs, ts
     )
     eager_ice = shr_flux_atmIce(
@@ -348,7 +356,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
     def scalar_sensible_heat(ts_scalar: float) -> jax.Array:
         ts_array = jnp.full((1, 1), ts_scalar)
         return jnp.sum(
-            new_flux_atmOcn(
+            compute_ocean_surface_fluxes(
                 settings,
                 mask,
                 zbot,
@@ -385,7 +393,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
     qbot = np.full(shape, 0.006)
     rbot = np.full(shape, 1.25)
 
-    base = new_flux_atmOcn(
+    base = compute_ocean_surface_fluxes(
         settings,
         mask,
         zbot,
@@ -400,7 +408,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
         ts,
         use_coldair_outbreak_mod=False,
     )
-    mod = new_flux_atmOcn(
+    mod = compute_ocean_surface_fluxes(
         settings,
         mask,
         zbot,

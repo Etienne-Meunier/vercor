@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock
-from vercor.components.base import ComponentInitContext
+from vercor.components.base import Component, ComponentInitContext
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -55,7 +55,7 @@ from vercor.grid_masks import (
     check_remap_conservation,
     compute_ocn_lnd_masks_on_atm_grid,
 )
-from vercor.types import AllComponentsType, RuntimeArray
+from vercor.types import RuntimeArray
 
 
 def setup_logger() -> Logger:
@@ -77,10 +77,7 @@ class Coupler:
     clock: Clock
     logger: Logger = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
-    components: dict[
-        str,
-        AllComponentsType,
-    ] = field(default_factory=dict)
+    components: dict[str, Component] = field(default_factory=dict)
     exchanges: list[Exchange] = field(default_factory=list)
     settings: VercorSettings = field(default_factory=VercorSettings)
     ocn_bmask_on_atm_grid: RuntimeArray = field(init=False)
@@ -131,7 +128,7 @@ class Coupler:
 
     def register(
         self,
-        component: AllComponentsType,
+        component: Component,
     ) -> None:
         """
         Register a component with the coupler.
@@ -393,14 +390,14 @@ class Coupler:
                 component_state,
                 self._runtime_contracts.get(
                     cname,
-                    RuntimeComponentContract.empty(),
+                    RuntimeComponentContract(),
                 ),
             )
             component.validate_runtime_state(
                 component_state,
                 self._runtime_contracts.get(
                     cname,
-                    RuntimeComponentContract.empty(),
+                    RuntimeComponentContract(),
                 ),
             )
 

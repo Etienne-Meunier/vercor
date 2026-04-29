@@ -19,7 +19,7 @@ from vercor.components.base import (
     RuntimeStepContext,
 )
 from vercor.grid import RectilinearGrid
-from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
+from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
 from vercor.runtime import RuntimeFieldStore
 from vercor.settings import VercorSettings
 from vercor.host_arrays import runtime_array_to_host
@@ -219,7 +219,7 @@ def compute_fluxes(
         tstar,
         qstar,
         dqfldt,
-    ) = new_flux_atmOcn(
+    ) = compute_ocean_surface_fluxes(
         settings,
         jnp.asarray(vs.maskT[2:-2, 2:-2, -1], dtype=jnp.float64).T,
         jnp.asarray(runtime_fields.get("model_level_height"), dtype=jnp.float64),

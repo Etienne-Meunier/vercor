@@ -44,7 +44,7 @@ def _step_component(
         create_runtime_component_state(
             component,
             prefill_missing=True,
-            contract=RuntimeComponentContract.empty(),
+            contract=RuntimeComponentContract(),
         ),
         RuntimeStepContext(
             dt_seconds=dt.total_seconds(),

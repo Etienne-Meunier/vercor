@@ -344,7 +344,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
         create_runtime_component_state(
             component,
             prefill_missing=True,
-            contract=RuntimeComponentContract.empty(),
+            contract=RuntimeComponentContract(),
         ),
         RuntimeStepContext(
             dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),

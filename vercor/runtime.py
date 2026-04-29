@@ -18,12 +18,6 @@ class RuntimeComponentContract:
     imports: tuple[str, ...] = ()
     exports: tuple[str, ...] = ()
 
-    @classmethod
-    def empty(cls) -> "RuntimeComponentContract":
-        """Return an empty runtime field contract."""
-
-        return cls()
-
     @property
     def all_fields(self) -> tuple[str, ...]:
         """Return all import/export fields while preserving contract order."""

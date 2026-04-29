@@ -56,6 +56,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     components_source = Path("vercor/components/__init__.py").read_text(
         encoding="utf-8"
     )
+    forcing_data_source = Path("vercor/forcing_data.py").read_text(encoding="utf-8")
+    flux_source = Path("vercor/fluxes/bulk_formula_cesm.py").read_text(encoding="utf-8")
     diagnostics_source = Path("vercor/diagnostics.py").read_text(encoding="utf-8")
     jax_gcm_source = Path("vercor/components/external/jax_gcm.py").read_text(
         encoding="utf-8"
@@ -109,11 +111,19 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def send_runtime_fields" not in base_source
     assert "def check_not_empty_import_export_lists" not in base_source
     assert "def check_valid_exchange_field_names" not in base_source
+    assert "ComponentForcingData" not in base_source
+    assert "h5netcdf" not in base_source
+    assert "import numpy" not in base_source
+    assert "class ComponentForcingData" in forcing_data_source
+    assert "ComponentForcingData" not in components_source
     assert "def create_runtime_component_state" in runtime_components_source
     assert "def receive_runtime_fields" in runtime_components_source
     assert "def send_runtime_fields" in runtime_components_source
     assert "def validate_component_runtime_state" in runtime_components_source
     assert "RuntimeComponentContract" in runtime_source
+    assert 'def empty(cls) -> "RuntimeComponentContract"' not in runtime_source
+    assert "RuntimeComponentContract.empty" not in coupler_source
+    assert "RuntimeComponentContract.empty" not in runtime_driver_source
     assert "def build_runtime_contracts_for_components" not in runtime_contracts_source
     assert "build_runtime_contracts_for_components" not in coupler_source
     assert "RuntimeDispatchContext" in runtime_driver_source
@@ -157,6 +167,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "component_state.data.to_mapping()" not in camulator_source
     assert "component_state.data.to_mapping()" not in camulator_land_source
     assert "post_process_wind_artifacts_deprecated" not in windpp_source
+    assert "old_flux_atmOcn" not in flux_source
+    assert "new_flux_atmOcn" not in flux_source
+    assert "def compute_ocean_surface_fluxes" in flux_source
 
 
 def test_examples_use_coupler_runtime_component_view_factory() -> None:

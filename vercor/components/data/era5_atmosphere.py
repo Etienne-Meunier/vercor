@@ -7,7 +7,6 @@ from jax.typing import ArrayLike
 
 from vercor.components.base import (
     Component,
-    ComponentForcingData,
     ComponentInitContext,
     RuntimeStepContext,
 )
@@ -17,6 +16,7 @@ from vercor.fluxes.utilities import (
     compute_pressure_levels,
     compute_potential_temperature,
 )
+from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.runtime_components import validate_runtime_grid_data_field
 from vercor.settings import VercorSettings

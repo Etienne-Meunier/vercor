@@ -689,7 +689,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         create_runtime_component_state(
             component,
             prefill_missing=True,
-            contract=RuntimeComponentContract.empty(),
+            contract=RuntimeComponentContract(),
         ),
         RuntimeStepContext(
             dt_seconds=timedelta(days=1).total_seconds(),
@@ -805,7 +805,7 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
 
     captured: dict[str, np.ndarray] = {}
 
-    def fake_new_flux_atm_ocn(
+    def fake_compute_ocean_surface_fluxes(
         settings: VercorSettings,
         mask: np.ndarray,
         model_level_height: np.ndarray,
@@ -849,7 +849,11 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
             np.asarray([[-1e10, -1e11], [0.5, -2.0]]),
         )
 
-    monkeypatch.setattr(veros_gcm_module, "new_flux_atmOcn", fake_new_flux_atm_ocn)
+    monkeypatch.setattr(
+        veros_gcm_module,
+        "compute_ocean_surface_fluxes",
+        fake_compute_ocean_surface_fluxes,
+    )
 
     taux, tauy, qnet, qnec = veros_gcm_module.compute_fluxes(
         component._veros_state,
