@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -10,7 +8,6 @@ import numpy as np
 
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.clock import ModelDateTime
 from vercor.components.base import Component, ComponentInitContext
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
@@ -31,14 +28,6 @@ class _RuntimeSendComponent(Component):
 
     def initialize(self, context: ComponentInitContext) -> None:
         _ = context
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: Any,
-    ) -> None:
-        _ = dt, time, coupler
 
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:

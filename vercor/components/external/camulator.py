@@ -553,8 +553,8 @@ class CAMulatorGCM(HostRuntimeComponent):
         for t in range(gpu_forcing_chunk.shape[0]):
             time_obj = ds_slice_times[t]
 
-            # Convert to Python datetime for output formatting
-            # Handle numpy scalar wrapper
+            # Convert to Python datetime for output formatting.
+            # Normalize NumPy scalar time objects before type checks.
             if hasattr(time_obj, "item"):
                 time_obj = time_obj.item()
 

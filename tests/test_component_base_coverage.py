@@ -51,7 +51,7 @@ class _RuntimeOnlyComponent(base_module.Component):
 
 
 @pytest.mark.fast_always
-def test_legacy_wrapper_api_is_removed() -> None:
+def test_removed_component_api_stays_absent() -> None:
     component = DummyComponent(name="ATM", grid=make_test_grid())
 
     assert not hasattr(components_module, "Shared")

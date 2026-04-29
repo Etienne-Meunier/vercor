@@ -1,5 +1,39 @@
 # 2026-04-29
 
+## Residual Compatibility Marker Cleanup
+
+- Audited remaining `legacy`, `old_`, `compat`, `wrapper`, `deprecated`, and
+  old runtime alias markers across `vercor`, `examples`, and `tests`.
+- Removed the last test-local old component `step()` stub from runtime-state
+  coverage; runtime send tests now use only the canonical runtime send helper.
+- Renamed the removed-component-API regression test so the active suite no
+  longer carries legacy/wrapper terminology in test names.
+- Cleaned stale CAMulator bridge commentary while preserving the required
+  host-backed `HostRuntimeComponent.step_host_runtime_state()` boundary.
+- No `DEPENDENCIES.md` update was needed because module ownership and runtime
+  dependency order did not change.
+- No failed implementation approaches. Remaining marker hits are negative
+  regression guards, current JAX/Python compatibility wording, or external
+  CAMulator package names.
+
+## Validation (Residual Compatibility Marker Cleanup, 2026-04-29)
+
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed before edits
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_camulator_component_kernels.py tests/test_external_components_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and left 94 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Source Simplification Audit
 
 - Consolidated runtime stepping into one explicit helper:
