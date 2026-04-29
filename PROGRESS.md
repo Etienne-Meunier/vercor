@@ -1,5 +1,39 @@
 # 2026-04-29
 
+## Unified Coupler Runtime Entrypoint
+
+- Removed the public `Coupler.compile_runtime()` API.
+- Made `Coupler.run(initial_state=None, *, donate_state=False)` the single public
+  runtime entrypoint:
+  - pure differentiable component sets use a cached JIT-scanned runtime
+  - host-backed component sets use the existing Python host bridge
+  - `donate_state=True` is rejected for host-backed runs with a clear
+    `CouplerError`
+- Renamed the compile-cache coverage to runtime-run cache coverage and updated
+  architecture tests to guard the removed public compile method.
+- No `DEPENDENCIES.md` update was needed because module dependency order and
+  runtime ownership boundaries did not change.
+- No failed implementation approaches. The change was limited to API selection,
+  private JIT caching, and tests.
+
+## Validation (Unified Coupler Runtime Entrypoint, 2026-04-29)
+
+- `conda run -n scipy pytest tests/test_runtime_run_cache.py tests/test_coupler_coverage.py tests/test_runtime_state.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_runtime_run_cache.py tests/test_coupler_coverage.py tests/test_runtime_state.py -q --tb=short`
+  - passed before and after formatting
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and reformatted `tests/test_coupler_coverage.py` and `tests/test_runtime_state.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Residual Compatibility Marker Cleanup
 
 - Audited remaining `legacy`, `old_`, `compat`, `wrapper`, `deprecated`, and

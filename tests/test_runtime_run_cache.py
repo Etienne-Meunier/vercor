@@ -56,7 +56,7 @@ def _component_state(
 
 
 def _make_coupler(steps: int) -> Coupler:
-    grid = make_test_grid(name="compile-cache")
+    grid = make_test_grid(name="run-cache")
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
     )
@@ -191,18 +191,22 @@ def _runtime_treedef_repr(value: RuntimeCouplerState) -> str:
     return repr(jax.tree_util.tree_structure(value))
 
 
-def test_compiled_runtime_reuses_cache_for_same_shapes_and_metadata() -> None:
+def test_run_reuses_compiled_cache_for_same_shapes_and_metadata() -> None:
     coupler = _make_coupler(steps=2)
-    compiled = coupler.compile_runtime(donate_state=False)
-    compiled_for_cache = cast(Any, compiled)
-    compiled_for_cache.clear_cache()
+    coupler._compiled_runtime_cache.clear()
 
-    first = _block_until_ready(compiled(_runtime_state_with_sst(288.15)))
-    first_cache_size = compiled_for_cache._cache_size()
+    first = _block_until_ready(
+        coupler.run(_runtime_state_with_sst(288.15), donate_state=False)
+    )
+    compiled = cast(Any, next(iter(coupler._compiled_runtime_cache.values())))
+    first_cache_size = compiled._cache_size()
 
-    second = _block_until_ready(compiled(_runtime_state_with_sst(291.15)))
-    second_cache_size = compiled_for_cache._cache_size()
+    second = _block_until_ready(
+        coupler.run(_runtime_state_with_sst(291.15), donate_state=False)
+    )
+    second_cache_size = compiled._cache_size()
 
+    assert len(coupler._compiled_runtime_cache) == 1
     assert first_cache_size == 1
     assert second_cache_size == first_cache_size
     assert first.get_component_state("OCN").data.get(
@@ -213,15 +217,16 @@ def test_compiled_runtime_reuses_cache_for_same_shapes_and_metadata() -> None:
     ).shape == (2, 2)
 
 
-def test_compiled_runtime_donation_runs_with_fresh_consumed_state() -> None:
+def test_run_donation_uses_donating_compiled_runtime() -> None:
     coupler = _make_coupler(steps=2)
-    compiled = coupler.compile_runtime(donate_state=True)
-    compiled_for_cache = cast(Any, compiled)
-    compiled_for_cache.clear_cache()
+    coupler._compiled_runtime_cache.clear()
 
-    final_state = _block_until_ready(compiled(_runtime_state_with_sst(289.15)))
+    final_state = _block_until_ready(
+        coupler.run(_runtime_state_with_sst(289.15), donate_state=True)
+    )
+    compiled = cast(Any, next(iter(coupler._compiled_runtime_cache.values())))
 
-    assert compiled_for_cache._cache_size() == 1
+    assert compiled._cache_size() == 1
     assert final_state.component_names == ("ATM", "OCN", "LND", "ICE")
     assert np.all(
         np.isfinite(
@@ -234,14 +239,13 @@ def test_compiled_runtime_donation_runs_with_fresh_consumed_state() -> None:
     )
 
 
-def test_non_donating_compiled_runtime_preserves_runtime_treedef() -> None:
+def test_non_donating_run_preserves_runtime_treedef() -> None:
     coupler = _make_coupler(steps=1)
-    compiled = coupler.compile_runtime(donate_state=False)
 
     first_state = _runtime_state_with_sst(287.15)
     second_state = _runtime_state_with_sst(292.15)
-    first_final = _block_until_ready(compiled(first_state))
-    second_final = _block_until_ready(compiled(second_state))
+    first_final = _block_until_ready(coupler.run(first_state, donate_state=False))
+    second_final = _block_until_ready(coupler.run(second_state, donate_state=False))
 
     expected_treedef = _runtime_treedef_repr(first_state)
     assert _runtime_treedef_repr(second_state) == expected_treedef

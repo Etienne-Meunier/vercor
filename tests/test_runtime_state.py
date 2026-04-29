@@ -94,9 +94,19 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "allow_host_runtime: bool" in runtime_driver_source
     assert "def step_runtime_component_pure" not in runtime_driver_source
     assert "def step_runtime_component_host_enabled" not in runtime_driver_source
-    run_body = coupler_source.split("def run", 1)[1].split("def compile_runtime", 1)[0]
+    assert "def compile_runtime" not in coupler_source
+    assert "def _compiled_scanned_runtime" in coupler_source
+    assert "def _run_host_runtime" in coupler_source
+    run_body = coupler_source.split("def run", 1)[1].split("def _run_host_runtime", 1)[
+        0
+    ]
     scanned_body = coupler_source.split("def _run_scanned_runtime", 1)[1]
-    assert run_body.count("self._runtime_dispatch_context()") == 1
+    host_body = coupler_source.split("def _run_host_runtime", 1)[1].split(
+        "def _compiled_scanned_runtime", 1
+    )[0]
+    assert "host_component_names(self.components)" in run_body
+    assert "_compiled_scanned_runtime(donate_state=donate_state)" in run_body
+    assert host_body.count("self._runtime_dispatch_context()") == 1
     assert scanned_body.count("self._runtime_dispatch_context()") == 1
     assert "def _apply_scalar" not in regridder_source
     assert "def _apply_vector" not in regridder_source

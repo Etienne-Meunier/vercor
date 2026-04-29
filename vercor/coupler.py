@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass, field
 from logging import Logger
 from pathlib import Path
-from typing import Callable, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -96,6 +96,10 @@ class Coupler:
     _runtime_contracts: dict[str, RuntimeComponentContract] = field(
         default_factory=dict
     )
+    _compiled_runtime_cache: dict[
+        tuple[Any, ...],
+        Callable[[RuntimeCouplerState], RuntimeCouplerState],
+    ] = field(default_factory=dict, init=False, repr=False)
 
     """
     Main coupler class to manage components and exchanges between them.
@@ -533,9 +537,16 @@ class Coupler:
     def run(
         self,
         initial_state: RuntimeCouplerState | None = None,
+        *,
+        donate_state: bool = False,
     ) -> RuntimeCouplerState:
         """
-        Run the coupler and all registered components according to the run sequence.
+        Run all registered components through the unified runtime entrypoint.
+
+        Pure differentiable components run through the cached JIT-scanned runtime.
+        Host-backed components run through the Python host bridge. When
+        ``donate_state`` is true for pure runs, callers must treat the input
+        runtime state as consumed after this method returns.
         """
 
         runtime_state = (
@@ -544,6 +555,28 @@ class Coupler:
             else initial_state
         )
         self._validate_runtime_state(runtime_state)
+
+        host_names = host_component_names(self.components)
+        if not host_names:
+            return self._compiled_scanned_runtime(donate_state=donate_state)(
+                runtime_state
+            )
+
+        if donate_state:
+            names = ", ".join(host_names)
+            raise CouplerError(
+                "Runtime state donation is only supported for differentiable "
+                f"components; host-backed component(s) require non-donating run(): {names}"
+            )
+
+        return self._run_host_runtime(runtime_state)
+
+    def _run_host_runtime(
+        self,
+        runtime_state: RuntimeCouplerState,
+    ) -> RuntimeCouplerState:
+        """Run the host-enabled runtime path for non-differentiable adapters."""
+
         dispatch_context = self._runtime_dispatch_context()
 
         for n, time, dt in self.clock.iter():
@@ -566,47 +599,67 @@ class Coupler:
 
         return runtime_state
 
-    def compile_runtime(
+    def _compiled_scanned_runtime(
         self, *, donate_state: bool = True
     ) -> Callable[[RuntimeCouplerState], RuntimeCouplerState]:
-        """Return a reusable compiled scanned-runtime callable.
+        """Return a cached JIT-scanned runtime for the current runtime topology."""
 
-        The returned callable runs the pure scanned runtime under ``jax.jit``.
-        Reuse the same compiled callable for repeated runs with the same
-        runtime-state PyTree structure and array shapes to maximize compile
-        cache hits. Host-backed adapters that require Python object mutation
-        should use ``run()`` instead of the scanned runtime.
-
-        If ``donate_state`` is true, the input ``RuntimeCouplerState`` is donated
-        to XLA at the outer runtime boundary. Callers must treat the donated input
-        state as consumed and must not read it after invoking the compiled
-        callable.
-        """
-        host_names = host_component_names(self.components)
-        if host_names:
-            names = ", ".join(host_names)
-            raise CouplerError(
-                "compile_runtime() only supports differentiable runtime components; "
-                f"host-backed component(s) require run(): {names}"
-            )
+        cache_key = self._compiled_runtime_cache_key(donate_state=donate_state)
+        if cache_key in self._compiled_runtime_cache:
+            return self._compiled_runtime_cache[cache_key]
 
         def scanned_runtime(
             state: RuntimeCouplerState,
         ) -> RuntimeCouplerState:
-            return self._run_scanned_runtime(state)
+            return self._run_scanned_runtime(state, validate_state=False)
 
         if donate_state:
-            return cast(
+            compiled_runtime = cast(
                 Callable[[RuntimeCouplerState], RuntimeCouplerState],
                 jax.jit(scanned_runtime, donate_argnums=(0,)),
             )
-        return cast(
-            Callable[[RuntimeCouplerState], RuntimeCouplerState],
-            jax.jit(scanned_runtime),
+        else:
+            compiled_runtime = cast(
+                Callable[[RuntimeCouplerState], RuntimeCouplerState],
+                jax.jit(scanned_runtime),
+            )
+        self._compiled_runtime_cache[cache_key] = compiled_runtime
+        return compiled_runtime
+
+    def _compiled_runtime_cache_key(self, *, donate_state: bool) -> tuple[Any, ...]:
+        """Return a static cache key for the compiled pure-runtime wrapper."""
+
+        return (
+            donate_state,
+            tuple((name, id(component)) for name, component in self.components.items()),
+            tuple(self.run_sequence),
+            tuple(
+                (
+                    id(exchange),
+                    exchange.source,
+                    exchange.destination,
+                    exchange.interpolation_type,
+                    tuple(exchange.field_names),
+                )
+                for exchange in self.exchanges
+            ),
+            tuple(sorted((key, id(value)) for key, value in self._regridders.items())),
+            tuple(
+                (name, contract.imports, contract.exports)
+                for name, contract in sorted(self._runtime_contracts.items())
+            ),
+            repr(self.clock.start),
+            self.clock.dt_seconds,
+            self.clock.steps,
+            self.clock.year_type,
+            self.settings.year_in_seconds,
         )
 
     def _run_scanned_runtime(
-        self, initial_state: RuntimeCouplerState | None = None
+        self,
+        initial_state: RuntimeCouplerState | None = None,
+        *,
+        validate_state: bool = True,
     ) -> RuntimeCouplerState:
         """Run the unified runtime path under ``jax.lax.scan`` and return state."""
 
@@ -615,7 +668,8 @@ class Coupler:
             if initial_state is None
             else initial_state
         )
-        self._validate_runtime_state(runtime_state)
+        if validate_state:
+            self._validate_runtime_state(runtime_state)
         step_infos = build_runtime_step_info(self.clock, self.settings)
         dispatch_context = self._runtime_dispatch_context()
 

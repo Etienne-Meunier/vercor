@@ -62,8 +62,9 @@ class _RunComponent(DummyComponent):
 
 
 class _HostRunComponent(HostRuntimeComponent):
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, events: list[str] | None = None) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.events = events
         self.data["temperature"] = np.ones((2, 2))
 
     def step_host_runtime_state(
@@ -71,6 +72,12 @@ class _HostRunComponent(HostRuntimeComponent):
         component_state: Any,
         context: RuntimeStepContext,
     ) -> Any:
+        if self.events is not None:
+            time = context.time
+            time_label = "none" if time is None else time.isoformat()
+            self.events.append(
+                f"step_host:{self.name}:{time_label}:{context.dt_seconds}"
+            )
         data = component_state.data.set(
             "temperature",
             component_state.data.get("temperature") + context.dt_seconds,
@@ -656,10 +663,9 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
 ) -> None:
     coupler = make_coupler()
     coupler.logger = cast(Any, _RecordingLogger())
-    timestamp = coupler.clock.start
     events: list[str] = []
-    atmosphere = _RunComponent("ATM", events, timestamp)
-    ocean = _RunComponent("OCN", events, timestamp)
+    atmosphere = _HostRunComponent("ATM", events)
+    ocean = _HostRunComponent("OCN", events)
     coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
     coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
 
@@ -696,11 +702,11 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         "send:OCN",
         "dispatch:ATM",
         "receive",
-        "step_runtime:ATM:2000-01-01T00:00:00:60.0",
+        "step_host:ATM:2000-01-01T00:00:00:60.0",
         "send:ATM",
         "dispatch:OCN",
         "receive",
-        "step_runtime:OCN:2000-01-01T00:00:00:60.0",
+        "step_host:OCN:2000-01-01T00:00:00:60.0",
         "send:OCN",
     ]
 
@@ -722,13 +728,13 @@ def test_host_runtime_components_use_explicit_host_contract() -> None:
     )
 
 
-def test_compile_runtime_rejects_host_backed_components() -> None:
+def test_run_rejects_state_donation_for_host_backed_components() -> None:
     coupler = make_coupler()
     coupler.components = cast(Any, {"ATM": _HostRunComponent("ATM")})
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    with pytest.raises(CouplerError, match="host-backed component"):
-        coupler.compile_runtime(donate_state=False)
+    with pytest.raises(CouplerError, match="donation"):
+        coupler.run(donate_state=True)
 
 
 def test_host_and_scanned_run_use_runtime_component_helper(
@@ -740,12 +746,6 @@ def test_host_and_scanned_run_use_runtime_component_helper(
     assert not hasattr(coupler, "interpolate_and_dispatch_fields")
     assert not hasattr(coupler, "_dispatch_runtime_fields")
     assert not hasattr(coupler, "_commit_runtime_incoming_fields")
-
-    timestamp = coupler.clock.start
-    atmosphere = _RunComponent("ATM", [], timestamp)
-    ocean = _RunComponent("OCN", [], timestamp)
-    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
-    coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
 
     events: list[str] = []
 
@@ -768,11 +768,18 @@ def test_host_and_scanned_run_use_runtime_component_helper(
         fake_runtime_step,
     )
 
+    coupler.components = cast(Any, {"ATM": _HostRunComponent("ATM")})
+    coupler.run_sequence = RunSequence(order=["ATM"])
     coupler.run()
     run_events = list(events)
     events.clear()
 
+    timestamp = coupler.clock.start
+    atmosphere = _RunComponent("ATM", [], timestamp)
+    ocean = _RunComponent("OCN", [], timestamp)
+    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
+    coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
     coupler._run_scanned_runtime()
 
-    assert run_events == ["run:ATM", "run:OCN"]
+    assert run_events == ["run:ATM"]
     assert events == ["scan:ATM", "scan:OCN"]
