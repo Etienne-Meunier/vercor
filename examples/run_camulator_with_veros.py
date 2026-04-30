@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta
 
-from vercor import Clock, Coupler, Exchange
+from vercor import Clock, Coupler, Exchange, RunSequence
 from vercor.components.data.camulator_land import CAMulatorLand
 from vercor.components.external.camulator import CAMulatorGCM
 from vercor.components.external.veros_gcm import VerosGCM
 
-from vercor.coupler import RunSequence
 from vercor.regridders import bilinear
 
 if __name__ == "__main__":

@@ -4,11 +4,10 @@ from typing import Any, Callable
 import jax
 
 from examples.jax_array_helpers import component_vector_speed
-from vercor import Clock, Coupler, Exchange
+from vercor import Clock, Coupler, Exchange, RunSequence
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_land import ERA5Land
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
-from vercor.coupler import RunSequence
 from vercor.regridders import bilinear, conservative
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,

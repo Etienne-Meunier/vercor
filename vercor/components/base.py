@@ -17,29 +17,23 @@ if TYPE_CHECKING:
 
 @dataclass
 class Component:
+    """Supported component-author contract for VerCOR model adapters.
+
+    Component instances own mutable setup-time metadata: name, grid, seed data,
+    and component-specific settings. During coupling, the coupler copies those
+    seed fields into immutable runtime state containers so JAX can trace the
+    integration. Custom components extend this class by overriding the runtime
+    hooks while preserving their signatures.
+
+    Common exchange-field conventions:
+        - fields use SI units
+        - surface fluxes are positive downward and negative upward
+    """
+
     name: str
     grid: RectilinearGrid
     data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: ComponentSettings = field(default_factory=ComponentSettings)
-    """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
-
-    Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
-    JCM atmospheric model (nTime, nLev, nLon, nLat).
-
-    One must implement necessary dimensions check and reshaping of fields
-    during import/export if needed.
-
-    Common conventions for exchange fields:
-        - All fields must have SI units.
-        - Surface fluxes are positive downward and negative upward.
-
-    Attributes:
-        name: component name
-        grid: component grid
-        data: internal storage for component data arrays to/from which fields
-                        seed the runtime state during initialization
-        settings: component-specific settings
-    """
 
     def initialize(self, context: ComponentInitContext) -> None:
         """Initialize component-owned runtime data before coupling."""

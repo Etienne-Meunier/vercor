@@ -74,6 +74,15 @@ def setup_logger() -> Logger:
 
 @dataclass
 class Coupler:
+    """Public orchestration facade for configured component integrations.
+
+    The coupler owns registration, exchange declarations, run sequence,
+    regridder/mask setup, runtime-state creation, execution, and final output.
+    The differentiable integration itself operates on immutable runtime state;
+    component objects remain setup/configuration adapters rather than the
+    traced integration state.
+    """
+
     clock: Clock
     logger: Logger = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
@@ -101,34 +110,6 @@ class Coupler:
         tuple[Any, ...],
         Callable[[RuntimeCouplerState], RuntimeCouplerState],
     ] = field(default_factory=dict, init=False, repr=False)
-
-    """
-    Main coupler class to manage components and exchanges between them.
-
-    Attributes:
-        clock: Clock instance for managing simulation time
-        logger: Logger instance for coupler logging
-        run_sequence: sequence of component names defining the call (step) order
-        components: mapping of component name to component instance
-        exchanges: list of all Exchange instances
-        settings: VercorSettings instance for coupler settings
-        ocn_bmask_on_atm_grid: binary ocean mask regridded onto atmosphere grid
-        lnd_bmask_on_atm_grid: binary land mask regridded onto atmosphere grid
-        ocn_fmask_on_atm_grid: fractional ocean mask regridded onto atmosphere grid
-        lnd_fmask_on_atm_grid: fractional land mask regridded onto atmosphere grid
-        _regridders: mapping of (source component name, destination component name)
-                to Regridder instance (a pool of all available regridders)
-        _binary_masks: mapping of (source component name, destination component name)
-                to a binary mask array. This mask is used during regridding of fields
-                to ensure that only valid (e.g., ocean or land) points are considered
-                during the regridding process.
-        _fractional_masks: mapping of (source component name, destination component name)
-                to a fractional mask array. This mask is applied during field exchanges
-                after regridding to ensure that only the appropriate portion from source
-                grid cells of the forcing or boundary conditions is transferred to
-                destination grid cells, reflecting the partial coverage of source grid cells
-                within destination grid cells.
-    """
 
     def register(
         self,

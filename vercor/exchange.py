@@ -31,6 +31,13 @@ VALID_EXCHANGE_FIELD_NAMES: list[str] = [
 
 @dataclass
 class Exchange:
+    """Public exchange declaration connecting source fields to a destination.
+
+    Exchange objects are static configuration. The coupler converts them into
+    runtime contracts and dispatch metadata before execution so traced runtime
+    state only carries arrays and stable field-store metadata.
+    """
+
     source: str
     destination: str
     name: str = field(init=False)
@@ -39,16 +46,6 @@ class Exchange:
         ..., BilinearRectilinearRegridder | ConservativeRectilinearRegridder
     ]
     interpolation_type: str = field(init=False)
-    """
-    Exchange definition between two components
-
-        source, destination: component names
-        name: exchange name (automatically set to "SOURCE2DESTINATION")
-        field_names: list of scalar field names and
-                tuples of vectors (u-component, v-component)
-        regridder_factory: callable that returns a Regridder instance
-        interpolation_type: type of interpolation used (automatically set from regridder_factory)
-    """
 
     def __post_init__(self) -> None:
         self.name = (

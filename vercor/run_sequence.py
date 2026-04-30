@@ -4,7 +4,8 @@ from typing import Iterator
 
 @dataclass
 class RunSequence:
-    # Ordered component names for stepping
+    """Public ordered component-name schedule used by ``Coupler.run()``."""
+
     order: list[str] = field(default_factory=list)
 
     def __iter__(self) -> Iterator[str]:

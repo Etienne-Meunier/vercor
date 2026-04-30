@@ -1,10 +1,9 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange
+from vercor import Clock, Coupler, Exchange, RunSequence
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_land import ERA5Land
 from vercor.components.external.veros_gcm import VerosGCM
-from vercor.coupler import RunSequence
 from vercor.regridders import bilinear
 
 if __name__ == "__main__":

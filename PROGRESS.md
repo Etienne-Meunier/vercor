@@ -1,5 +1,52 @@
 # 2026-04-30
 
+## Public/Runtime API Boundary Clarification
+
+- Preserved the current differentiable runtime architecture and kept runtime
+  state containers, runtime contexts, and component runtime hook signatures
+  unchanged.
+- Clarified the public package surface:
+  - `vercor.__all__` now exports `Component`, `HostRuntimeComponent`, and
+    `RunSequence` alongside the existing orchestration API
+  - runtime internals remain out of the package top-level
+  - `vercor.components` remains limited to `Component` and
+    `HostRuntimeComponent`
+- Updated examples to import `RunSequence` from the top-level `vercor` public
+  API instead of `vercor.coupler`.
+- Converted misplaced class documentation in `Component`, `Coupler`,
+  `Exchange`, and `RunSequence` into actual class docstrings explaining the
+  setup-time public API vs immutable runtime-state boundary.
+- Added API-boundary regression coverage in `tests/test_api_boundaries.py`.
+- Added a `DESIGN.md` section documenting public orchestration APIs,
+  component-author hooks, and internal runtime state APIs.
+- No `DEPENDENCIES.md` update was needed because module ownership and
+  dependency order did not change.
+- No failed architectural approaches. The TDD red check failed as expected
+  before implementation; one broad multi-file example import patch had stale
+  context and was split into smaller patches without changing the design.
+
+## Validation (Public/Runtime API Boundary Clarification, 2026-04-30)
+
+- `conda run -n scipy pytest tests/test_api_boundaries.py -q --fast --tb=short`
+  - failed as expected before implementation because top-level public exports
+    were missing and examples still imported `RunSequence` from `vercor.coupler`
+- `conda run -n scipy pytest tests/test_api_boundaries.py -q --fast --tb=short`
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_api_boundaries.py tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_api_boundaries.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`96 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Context Boundary Cleanup
 
 - Moved `ComponentInitContext` and `RuntimeStepContext` from

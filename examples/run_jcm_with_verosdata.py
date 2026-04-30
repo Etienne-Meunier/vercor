@@ -1,14 +1,13 @@
 from datetime import datetime
 
 from examples.jax_array_helpers import transposed_host_array
-from vercor import Clock, Coupler, Exchange
+from vercor import Clock, Coupler, Exchange, RunSequence
 from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.components.data.jcm_land import JCMLand
 from vercor.components.external.jax_gcm import JAXGCM
 from vercor.components.external.jax_gcm_tools import (
     generate_jcm_coords_forcing_topography_files,
 )
-from vercor.coupler import RunSequence
 from vercor.regridders import bilinear
 
 if __name__ == "__main__":

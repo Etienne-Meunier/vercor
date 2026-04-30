@@ -96,6 +96,26 @@ class RectilinearGrid:
     ...
 ```
 
+### Public and runtime API boundary
+
+VerCOR intentionally separates user-facing orchestration objects from the
+immutable runtime containers used during traced integration.
+
+- Public orchestration API: `Coupler`, `Exchange`, `RunSequence`, `Clock`,
+  grids, regridders, and bundled concrete components are the objects users
+  compose when configuring a coupled run.
+- Component-author API: `Component` and `HostRuntimeComponent` are the stable
+  extension points. Custom adapters seed setup-time fields on `Component.data`
+  and implement the runtime hooks `initialize()`, `create_runtime_payload()`,
+  `prefill_runtime_state_fields()`, `validate_runtime_state()`,
+  `step_runtime_state()`, and, for host-backed adapters,
+  `step_host_runtime_state()`.
+- Internal runtime API: `RuntimeFieldStore`, `RuntimeComponentState`,
+  `RuntimeCouplerState`, runtime contexts, dispatch contexts, and runtime
+  helper functions carry immutable arrays and static metadata through JAX
+  tracing. They are required for differentiability and stable scan carry
+  structure, but they are not exported from the package top level.
+
 ---
 
 ## 3. Module Specifications
