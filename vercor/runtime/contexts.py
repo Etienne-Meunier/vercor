@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from logging import Logger
 
 from vercor.clock import ModelDateTime
+from vercor.jax_logging import LoggerLike
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 
@@ -17,7 +17,7 @@ class ComponentInitContext:
     dt_seconds: float
     run_sequence: RunSequence
     settings: VercorSettings
-    logger: Logger
+    logger: LoggerLike
 
 
 @dataclass(frozen=True)
@@ -27,4 +27,4 @@ class RuntimeStepContext:
     dt_seconds: float
     settings: VercorSettings
     time: datetime | ModelDateTime | None = None
-    logger: Logger | None = None
+    logger: LoggerLike | None = None

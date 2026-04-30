@@ -39,11 +39,11 @@ class _RecordingLogger:
     def __init__(self) -> None:
         self.messages: list[str] = []
 
-    def info(self, message: str) -> None:
-        self.messages.append(message)
+    def info(self, message: str, *args: Any) -> None:
+        self.messages.append(message.format(*args) if args else message)
 
-    def warning(self, message: str) -> None:
-        self.messages.append(message)
+    def warning(self, message: str, *args: Any) -> None:
+        self.messages.append(message.format(*args) if args else message)
 
 
 def _runtime_component_state(

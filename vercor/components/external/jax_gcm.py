@@ -576,15 +576,10 @@ class JAXGCM(Component):
         logger = context.logger
         if logger is not None:
             logger.info(
-                " Mean of SST: {}".format(
-                    float(
-                        jnp.nanmean(
-                            jnp.asarray(
-                                component_state.data.get("sea_surface_temperature")
-                            )
-                        )
-                    )
-                )
+                " Mean of SST: {}",
+                jnp.nanmean(
+                    jnp.asarray(component_state.data.get("sea_surface_temperature"))
+                ),
             )
 
         stepped_state, prediction = self._step_jax_gcm_component_state(
@@ -607,9 +602,8 @@ class JAXGCM(Component):
         )
         if logger is not None:
             logger.info(
-                " Number of cells with (SST + SKT) less than 250.0 K: {}".format(
-                    int(jnp.sum(cold_surface_cells))
-                ),
+                " Number of cells with (SST + SKT) less than 250.0 K: {}",
+                jnp.sum(cold_surface_cells),
             )
 
         if self._should_write_output(

@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass, field
-from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
@@ -14,6 +13,12 @@ from vercor.exceptions import (
     ComponentError,
 )
 from vercor.exchange import Exchange
+from vercor.jax_logging import (
+    JaxCallbackLogger,
+    LoggerLike,
+    effective_log_level,
+    setup_logger,
+)
 from vercor.regridders import (
     BilinearRectilinearRegridder,
     ConservativeRectilinearRegridder,
@@ -58,20 +63,6 @@ from vercor.grid_masks import (
 from vercor.types import RuntimeArray
 
 
-def setup_logger() -> Logger:
-    """
-    Setup and return a logger for the Coupler.
-    """
-    logger = logging.getLogger("VerCOR")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    logger.setLevel(logging.INFO)
-    return logger
-
-
 @dataclass
 class Coupler:
     """Public orchestration facade for configured component integrations.
@@ -108,7 +99,8 @@ class Coupler:
     """
 
     clock: Clock
-    logger: Logger = field(default_factory=setup_logger)
+    log_level: int | str = "INFO"
+    logger: LoggerLike = field(default_factory=setup_logger)
     run_sequence: RunSequence = field(init=False)
     components: dict[str, Component] = field(default_factory=dict)
     exchanges: list[Exchange] = field(default_factory=list)
@@ -134,6 +126,16 @@ class Coupler:
         tuple[Any, ...],
         Callable[[RuntimeCouplerState], RuntimeCouplerState],
     ] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Apply the configured logging threshold at construction time."""
+
+        if isinstance(self.logger, logging.Logger):
+            self.logger = JaxCallbackLogger(self.logger)
+
+        set_level = getattr(self.logger, "setLevel", None)
+        if callable(set_level):
+            set_level(self.log_level)
 
     def register(
         self,
@@ -650,6 +652,8 @@ class Coupler:
                 for exchange in self.exchanges
             ),
             tuple(sorted((key, id(value)) for key, value in self._regridders.items())),
+            id(self.logger),
+            effective_log_level(self.logger, self.log_level),
             tuple(
                 (name, contract.imports, contract.exports)
                 for name, contract in sorted(self._runtime_contracts.items())
@@ -689,6 +693,7 @@ class Coupler:
                     step_info,
                     dispatch_context=dispatch_context,
                     allow_host_runtime=False,
+                    logger=self.logger,
                 )
             return state, None
 

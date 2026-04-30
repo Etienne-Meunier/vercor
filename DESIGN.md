@@ -117,6 +117,16 @@ immutable runtime containers used during traced integration.
   required for differentiability and stable scan carry structure, but they are
   not exported from the package top level.
 
+### Logging across JAX runtime transforms
+
+The coupler logger is callback-backed through `jax.debug.callback`, so runtime
+hooks can emit diagnostics inside `jax.lax.scan`, `jax.jit`, and automatic
+differentiation transforms. Coupler logging levels are configured at
+instantiation with `Coupler(..., log_level=...)`; disabled levels are filtered
+before callbacks enter the traced graph. Runtime hooks should pass traced values
+as logger arguments, for example `logger.info("Mean SST: {}", jnp.mean(sst))`,
+instead of converting tracers with `float(...)` or `int(...)`.
+
 ---
 
 ## 3. Module Specifications

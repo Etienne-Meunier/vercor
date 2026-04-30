@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -17,7 +18,7 @@ from vercor.clock import Clock
 import vercor.coupler as coupler_module
 from vercor.components.base import HostRuntimeComponent
 from vercor.runtime.contexts import RuntimeStepContext
-from vercor.coupler import Coupler
+from vercor.coupler import Coupler, setup_logger
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
 from vercor.regridders.bilinear import bilinear
@@ -32,14 +33,14 @@ class _RecordingLogger:
         self.warning_messages: list[str] = []
         self.debug_messages: list[str] = []
 
-    def info(self, message: str) -> None:
-        self.info_messages.append(message)
+    def info(self, message: str, *args: Any) -> None:
+        self.info_messages.append(message.format(*args) if args else message)
 
-    def warning(self, message: str) -> None:
-        self.warning_messages.append(message)
+    def warning(self, message: str, *args: Any) -> None:
+        self.warning_messages.append(message.format(*args) if args else message)
 
-    def debug(self, message: str) -> None:
-        self.debug_messages.append(message)
+    def debug(self, message: str, *args: Any) -> None:
+        self.debug_messages.append(message.format(*args) if args else message)
 
 
 class _RunComponent(DummyComponent):
@@ -58,6 +59,25 @@ class _RunComponent(DummyComponent):
         time_label = "none" if time is None else time.isoformat()
         self.events.append(
             f"step_runtime:{self.name}:{time_label}:{context.dt_seconds}"
+        )
+        return component_state
+
+
+class _LoggingRunComponent(DummyComponent):
+    def __init__(self, name: str) -> None:
+        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.data["temperature"] = np.ones((2, 2), dtype=float)
+
+    def step_runtime_state(
+        self,
+        component_state: Any,
+        context: RuntimeStepContext,
+    ) -> Any:
+        assert context.logger is not None
+        context.logger.info(
+            "scanned {} {}",
+            self.name,
+            jnp.sum(component_state.data.get("temperature")),
         )
         return component_state
 
@@ -102,6 +122,99 @@ def _dispatch_runtime_fields(
         coupler.exchanges,
         coupler._regridders,
     )
+
+
+def test_coupler_accepts_log_level_at_instantiation() -> None:
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        log_level="WARNING",
+    )
+
+    assert not coupler.logger.isEnabledFor(logging.INFO)
+    assert coupler.logger.isEnabledFor(logging.WARNING)
+
+
+def test_coupler_wraps_injected_python_logger_for_scanned_runtime(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger_name = "VerCOR.test.injected"
+    caplog.set_level(logging.INFO, logger=logger_name)
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        logger=logging.getLogger(logger_name),
+        log_level="INFO",
+    )
+    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+    jax.effects_barrier()
+
+    assert final_state.component_names == ("ATM",)
+    assert "scanned ATM 4.0" in caplog.text
+
+
+def test_setup_logger_formats_traced_values_under_scan(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger_name = "VerCOR.test.callback"
+    logger = setup_logger(level="INFO", name=logger_name)
+    caplog.set_level(logging.INFO, logger=logger_name)
+
+    def scanned_total(seed: jax.Array) -> jax.Array:
+        def body(total: jax.Array, value: jax.Array) -> tuple[jax.Array, None]:
+            updated = total + value
+            logger.info("callback value {}", updated)
+            return updated, None
+
+        result, _ = jax.lax.scan(body, seed, jnp.asarray([1.0, 2.0]))
+        return result
+
+    assert jax.jit(scanned_total)(jnp.asarray(0.0)) == 3.0
+    jax.effects_barrier()
+
+    assert "callback value 1.0" in caplog.text
+    assert "callback value 3.0" in caplog.text
+
+
+def test_scanned_runtime_passes_callback_logger_to_components(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger_name = "VerCOR.test.scanned-runtime"
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        log_level="INFO",
+    )
+    coupler.logger = setup_logger(level="INFO", name=logger_name)
+    caplog.set_level(logging.INFO, logger=logger_name)
+    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+    jax.effects_barrier()
+
+    assert final_state.component_names == ("ATM",)
+    assert "scanned ATM 4.0" in caplog.text
+
+
+def test_scanned_runtime_suppresses_info_below_log_level(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger_name = "VerCOR.test.scanned-runtime-warning"
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        log_level="WARNING",
+    )
+    coupler.logger = setup_logger(level="WARNING", name=logger_name)
+    caplog.set_level(logging.INFO)
+    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+    jax.effects_barrier()
+
+    assert final_state.component_names == ("ATM",)
+    assert "scanned ATM" not in caplog.text
 
 
 @pytest.mark.fast_always

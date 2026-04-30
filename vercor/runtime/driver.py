@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from logging import Logger
 from typing import Any
 
 from vercor.clock import ModelDateTime
 from vercor.components.base import Component, HostRuntimeComponent
 from vercor.exchange import Exchange
+from vercor.jax_logging import LoggerLike
 from vercor.runtime import (
     RuntimeComponentContract,
     RuntimeCouplerState,
@@ -50,7 +50,7 @@ def step_runtime_component(
     dispatch_context: RuntimeDispatchContext,
     allow_host_runtime: bool,
     time: datetime | ModelDateTime | None = None,
-    logger: Logger | None = None,
+    logger: LoggerLike | None = None,
 ) -> RuntimeCouplerState:
     """Advance one component through dispatch, receive, step, and send phases."""
 

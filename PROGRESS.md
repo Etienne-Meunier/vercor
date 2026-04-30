@@ -1,5 +1,57 @@
 # 2026-04-30
 
+## JAX Callback Runtime Logging
+
+- Added `vercor/jax_logging.py` with a callback-backed `JaxCallbackLogger`,
+  `LoggerLike` protocol, `setup_logger(level=..., name=...)`, and logging-level
+  normalization helpers.
+- Added `Coupler(..., log_level=...)` so the logging threshold is configured at
+  instantiation, and included logger identity/effective level in the scanned
+  runtime compile-cache key. Plain `logging.Logger` instances passed at
+  construction are wrapped with the same callback-backed logger.
+- Passed the coupler logger into scanned runtime component contexts so pure
+  components can log from inside `jax.lax.scan`, `jax.jit`, `jax.grad`, and
+  `jax.jvp` paths through `jax.debug.callback`.
+- Updated JAXGCM traced diagnostic logs to pass JAX values as logger arguments
+  instead of converting tracers with `float(...)` or `int(...)`.
+- Documented the callback logging boundary in `DESIGN.md` and added
+  `vercor/jax_logging.py` to `DEPENDENCIES.md`.
+- Failed approaches / corrections:
+  - The first implementation imported NumPy for callback value formatting; the
+    production NumPy-boundary guard caught this, so callback host values now use
+    `jax.device_get` and scalar `.item()` instead.
+  - The first full-suite run exposed test-local recording loggers that accepted
+    only a single message argument; those test doubles now match the runtime
+    logger protocol.
+
+## Validation (JAX Callback Runtime Logging, 2026-04-30)
+
+- `conda run -n scipy pytest tests/test_coupler_coverage.py::test_coupler_accepts_log_level_at_instantiation tests/test_coupler_coverage.py::test_setup_logger_formats_traced_values_under_scan tests/test_coupler_coverage.py::test_scanned_runtime_passes_callback_logger_to_components tests/test_coupler_coverage.py::test_scanned_runtime_suppresses_info_below_log_level -q --tb=short`
+  - failed as expected before implementation because `Coupler.__init__()` had no
+    `log_level` argument and `setup_logger()` accepted no `level`/`name`
+    arguments
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_runtime_state.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - first failed because `vercor/jax_logging.py` imported NumPy outside the
+    explicit host boundaries
+  - passed after removing the NumPy dependency
+- `conda run -n scipy pytest tests/test_external_components_coverage.py::test_jax_gcm_step_maps_outputs_and_respects_output_gate -q --tb=short`
+  - passed after updating recording logger test doubles
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left 98 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`98 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Package Refactor
 
 - Moved all root-level runtime modules into the `vercor.runtime` package:
