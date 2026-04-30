@@ -2,7 +2,7 @@ from pathlib import Path
 import xarray as xr
 
 from vercor.host_arrays import runtime_array_to_host
-from vercor.runtime_views import RuntimeComponentView
+from vercor.runtime.views import RuntimeComponentView
 from vercor.types import RuntimeArray
 
 

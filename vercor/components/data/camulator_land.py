@@ -12,7 +12,7 @@ from vercor.components.external.camulator_state import (
 
 from vercor.grid import RectilinearGrid
 from vercor.components.base import HostRuntimeComponent
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.grid_masks import create_lnd_mask_from_ocn
 
 if TYPE_CHECKING:

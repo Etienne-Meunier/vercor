@@ -14,8 +14,8 @@ from vercor.fluxes.utilities import (
 )
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime_components import validate_runtime_grid_data_field
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.components import validate_runtime_grid_data_field
 from vercor.settings import VercorSettings
 from vercor.assets import get_forcing_data
 from vercor.types import RuntimeArray

@@ -1,5 +1,45 @@
 # 2026-04-30
 
+## Runtime Package Refactor
+
+- Moved all root-level runtime modules into the `vercor.runtime` package:
+  - `vercor/runtime/state.py` owns immutable runtime state, contracts, field
+    stores, and exchange dispatch
+  - `vercor/runtime/components.py` owns component runtime-state creation,
+    prefill/validation, receive/send, and time-selection helpers
+  - `vercor/runtime/contexts.py`, `driver.py`, `time.py`, and `views.py` own the
+    focused runtime context, dispatch, time metadata, and view helpers
+- Removed the old root sibling runtime module paths instead of keeping
+  compatibility shims.
+- Kept `from vercor.runtime import RuntimeComponentState, ...` working through
+  the internal runtime package re-export surface while keeping runtime internals
+  out of top-level `vercor.__all__`.
+- Updated source, tests, monkeypatch paths, `DESIGN.md`, and `DEPENDENCIES.md`
+  for the package layout.
+- No failed implementation approaches. The TDD red check failed for the expected
+  reason before the package move: `vercor.runtime` was still a file module and
+  could not expose `vercor.runtime.contexts`.
+
+## Validation (Runtime Package Refactor, 2026-04-30)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_module_does_not_own_component_specific_steps tests/test_api_boundaries.py -q --fast --tb=short`
+  - failed as expected before implementation because `vercor.runtime` was not a
+    package
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_api_boundaries.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py tests/test_runtime_run_cache.py tests/test_runtime_exchange.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_runtime_state.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`97 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Public/Runtime API Boundary Clarification
 
 - Preserved the current differentiable runtime architecture and kept runtime

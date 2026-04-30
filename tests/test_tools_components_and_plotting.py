@@ -18,7 +18,7 @@ from vercor.runtime import (
     append_unique_runtime_fields,
     flatten_exchange_fields,
 )
-from vercor.runtime_views import RuntimeComponentView
+from vercor.runtime.views import RuntimeComponentView
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,

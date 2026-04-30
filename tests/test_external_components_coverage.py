@@ -17,13 +17,13 @@ import vercor.components.external.jax_gcm as jax_gcm_module
 import vercor.components.external.veros_gcm as veros_gcm_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime import (
     RuntimeComponentContract,
     RuntimeComponentState,
     RuntimeFieldStore,
 )
-from vercor.runtime_components import create_runtime_component_state
+from vercor.runtime.components import create_runtime_component_state
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 

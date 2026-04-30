@@ -28,25 +28,25 @@ from vercor.runtime import (
     build_runtime_contracts,
     exchange_key_name,
 )
-from vercor.runtime_contexts import ComponentInitContext
-from vercor.runtime_components import (
+from vercor.runtime.contexts import ComponentInitContext
+from vercor.runtime.components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
     create_runtime_component_state,
     validate_component_runtime_contract_fields,
 )
-from vercor.runtime_driver import (
+from vercor.runtime.driver import (
     RuntimeDispatchContext,
     host_component_names,
     prime_runtime_outgoing,
     step_runtime_component,
 )
-from vercor.runtime_time import (
+from vercor.runtime.time import (
     build_runtime_step_info,
     initial_runtime_step_info,
     scalar_runtime_step_info,
 )
-from vercor.runtime_views import RuntimeComponentView
+from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
 from vercor.grid_masks import (
     check_total_lnd_ocn_mask_sum,

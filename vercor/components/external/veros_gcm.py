@@ -10,7 +10,7 @@ from vercor.components.base import HostRuntimeComponent
 from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
 from vercor.runtime import RuntimeFieldStore
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
 from vercor.host_arrays import runtime_array_to_host
 from vercor.types import RuntimeArray

@@ -110,11 +110,12 @@ immutable runtime containers used during traced integration.
   `prefill_runtime_state_fields()`, `validate_runtime_state()`,
   `step_runtime_state()`, and, for host-backed adapters,
   `step_host_runtime_state()`.
-- Internal runtime API: `RuntimeFieldStore`, `RuntimeComponentState`,
-  `RuntimeCouplerState`, runtime contexts, dispatch contexts, and runtime
-  helper functions carry immutable arrays and static metadata through JAX
-  tracing. They are required for differentiability and stable scan carry
-  structure, but they are not exported from the package top level.
+- Internal runtime API: the `vercor.runtime` package owns
+  `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime
+  contexts, dispatch contexts, and runtime helper functions. These containers
+  carry immutable arrays and static metadata through JAX tracing. They are
+  required for differentiability and stable scan carry structure, but they are
+  not exported from the package top level.
 
 ---
 

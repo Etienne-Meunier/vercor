@@ -5,8 +5,8 @@ import jax.numpy as jnp
 
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime_components import validate_runtime_grid_data_field
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.components import validate_runtime_grid_data_field
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState

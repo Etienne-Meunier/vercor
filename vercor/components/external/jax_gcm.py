@@ -35,8 +35,8 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.grid import RectilinearGrid
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime_components import (
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.components import (
     validate_runtime_data_field_exists,
     validate_runtime_grid_data_field,
 )

@@ -14,7 +14,7 @@ import vercor.components.base as base_module
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.runtime_contexts import RuntimeStepContext
+from vercor.runtime.contexts import RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.forcing_data import ComponentForcingData
@@ -24,7 +24,7 @@ from vercor.runtime import (
     RuntimeComponentState,
     RuntimeFieldStore,
 )
-from vercor.runtime_components import (
+from vercor.runtime.components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
     create_runtime_component_state,
@@ -32,8 +32,8 @@ from vercor.runtime_components import (
     send_runtime_fields,
     validate_component_runtime_contract_fields,
 )
-from vercor.runtime_time import scalar_runtime_step_info
-from vercor.runtime_views import RuntimeComponentView
+from vercor.runtime.time import scalar_runtime_step_info
+from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
 
 

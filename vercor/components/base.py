@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vercor.grid import RectilinearGrid
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import ComponentSettings
 from vercor.types import RuntimeArray
 

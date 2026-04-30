@@ -11,7 +11,7 @@ from vercor.clock import Clock
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 from vercor.run_sequence import RunSequence
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
 

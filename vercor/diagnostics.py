@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from vercor.host_arrays import runtime_array_to_host
-from vercor.runtime_views import RuntimeComponentView
+from vercor.runtime.views import RuntimeComponentView
 from vercor.types import RuntimeArray
 
 

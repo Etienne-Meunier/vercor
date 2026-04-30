@@ -16,7 +16,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 import vercor.coupler as coupler_module
 from vercor.components.base import HostRuntimeComponent
-from vercor.runtime_contexts import RuntimeStepContext
+from vercor.runtime.contexts import RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
@@ -691,10 +691,10 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         return component_state
 
     monkeypatch.setattr(
-        "vercor.runtime_driver.dispatch_component_exchanges", fake_dispatch
+        "vercor.runtime.driver.dispatch_component_exchanges", fake_dispatch
     )
-    monkeypatch.setattr("vercor.runtime_driver.receive_runtime_fields", fake_receive)
-    monkeypatch.setattr("vercor.runtime_driver.send_runtime_fields", fake_send)
+    monkeypatch.setattr("vercor.runtime.driver.receive_runtime_fields", fake_receive)
+    monkeypatch.setattr("vercor.runtime.driver.send_runtime_fields", fake_send)
 
     coupler.run()
 

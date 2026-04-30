@@ -9,7 +9,7 @@ import numpy as np
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.base import Component
-from vercor.runtime_contexts import ComponentInitContext
+from vercor.runtime.contexts import ComponentInitContext
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
@@ -19,7 +19,7 @@ from vercor.runtime import (
     RuntimeFieldStore,
     RuntimeStepInfo,
 )
-from vercor.runtime_components import send_runtime_fields
+from vercor.runtime.components import send_runtime_fields
 
 
 class _RuntimeSendComponent(Component):
@@ -32,13 +32,13 @@ class _RuntimeSendComponent(Component):
 
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
-    runtime_source = Path("vercor/runtime.py").read_text(encoding="utf-8")
-    runtime_components_source = Path("vercor/runtime_components.py").read_text(
+    runtime_source = Path("vercor/runtime/state.py").read_text(encoding="utf-8")
+    runtime_components_source = Path("vercor/runtime/components.py").read_text(
         encoding="utf-8"
     )
-    runtime_driver_source = Path("vercor/runtime_driver.py").read_text(encoding="utf-8")
-    runtime_time_source = Path("vercor/runtime_time.py").read_text(encoding="utf-8")
-    runtime_contexts_path = Path("vercor/runtime_contexts.py")
+    runtime_driver_source = Path("vercor/runtime/driver.py").read_text(encoding="utf-8")
+    runtime_time_source = Path("vercor/runtime/time.py").read_text(encoding="utf-8")
+    runtime_contexts_path = Path("vercor/runtime/contexts.py")
     assert runtime_contexts_path.exists()
     runtime_contexts_source = runtime_contexts_path.read_text(encoding="utf-8")
     regridder_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
@@ -93,6 +93,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def _build_runtime_contracts" not in coupler_source
     assert "def build_runtime_contracts" in runtime_source
     assert not Path("vercor/runtime_contracts.py").exists()
+    assert not Path("vercor/runtime.py").exists()
+    assert not Path("vercor/runtime_components.py").exists()
+    assert not Path("vercor/runtime_contexts.py").exists()
+    assert not Path("vercor/runtime_driver.py").exists()
+    assert not Path("vercor/runtime_time.py").exists()
+    assert not Path("vercor/runtime_views.py").exists()
     assert "def runtime_step_info_from_times" in runtime_time_source
     assert "def step_runtime_component(" in runtime_driver_source
     assert "allow_host_runtime: bool" in runtime_driver_source
@@ -150,7 +156,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "_runtime_contracts" in coupler_source
     assert "class ComponentInitContext" not in base_source
     assert "class RuntimeStepContext" not in base_source
-    assert "from vercor.runtime_contexts import" in base_source
+    assert "from vercor.runtime.contexts import" in base_source
     assert "class ComponentInitContext" in runtime_contexts_source
     assert "class RuntimeStepContext" in runtime_contexts_source
     assert "ComponentInitContext" not in components_source

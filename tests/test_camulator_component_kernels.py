@@ -14,7 +14,7 @@ import vercor.components.data.camulator_land as camulator_land_module
 import vercor.components.external.camulator as camulator_module
 import vercor.components.external.camulator_state as camulator_state_module
 from tests.assertions import assert_allclose_compact
-from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.components.external.camulator import (
     CAMulatorGCM,
     _initialize_camulator_runtime_fields,
@@ -30,7 +30,7 @@ from vercor.runtime import (
     RuntimeComponentState,
     RuntimeFieldStore,
 )
-from vercor.runtime_components import create_runtime_component_state
+from vercor.runtime.components import create_runtime_component_state
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
 
