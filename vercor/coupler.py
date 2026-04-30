@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock
-from vercor.components.base import Component, ComponentInitContext
+from vercor.components.base import Component
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -28,6 +28,7 @@ from vercor.runtime import (
     build_runtime_contracts,
     exchange_key_name,
 )
+from vercor.runtime_contexts import ComponentInitContext
 from vercor.runtime_components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,

@@ -27,13 +27,10 @@ try:
 except ModuleNotFoundError:
     print("Credit module not found. Please install credit to use CAMulator.")
 
-from vercor.components.base import (
-    ComponentInitContext,
-    HostRuntimeComponent,
-    RuntimeStepContext,
-)
+from vercor.components.base import HostRuntimeComponent
 from vercor.grid import RectilinearGrid
 from vercor.host_arrays import runtime_array_to_host
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
 

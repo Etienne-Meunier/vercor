@@ -7,7 +7,7 @@ from logging import Logger
 from typing import Any
 
 from vercor.clock import ModelDateTime
-from vercor.components.base import Component, HostRuntimeComponent, RuntimeStepContext
+from vercor.components.base import Component, HostRuntimeComponent
 from vercor.exchange import Exchange
 from vercor.runtime import (
     RuntimeComponentContract,
@@ -16,6 +16,7 @@ from vercor.runtime import (
     dispatch_component_exchanges,
 )
 from vercor.runtime_components import receive_runtime_fields, send_runtime_fields
+from vercor.runtime_contexts import RuntimeStepContext
 from vercor.settings import VercorSettings
 
 

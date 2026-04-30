@@ -8,9 +8,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from vercor.clock import Clock
-from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
+from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
 from vercor.run_sequence import RunSequence
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
 

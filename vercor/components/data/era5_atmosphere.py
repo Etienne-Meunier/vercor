@@ -5,11 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components.base import (
-    Component,
-    ComponentInitContext,
-    RuntimeStepContext,
-)
+from vercor.components.base import Component
 from vercor.fluxes.utilities import (
     compute_air_density,
     get_altitudes_hybrid_sigma_levels,
@@ -18,6 +14,7 @@ from vercor.fluxes.utilities import (
 )
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime_components import validate_runtime_grid_data_field
 from vercor.settings import VercorSettings
 from vercor.assets import get_forcing_data

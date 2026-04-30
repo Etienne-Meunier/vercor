@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from logging import Logger
 from typing import TYPE_CHECKING, Any
 
-from vercor.clock import ModelDateTime
 from vercor.grid import RectilinearGrid
-from vercor.run_sequence import RunSequence
-from vercor.settings import ComponentSettings, VercorSettings
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
+from vercor.settings import ComponentSettings
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -16,27 +13,6 @@ if TYPE_CHECKING:
         RuntimeComponentContract,
         RuntimeComponentState,
     )
-
-
-@dataclass(frozen=True)
-class ComponentInitContext:
-    """Minimal component initialization context owned by the coupler."""
-
-    start: datetime | ModelDateTime
-    dt_seconds: float
-    run_sequence: RunSequence
-    settings: VercorSettings
-    logger: Logger
-
-
-@dataclass(frozen=True)
-class RuntimeStepContext:
-    """Minimal runtime step context passed to component step boundaries."""
-
-    dt_seconds: float
-    settings: VercorSettings
-    time: datetime | ModelDateTime | None = None
-    logger: Logger | None = None
 
 
 @dataclass

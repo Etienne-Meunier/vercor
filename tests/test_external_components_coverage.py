@@ -17,7 +17,7 @@ import vercor.components.external.jax_gcm as jax_gcm_module
 import vercor.components.external.veros_gcm as veros_gcm_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.components.base import ComponentInitContext, RuntimeStepContext
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime import (
     RuntimeComponentContract,
     RuntimeComponentState,
@@ -456,7 +456,6 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     )
 
     physics_calls: dict[str, Any] = {}
-    spinup_calls = {"count": 0}
 
     class _FakePhysicsData:
         @staticmethod

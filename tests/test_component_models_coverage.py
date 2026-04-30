@@ -17,7 +17,7 @@ import vercor.components.data.erainterim_ocean as erainterim_ocean_module
 import vercor.components.data.jcm_land as jcm_land_module
 from tests._coverage_support import CoverageCouplerStub, make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.components.base import RuntimeStepContext
+from vercor.runtime_contexts import RuntimeStepContext
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_land import ERA5Land
 from vercor.components.data.era5_ocean import ERA5Ocean

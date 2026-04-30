@@ -1,3 +1,45 @@
+# 2026-04-30
+
+## Runtime Context Boundary Cleanup
+
+- Moved `ComponentInitContext` and `RuntimeStepContext` from
+  `vercor.components.base` into the focused `vercor.runtime_contexts` module.
+- Kept the runtime state architecture unchanged:
+  - `RuntimeComponentState`, `RuntimeCouplerState`, and `RuntimeFieldStore`
+    remain the integration-state containers
+  - component runtime hook method names and signatures remain unchanged
+  - `Coupler.run()` remains the single public runtime entrypoint
+- Slimmed `vercor.components` to export only `Component` and
+  `HostRuntimeComponent`; context types are now imported from
+  `vercor.runtime_contexts`.
+- Updated component, runtime-driver, coupler, and test imports to use the new
+  context owner.
+- Updated architecture coverage to guard the new boundary and removed one dead
+  test-local assignment exposed by the lint pass.
+- Updated `DEPENDENCIES.md` to document `vercor.runtime_contexts`.
+- No failed implementation approaches. The TDD red check failed as expected
+  before the new module existed; the first lint pass exposed a dead local in a
+  touched test file, which was removed without changing runtime behavior.
+
+## Validation (Runtime Context Boundary Cleanup, 2026-04-30)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_module_does_not_own_component_specific_steps -q --fast --tb=short`
+  - failed as expected before implementation because `vercor/runtime_contexts.py`
+    did not exist
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check warning and reformatted `tests/test_external_components_coverage.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-04-29
 
 ## Unified Coupler Runtime Entrypoint

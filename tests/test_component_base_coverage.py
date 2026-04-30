@@ -14,7 +14,7 @@ import vercor.components.base as base_module
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components.base import RuntimeStepContext
+from vercor.runtime_contexts import RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.forcing_data import ComponentForcingData
@@ -56,6 +56,8 @@ def test_removed_component_api_stays_absent() -> None:
 
     assert not hasattr(components_module, "Shared")
     assert not hasattr(components_module, "TimedNamedArray")
+    assert not hasattr(components_module, "ComponentInitContext")
+    assert not hasattr(components_module, "RuntimeStepContext")
     assert not hasattr(base_module, "Shared")
     assert not hasattr(base_module, "TimedNamedArray")
     assert not hasattr(base_module, "write_shared_to_netcdf")

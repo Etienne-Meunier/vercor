@@ -14,7 +14,7 @@ import vercor.components.data.camulator_land as camulator_land_module
 import vercor.components.external.camulator as camulator_module
 import vercor.components.external.camulator_state as camulator_state_module
 from tests.assertions import assert_allclose_compact
-from vercor.components.base import ComponentInitContext, RuntimeStepContext
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
 from vercor.components.external.camulator import (
     CAMulatorGCM,
     _initialize_camulator_runtime_fields,

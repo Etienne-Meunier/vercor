@@ -24,7 +24,7 @@ from jcm.physics_interface import (
 )
 
 from vercor.clock import ModelDateTime
-from vercor.components.base import Component, ComponentInitContext, RuntimeStepContext
+from vercor.components.base import Component
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.components.external.jax_gcm_tools import (
     change_jcm_parameter_values,
@@ -35,6 +35,7 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.grid import RectilinearGrid
+from vercor.runtime_contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime_components import (
     validate_runtime_data_field_exists,
     validate_runtime_grid_data_field,

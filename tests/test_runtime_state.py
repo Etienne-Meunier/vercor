@@ -8,7 +8,8 @@ import numpy as np
 
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.components.base import Component, ComponentInitContext
+from vercor.components.base import Component
+from vercor.runtime_contexts import ComponentInitContext
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
@@ -37,6 +38,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     runtime_driver_source = Path("vercor/runtime_driver.py").read_text(encoding="utf-8")
     runtime_time_source = Path("vercor/runtime_time.py").read_text(encoding="utf-8")
+    runtime_contexts_path = Path("vercor/runtime_contexts.py")
+    assert runtime_contexts_path.exists()
+    runtime_contexts_source = runtime_contexts_path.read_text(encoding="utf-8")
     regridder_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
@@ -144,8 +148,13 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def to_mapping(" not in runtime_source
     assert "def merge(" not in runtime_source
     assert "_runtime_contracts" in coupler_source
-    assert "ComponentInitContext" in base_source
-    assert "RuntimeStepContext" in base_source
+    assert "class ComponentInitContext" not in base_source
+    assert "class RuntimeStepContext" not in base_source
+    assert "from vercor.runtime_contexts import" in base_source
+    assert "class ComponentInitContext" in runtime_contexts_source
+    assert "class RuntimeStepContext" in runtime_contexts_source
+    assert "ComponentInitContext" not in components_source
+    assert "RuntimeStepContext" not in components_source
     assert "component.initialize(self)" not in coupler_source
     assert "dt_seconds: float,\n        runtime_settings" not in base_source
     assert "def write_runtime_component_to_netcdf" not in base_source
