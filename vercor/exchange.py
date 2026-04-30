@@ -36,6 +36,14 @@ class Exchange:
     Exchange objects are static configuration. The coupler converts them into
     runtime contracts and dispatch metadata before execution so traced runtime
     state only carries arrays and stable field-store metadata.
+
+    Attributes:
+        source, destination: component names
+        name: exchange name (automatically set to "SOURCE2DESTINATION")
+        field_names: list of scalar field names and
+            tuples of vectors (u-component, v-component)
+        regridder_factory: callable that returns a Regridder instance
+        interpolation_type: type of interpolation used (automatically set from regridder_factory)
     """
 
     source: str

@@ -28,6 +28,14 @@ class Component:
     Common exchange-field conventions:
         - fields use SI units
         - surface fluxes are positive downward and negative upward
+        - default grid dimensions (nTime, nLev, nLat, nLon)
+
+    Attributes:
+        name: component name
+        grid: component grid
+        data: internal storage for component data arrays to/from which fields
+            seed the runtime state during initialization
+        settings: component-specific settings
     """
 
     name: str
