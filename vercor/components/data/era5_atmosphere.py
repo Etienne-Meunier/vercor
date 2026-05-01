@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components.base import Component
+from vercor.components.base import DataComponent
 from vercor.fluxes.utilities import (
     compute_air_density,
     get_altitudes_hybrid_sigma_levels,
@@ -14,14 +14,9 @@ from vercor.fluxes.utilities import (
 )
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
-from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime.components import validate_runtime_grid_data_field
+from vercor.runtime.contexts import ComponentInitContext
 from vercor.settings import VercorSettings
 from vercor.assets import get_forcing_data
-from vercor.types import RuntimeArray
-
-if TYPE_CHECKING:
-    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
 
 
 def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
@@ -69,20 +64,7 @@ def _compute_monthly_diagnostics(
     return model_level_height, density, potential_temperature
 
 
-def _combine_surface_temperatures(
-    land_surface_temperature: ArrayLike,
-    sea_surface_temperature: ArrayLike,
-) -> jax.Array:
-    """Merge land and sea surface temperatures while treating NaNs as missing."""
-    return jnp.nan_to_num(
-        jnp.asarray(land_surface_temperature), nan=0.0
-    ) + jnp.nan_to_num(
-        jnp.asarray(sea_surface_temperature),
-        nan=0.0,
-    )
-
-
-class ERA5Atmosphere(Component, ComponentForcingData):
+class ERA5Atmosphere(DataComponent, ComponentForcingData):
     def __init__(
         self,
         name: str = "ATM",
@@ -213,53 +195,4 @@ class ERA5Atmosphere(Component, ComponentForcingData):
         self.data["potential_temperature"] = jnp.stack(
             [item[2] for item in diagnostics],
             axis=-1,
-        )
-
-    def prefill_runtime_state_fields(
-        self,
-        data: dict[str, RuntimeArray],
-        incoming: dict[str, RuntimeArray],
-        outgoing: dict[str, RuntimeArray],
-        contract: "RuntimeComponentContract",
-    ) -> None:
-        """Pre-seed ERA5 atmosphere diagnostics for stable runtime state."""
-
-        zeros = jnp.zeros(self.grid.shape, dtype=jnp.float_)
-        data.setdefault("total_surface_temperature", zeros)
-        _ = incoming, outgoing, contract
-
-    def validate_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract",
-    ) -> None:
-        """Validate ERA5 atmosphere runtime diagnostic fields."""
-
-        _ = contract
-        for field_name in (
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-        ):
-            validate_runtime_grid_data_field(
-                self,
-                component_state,
-                field_name,
-            )
-
-    def step_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: RuntimeStepContext,
-    ) -> "RuntimeComponentState":
-        """Update ERA5 atmosphere surface-temperature diagnostics."""
-
-        _ = context
-        data = component_state.data
-        total_surface_temperature = _combine_surface_temperatures(
-            data.get("land_surface_temperature"),
-            data.get("sea_surface_temperature"),
-        )
-        return component_state.with_data(
-            data.set("total_surface_temperature", total_surface_temperature)
         )

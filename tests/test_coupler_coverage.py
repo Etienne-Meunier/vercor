@@ -16,7 +16,7 @@ from tests._coverage_support import DummyComponent, RecordingRegridder, make_tes
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 import vercor.coupler as coupler_module
-from vercor.components.base import HostRuntimeComponent
+from vercor.components.base import Component, HostRuntimeComponent
 from vercor.runtime.contexts import RuntimeStepContext
 from vercor.coupler import Coupler, setup_logger
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
@@ -43,7 +43,7 @@ class _RecordingLogger:
         self.debug_messages.append(message.format(*args) if args else message)
 
 
-class _RunComponent(DummyComponent):
+class _RunComponent(Component):
     def __init__(self, name: str, events: list[str], timestamp: datetime) -> None:
         _ = timestamp
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
@@ -63,7 +63,7 @@ class _RunComponent(DummyComponent):
         return component_state
 
 
-class _LoggingRunComponent(DummyComponent):
+class _LoggingRunComponent(Component):
     def __init__(self, name: str) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.data["temperature"] = np.ones((2, 2), dtype=float)

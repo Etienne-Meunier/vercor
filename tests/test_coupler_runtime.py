@@ -802,12 +802,18 @@ def test_data_forcing_components_run_inside_runtime() -> None:
         initial_state
     )
     atmosphere = final_state.get_component_state("ATM")
-    total_surface_temperature = atmosphere.data.get("total_surface_temperature")
-    expected = np.asarray(monthly_ocean[:, :, 0] + monthly_land[:, :, 0]).T
+    received_ocean = atmosphere.incoming.get("sea_surface_temperature")
+    received_land = atmosphere.incoming.get("land_surface_temperature")
+    expected_ocean = np.asarray(monthly_ocean[:, :, 0]).T
+    expected_land = np.asarray(monthly_land[:, :, 0]).T
 
-    assert total_surface_temperature.shape == grid.shape
-    assert isinstance(total_surface_temperature, jax.Array)
-    assert_allclose_compact(total_surface_temperature, expected)
+    assert received_ocean.shape == grid.shape
+    assert received_land.shape == grid.shape
+    assert "total_surface_temperature" not in atmosphere.data.field_names
+    assert isinstance(received_ocean, jax.Array)
+    assert isinstance(received_land, jax.Array)
+    assert_allclose_compact(received_ocean, expected_ocean)
+    assert_allclose_compact(received_land, expected_land)
 
     def loss(ocean_forcing: jax.Array) -> jax.Array:
         ocean = initial_state.get_component_state("OCN")
@@ -817,7 +823,7 @@ def test_data_forcing_components_run_inside_runtime() -> None:
         )
         result = coupler._run_scanned_runtime(state)
         return jnp.sum(
-            result.get_component_state("ATM").data.get("total_surface_temperature")
+            result.get_component_state("ATM").incoming.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(monthly_ocean)
@@ -1016,14 +1022,11 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
     )
     atmosphere_state = final_state.get_component_state("ATM")
     received_temperature = atmosphere_state.incoming.get("land_surface_temperature")
-    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
 
     assert received_temperature.shape == grid.shape
-    assert total_surface_temperature.shape == grid.shape
+    assert "total_surface_temperature" not in atmosphere_state.data.field_names
     assert isinstance(received_temperature, jax.Array)
-    assert isinstance(total_surface_temperature, jax.Array)
     assert_allclose_compact(received_temperature, np.asarray(forcing[2]))
-    assert_allclose_compact(total_surface_temperature, np.asarray(forcing[2]))
 
     def loss(land_forcing: jax.Array) -> jax.Array:
         land_state = initial_state.get_component_state("LND")
@@ -1035,7 +1038,7 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
         )
         result = coupler._run_scanned_runtime(state)
         return jnp.sum(
-            result.get_component_state("ATM").data.get("total_surface_temperature")
+            result.get_component_state("ATM").incoming.get("land_surface_temperature")
         )
 
     gradient = jax.grad(loss)(forcing)
@@ -1093,9 +1096,10 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
-    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
+    received_temperature = atmosphere_state.incoming.get("land_surface_temperature")
 
-    assert_allclose_compact(total_surface_temperature, np.asarray(forcing[59]))
+    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert_allclose_compact(received_temperature, np.asarray(forcing[59]))
 
     def loss(land_forcing: jax.Array) -> jax.Array:
         land_state = initial_state.get_component_state("LND")
@@ -1107,7 +1111,7 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
         )
         result = coupler._run_scanned_runtime(state)
         return jnp.sum(
-            result.get_component_state("ATM").data.get("total_surface_temperature")
+            result.get_component_state("ATM").incoming.get("land_surface_temperature")
         )
 
     gradient = jax.grad(loss)(forcing)
@@ -1172,10 +1176,11 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
-    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
+    received_temperature = atmosphere_state.incoming.get("land_surface_temperature")
 
     assert_allclose_compact(expected_slice, np.asarray(forcing[56]))
-    assert_allclose_compact(total_surface_temperature, expected_slice)
+    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert_allclose_compact(received_temperature, expected_slice)
 
     def loss(land_forcing: jax.Array) -> jax.Array:
         land_state = initial_state.get_component_state("LND")
@@ -1187,7 +1192,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         )
         result = coupler._run_scanned_runtime(state)
         return jnp.sum(
-            result.get_component_state("ATM").data.get("total_surface_temperature")
+            result.get_component_state("ATM").incoming.get("land_surface_temperature")
         )
 
     gradient = jax.grad(loss)(forcing)
@@ -1249,15 +1254,16 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         initial_state
     )
     atmosphere_state = final_state.get_component_state("ATM")
-    total_surface_temperature = atmosphere_state.data.get("total_surface_temperature")
+    received_ocean = atmosphere_state.incoming.get("sea_surface_temperature")
     expected = np.asarray(
         left_weight * monthly_ocean[:, :, left_index]
         + right_weight * monthly_ocean[:, :, right_index]
     ).T
 
     assert (left_index, right_index) == (11, 0)
-    assert total_surface_temperature.shape == grid.shape
-    assert_allclose_compact(total_surface_temperature, expected)
+    assert received_ocean.shape == grid.shape
+    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert_allclose_compact(received_ocean, expected)
 
     def loss(ocean_forcing: jax.Array) -> jax.Array:
         ocean_state = initial_state.get_component_state("OCN")
@@ -1269,7 +1275,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         )
         result = coupler._run_scanned_runtime(state)
         return jnp.sum(
-            result.get_component_state("ATM").data.get("total_surface_temperature")
+            result.get_component_state("ATM").incoming.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(monthly_ocean)

@@ -110,10 +110,12 @@ immutable runtime containers used during traced integration.
   `name`, `grid`, `data`, and `settings` are available during initialization,
   execution, and finalization. Use `Component` for differentiable active models
   and implement `step_runtime_state()`. Use `DataComponent` for forcing/static
-  data adapters that intentionally keep the no-op runtime step. Use
-  `HostRuntimeComponent` for non-differentiable adapters and implement
-  `step_host_runtime_state()`; host-backed adapters must run through
-  `Coupler.run()` so VerCOR can select the Python host runtime path.
+  data adapters that intentionally keep the shared no-op runtime step and do
+  not create plotting-only runtime fields. Derived diagnostics, such as a
+  combined land/sea surface temperature used only for plots, belong in
+  diagnostics or examples. Use `HostRuntimeComponent` for non-differentiable
+  adapters and implement `step_host_runtime_state()`; host-backed adapters must
+  run through `Coupler.run()` so VerCOR can select the Python host runtime path.
   Optional hooks include `initialize()`, `create_runtime_payload()`,
   `prefill_runtime_state_fields()`, and `validate_runtime_state()`.
 - Internal runtime API: the `vercor.runtime` package owns

@@ -12,6 +12,7 @@ from vercor.regridders import bilinear, conservative
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
+    total_surface_temperature,
 )
 
 import matplotlib.pyplot as plt
@@ -143,7 +144,7 @@ if __name__ == "__main__":
             (
                 "ATM",
                 cpl.runtime_component_view(final_state, "ATM"),
-                "total_surface_temperature",
+                total_surface_temperature,
                 "u_velocity",
                 "v_velocity",
             ),

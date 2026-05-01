@@ -1,5 +1,48 @@
 # 2026-05-01
 
+## ERA5 Atmosphere Pure Data Component
+
+- Converted `ERA5Atmosphere` to inherit `DataComponent` and removed its custom
+  runtime prefill, validation, and step hooks.
+- Kept `DataComponent` as the shared no-op runtime-step contract and marked the
+  data/host scanned-runtime boundary implementations as final.
+- Moved plotting-only combined land/sea surface temperature into diagnostics:
+  `combine_surface_temperatures()` and `total_surface_temperature(view)`.
+- Updated `examples/run_data_driver.py` so ATM total surface temperature is a
+  callable plotting diagnostic rather than a runtime-state field.
+- Updated runtime tests to assert ERA5 atmosphere receives land/sea fields while
+  `total_surface_temperature` remains absent from ATM runtime data.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document derived plotting
+  diagnostics outside component runtime state.
+- Failed approaches / corrections:
+  - The red tests failed as expected because `ERA5Atmosphere` still inherited
+    `Component`, diagnostics helpers were missing, and the runtime still carried
+    `total_surface_temperature`.
+  - The first `mypy` run exposed two active-runtime test doubles that inherited
+    `DataComponent` while overriding its now-final no-op step; those helpers now
+    inherit `Component`.
+
+## Validation (ERA5 Atmosphere Pure Data Component, 2026-05-01)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_era5_atmosphere_uses_data_component_runtime_contract tests/test_data_component_kernels.py::test_era5_atmosphere_helpers_support_jit_and_gradients tests/test_data_component_kernels.py::test_total_surface_temperature_diagnostic_uses_runtime_view_fields tests/test_tools_components_and_plotting.py::test_plot_component_scalar_vector_comparison_accepts_callable_scalar tests/test_coupler_runtime.py::test_data_forcing_components_run_inside_runtime -q --tb=short`
+  - failed as expected before implementation
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_data_component_kernels.py tests/test_tools_components_and_plotting.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left 98 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - first failed on two test doubles overriding `DataComponent.step_runtime_state()`;
+    passed after switching those helpers to `Component`
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Explicit Component Author Contracts
 
 - Added `DataComponent` as the explicit base class for data-only/forcing

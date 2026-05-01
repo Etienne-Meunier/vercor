@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, final
 
 from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
@@ -117,12 +117,15 @@ class Component(ABC):
 class DataComponent(Component):
     """Base class for data-only components that intentionally do not step.
 
-    Use this for forcing and boundary-condition adapters whose runtime behavior
-    is limited to importing/exporting seeded fields. Active differentiable
-    models should inherit :class:`Component` and implement
+    Use this for forcing and boundary-condition adapters whose runtime behavior is
+    limited to importing/exporting seeded fields through the coupler contract.
+    Data components must not own active runtime stepping behavior; compute
+    plotting-only diagnostics outside runtime state. Active differentiable models
+    should inherit :class:`Component` and implement
     :meth:`Component.step_runtime_state` instead.
     """
 
+    @final
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",
@@ -137,6 +140,7 @@ class DataComponent(Component):
 class HostRuntimeComponent(Component):
     """Base class for host-backed adapters that cannot run inside JAX scan."""
 
+    @final
     def step_runtime_state(
         self,
         component_state: "RuntimeComponentState",

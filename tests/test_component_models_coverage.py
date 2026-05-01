@@ -468,25 +468,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
     assert component.data["density"].shape == (2, 3, 12)
     assert component.data["potential_temperature"].shape == (2, 3, 12)
     assert np.all(component.data["model_level_height"] > 0.0)
-
-    component.data["land_surface_temperature"] = np.asarray(
-        [[np.nan, 270.0, 271.0], [272.0, np.nan, 273.0]]
-    )
-    component.data["sea_surface_temperature"] = np.asarray(
-        [[274.0, np.nan, 275.0], [276.0, 277.0, np.nan]]
-    )
-
-    component_state = _step_component(
-        component, timedelta(hours=1), datetime(2000, 1, 1), coupler
-    )
-
-    expected_total = np.asarray(
-        [[274.0, 270.0, 546.0], [548.0, 277.0, 273.0]],
-        dtype=float,
-    )
-    assert_allclose_compact(
-        component_state.data.get("total_surface_temperature"), expected_total
-    )
+    assert "total_surface_temperature" not in component.data
 
 
 def test_jcm_land_constructor_converts_coords_and_preserves_data(

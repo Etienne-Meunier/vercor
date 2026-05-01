@@ -36,6 +36,7 @@ from vercor.runtime.components import (
 from vercor.runtime.time import scalar_runtime_step_info
 from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
+from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 
 
 class _RuntimeOnlyComponent(base_module.Component):
@@ -118,6 +119,14 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
         sent.outgoing.get("sea_surface_temperature"),
         np.full(grid.shape, 280.0),
     )
+
+
+@pytest.mark.fast_always
+def test_era5_atmosphere_uses_data_component_runtime_contract() -> None:
+    assert issubclass(ERA5Atmosphere, base_module.DataComponent)
+    assert "prefill_runtime_state_fields" not in ERA5Atmosphere.__dict__
+    assert "validate_runtime_state" not in ERA5Atmosphere.__dict__
+    assert "step_runtime_state" not in ERA5Atmosphere.__dict__
 
 
 @pytest.mark.fast_always

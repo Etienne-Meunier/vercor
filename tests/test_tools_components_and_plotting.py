@@ -10,6 +10,7 @@ import pytest
 
 from tests._tools_support import DummyComponentA, DummyComponentB
 from tests.assertions import assert_allclose_compact
+import vercor.diagnostics as diagnostics_module
 from vercor.exceptions import CouplerError
 from vercor.grid import RectilinearGrid
 from vercor.runtime import (
@@ -246,6 +247,57 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
     )
 
     assert axs.shape == (1, 2)
+    assert scalar_mappable is not None
+
+    plt.close(fig)
+
+
+@pytest.mark.fast_always
+def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> None:
+    import matplotlib.pyplot as plt
+
+    grid = RectilinearGrid(
+        "atm",
+        longitude=jnp.asarray([0.0, 1.0]),
+        latitude=jnp.asarray([-1.0, 1.0]),
+    )
+    runtime_view = RuntimeComponentView(
+        name="ATM",
+        grid=grid,
+        data=RuntimeFieldStore.from_mapping(
+            {
+                "u_velocity": jnp.ones(grid.shape),
+                "v_velocity": jnp.zeros(grid.shape),
+            }
+        ),
+        incoming=RuntimeFieldStore.from_mapping(
+            {
+                "land_surface_temperature": jnp.asarray(
+                    [[jnp.nan, 270.0], [271.0, jnp.nan]]
+                ),
+                "sea_surface_temperature": jnp.asarray(
+                    [[272.0, jnp.nan], [273.0, 274.0]]
+                ),
+            }
+        ),
+    )
+
+    fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
+        rows=[
+            (
+                "ATM",
+                runtime_view,
+                diagnostics_module.total_surface_temperature,
+                "u_velocity",
+                "v_velocity",
+            )
+        ],
+        figsize=(6.0, 4.0),
+        quiver_scale=10.0,
+    )
+
+    assert axs.shape == (1, 2)
+    assert "total_surface_temperature" not in runtime_view.data.field_names
     assert scalar_mappable is not None
 
     plt.close(fig)

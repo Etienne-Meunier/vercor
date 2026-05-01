@@ -10,6 +10,31 @@ from vercor.host_arrays import runtime_array_to_host
 from vercor.runtime.views import RuntimeComponentView
 from vercor.types import RuntimeArray
 
+ComponentMetric = str | Callable[[RuntimeComponentView], RuntimeArray | float]
+
+
+def combine_surface_temperatures(
+    land_surface_temperature: RuntimeArray,
+    sea_surface_temperature: RuntimeArray,
+) -> RuntimeArray:
+    """Merge land and sea surface temperatures while treating NaNs as missing."""
+
+    return jnp.nan_to_num(
+        jnp.asarray(land_surface_temperature), nan=0.0
+    ) + jnp.nan_to_num(
+        jnp.asarray(sea_surface_temperature),
+        nan=0.0,
+    )
+
+
+def total_surface_temperature(component: RuntimeComponentView) -> RuntimeArray:
+    """Return combined land and sea surface temperature for diagnostics."""
+
+    return combine_surface_temperatures(
+        _view_field(component, "land_surface_temperature"),
+        _view_field(component, "sea_surface_temperature"),
+    )
+
 
 def safe_component_nanmean(component: RuntimeComponentView, field_name: str) -> float:
     """Return a robust NaN-aware mean for a runtime component view field."""
@@ -55,9 +80,20 @@ def _component_plot_field(
     raise KeyError(f"Field {field_name!r} not found")
 
 
+def _component_plot_scalar(
+    component: RuntimeComponentView,
+    scalar: ComponentMetric,
+) -> RuntimeArray | float:
+    """Resolve a field name or callable diagnostic for plotting."""
+
+    if isinstance(scalar, str):
+        return _component_plot_field(component, scalar)
+    return scalar(component)
+
+
 def _safe_component_metric_mean(
     component: RuntimeComponentView,
-    metric: str | Callable[[RuntimeComponentView], RuntimeArray | float],
+    metric: ComponentMetric,
 ) -> float:
     """Resolve a metric and return a robust mean value as float."""
 
@@ -72,9 +108,7 @@ def _safe_component_metric_mean(
 
 def print_component_field_means_table(
     components: Mapping[str, RuntimeComponentView],
-    fields: Sequence[
-        tuple[str | Callable[[RuntimeComponentView], RuntimeArray | float], str]
-    ],
+    fields: Sequence[tuple[ComponentMetric, str]],
     component_order: Sequence[str] | None = None,
 ) -> None:
     """Print a means table for component fields with configurable column order."""
@@ -102,7 +136,7 @@ def print_component_field_means_table(
 
 def _get_component_plot_data(
     component: RuntimeComponentView,
-    scalar_field_name: str,
+    scalar: ComponentMetric,
     u_field_name: str,
     v_field_name: str,
 ) -> tuple[NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any], NDArray[Any]]:
@@ -113,7 +147,7 @@ def _get_component_plot_data(
     lat = runtime_array_to_host(grid.latitude)
     lon_2d, lat_2d = np.meshgrid(lon, lat, indexing="ij")
     scalar_field = runtime_array_to_host(
-        jnp.asarray(_component_plot_field(component, scalar_field_name)).T
+        jnp.asarray(_component_plot_scalar(component, scalar)).T
     )
     u_field = runtime_array_to_host(
         jnp.asarray(_component_plot_field(component, u_field_name)).T
@@ -125,7 +159,7 @@ def _get_component_plot_data(
 
 
 def plot_component_scalar_vector_comparison(
-    rows: Sequence[tuple[str, RuntimeComponentView, str, str, str]],
+    rows: Sequence[tuple[str, RuntimeComponentView, ComponentMetric, str, str]],
     *,
     figsize: tuple[float, float] = (15.0, 10.0),
     quiver_scale: float = 100.0,

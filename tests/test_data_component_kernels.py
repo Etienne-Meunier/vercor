@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from tests.assertions import assert_allclose_compact
+import vercor.diagnostics as diagnostics_module
 from vercor.components.data.era5_atmosphere import (
-    _combine_surface_temperatures,
     _compute_monthly_diagnostics,
     _decode_surface_pressure,
 )
@@ -30,6 +30,8 @@ from vercor.components.data.jcm_land import (
     _coordinates_in_degrees,
     _prepare_jcm_land_runtime_fields,
 )
+from vercor.runtime import RuntimeFieldStore
+from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
 
 
@@ -72,7 +74,8 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
         specific_humidity_3d,
         temperature,
     )
-    combined_surface_temperature = jax.jit(_combine_surface_temperatures)(
+    combine_surface_temperatures = diagnostics_module.combine_surface_temperatures
+    combined_surface_temperature = jax.jit(combine_surface_temperatures)(
         jnp.asarray([[jnp.nan, 270.0], [271.0, jnp.nan]]),
         jnp.asarray([[272.0, jnp.nan], [273.0, 274.0]]),
     )
@@ -88,6 +91,15 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
         combined_surface_temperature,
         np.asarray([[272.0, 270.0], [544.0, 274.0]]),
     )
+    surface_temperature_gradient = jax.grad(
+        lambda land: jnp.sum(
+            combine_surface_temperatures(
+                land,
+                jnp.asarray([[272.0, 273.0], [274.0, 275.0]]),
+            )
+        )
+    )(jnp.asarray([[270.0, 271.0], [272.0, 273.0]]))
+    assert_allclose_compact(surface_temperature_gradient, np.ones((2, 2)))
 
     density_gradient = jax.grad(
         lambda sp: jnp.sum(
@@ -105,6 +117,27 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
         )
     )(surface_pressure)
     assert np.all(np.isfinite(np.asarray(density_gradient)))
+
+
+def test_total_surface_temperature_diagnostic_uses_runtime_view_fields() -> None:
+    view = RuntimeComponentView(
+        name="ATM",
+        grid=None,  # type: ignore[arg-type]
+        incoming=RuntimeFieldStore.from_mapping(
+            {
+                "land_surface_temperature": jnp.asarray(
+                    [[jnp.nan, 270.0], [271.0, jnp.nan]]
+                ),
+                "sea_surface_temperature": jnp.asarray(
+                    [[272.0, jnp.nan], [273.0, 274.0]]
+                ),
+            }
+        ),
+    )
+
+    total = diagnostics_module.total_surface_temperature(view)
+
+    assert_allclose_compact(total, np.asarray([[272.0, 270.0], [544.0, 274.0]]))
 
 
 def test_era5_land_helper_supports_jit_and_gradients() -> None:
