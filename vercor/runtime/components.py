@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 
+from vercor.components.base import validate_component_setup
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
 from vercor.runtime import (
@@ -44,6 +45,7 @@ def create_runtime_component_state(
 ) -> RuntimeComponentState:
     """Create immutable runtime state from a component's seed data."""
 
+    validate_component_setup(component)
     data = dict(component.data)
     incoming: dict[str, RuntimeArray] = {}
     outgoing: dict[str, RuntimeArray] = {}

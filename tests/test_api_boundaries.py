@@ -18,6 +18,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "Clock",
         "Component",
         "Coupler",
+        "DataComponent",
         "Exchange",
         "HostRuntimeComponent",
         "RectilinearGrid",
@@ -39,6 +40,9 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     assert runtime_internal_names.isdisjoint(set(vercor.__all__))
 
     assert vercor.Component is Component
+    data_component_type = getattr(components_module, "DataComponent", None)
+    assert data_component_type is not None
+    assert getattr(vercor, "DataComponent", None) is data_component_type
     assert vercor.HostRuntimeComponent is HostRuntimeComponent
     assert vercor.RunSequence is RunSequence
     for name in runtime_internal_names:
@@ -47,8 +51,13 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 
 @pytest.mark.fast_always
 def test_components_package_exports_only_component_author_contracts() -> None:
-    assert components_module.__all__ == ["Component", "HostRuntimeComponent"]
+    assert components_module.__all__ == [
+        "Component",
+        "DataComponent",
+        "HostRuntimeComponent",
+    ]
     assert components_module.Component is Component
+    assert hasattr(components_module, "DataComponent")
     assert components_module.HostRuntimeComponent is HostRuntimeComponent
     assert not hasattr(components_module, "RuntimeComponentState")
     assert not hasattr(components_module, "ComponentInitContext")
@@ -57,7 +66,11 @@ def test_components_package_exports_only_component_author_contracts() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_state_is_separate_from_public_component_objects() -> None:
-    component = Component(name="ATM", grid=make_test_grid(name="api-boundary"))
+    assert hasattr(components_module, "DataComponent")
+    component = components_module.DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="api-boundary"),
+    )
     runtime_state = RuntimeComponentState(
         data=RuntimeFieldStore.empty(),
         incoming=RuntimeFieldStore.empty(),

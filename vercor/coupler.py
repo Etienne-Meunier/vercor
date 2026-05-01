@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.clock import Clock
-from vercor.components.base import Component
+from vercor.components.base import Component, validate_component_setup
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -148,6 +148,7 @@ class Coupler:
             component: component instance to register
         """
 
+        validate_component_setup(component)
         if component.name in self.components:
             raise CouplerError(f"Component {component.name} already registered")
 
@@ -215,6 +216,7 @@ class Coupler:
 
         # Initialize each component
         for name, component in self.components.items():
+            validate_component_setup(component)
             component.initialize(init_context)
 
             if name not in ("ATM", "OCN", "LND", "ICE"):
@@ -231,6 +233,7 @@ class Coupler:
         )
 
         for name, component in self.components.items():
+            validate_component_setup(component)
             contract = self._runtime_contracts[name]
             check_not_empty_import_export_lists(component, contract)
             check_valid_exchange_field_names(component, contract)
@@ -513,6 +516,7 @@ class Coupler:
 
         self.logger.info(" ------------ Finalizing coupler and components ------------")
         for name, component in self.components.items():
+            validate_component_setup(component)
             if output_file_mask is None:
                 filepath = Path(f"{name.lower()}_component_runtime_fields.nc")
             else:

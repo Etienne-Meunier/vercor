@@ -1,3 +1,53 @@
+# 2026-05-01
+
+## Explicit Component Author Contracts
+
+- Added `DataComponent` as the explicit base class for data-only/forcing
+  adapters with an intentional no-op runtime step.
+- Made `Component` the active differentiable-model base class with an abstract
+  `step_runtime_state()` hook.
+- Made `HostRuntimeComponent` require `step_host_runtime_state()` and raise a
+  clear `ComponentError` if a host-backed adapter is accidentally sent through
+  the differentiable scanned runtime.
+- Added setup validation for required component-author attributes (`name`,
+  `grid`, `data`, and `settings`) so adapters that skip
+  `super().__init__(name, grid=...)` fail with actionable diagnostics before
+  initialization, runtime execution, or finalization.
+- Updated bundled data components, public exports, architecture docs, and
+  component/API-boundary tests for the three public author-facing roles:
+  `Component`, `DataComponent`, and `HostRuntimeComponent`.
+- Failed approaches / corrections:
+  - The first API-boundary red test imported `DataComponent` directly before the
+    symbol existed, causing collection to stop; it was changed to assert the
+    missing public symbol during test execution.
+  - `mypy` correctly flagged tests that intentionally instantiate abstract
+    classes; those lines now use targeted `# type: ignore[abstract]` comments.
+  - The first full-suite run exposed a test-local `JAXGCM.__new__()` fixture
+    that skipped the base `settings` attribute; the fixture now supplies
+    `ComponentSettings()` rather than weakening production validation.
+
+## Validation (Explicit Component Author Contracts, 2026-05-01)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --fast --tb=short`
+  - failed as expected before implementation because `DataComponent` was not
+    exported and `HostRuntimeComponent` did not require an explicit host step
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py tests/test_runtime_state.py tests/test_coupler_runtime.py tests/test_coupler_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning; final run left 98 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`98 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - first failed because a test-local `JAXGCM.__new__()` fixture skipped
+    `settings`; passed after adding the missing fixture attribute
+
 # 2026-04-30
 
 ## JAX Callback Runtime Logging

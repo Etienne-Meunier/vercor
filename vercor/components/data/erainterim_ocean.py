@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components.base import Component
+from vercor.components.base import DataComponent
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
@@ -69,7 +69,7 @@ def _mask_sea_surface_temperature(
     )
 
 
-class ERAInterimOcean(Component, ComponentForcingData):
+class ERAInterimOcean(DataComponent, ComponentForcingData):
     def __init__(
         self,
         name: str = "OCN",

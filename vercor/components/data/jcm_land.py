@@ -5,7 +5,7 @@ from jax.typing import ArrayLike
 from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.forcing import ForcingData
 
-from vercor.components.base import Component
+from vercor.components.base import DataComponent
 from vercor.grid import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
 
@@ -47,7 +47,7 @@ def _prepare_jcm_land_runtime_fields(
     )
 
 
-class JCMLand(Component):
+class JCMLand(DataComponent):
     def __init__(
         self,
         jcm_coords: CoordinateSystem,

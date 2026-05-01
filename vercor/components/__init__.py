@@ -1,6 +1,7 @@
-from vercor.components.base import Component, HostRuntimeComponent
+from vercor.components.base import Component, DataComponent, HostRuntimeComponent
 
 __all__ = [
     "Component",
+    "DataComponent",
     "HostRuntimeComponent",
 ]

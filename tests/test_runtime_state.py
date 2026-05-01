@@ -8,7 +8,7 @@ import numpy as np
 
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.components.base import Component
+from vercor.components.base import DataComponent
 from vercor.runtime.contexts import ComponentInitContext
 from vercor.settings import ComponentSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
@@ -22,7 +22,7 @@ from vercor.runtime import (
 from vercor.runtime.components import send_runtime_fields
 
 
-class _RuntimeSendComponent(Component):
+class _RuntimeSendComponent(DataComponent):
     def __init__(self, settings: ComponentSettings) -> None:
         super().__init__("DATA", make_test_grid(name="runtime-send"))
         self.settings = settings

@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components.base import Component
+from vercor.components.base import DataComponent
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
@@ -26,7 +26,7 @@ def _prepare_era5_land_runtime_fields(
     )
 
 
-class ERA5Land(Component, ComponentForcingData):
+class ERA5Land(DataComponent, ComponentForcingData):
     def __init__(
         self,
         name: str = "LND",

@@ -1441,7 +1441,7 @@ def test_run_accepts_default_runtime_component() -> None:
     assert final_state.component_names == ("ATM",)
 
 
-def test_run_accepts_camulator_land_runtime_boundary() -> None:
+def test_scanned_runtime_rejects_camulator_land_runtime_boundary() -> None:
     grid = make_test_grid(name="camulator")
     camulator_land = _make_data_component(
         CAMulatorLand,
@@ -1457,16 +1457,12 @@ def test_run_accepts_camulator_land_runtime_boundary() -> None:
 
     assert isinstance(camulator_land.data["land_surface_temperature"], jax.Array)
     state = coupler.create_runtime_state()
-    final_state = coupler._run_scanned_runtime(state)
 
-    assert final_state.component_names == ("LND",)
-    assert_allclose_compact(
-        final_state.get_component_state("LND").data.get("land_surface_temperature"),
-        np.zeros(grid.shape),
-    )
+    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+        coupler._run_scanned_runtime(state)
 
 
-def test_run_accepts_camulator_gcm_runtime_boundary() -> None:
+def test_scanned_runtime_rejects_camulator_gcm_runtime_boundary() -> None:
     grid = make_test_grid(name="camulator-gcm")
     camulator = _make_data_component(
         CAMulatorGCM,
@@ -1482,16 +1478,12 @@ def test_run_accepts_camulator_gcm_runtime_boundary() -> None:
 
     assert isinstance(camulator.data["temperature"], jax.Array)
     state = coupler.create_runtime_state()
-    final_state = coupler._run_scanned_runtime(state)
 
-    assert final_state.component_names == ("ATM",)
-    assert_allclose_compact(
-        final_state.get_component_state("ATM").data.get("temperature"),
-        np.ones(grid.shape),
-    )
+    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+        coupler._run_scanned_runtime(state)
 
 
-def test_run_accepts_veros_runtime_boundary() -> None:
+def test_scanned_runtime_rejects_veros_runtime_boundary() -> None:
     grid = make_test_grid(name="veros")
     veros = _make_data_component(
         VerosGCM,
@@ -1507,13 +1499,9 @@ def test_run_accepts_veros_runtime_boundary() -> None:
 
     assert isinstance(veros.data["sea_surface_temperature"], jax.Array)
     state = coupler.create_runtime_state()
-    final_state = coupler._run_scanned_runtime(state)
 
-    assert final_state.component_names == ("OCN",)
-    assert_allclose_compact(
-        final_state.get_component_state("OCN").data.get("sea_surface_temperature"),
-        np.zeros(grid.shape),
-    )
+    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+        coupler._run_scanned_runtime(state)
 
 
 def test_run_validates_regridders_and_fractional_masks() -> None:

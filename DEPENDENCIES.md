@@ -29,7 +29,7 @@
 29. `vercor/runtime/contexts.py` - immutable component initialization and runtime step context payloads built on clock, run-sequence, settings helpers, and (28)
 30. `vercor/runtime/views.py` - explicit runtime component metadata/field view used by diagnostics and output built on (9)
 31. `vercor/diagnostics.py` - runtime-view means tables and plotting helpers built on (4, 30)
-32. `vercor/components/base.py` - slim component interface for seed data, component-specific runtime hooks, explicit runtime contexts, public host-runtime adapter contract, and pure stepping built on (9, 29)
+32. `vercor/components/base.py` - slim component-author interfaces for active differentiable components, data-only components, host-runtime adapters, seed data, setup validation, explicit runtime contexts, and runtime hooks built on (9, 29)
 33. `vercor/runtime/state.py` and `vercor/runtime/__init__.py` - immutable runtime state, coupler-owned component-name metadata, runtime field stores, import/export contract construction, pure exchange dispatch, and the internal `vercor.runtime` re-export surface built on (9, 11, 12, 32)
 34. `vercor/runtime/time.py` - host-precomputed daily/monthly runtime step metadata built on clock/settings helpers and (17, 33)
 35. `vercor/runtime/components.py` - generic component runtime state creation, explicit contract prefill/validation, receive/send, and time-selection helpers built on (32, 33)

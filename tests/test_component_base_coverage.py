@@ -19,6 +19,7 @@ from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.forcing_data import ComponentForcingData
 from vercor.output import write_runtime_component_view_to_netcdf
+from vercor.run_sequence import RunSequence
 from vercor.runtime import (
     RuntimeComponentContract,
     RuntimeComponentState,
@@ -48,6 +49,103 @@ class _RuntimeOnlyComponent(base_module.Component):
             component_state.data.get("temperature") + context.dt_seconds,
         )
         return component_state.with_data(data)
+
+
+class _MissingSetupComponent(base_module.Component):
+    def __init__(self) -> None:
+        pass
+
+    def step_runtime_state(
+        self,
+        component_state: RuntimeComponentState,
+        context: RuntimeStepContext,
+    ) -> RuntimeComponentState:
+        _ = context
+        return component_state
+
+
+class _HostStepOnlyComponent(base_module.HostRuntimeComponent):
+    def step_host_runtime_state(
+        self,
+        component_state: RuntimeComponentState,
+        context: RuntimeStepContext,
+    ) -> RuntimeComponentState:
+        _ = context
+        return component_state
+
+
+@pytest.mark.fast_always
+def test_active_component_requires_explicit_runtime_step() -> None:
+    class MissingRuntimeStep(base_module.Component):
+        pass
+
+    with pytest.raises(TypeError, match="step_runtime_state"):
+        MissingRuntimeStep(name="ATM", grid=make_test_grid())  # type: ignore[abstract]
+
+
+@pytest.mark.fast_always
+def test_host_runtime_component_requires_explicit_host_step() -> None:
+    class MissingHostStep(base_module.HostRuntimeComponent):
+        pass
+
+    with pytest.raises(TypeError, match="step_host_runtime_state"):
+        MissingHostStep(name="ATM", grid=make_test_grid())  # type: ignore[abstract]
+
+
+@pytest.mark.fast_always
+def test_data_component_uses_explicit_noop_runtime_step() -> None:
+    class StaticForcingComponent(base_module.DataComponent):
+        pass
+
+    grid = make_test_grid(name="data")
+    component = StaticForcingComponent(name="OCN", grid=grid)
+    component.data["sea_surface_temperature"] = jnp.full(grid.shape, 280.0)
+    contract = RuntimeComponentContract(exports=("sea_surface_temperature",))
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=contract,
+    )
+
+    stepped = component.step_runtime_state(
+        state,
+        RuntimeStepContext(dt_seconds=60.0, settings=VercorSettings()),
+    )
+
+    assert stepped is state
+    sent = send_runtime_fields(component, stepped, contract=contract)
+    assert_allclose_compact(
+        sent.outgoing.get("sea_surface_temperature"),
+        np.full(grid.shape, 280.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_component_setup_validation_reports_missing_required_attributes() -> None:
+    component = _MissingSetupComponent()
+    contract = RuntimeComponentContract(exports=("temperature",))
+
+    with pytest.raises(
+        ComponentError,
+        match="missing required setup attribute.*name.*grid.*data.*settings",
+    ):
+        create_runtime_component_state(component, contract=contract)
+
+
+@pytest.mark.fast_always
+def test_host_component_rejects_scanned_runtime_with_clear_error() -> None:
+    grid = make_test_grid(name="host")
+    component = _HostStepOnlyComponent(name="ATM", grid=grid)
+    component.data["temperature"] = jnp.ones(grid.shape)
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": component}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+    state = coupler.create_runtime_state()
+
+    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+        coupler._run_scanned_runtime(state)
 
 
 @pytest.mark.fast_always

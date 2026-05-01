@@ -104,12 +104,18 @@ immutable runtime containers used during traced integration.
 - Public orchestration API: `Coupler`, `Exchange`, `RunSequence`, `Clock`,
   grids, regridders, and bundled concrete components are the objects users
   compose when configuring a coupled run.
-- Component-author API: `Component` and `HostRuntimeComponent` are the stable
-  extension points. Custom adapters seed setup-time fields on `Component.data`
-  and implement the runtime hooks `initialize()`, `create_runtime_payload()`,
-  `prefill_runtime_state_fields()`, `validate_runtime_state()`,
-  `step_runtime_state()`, and, for host-backed adapters,
-  `step_host_runtime_state()`.
+- Component-author API: `Component`, `DataComponent`, and
+  `HostRuntimeComponent` are the stable extension points. All custom adapters
+  seed setup-time fields on `Component.data` and call the base constructor so
+  `name`, `grid`, `data`, and `settings` are available during initialization,
+  execution, and finalization. Use `Component` for differentiable active models
+  and implement `step_runtime_state()`. Use `DataComponent` for forcing/static
+  data adapters that intentionally keep the no-op runtime step. Use
+  `HostRuntimeComponent` for non-differentiable adapters and implement
+  `step_host_runtime_state()`; host-backed adapters must run through
+  `Coupler.run()` so VerCOR can select the Python host runtime path.
+  Optional hooks include `initialize()`, `create_runtime_payload()`,
+  `prefill_runtime_state_fields()`, and `validate_runtime_state()`.
 - Internal runtime API: the `vercor.runtime` package owns
   `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime
   contexts, dispatch contexts, and runtime helper functions. These containers
