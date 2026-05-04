@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
+from vercor.dtypes import as_jax_real_array, jax_full
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.components import validate_runtime_grid_data_field
@@ -18,8 +19,8 @@ def _update_soil_moisture(
     latent_heat_flux: object,
     dt_seconds: float,
 ) -> jax.Array:
-    soil_moisture_array = jnp.asarray(soil_moisture, dtype=jnp.float64)
-    latent_heat_flux_array = jnp.asarray(latent_heat_flux, dtype=jnp.float64)
+    soil_moisture_array = as_jax_real_array(soil_moisture)
+    latent_heat_flux_array = as_jax_real_array(latent_heat_flux)
     evap = 1e-9 * latent_heat_flux_array
     return jnp.clip(soil_moisture_array - evap * dt_seconds, 0.0, 1.0)
 
@@ -34,10 +35,9 @@ class Land(Component):
         super().__init__(name, grid)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        _ = context
-        self.data["soil_moisture"] = jnp.full(self.grid.shape, 0.3, dtype=jnp.float64)
-        self.data["land_surface_temperature"] = jnp.full(
-            self.grid.shape, 288.15, dtype=jnp.float64
+        self.data["soil_moisture"] = jax_full(self.grid.shape, 0.3, context.settings)
+        self.data["land_surface_temperature"] = jax_full(
+            self.grid.shape, 288.15, context.settings
         )
 
     def validate_runtime_state(

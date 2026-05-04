@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from vercor.components.external.veros_runtime_settings import configure_veros_runtime
 from vercor.components.base import HostRuntimeComponent
+from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
 from vercor.runtime import RuntimeFieldStore
@@ -140,8 +141,8 @@ def _update_veros_interior(
     array: object,
     interior_value: object,
 ) -> jax.Array:
-    array_jax = jnp.asarray(array, dtype=jnp.float64)
-    interior_value_jax = jnp.asarray(interior_value, dtype=jnp.float64)
+    array_jax = as_jax_real_array(array)
+    interior_value_jax = as_jax_real_array(interior_value)
     return array_jax.at[2:-2, 2:-2, ...].set(interior_value_jax)
 
 
@@ -156,7 +157,7 @@ def _prepare_surface_forcing_fields(
     restore_to_climatology_jax = jnp.asarray(restore_to_climatology, dtype=bool)
 
     def _prepare(field: object) -> jax.Array:
-        field_jax = jnp.asarray(field, dtype=jnp.float64)
+        field_jax = as_jax_real_array(field)
         return jnp.nan_to_num(field_jax.T[..., jnp.newaxis])
 
     taux_prepared = _prepare(taux)
@@ -175,8 +176,8 @@ def _extract_surface_temperature(
     temperature: object,
     tau: object,
 ) -> jax.Array:
-    temperature_array = jnp.asarray(temperature, dtype=jnp.float64)
-    tau_index = jnp.asarray(tau, dtype=jnp.int32)
+    temperature_array = as_jax_real_array(temperature)
+    tau_index = as_jax_index_array(tau)
     return temperature_array[2:-2, 2:-2, -1, tau_index].T + 273.15
 
 
@@ -192,15 +193,15 @@ def compute_fluxes(
     # u & v have Arakawa-C grid staggering in Veros
     # require additional interpolation
     u_tgrid = 0.5 * (
-        jnp.asarray(vs.u[1:, 2:-2, -1, vs.tau], dtype=jnp.float64)
-        + jnp.asarray(vs.u[:-1, 2:-2, -1, vs.tau], dtype=jnp.float64)
+        as_jax_real_array(vs.u[1:, 2:-2, -1, vs.tau], settings)
+        + as_jax_real_array(vs.u[:-1, 2:-2, -1, vs.tau], settings)
     )
     v_tgrid = 0.5 * (
-        jnp.asarray(vs.v[2:-2, 1:, -1, vs.tau], dtype=jnp.float64)
-        + jnp.asarray(vs.v[2:-2, :-1, -1, vs.tau], dtype=jnp.float64)
+        as_jax_real_array(vs.v[2:-2, 1:, -1, vs.tau], settings)
+        + as_jax_real_array(vs.v[2:-2, :-1, -1, vs.tau], settings)
     )
 
-    temp = jnp.asarray(vs.temp[2:-2, 2:-2, -1, vs.tau], dtype=jnp.float64).T + 273.15
+    temp = as_jax_real_array(vs.temp[2:-2, 2:-2, -1, vs.tau], settings).T + 273.15
 
     (
         senf,
@@ -218,14 +219,14 @@ def compute_fluxes(
         dqfldt,
     ) = compute_ocean_surface_fluxes(
         settings,
-        jnp.asarray(vs.maskT[2:-2, 2:-2, -1], dtype=jnp.float64).T,
-        jnp.asarray(runtime_fields.get("model_level_height"), dtype=jnp.float64),
-        jnp.asarray(runtime_fields.get("u_velocity"), dtype=jnp.float64),
-        jnp.asarray(runtime_fields.get("v_velocity"), dtype=jnp.float64),
-        jnp.asarray(runtime_fields.get("potential_temperature"), dtype=jnp.float64),
-        jnp.asarray(runtime_fields.get("specific_humidity"), dtype=jnp.float64),
-        jnp.asarray(runtime_fields.get("density"), dtype=jnp.float64),
-        jnp.asarray(runtime_fields.get("temperature"), dtype=jnp.float64),
+        as_jax_real_array(vs.maskT[2:-2, 2:-2, -1], settings).T,
+        as_jax_real_array(runtime_fields.get("model_level_height"), settings),
+        as_jax_real_array(runtime_fields.get("u_velocity"), settings),
+        as_jax_real_array(runtime_fields.get("v_velocity"), settings),
+        as_jax_real_array(runtime_fields.get("potential_temperature"), settings),
+        as_jax_real_array(runtime_fields.get("specific_humidity"), settings),
+        as_jax_real_array(runtime_fields.get("density"), settings),
+        as_jax_real_array(runtime_fields.get("temperature"), settings),
         u_tgrid[1:-2, :].T,
         v_tgrid[:, 1:-2].T,
         temp,
@@ -236,11 +237,9 @@ def compute_fluxes(
     # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
 
     qnet = (
-        jnp.asarray(
-            runtime_fields.get("net_shortwave_radiation_flux"), dtype=jnp.float64
-        )
-        + jnp.asarray(
-            runtime_fields.get("downward_longwave_radiation_flux"), dtype=jnp.float64
+        as_jax_real_array(runtime_fields.get("net_shortwave_radiation_flux"), settings)
+        + as_jax_real_array(
+            runtime_fields.get("downward_longwave_radiation_flux"), settings
         )
         + lwup
         + senf
@@ -249,10 +248,10 @@ def compute_fluxes(
     qnec = -jnp.where(dqfldt <= -1e10, 0.0, dqfldt)
 
     return (
-        jnp.asarray(taux, dtype=jnp.float64),
-        jnp.asarray(tauy, dtype=jnp.float64),
-        jnp.asarray(qnet, dtype=jnp.float64),
-        jnp.asarray(qnec, dtype=jnp.float64),
+        as_jax_real_array(taux, settings),
+        as_jax_real_array(tauy, settings),
+        as_jax_real_array(qnet, settings),
+        as_jax_real_array(qnec, settings),
     )
 
 

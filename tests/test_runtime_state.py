@@ -272,6 +272,20 @@ def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> Non
     assert_allclose_compact(updated.get("b"), np.asarray([4.0, 5.0]))
 
 
+def test_runtime_field_store_replacement_preserves_existing_dtype() -> None:
+    store = RuntimeFieldStore.from_mapping(
+        {"temperature": jnp.zeros((2, 2), dtype=jnp.float32)}
+    )
+
+    updated = store.set(
+        "temperature",
+        jnp.ones((2, 2), dtype=jnp.float64),
+    )
+
+    assert updated.get("temperature").dtype == jnp.float32
+    assert_allclose_compact(updated.get("temperature"), np.ones((2, 2)))
+
+
 def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     component = RuntimeComponentState(
         data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),

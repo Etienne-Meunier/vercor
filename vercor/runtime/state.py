@@ -6,6 +6,7 @@ from typing import Any, Mapping, Sequence
 import jax
 import jax.numpy as jnp
 
+from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.exceptions import CouplerError, ExchangerError
 from vercor.exchange import Exchange
 from vercor.types import RuntimeArray
@@ -129,11 +130,11 @@ class RuntimeStepInfo:
         """Create scan metadata from host-precomputed index and weight arrays."""
 
         return cls(
-            monthly_index_left=jnp.asarray(monthly_index_left, dtype=jnp.int32),
-            monthly_index_right=jnp.asarray(monthly_index_right, dtype=jnp.int32),
-            monthly_weight_left=jnp.asarray(monthly_weight_left, dtype=jnp.float_),
-            monthly_weight_right=jnp.asarray(monthly_weight_right, dtype=jnp.float_),
-            daily_index=jnp.asarray(daily_index, dtype=jnp.int32),
+            monthly_index_left=as_jax_index_array(monthly_index_left),
+            monthly_index_right=as_jax_index_array(monthly_index_right),
+            monthly_weight_left=as_jax_real_array(monthly_weight_left),
+            monthly_weight_right=as_jax_real_array(monthly_weight_right),
+            daily_index=as_jax_index_array(daily_index),
         )
 
     def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], None]:
@@ -213,15 +214,19 @@ class RuntimeFieldStore:
     def set(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
         """Return a new store with ``name`` replaced or appended."""
 
-        value_array = jnp.array(value, copy=True)
         if name not in self.field_names:
+            value_array = jnp.array(value, copy=True)
             return RuntimeFieldStore(
                 field_names=(*self.field_names, name),
                 values=(*self.values, value_array),
             )
 
         values = tuple(
-            value_array if field_name == name else current
+            (
+                jnp.array(value, dtype=jnp.asarray(current).dtype, copy=True)
+                if field_name == name
+                else current
+            )
             for field_name, current in zip(self.field_names, self.values)
         )
         return RuntimeFieldStore(field_names=self.field_names, values=values)

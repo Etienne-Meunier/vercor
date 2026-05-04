@@ -5,6 +5,12 @@ from typing import Any, Optional
 import jax
 import jax.numpy as jnp
 
+from vercor.dtypes import (
+    as_jax_real_array,
+    jax_index_dtype,
+    jax_real_dtype,
+    jax_zeros,
+)
 from vercor.types import RuntimeArray
 
 
@@ -51,9 +57,9 @@ class ConservativeRectilinearRemapper:
         self._normalize_fracarea = normalize == "fracarea"
 
         # 1. Standardize and store bounds
-        self.src_lon_b = jnp.asarray(src_lon_edges, dtype=jnp.float64)
+        self.src_lon_b = as_jax_real_array(src_lon_edges)
         self.src_lat_b, self._s_lat_flip = self._standardize_lat(src_lat_edges)
-        self.dst_lon_b = jnp.asarray(dst_lon_edges, dtype=jnp.float64)
+        self.dst_lon_b = as_jax_real_array(dst_lon_edges)
         self.dst_lat_b, self._d_lat_flip = self._standardize_lat(dst_lat_edges)
 
         self.n_src_lon = self.src_lon_b.shape[0] - 1
@@ -96,9 +102,9 @@ class ConservativeRectilinearRemapper:
             src_indices = src_indices[keep_indices]
             overlap_weights = overlap_weights[keep_indices]
 
-        self.dst_indices = dst_indices.astype(jnp.int32)
-        self.src_indices = src_indices.astype(jnp.int32)
-        self.overlap_weights = overlap_weights.astype(jnp.float64)
+        self.dst_indices = dst_indices.astype(jax_index_dtype())
+        self.src_indices = src_indices.astype(jax_index_dtype())
+        self.overlap_weights = overlap_weights.astype(jax_real_dtype())
 
         dst_lon_diff = jnp.abs(jnp.diff(jnp.deg2rad(self.dst_lon_b)))
         dst_lat_diff = jnp.abs(jnp.diff(dst_sin_lat))
@@ -114,13 +120,13 @@ class ConservativeRectilinearRemapper:
 
     @staticmethod
     def _segment_sum(values: jax.Array, indices: jax.Array, size: int) -> jax.Array:
-        return jnp.zeros((size,), dtype=jnp.float64).at[indices].add(values)
+        return jax_zeros((size,)).at[indices].add(values)
 
     @staticmethod
     def _standardize_lat(bounds: RuntimeArray) -> tuple[jax.Array, bool]:
         """Ensure latitude bounds are monotonically increasing."""
 
-        bounds_array = jnp.asarray(bounds, dtype=jnp.float64)
+        bounds_array = as_jax_real_array(bounds)
         is_flipped = bool(bounds_array[0] > bounds_array[-1])
         return (
             jnp.flip(bounds_array) if is_flipped else bounds_array,
@@ -270,7 +276,7 @@ class ConservativeRectilinearRemapper:
     def apply_scalar(self, field: Any) -> jax.Array:
         """Apply conservative remapping to a scalar field."""
 
-        field_array = jnp.asarray(field, dtype=jnp.float64)
+        field_array = as_jax_real_array(field)
         expected_shape = (self.n_src_lat, self.n_src_lon)
         if field_array.shape != expected_shape:
             raise ValueError(
@@ -315,7 +321,7 @@ class ConservativeRectilinearRemapper:
     def get_src_total_mass(self, field_on_src: Any) -> float:
         """Calculate total mass on source grid given field values."""
 
-        field_array = jnp.asarray(field_on_src, dtype=jnp.float64)
+        field_array = as_jax_real_array(field_on_src)
         result = jnp.nansum(field_array * self.get_src_areas())
         return float(result)
 
@@ -323,6 +329,6 @@ class ConservativeRectilinearRemapper:
         """Calculate total mass on destination grid given field values."""
 
         clean_areas = jnp.where(jnp.isinf(self.dst_areas), 0.0, self.dst_areas)
-        field_array = jnp.asarray(field_on_dst, dtype=jnp.float64)
+        field_array = as_jax_real_array(field_on_dst)
         result = jnp.nansum(field_array.reshape(-1) * clean_areas)
         return float(result)

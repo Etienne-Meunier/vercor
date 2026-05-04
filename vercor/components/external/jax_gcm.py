@@ -34,6 +34,13 @@ from vercor.components.external.jax_gcm_tools import (
     get_altitudes_sigma_levels,
     compute_pressure_levels,
 )
+from vercor.dtypes import (
+    PrecisionPolicy,
+    as_jax_real_array,
+    jax_full,
+    jax_real_dtype,
+    jax_zeros,
+)
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.components import (
@@ -55,7 +62,7 @@ except ImportError:
 
 
 def asfloat(tree: Any) -> Any:
-    return jax.tree_util.tree_map(lambda arr: arr.astype(jnp.float_), tree)
+    return jax.tree_util.tree_map(lambda arr: arr.astype(jax_real_dtype()), tree)
 
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -85,18 +92,19 @@ def _default_jax_gcm_grid_fields(
     grid_shape: tuple[int, int],
     *,
     include_total_surface_temperature: bool,
+    policy: PrecisionPolicy = None,
 ) -> dict[str, RuntimeArray]:
     """Return default grid-shaped JAXGCM runtime fields."""
 
-    zeros = jnp.zeros(grid_shape, dtype=jnp.float_)
+    zeros = jax_zeros(grid_shape, policy)
     fields: dict[str, RuntimeArray] = {
         field_name: zeros for field_name in _JAXGCM_OUTPUT_GRID_FIELD_NAMES
     }
     fields["land_surface_temperature"] = zeros
-    fields["sea_surface_temperature"] = jnp.full(
+    fields["sea_surface_temperature"] = jax_full(
         grid_shape,
         _REFERENCE_SURFACE_TEMPERATURE,
-        dtype=jnp.float_,
+        policy,
     )
     if include_total_surface_temperature:
         fields["total_surface_temperature"] = zeros
@@ -122,10 +130,10 @@ def _cleanup_surface_temperature_fields(
     sea_surface_temperature: object,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     land_surface_temperature_array = jnp.nan_to_num(
-        jnp.asarray(land_surface_temperature, dtype=jnp.float_)
+        as_jax_real_array(land_surface_temperature)
     )
     sea_surface_temperature_array = jnp.nan_to_num(
-        jnp.asarray(sea_surface_temperature, dtype=jnp.float_)
+        as_jax_real_array(sea_surface_temperature)
     )
     total_surface_temperature = (
         land_surface_temperature_array + sea_surface_temperature_array
@@ -144,10 +152,8 @@ def _prepare_surface_temperature_forcing(
     total_surface_temperature: object,
     land_fraction_mask: object,
 ) -> tuple[jax.Array, jax.Array]:
-    total_surface_temperature_array = jnp.asarray(
-        total_surface_temperature, dtype=jnp.float_
-    )
-    land_fraction_mask_array = jnp.asarray(land_fraction_mask, dtype=jnp.float_)
+    total_surface_temperature_array = as_jax_real_array(total_surface_temperature)
+    land_fraction_mask_array = as_jax_real_array(land_fraction_mask)
 
     land_surface_temperature = (
         total_surface_temperature_array * land_fraction_mask_array
@@ -189,52 +195,44 @@ def _map_jcm_output_fields(
     temperature: object,
     specific_humidity: object,
 ) -> dict[str, jax.Array]:
-    u_velocity = jnp.asarray(u_wind, dtype=jnp.float_)[-1, :, :].T
-    v_velocity = jnp.asarray(v_wind, dtype=jnp.float_)[-1, :, :].T
-    temperature_2m = jnp.asarray(temperature, dtype=jnp.float_)[-1, :, :].T
-    specific_humidity_2m = (
-        jnp.asarray(specific_humidity, dtype=jnp.float_)[-1, :, :].T / 1000.0
-    )
+    u_velocity = as_jax_real_array(u_wind)[-1, :, :].T
+    v_velocity = as_jax_real_array(v_wind)[-1, :, :].T
+    temperature_2m = as_jax_real_array(temperature)[-1, :, :].T
+    specific_humidity_2m = as_jax_real_array(specific_humidity)[-1, :, :].T / 1000.0
 
     sensible_heat_flux = -jnp.sum(
-        jnp.asarray(surface_sensible_heat_flux, dtype=jnp.float_), axis=2
+        as_jax_real_array(surface_sensible_heat_flux), axis=2
     ).T
     latent_heat_flux = -jnp.sum(
-        jnp.asarray(surface_evaporation, dtype=jnp.float_) / 1e3 * latvap,
+        as_jax_real_array(surface_evaporation) / 1e3 * latvap,
         axis=2,
     ).T
-    net_shortwave_radiation_flux_2m = jnp.asarray(
-        net_shortwave_radiation_flux, dtype=jnp.float_
-    ).T
-    downward_longwave_radiation_flux_2m = jnp.asarray(
-        downward_longwave_radiation_flux, dtype=jnp.float_
+    net_shortwave_radiation_flux_2m = as_jax_real_array(net_shortwave_radiation_flux).T
+    downward_longwave_radiation_flux_2m = as_jax_real_array(
+        downward_longwave_radiation_flux
     ).T
 
     pressure = compute_pressure_levels(
-        jnp.asarray(reference_pressure, dtype=jnp.float_),
-        jnp.asarray(0.0, dtype=jnp.float_),
-        jnp.asarray(sigma_levels, dtype=jnp.float_),
-        jnp.asarray(normalized_surface_pressure, dtype=jnp.float_).T,
+        as_jax_real_array(reference_pressure),
+        as_jax_real_array(0.0),
+        as_jax_real_array(sigma_levels),
+        as_jax_real_array(normalized_surface_pressure).T,
     )
 
     density = (
-        jnp.asarray(mwdair, dtype=jnp.float_)
-        / jnp.asarray(rgas, dtype=jnp.float_)
+        as_jax_real_array(mwdair)
+        / as_jax_real_array(rgas)
         * pressure[-1, ...]
         / temperature_2m
     )
     potential_temperature = temperature_2m * (
-        jnp.asarray(potential_temperature_reference_pressure, dtype=jnp.float_)
-        / pressure[-1, ...]
-    ) ** jnp.asarray(cappa, dtype=jnp.float_)
+        as_jax_real_array(potential_temperature_reference_pressure) / pressure[-1, ...]
+    ) ** as_jax_real_array(cappa)
 
     model_level_height = get_altitudes_sigma_levels(
-        jnp.asarray(temperature, dtype=jnp.float_).transpose((0, 2, 1))[::-1, :, :],
+        as_jax_real_array(temperature).transpose((0, 2, 1))[::-1, :, :],
         pressure[::-1, :, :],
-        jnp.asarray(specific_humidity, dtype=jnp.float_).transpose((0, 2, 1))[
-            ::-1, :, :
-        ]
-        / 1000.0,
+        as_jax_real_array(specific_humidity).transpose((0, 2, 1))[::-1, :, :] / 1000.0,
     )[1, :, :]
 
     return {
@@ -405,6 +403,7 @@ class JAXGCM(Component):
             _default_jax_gcm_grid_fields(
                 self.grid.shape,
                 include_total_surface_temperature=False,
+                policy=context.settings,
             )
         )
 
@@ -457,7 +456,7 @@ class JAXGCM(Component):
         sigma_levels = jnp.asarray(self.sigma_levels)
         data.setdefault(
             "pressure",
-            jnp.zeros((sigma_levels.shape[0], *self.grid.shape), dtype=jnp.float_),
+            jax_zeros((sigma_levels.shape[0], *self.grid.shape)),
         )
         _ = incoming, outgoing, contract
 
@@ -521,7 +520,7 @@ class JAXGCM(Component):
         land_surface_temperature_forcing, sea_surface_temperature_forcing = (
             _prepare_surface_temperature_forcing(
                 total_surface_temperature,
-                jnp.asarray(self.model.terrain.fmask, dtype=jnp.float_).T,
+                as_jax_real_array(self.model.terrain.fmask, settings).T,
             )
         )
         forcing = payload.forcing.copy(

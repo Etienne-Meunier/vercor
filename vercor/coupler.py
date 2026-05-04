@@ -8,6 +8,7 @@ import jax.numpy as jnp
 
 from vercor.clock import Clock
 from vercor.components.base import Component, validate_component_setup
+from vercor.dtypes import jax_ones
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -195,11 +196,12 @@ class Coupler:
 
         self.logger.info(" Initializing coupler and components")
 
+        if enable_x64_computations is not None:
+            self.settings.enable_x64 = enable_x64_computations
+
         self.logger.info(
             f" Setting default precision for JAX computations: {self.settings.enable_x64}"
         )
-        if enable_x64_computations is not None:
-            self.settings.enable_x64 = enable_x64_computations
 
         if self.settings.enable_x64:
             import jax
@@ -252,13 +254,13 @@ class Coupler:
                     self.components[exchange.source].grid,
                     self.components[exchange.destination].grid,
                 )
-                self._binary_masks[key] = jnp.ones(
+                self._binary_masks[key] = jax_ones(
                     self.components[exchange.destination].grid.shape,
-                    dtype=jnp.float_,
+                    self.settings,
                 )
-                self._fractional_masks[key] = jnp.ones(
+                self._fractional_masks[key] = jax_ones(
                     self.components[exchange.destination].grid.shape,
-                    dtype=jnp.float_,
+                    self.settings,
                 )
             else:
                 self.logger.warning(

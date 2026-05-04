@@ -28,6 +28,7 @@ except ModuleNotFoundError:
     print("Credit module not found. Please install credit to use CAMulator.")
 
 from vercor.components.base import HostRuntimeComponent
+from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full, jax_ones
 from vercor.grid import RectilinearGrid
 from vercor.host_arrays import runtime_array_to_host
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
@@ -69,10 +70,11 @@ _CAMULATOR_RUNTIME_FIELD_NAMES = (
 
 def _initialize_camulator_runtime_fields(
     grid_shape: tuple[int, int],
+    policy: PrecisionPolicy = None,
 ) -> dict[str, jax.Array]:
     """Create JAX-backed zero fields for CAMulator exchange storage."""
 
-    zeros = jnp.full(grid_shape, 0.0, dtype=jnp.float_)
+    zeros = jax_full(grid_shape, 0.0, policy)
     return {field_name: zeros for field_name in _CAMULATOR_RUNTIME_FIELD_NAMES}
 
 
@@ -84,9 +86,9 @@ def _prepare_camulator_surface_forcing(
 ) -> tuple[jax.Array, jax.Array]:
     """Prepare CAMulator's rescaled surface-temperature forcing field."""
 
-    sst = jnp.nan_to_num(jnp.asarray(sea_surface_temperature, dtype=jnp.float_))
-    skt = jnp.nan_to_num(jnp.asarray(land_surface_temperature, dtype=jnp.float_))
-    land_mask = jnp.asarray(land_mask_coslat, dtype=jnp.float_)
+    sst = jnp.nan_to_num(as_jax_real_array(sea_surface_temperature))
+    skt = jnp.nan_to_num(as_jax_real_array(land_surface_temperature))
+    land_mask = as_jax_real_array(land_mask_coslat)
 
     total_surface_temperature = jnp.where(land_mask < 1.0, sst + skt, 283.0)
     rescaled_total_surface_temperature = (
@@ -102,7 +104,7 @@ def _prepare_camulator_dynamic_forcing_chunk(
 ) -> jax.Array:
     """Convert xarray forcing values to CAMulator's time-major layout."""
 
-    return jnp.asarray(dynamic_forcing_values, dtype=jnp.float_).transpose((1, 0, 2, 3))
+    return as_jax_real_array(dynamic_forcing_values).transpose((1, 0, 2, 3))
 
 
 @jax.jit
@@ -111,7 +113,7 @@ def _prepare_camulator_sst_input(
 ) -> jax.Array:
     """Expand a rescaled SST field to CAMulator's input tensor layout."""
 
-    return jnp.asarray(rescaled_total_surface_temperature, dtype=jnp.float_)[
+    return as_jax_real_array(rescaled_total_surface_temperature)[
         jnp.newaxis, jnp.newaxis, jnp.newaxis, ...
     ]
 
@@ -157,38 +159,30 @@ def _map_camulator_prediction_arrays(
 ) -> dict[str, jax.Array]:
     """Map CAMulator tensor outputs into VerCOR runtime exchange fields."""
 
-    hyai_array = jnp.asarray(hyai, dtype=jnp.float_).reshape(-1)
-    hybi_array = jnp.asarray(hybi, dtype=jnp.float_).reshape(-1)
-    hyam_array = jnp.asarray(hyam, dtype=jnp.float_).reshape(-1)
-    hybm_array = jnp.asarray(hybm, dtype=jnp.float_).reshape(-1)
+    hyai_array = as_jax_real_array(hyai).reshape(-1)
+    hybi_array = as_jax_real_array(hybi).reshape(-1)
+    hyam_array = as_jax_real_array(hyam).reshape(-1)
+    hybm_array = as_jax_real_array(hybm).reshape(-1)
 
-    u_velocity = jnp.asarray(u_wind, dtype=jnp.float_).squeeze()[-1, :, :]
-    v_velocity = jnp.asarray(v_wind, dtype=jnp.float_).squeeze()[-1, :, :]
-    surface_temperature_array = jnp.asarray(
-        surface_temperature, dtype=jnp.float_
-    ).squeeze()
-    temperature_3d_array = jnp.asarray(temperature_3d, dtype=jnp.float_).squeeze()
-    specific_humidity_3d_array = jnp.asarray(
-        specific_humidity_3d, dtype=jnp.float_
-    ).squeeze()
+    u_velocity = as_jax_real_array(u_wind).squeeze()[-1, :, :]
+    v_velocity = as_jax_real_array(v_wind).squeeze()[-1, :, :]
+    surface_temperature_array = as_jax_real_array(surface_temperature).squeeze()
+    temperature_3d_array = as_jax_real_array(temperature_3d).squeeze()
+    specific_humidity_3d_array = as_jax_real_array(specific_humidity_3d).squeeze()
     temperature = temperature_3d_array[-1, ...]
     specific_humidity = specific_humidity_3d_array[-1, ...]
 
     net_shortwave_radiation_flux = (
-        jnp.asarray(
-            net_shortwave_radiation_flux_accumulated, dtype=jnp.float_
-        ).squeeze()
-        / 21600.0
+        as_jax_real_array(net_shortwave_radiation_flux_accumulated).squeeze() / 21600.0
     )
     net_longwave_radiation_flux = (
-        jnp.asarray(net_longwave_radiation_flux_accumulated, dtype=jnp.float_).squeeze()
-        / -21600.0
+        as_jax_real_array(net_longwave_radiation_flux_accumulated).squeeze() / -21600.0
     )
     downward_longwave_radiation_flux = (
         stef_boltz * surface_temperature_array**4 - net_longwave_radiation_flux
     )
 
-    surface_pressure_array = jnp.asarray(surface_pressure, dtype=jnp.float_).squeeze()
+    surface_pressure_array = as_jax_real_array(surface_pressure).squeeze()
     p_mid = (
         hyam_array[:, jnp.newaxis, jnp.newaxis] * camulator_reference_pressure
         + hybm_array[:, jnp.newaxis, jnp.newaxis]
@@ -423,12 +417,11 @@ class CAMulatorGCM(HostRuntimeComponent):
             name=name,
             longitude=self.latlons.longitude.values,
             latitude=self.latlons.latitude.values,
-            binary_mask=jnp.ones(
+            binary_mask=jax_ones(
                 (
                     self.latlons.latitude.values.shape[0],
                     self.latlons.longitude.values.shape[0],
-                ),
-                dtype=jnp.float_,
+                )
             ),
         )
 
@@ -511,7 +504,9 @@ class CAMulatorGCM(HostRuntimeComponent):
         self.forecast_hour = 1
         self.timestep_counter = 0
 
-        self.data.update(_initialize_camulator_runtime_fields(self.grid.shape))
+        self.data.update(
+            _initialize_camulator_runtime_fields(self.grid.shape, context.settings)
+        )
 
     def step_host_runtime_state(
         self,

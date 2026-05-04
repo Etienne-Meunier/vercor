@@ -12,6 +12,7 @@ from vercor.components.external.camulator_state import (
 
 from vercor.grid import RectilinearGrid
 from vercor.components.base import HostRuntimeComponent
+from vercor.dtypes import jax_full
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.grid_masks import create_lnd_mask_from_ocn
 
@@ -118,8 +119,8 @@ class CAMulatorLand(HostRuntimeComponent):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.data["land_surface_temperature"] = jnp.full(
-            self.grid.shape, 283.0, dtype=jnp.float32
+        self.data["land_surface_temperature"] = jax_full(
+            self.grid.shape, 283.0, context.settings
         )
 
     def step_host_runtime_state(

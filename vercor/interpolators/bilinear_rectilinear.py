@@ -6,6 +6,8 @@ import jax
 import jax.numpy as jnp
 from jax import Array, lax
 
+from vercor.dtypes import as_jax_real_array, jax_full, jax_index_dtype
+
 
 def _wrap_like(lon_deg: Array, base0_deg: float) -> Array:
     r"""Maps longitudes (deg) into the [base0, base0+360) interval."""
@@ -93,8 +95,8 @@ class BilinearRectilinearInterpolator:
         self.idw_eps = float(idw_eps)
         self.fill_value = float(fill_value)
 
-        lon_src_deg = jnp.asarray(lon_src, dtype=jnp.float64)
-        lat_src_deg = jnp.asarray(lat_src, dtype=jnp.float64)
+        lon_src_deg = as_jax_real_array(lon_src)
+        lat_src_deg = as_jax_real_array(lat_src)
         if lon_src_deg.ndim != 1 or lat_src_deg.ndim != 1:
             raise AssertionError("lon_src, lat_src must be 1-D")
 
@@ -129,8 +131,8 @@ class BilinearRectilinearInterpolator:
         self.nx_source = self.nlon
         self.ny_source = self.nlat
 
-        lon_tgt_array = jnp.asarray(lon_tgt, dtype=jnp.float64)
-        lat_tgt_array = jnp.asarray(lat_tgt, dtype=jnp.float64)
+        lon_tgt_array = as_jax_real_array(lon_tgt)
+        lat_tgt_array = as_jax_real_array(lat_tgt)
         lon_tgt_deg, lat_tgt_deg = jnp.meshgrid(lon_tgt_array, lat_tgt_array)
         self.tshape = tuple(int(size) for size in lon_tgt_deg.shape)
         self.lon_tgt_deg = lon_tgt_deg
@@ -327,10 +329,10 @@ class BilinearRectilinearInterpolator:
         fy = jnp.where(dphi != 0.0, (self.lat_tgt_rad - lat0) / dphi, 0.0)
         fy = jnp.clip(fy, 0.0, 1.0)
 
-        self.i0 = i0.astype(jnp.int64)
-        self.i1 = i1.astype(jnp.int64)
-        self.j0 = j0.astype(jnp.int64)
-        self.j1 = j1.astype(jnp.int64)
+        self.i0 = i0.astype(jax_index_dtype())
+        self.i1 = i1.astype(jax_index_dtype())
+        self.j0 = j0.astype(jax_index_dtype())
+        self.j1 = j1.astype(jax_index_dtype())
         self.fx = fx
         self.fy = fy
         self.w00 = (1.0 - fx) * (1.0 - fy)
@@ -345,7 +347,7 @@ class BilinearRectilinearInterpolator:
         return jnp.asarray(src_mask, dtype=bool) & jnp.isfinite(src)
 
     def _prepare_source_field(self, src: Array) -> Array:
-        src_array = jnp.asarray(src, dtype=jnp.float64)
+        src_array = as_jax_real_array(src)
         if self._lon_flipped:
             src_array = jnp.flip(src_array, axis=1)
         return src_array
@@ -392,7 +394,7 @@ class BilinearRectilinearInterpolator:
 
     def _extrapolate_scalar(self, src: Array, src_mask: Array | None) -> Array:
         if self.extrapolation_mode is None:
-            return jnp.full(self.tshape, self.fill_value, dtype=jnp.float64)
+            return jax_full(self.tshape, self.fill_value)
 
         src_array = self._prepare_source_field(src)
         valid = self._ensure_src_mask(src_array, src_mask).reshape(-1)
@@ -447,7 +449,7 @@ class BilinearRectilinearInterpolator:
         ext = lax.cond(
             jnp.any(need),
             lambda _: self._extrapolate_scalar(src, self.src_mask),
-            lambda _: jnp.full(self.tshape, self.fill_value, dtype=jnp.float64),
+            lambda _: jax_full(self.tshape, self.fill_value),
             operand=None,
         )
         out = jnp.where(need, ext, out)
@@ -519,7 +521,7 @@ class BilinearRectilinearInterpolator:
             return u_fill, v_fill
 
         def no_vector_extrapolation(_: None) -> tuple[Array, Array]:
-            fill = jnp.full(self.tshape, self.fill_value, dtype=jnp.float64)
+            fill = jax_full(self.tshape, self.fill_value)
             return fill, fill
 
         u_fill, v_fill = lax.cond(

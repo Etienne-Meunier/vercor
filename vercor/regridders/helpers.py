@@ -5,6 +5,7 @@ from typing import Any, cast
 from jax import Array, lax
 import jax.numpy as jnp
 
+from vercor.dtypes import as_jax_real_array, jax_linspace
 from vercor.grid import RectilinearGrid
 
 
@@ -35,8 +36,8 @@ def make_rectilinear_grid(
         RectilinearGrid instance
     """
 
-    longitude = jnp.linspace(longitude_start, longitude_end, nlon, dtype=float)
-    latitude = jnp.linspace(latitude_start, latitude_end, nlat, dtype=float)
+    longitude = jax_linspace(longitude_start, longitude_end, nlon)
+    latitude = jax_linspace(latitude_start, latitude_end, nlat)
 
     return RectilinearGrid(
         name=name, longitude=longitude, latitude=latitude, binary_mask=mask
@@ -58,7 +59,7 @@ def centers_to_edges(centers: Any, grid_type: str) -> Any:
     Returns:
         1D array of grid cell edges
     """
-    centers = jnp.asarray(centers, dtype=jnp.float64)
+    centers = as_jax_real_array(centers)
 
     if centers.size < 2:
         half_width = 0.5

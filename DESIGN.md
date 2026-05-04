@@ -131,6 +131,22 @@ immutable runtime containers used during traced integration.
   required for differentiability and stable scan carry structure, but they are
   not exported from the package top level.
 
+### Precision and dtype policy
+
+VerCOR-owned array dtypes are centralized in `vercor.dtypes`. Real-valued JAX
+and NumPy arrays use the `VercorSettings.enable_x64` precision switch whenever a
+settings object is available: `False` maps to 32-bit real arrays and `True` maps
+to 64-bit real arrays. Helpers that create arrays without a settings object
+follow the active JAX global `jax_enable_x64` configuration; conversion helpers
+preserve an already-typed real array when no settings object is supplied.
+Integer/index arrays use the canonical 32-bit index dtype in both
+real-precision modes to keep sparse metadata and interpolation indices compact.
+
+Production kernels and adapters should use the dtype helpers rather than
+hard-coded `jnp.float64`, `jnp.float32`, `jnp.float_`, `jnp.int64`, or
+`jnp.int32` annotations. NumPy remains restricted to explicit host and dtype
+boundaries.
+
 ### Logging across JAX runtime transforms
 
 The coupler logger is callback-backed through `jax.debug.callback`, so runtime

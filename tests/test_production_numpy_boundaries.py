@@ -8,6 +8,7 @@ VERCOR_ROOT = PROJECT_ROOT / "vercor"
 
 ALLOWED_NUMPY_BOUNDARIES = {
     "vercor/diagnostics.py",
+    "vercor/dtypes.py",
     "vercor/forcing_data.py",
     "vercor/host_arrays.py",
     "vercor/types.py",

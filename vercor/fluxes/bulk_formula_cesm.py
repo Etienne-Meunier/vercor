@@ -3,12 +3,13 @@ import jax.numpy as jnp
 from jax import lax
 from jax.typing import ArrayLike
 
+from vercor.dtypes import as_jax_real_array
 from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
 from vercor.settings import VercorSettings
 
 
 def _asarray(value: ArrayLike) -> jax.Array:
-    return jnp.asarray(value, dtype=jnp.float_)
+    return as_jax_real_array(value)
 
 
 def _compute_stability_terms(

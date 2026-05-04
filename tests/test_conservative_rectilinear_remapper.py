@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_allclose_compact
+from vercor.dtypes import jax_index_dtype, jax_real_dtype
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
@@ -100,13 +101,13 @@ def test_remapper_accepts_jax_backed_constructor_inputs() -> None:
         normalize="fracarea",
     )
 
-    assert remapper.src_lon_b.dtype == jnp.float64
-    assert remapper.src_lat_b.dtype == jnp.float64
-    assert remapper.dst_lon_b.dtype == jnp.float64
-    assert remapper.dst_lat_b.dtype == jnp.float64
-    assert remapper.dst_indices.dtype == jnp.int32
-    assert remapper.src_indices.dtype == jnp.int32
-    assert remapper.overlap_weights.dtype == jnp.float64
+    assert remapper.src_lon_b.dtype == jax_real_dtype()
+    assert remapper.src_lat_b.dtype == jax_real_dtype()
+    assert remapper.dst_lon_b.dtype == jax_real_dtype()
+    assert remapper.dst_lat_b.dtype == jax_real_dtype()
+    assert remapper.dst_indices.dtype == jax_index_dtype()
+    assert remapper.src_indices.dtype == jax_index_dtype()
+    assert remapper.overlap_weights.dtype == jax_real_dtype()
 
 
 def test_mass_conserved_between_source_and_destination() -> None:

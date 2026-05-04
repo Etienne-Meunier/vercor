@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
+from vercor.dtypes import as_jax_real_array, jax_full, jax_zeros
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.components import validate_runtime_grid_data_field
@@ -18,7 +19,7 @@ _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 @jax.jit
 def _default_sea_surface_temperature(temperature_2m: object) -> jax.Array:
     return jnp.full_like(
-        jnp.asarray(temperature_2m, dtype=jnp.float64),
+        as_jax_real_array(temperature_2m),
         _REFERENCE_SURFACE_TEMPERATURE,
     )
 
@@ -28,10 +29,8 @@ def _bulk_flux_step(
     temperature_2m: object,
     sea_surface_temperature: object,
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
-    temperature_2m_array = jnp.asarray(temperature_2m, dtype=jnp.float64)
-    sea_surface_temperature_array = jnp.asarray(
-        sea_surface_temperature, dtype=jnp.float64
-    )
+    temperature_2m_array = as_jax_real_array(temperature_2m)
+    sea_surface_temperature_array = as_jax_real_array(sea_surface_temperature)
     delta_temperature = temperature_2m_array - sea_surface_temperature_array
     sensible_heat_flux = -10.0 * delta_temperature
     latent_heat_flux = -0.5 * sensible_heat_flux
@@ -44,8 +43,8 @@ def _surface_wind_10m(
     latitude: object,
     longitude: object,
 ) -> tuple[jax.Array, jax.Array]:
-    latitude_array = jnp.asarray(latitude, dtype=jnp.float64)
-    longitude_array = jnp.asarray(longitude, dtype=jnp.float64) - 180.0
+    latitude_array = as_jax_real_array(latitude)
+    longitude_array = as_jax_real_array(longitude) - 180.0
     latitudes, longitudes = jnp.meshgrid(latitude_array, longitude_array, indexing="ij")
     u_velocity_10m = jnp.cos(jnp.deg2rad(latitudes))
     v_velocity_10m = 0.5 * jnp.sin(jnp.deg2rad(longitudes))
@@ -62,12 +61,11 @@ class Atmosphere(Component):
         super().__init__(name, grid)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        _ = context
         grid_shape = self.grid.shape
-        zeros = jnp.zeros(grid_shape, dtype=jnp.float64)
+        zeros = jax_zeros(grid_shape, context.settings)
 
-        self.data["temperature_2m"] = jnp.full(
-            grid_shape, _REFERENCE_SURFACE_TEMPERATURE, dtype=jnp.float64
+        self.data["temperature_2m"] = jax_full(
+            grid_shape, _REFERENCE_SURFACE_TEMPERATURE, context.settings
         )
         self.data["sensible_heat_flux"] = zeros
         self.data["latent_heat_flux"] = zeros

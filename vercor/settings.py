@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from vercor.dtypes import DTypePolicy
+
 
 @dataclass
 class VercorSettings:
@@ -39,6 +41,12 @@ class VercorSettings:
     ztref: float = 2.0  # reference height for air T (m)
     # --------------------------------------------------------------------------------
     year_in_seconds: float = 365 * 86400.0
+
+    @property
+    def dtype_policy(self) -> DTypePolicy:
+        """Return the canonical array dtype policy for these settings."""
+
+        return DTypePolicy.from_settings(self)
 
 
 @dataclass

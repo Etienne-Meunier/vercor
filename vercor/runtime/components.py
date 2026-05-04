@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 
 from vercor.components.base import validate_component_setup
+from vercor.dtypes import jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
 from vercor.field_layout import validate_component_data_layout
@@ -29,7 +30,7 @@ def prefill_runtime_contract_fields(
 ) -> None:
     """Add generic import/export fields required for stable runtime execution."""
 
-    zeros = jnp.zeros(component.grid.shape, dtype=jnp.float_)
+    zeros = jax_zeros(component.grid.shape)
     for field_name in contract.imports:
         incoming.setdefault(field_name, zeros)
         data.setdefault(field_name, zeros)

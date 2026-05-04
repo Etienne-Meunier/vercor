@@ -1,5 +1,59 @@
 # 2026-05-04
 
+## Centralized VerCOR Dtype Policy
+
+- Added `vercor.dtypes` as the single dtype policy boundary for VerCOR-owned
+  JAX/NumPy real and index arrays.
+- Added `VercorSettings.dtype_policy`; settings-bound helpers use
+  `enable_x64` for real arrays while canonical index arrays remain `int32`.
+- Replaced production hard-coded JAX dtype spellings with dtype helpers across
+  flux kernels, slab components, external adapters, interpolators, regridders,
+  runtime metadata, and coupler-owned masks.
+- Kept no-settings conversion helpers from upcasting already-typed arrays; array
+  creation helpers without settings still follow the active JAX precision.
+- Made `RuntimeFieldStore.set()` preserve the dtype of existing fields during
+  replacement so `jax.lax.scan` carry dtypes stay stable.
+- Updated exact dtype tests, the explicit NumPy-boundary test, `DESIGN.md`, and
+  `DEPENDENCIES.md`.
+- Failed approaches / corrections:
+  - The first new dtype test failed as expected because `vercor.dtypes` did not
+    exist.
+  - A no-settings conversion initially upcast initialized `float32` fields to
+    the test harness's global `float64`; a regression test now preserves existing
+    array dtypes when no settings are supplied.
+  - Runtime scan tests exposed regridder/kernel outputs replacing `float32`
+    carry fields with `float64`; replacement now casts to the existing field
+    dtype.
+  - Symmetrically disabling global `jax_enable_x64` during
+    `Coupler.initialize()` caused process-wide test-harness side effects; the
+    implementation keeps the previous "enable when requested" global behavior
+    and uses explicit settings-bound dtype helpers where settings are available.
+
+## Validation (Centralized VerCOR Dtype Policy, 2026-05-04)
+
+- `conda run -n scipy pytest tests/test_dtypes.py tests/test_conservative_rectilinear_remapper.py::test_remapper_accepts_jax_backed_constructor_inputs tests/test_bilinear_rectilinear_interpolator.py::test_scalar_periodic_longitude_wrap_uses_dateline_cell -q --tb=short`
+  - failed as expected before implementation because `vercor.dtypes` did not
+    exist
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_dtypes.py::test_unconfigured_real_conversion_preserves_existing_array_dtype tests/test_component_models_coverage.py::test_slab_component_initialize_and_step_behaviors -q --tb=short`
+  - failed before the no-settings conversion fix
+  - passed after preserving existing array dtypes
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_field_store_replacement_preserves_existing_dtype tests/test_tools_components_and_plotting.py::test_grids_identical_detects_equal_and_unequal_grids tests/test_coupler_runtime.py::test_initialized_slab_coupler_creates_jittable_runtime_state tests/test_coupler_runtime.py::test_initialized_slab_coupler_run_prefills_missing_imports tests/test_coupler_runtime.py::test_scanned_runtime_state_uses_runtime_field_stores tests/test_coupler_runtime.py::test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jvp -q --tb=short`
+  - failed before `RuntimeFieldStore.set()` preserved replacement dtypes
+  - passed after the runtime store fix
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning; final run left 101 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`101 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Canonical Component Data Dimension Order
 
 - Added a shared `vercor.field_layout` module for canonical component

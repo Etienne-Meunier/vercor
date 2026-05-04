@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
+from vercor.dtypes import as_jax_real_array, jax_full
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.components import validate_runtime_grid_data_field
@@ -27,11 +28,9 @@ def _advance_sea_surface_temperature(
     lambda_relax: float,
     reference_temperature: float,
 ) -> jax.Array:
-    sea_surface_temperature_array = jnp.asarray(
-        sea_surface_temperature, dtype=jnp.float64
-    )
-    sensible_heat_flux_array = jnp.asarray(sensible_heat_flux, dtype=jnp.float64)
-    latent_heat_flux_array = jnp.asarray(latent_heat_flux, dtype=jnp.float64)
+    sea_surface_temperature_array = as_jax_real_array(sea_surface_temperature)
+    sensible_heat_flux_array = as_jax_real_array(sensible_heat_flux)
+    latent_heat_flux_array = as_jax_real_array(latent_heat_flux)
     qnet = sensible_heat_flux_array + latent_heat_flux_array
     tendency = qnet / (rho * cp * mixed_layer_depth) + lambda_relax * (
         sea_surface_temperature_array - reference_temperature
@@ -58,11 +57,10 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, context: ComponentInitContext) -> None:
-        _ = context
-        self.data["sea_surface_temperature"] = jnp.full(
+        self.data["sea_surface_temperature"] = jax_full(
             self.grid.shape,
             _REFERENCE_SEA_SURFACE_TEMPERATURE,
-            dtype=jnp.float64,
+            context.settings,
         )
 
     def validate_runtime_state(

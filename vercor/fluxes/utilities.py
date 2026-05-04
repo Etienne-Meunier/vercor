@@ -2,11 +2,12 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
+from vercor.dtypes import as_jax_real_array
 from vercor.settings import VercorSettings
 
 
 def _as_jax_array(value: ArrayLike) -> jax.Array:
-    return jnp.asarray(value, dtype=jnp.float_)
+    return as_jax_real_array(value)
 
 
 def qsat(tk: ArrayLike) -> jax.Array:

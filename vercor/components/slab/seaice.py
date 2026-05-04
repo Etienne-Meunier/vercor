@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
+from vercor.dtypes import as_jax_real_array, jax_zeros
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.components import validate_runtime_grid_data_field
@@ -14,9 +15,7 @@ if TYPE_CHECKING:
 
 @jax.jit
 def _diagnose_ice_fraction(sea_surface_temperature: object) -> jax.Array:
-    sea_surface_temperature_array = jnp.asarray(
-        sea_surface_temperature, dtype=jnp.float64
-    )
+    sea_surface_temperature_array = as_jax_real_array(sea_surface_temperature)
     freezing_temperature = 273.15 - 1.8
     x = (freezing_temperature - sea_surface_temperature_array) / 2.0
     return 1.0 / (1.0 + jnp.exp(-x))
@@ -32,8 +31,7 @@ class SeaIce(Component):
         super().__init__(name, grid)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        _ = context
-        self.data["ice_fraction"] = jnp.zeros(self.grid.shape, dtype=jnp.float64)
+        self.data["ice_fraction"] = jax_zeros(self.grid.shape, context.settings)
 
     def validate_runtime_state(
         self,
