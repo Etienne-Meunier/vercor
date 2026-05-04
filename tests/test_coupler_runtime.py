@@ -731,12 +731,12 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
 
 def test_data_forcing_components_run_inside_runtime() -> None:
     grid = make_test_grid(name="forcing")
-    monthly_ocean = jnp.zeros((2, 2, 12), dtype=jnp.float64)
-    monthly_ocean = monthly_ocean.at[:, :, 0].set(
+    monthly_ocean = jnp.zeros((12, 2, 2), dtype=jnp.float64)
+    monthly_ocean = monthly_ocean.at[0].set(
         jnp.asarray([[280.0, 281.0], [282.0, 283.0]], dtype=jnp.float64)
     )
-    monthly_land = jnp.zeros((2, 2, 12), dtype=jnp.float64)
-    monthly_land = monthly_land.at[:, :, 0].set(
+    monthly_land = jnp.zeros((12, 2, 2), dtype=jnp.float64)
+    monthly_land = monthly_land.at[0].set(
         jnp.asarray([[285.0, 286.0], [287.0, 288.0]], dtype=jnp.float64)
     )
     coupler = Coupler(
@@ -804,8 +804,8 @@ def test_data_forcing_components_run_inside_runtime() -> None:
     atmosphere = final_state.get_component_state("ATM")
     received_ocean = atmosphere.incoming.get("sea_surface_temperature")
     received_land = atmosphere.incoming.get("land_surface_temperature")
-    expected_ocean = np.asarray(monthly_ocean[:, :, 0]).T
-    expected_land = np.asarray(monthly_land[:, :, 0]).T
+    expected_ocean = np.asarray(monthly_ocean[0])
+    expected_land = np.asarray(monthly_land[0])
 
     assert received_ocean.shape == grid.shape
     assert received_land.shape == grid.shape
@@ -828,8 +828,8 @@ def test_data_forcing_components_run_inside_runtime() -> None:
 
     gradient = jax.grad(loss)(monthly_ocean)
     assert gradient.shape == monthly_ocean.shape
-    assert_allclose_compact(gradient[:, :, 0], np.ones((2, 2)))
-    assert_allclose_compact(gradient[:, :, 1:], np.zeros((2, 2, 11)))
+    assert_allclose_compact(gradient[0], np.ones((2, 2)))
+    assert_allclose_compact(gradient[1:], np.zeros((11, 2, 2)))
 
 
 def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridder() -> (
@@ -898,13 +898,13 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         longitude=np.asarray([0.5, 1.5], dtype=float),
         latitude=np.asarray([-1.0, 1.0], dtype=float),
     )
-    monthly_ocean = jnp.zeros((3, 2, 12), dtype=jnp.float64)
+    monthly_ocean = jnp.zeros((12, 2, 3), dtype=jnp.float64)
     first_month = jnp.asarray(
-        [[280.0, 281.0], [282.0, 283.0], [284.0, 285.0]],
+        [[280.0, 282.0, 284.0], [281.0, 283.0, 285.0]],
         dtype=jnp.float64,
     )
-    monthly_ocean = monthly_ocean.at[:, :, 0].set(first_month)
-    monthly_ocean = monthly_ocean.at[:, :, 1].set(first_month + 12.0)
+    monthly_ocean = monthly_ocean.at[0].set(first_month)
+    monthly_ocean = monthly_ocean.at[1].set(first_month + 12.0)
     atmosphere = Atmosphere(atmosphere_grid)
     ocean = _make_data_component(
         ERAInterimOcean,
@@ -948,7 +948,7 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
     atmosphere_state = final_state.get_component_state("ATM")
     received_sst = atmosphere_state.incoming.get("sea_surface_temperature")
     sensible_heat_flux = atmosphere_state.data.get("sensible_heat_flux")
-    expected_source = np.asarray(first_month).T
+    expected_source = np.asarray(first_month)
     expected_received = regridder(expected_source)
 
     assert received_sst.shape == atmosphere_grid.shape
@@ -973,8 +973,8 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
 
     gradient = jax.grad(loss)(monthly_ocean)
     assert gradient.shape == monthly_ocean.shape
-    assert np.all(np.isfinite(np.asarray(gradient[:, :, 0])))
-    assert_allclose_compact(gradient[:, :, 1:], np.zeros((3, 2, 11)))
+    assert np.all(np.isfinite(np.asarray(gradient[0])))
+    assert_allclose_compact(gradient[1:], np.zeros((11, 2, 3)))
 
 
 def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() -> None:
@@ -1203,11 +1203,11 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
 
 def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     grid = make_test_grid(name="monthly-wrap")
-    monthly_ocean = jnp.zeros((2, 2, 12), dtype=jnp.float64)
+    monthly_ocean = jnp.zeros((12, 2, 2), dtype=jnp.float64)
     month_zero = jnp.asarray([[280.0, 281.0], [282.0, 283.0]], dtype=jnp.float64)
     month_eleven = jnp.asarray([[292.0, 293.0], [294.0, 295.0]], dtype=jnp.float64)
-    monthly_ocean = monthly_ocean.at[:, :, 0].set(month_zero)
-    monthly_ocean = monthly_ocean.at[:, :, 11].set(month_eleven)
+    monthly_ocean = monthly_ocean.at[0].set(month_zero)
+    monthly_ocean = monthly_ocean.at[11].set(month_eleven)
     ocean = _make_data_component(
         ERA5Ocean,
         name="OCN",
@@ -1256,9 +1256,9 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     atmosphere_state = final_state.get_component_state("ATM")
     received_ocean = atmosphere_state.incoming.get("sea_surface_temperature")
     expected = np.asarray(
-        left_weight * monthly_ocean[:, :, left_index]
-        + right_weight * monthly_ocean[:, :, right_index]
-    ).T
+        left_weight * monthly_ocean[left_index]
+        + right_weight * monthly_ocean[right_index]
+    )
 
     assert (left_index, right_index) == (11, 0)
     assert received_ocean.shape == grid.shape
@@ -1279,9 +1279,9 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         )
 
     gradient = jax.grad(loss)(monthly_ocean)
-    assert_allclose_compact(gradient[:, :, 0], np.full(grid.shape, right_weight))
-    assert_allclose_compact(gradient[:, :, 11], np.full(grid.shape, left_weight))
-    assert_allclose_compact(gradient[:, :, 1:11], np.zeros((2, 2, 10)))
+    assert_allclose_compact(gradient[0], np.full(grid.shape, right_weight))
+    assert_allclose_compact(gradient[11], np.full(grid.shape, left_weight))
+    assert_allclose_compact(gradient[1:11], np.zeros((10, 2, 2)))
 
 
 def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:

@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from vercor.components.base import validate_component_setup
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
+from vercor.field_layout import validate_component_data_layout
 from vercor.runtime import (
     RuntimeComponentContract,
     RuntimeComponentState,
@@ -52,6 +53,12 @@ def create_runtime_component_state(
     if prefill_missing:
         component.prefill_runtime_state_fields(data, incoming, outgoing, contract)
         prefill_runtime_contract_fields(component, data, incoming, outgoing, contract)
+
+    validate_component_data_layout(
+        component_name=component.name,
+        grid_shape=component.grid.shape,
+        data=data,
+    )
 
     return RuntimeComponentState(
         data=RuntimeFieldStore.from_mapping(data),
@@ -175,12 +182,12 @@ def _select_runtime_field_for_send(
 
     if component.settings.apply_time_interpolation:
         arr = jnp.asarray(field)
-        left = jnp.take(arr, step_info.monthly_index_left, axis=-1)
-        right = jnp.take(arr, step_info.monthly_index_right, axis=-1)
+        left = jnp.take(arr, step_info.monthly_index_left, axis=0)
+        right = jnp.take(arr, step_info.monthly_index_right, axis=0)
         return (
             step_info.monthly_weight_left * left
             + step_info.monthly_weight_right * right
-        ).swapaxes(-2, -1)
+        )
 
     if component.settings.get_field_time_slice:
         return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)

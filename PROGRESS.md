@@ -1,3 +1,54 @@
+# 2026-05-04
+
+## Canonical Component Data Dimension Order
+
+- Added a shared `vercor.field_layout` module for canonical component
+  `data` field validation and time-last forcing normalization helpers.
+- Enforced `Component.data` as a grid-field store with trailing
+  `(nLat, nLon)` dimensions and accepted layouts `(nLat, nLon)`,
+  `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, and
+  `(nTime, nLev, nLat, nLon)`.
+- Runtime state creation validates component seed data after generic/component
+  prefill, so invalid setup data fails before JAX runtime execution.
+- Moved ERA5 hybrid-coordinate coefficients (`hyai`, `hybi`, `hyam`, `hybm`)
+  from `ERA5Atmosphere.data` to component attributes.
+- Converted ERA5, ERA-Interim, and JCM data adapters and runtime monthly
+  forcing selection to the canonical leading-time-axis convention.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` for the canonical data-field
+  layout boundary.
+- Failed approaches / corrections:
+  - The initial red tests confirmed that legacy `(nLon, nLat, nTime)` data and
+    1D metadata were not rejected before this slice.
+  - The runtime monthly-send red test confirmed that interpolation still read
+    time from the trailing axis and transposed the selected field.
+
+## Validation (Canonical Component Data Dimension Order, 2026-05-04)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_component_data_layout_validation_rejects_non_grid_data_fields -q --tb=short`
+  - failed as expected before implementation because invalid data layout was not
+    rejected
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_send_applies_monthly_interpolation_under_jit_and_grad -q --tb=short`
+  - failed as expected before implementation because monthly send still used
+    the trailing time axis
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_runtime_state.py tests/test_component_models_coverage.py tests/test_data_component_kernels.py tests/test_coupler_runtime.py tests/test_tools_time_and_forcing.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted four touched files
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`99 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed after formatting
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-05-01
 
 ## ERA5 Atmosphere Pure Data Component

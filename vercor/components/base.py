@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, final
 
 from vercor.exceptions import ComponentError
+from vercor.field_layout import validate_component_data_layout
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import ComponentSettings
@@ -32,7 +33,9 @@ class Component(ABC):
     Common exchange-field conventions:
         - fields use SI units
         - surface fluxes are positive downward and negative upward
-        - default grid dimensions (nTime, nLev, nLat, nLon)
+        - data fields use canonical trailing horizontal dimensions:
+          (nLat, nLon), (nTime, nLat, nLon), (nLev, nLat, nLon), or
+          (nTime, nLev, nLat, nLon)
 
     Attributes:
         name: component name
@@ -198,3 +201,8 @@ def validate_component_setup(component: Component) -> None:
             f"Component '{component.name}' has invalid setup attribute 'settings'; "
             "expected ComponentSettings."
         )
+    validate_component_data_layout(
+        component_name=component.name,
+        grid_shape=component.grid.shape,
+        data=component.data,
+    )

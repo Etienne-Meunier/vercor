@@ -144,7 +144,13 @@ def test_era5_land_helper_supports_jit_and_gradients() -> None:
     longitude = jnp.asarray([0.0, 120.0, 240.0])
     latitude = jnp.asarray([-30.0, 30.0])
     binary_mask = jnp.asarray([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
-    land_surface_temperature = jnp.asarray([[[280.0]], [[281.0]], [[282.0]]])
+    land_surface_temperature = jnp.asarray(
+        [
+            [[280.0], [281.0]],
+            [[282.0], [283.0]],
+            [[284.0], [285.0]],
+        ]
+    )
 
     (
         prepared_longitude,
@@ -167,7 +173,7 @@ def test_era5_land_helper_supports_jit_and_gradients() -> None:
     assert_allclose_compact(prepared_binary_mask, np.asarray(binary_mask).T)
     assert_allclose_compact(
         prepared_land_surface_temperature,
-        np.asarray([[[280.0]], [[281.0]], [[282.0]]]),
+        np.asarray([[[280.0, 282.0, 284.0], [281.0, 283.0, 285.0]]]),
     )
 
     gradient = jax.grad(
@@ -205,6 +211,7 @@ def test_ocean_mask_helpers_accept_jax_arrays() -> None:
     assert_allclose_compact(binary_mask, np.asarray([[0.0, 0.0], [1.0, 0.0]]))
     assert np.isnan(np.asarray(masked_sst)[0, 0, 0])
     assert np.isclose(np.asarray(masked_sst)[0, 1, 0], 282.0)
+    assert masked_sst.shape == (2, 2, 2)
 
 
 def test_erainterim_helpers_prepare_jax_backed_grid_and_masked_fields() -> None:
@@ -230,7 +237,7 @@ def test_erainterim_helpers_prepare_jax_backed_grid_and_masked_fields() -> None:
     assert isinstance(sea_surface_temperature, jax.Array)
     assert latitude.shape == (46,)
     assert binary_mask.shape == (46, 2)
-    assert sea_surface_temperature.shape == (2, 46, 12)
+    assert sea_surface_temperature.shape == (12, 46, 2)
     assert_allclose_compact(latitude[3:5], np.asarray([-78.0, -74.0]))
     assert np.all(np.asarray(binary_mask[3:5, :]) == 1.0)
     assert np.all(np.asarray(binary_mask[:3, :]) == 0.0)

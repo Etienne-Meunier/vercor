@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
@@ -21,14 +22,14 @@ def _mask_sea_surface_temperature(
     sea_surface_temperature: ArrayLike,
     binary_mask: ArrayLike,
 ) -> jax.Array:
-    """Apply the binary ocean mask to a `(nlon, nlat, time)` SST field."""
+    """Apply the binary ocean mask and return a `(nTime, nLat, nLon)` SST field."""
     return (
-        jnp.asarray(sea_surface_temperature)
+        canonicalize_time_last_surface_field(sea_surface_temperature)
         * jnp.where(
             jnp.asarray(binary_mask) > 0.0,
             1.0,
             jnp.nan,
-        ).T[..., jnp.newaxis]
+        )[jnp.newaxis, ...]
     )
 
 

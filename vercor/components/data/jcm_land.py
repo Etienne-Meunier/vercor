@@ -6,6 +6,7 @@ from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.forcing import ForcingData
 
 from vercor.components.base import DataComponent
+from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.grid import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
 
@@ -39,11 +40,25 @@ def _prepare_jcm_land_runtime_fields(
     longitude, latitude = _jcm_coordinates_in_degrees(
         longitude_radians, latitude_radians
     )
+    land_surface_temperature_array = jnp.asarray(land_surface_temperature)
+    soil_moisture_array = jnp.asarray(soil_moisture)
+    if land_surface_temperature_array.ndim == 3:
+        prepared_land_surface_temperature = canonicalize_time_last_surface_field(
+            land_surface_temperature_array
+        )
+    else:
+        prepared_land_surface_temperature = land_surface_temperature_array.T
+    if soil_moisture_array.ndim == 3:
+        prepared_soil_moisture = canonicalize_time_last_surface_field(
+            soil_moisture_array
+        )
+    else:
+        prepared_soil_moisture = soil_moisture_array.T
     return (
         longitude,
         latitude,
-        jnp.asarray(land_surface_temperature).T,
-        jnp.asarray(soil_moisture).T,
+        prepared_land_surface_temperature,
+        prepared_soil_moisture,
     )
 
 

@@ -132,5 +132,5 @@ def get_field_at_specific_time(
     )
 
     arr = jnp.asarray(data[field_name])
-    out: RuntimeArray = (f1 * arr[..., n1] + f2 * arr[..., n2]).swapaxes(-2, -1)
+    out: RuntimeArray = f1 * arr[n1, ...] + f2 * arr[n2, ...]
     return out

@@ -128,9 +128,9 @@ def test_get_field_at_specific_time_weights_and_interpolation() -> None:
     coupler = make_coupler(year_in_seconds=12.0)
 
     lat, lon, nrec = 2, 3, 12
-    arr = np.zeros((lat, lon, nrec), dtype=float)
-    arr[..., 0] = 0.0
-    arr[..., 1] = 10.0
+    arr = np.zeros((nrec, lat, lon), dtype=float)
+    arr[0, ...] = 0.0
+    arr[1, ...] = 10.0
     data = {"foo": arr}
 
     current_time = coupler.clock.start + timedelta(seconds=0.25)
@@ -155,8 +155,8 @@ def test_get_field_at_specific_time_weights_and_interpolation() -> None:
 
 def test_get_field_at_specific_time_boundary_record() -> None:
     coupler = make_coupler(year_in_seconds=120.0)
-    arr = np.zeros((2, 2, 12), dtype=float)
-    arr[..., 1] = 7.0
+    arr = np.zeros((12, 2, 2), dtype=float)
+    arr[1, ...] = 7.0
 
     rec_spacing = coupler.settings.year_in_seconds / 12.0
     current_time = coupler.clock.start + timedelta(seconds=rec_spacing)
@@ -169,29 +169,29 @@ def test_get_field_at_specific_time_boundary_record() -> None:
 
 def test_get_field_at_specific_time_accepts_jax_backed_forcing_cube() -> None:
     coupler = make_coupler(year_in_seconds=12.0)
-    arr = jnp.zeros((2, 3, 12), dtype=jnp.float64)
-    arr = arr.at[:, :, 0].set(jnp.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]]))
+    arr = jnp.zeros((12, 2, 3), dtype=jnp.float64)
+    arr = arr.at[0].set(jnp.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]]))
 
     out = get_field_at_specific_time(
         "foo", {"foo": arr}, coupler, current_time=coupler.clock.start
     )
 
     assert isinstance(out, jax.Array)
-    assert out.shape == (3, 2)
-    assert_allclose_compact(out, np.asarray(arr[:, :, 0]).swapaxes(-2, -1))
+    assert out.shape == (2, 3)
+    assert_allclose_compact(out, np.asarray(arr[0]))
 
 
 def test_get_field_at_specific_time_axis_ordering() -> None:
     coupler = make_coupler(year_in_seconds=12.0)
-    arr = np.zeros((2, 3, 12), dtype=float)
-    arr[:, :, 0] = np.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]])
+    arr = np.zeros((12, 2, 3), dtype=float)
+    arr[0] = np.array([[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]])
 
     out = get_field_at_specific_time(
         "foo", {"foo": arr}, coupler, current_time=coupler.clock.start
     )
-    expected = arr[:, :, 0].swapaxes(-2, -1)
+    expected = arr[0]
 
-    assert out.shape == (3, 2)
+    assert out.shape == (2, 3)
     assert_allclose_compact(out, expected)
 
 
@@ -199,8 +199,8 @@ def test_get_field_at_specific_time_uses_coupler_clock_start_when_time_is_none()
     None
 ):
     coupler = make_coupler(year_in_seconds=12.0)
-    arr = np.zeros((2, 2, 12), dtype=float)
-    arr[..., 0] = 3.0
+    arr = np.zeros((12, 2, 2), dtype=float)
+    arr[0, ...] = 3.0
 
     out = get_field_at_specific_time("foo", {"foo": arr}, coupler, current_time=None)
     assert_allclose_compact(out, 3.0)
@@ -208,9 +208,9 @@ def test_get_field_at_specific_time_uses_coupler_clock_start_when_time_is_none()
 
 def test_get_field_at_specific_time_wraps_across_year_end() -> None:
     coupler = make_coupler(year_in_seconds=12.0)
-    arr = np.zeros((2, 2, 12), dtype=float)
-    arr[..., 11] = 100.0
-    arr[..., 0] = 20.0
+    arr = np.zeros((12, 2, 2), dtype=float)
+    arr[11, ...] = 100.0
+    arr[0, ...] = 20.0
 
     current_time = coupler.clock.start + timedelta(seconds=11.75)
     out = get_field_at_specific_time("foo", {"foo": arr}, coupler, current_time)

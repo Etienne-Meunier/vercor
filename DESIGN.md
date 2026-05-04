@@ -108,15 +108,21 @@ immutable runtime containers used during traced integration.
   `HostRuntimeComponent` are the stable extension points. All custom adapters
   seed setup-time fields on `Component.data` and call the base constructor so
   `name`, `grid`, `data`, and `settings` are available during initialization,
-  execution, and finalization. Use `Component` for differentiable active models
-  and implement `step_runtime_state()`. Use `DataComponent` for forcing/static
-  data adapters that intentionally keep the shared no-op runtime step and do
-  not create plotting-only runtime fields. Derived diagnostics, such as a
-  combined land/sea surface temperature used only for plots, belong in
-  diagnostics or examples. Use `HostRuntimeComponent` for non-differentiable
-  adapters and implement `step_host_runtime_state()`; host-backed adapters must
-  run through `Coupler.run()` so VerCOR can select the Python host runtime path.
-  Optional hooks include `initialize()`, `create_runtime_payload()`,
+  execution, and finalization. `Component.data` is a grid-field store, not a
+  general metadata store: all entries must use one of the canonical layouts
+  `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
+  `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
+  contract before traced execution, and non-grid metadata such as hybrid-level
+  coefficients belongs on component attributes or runtime payloads. Use
+  `Component` for differentiable active models and implement
+  `step_runtime_state()`. Use `DataComponent` for forcing/static data adapters
+  that intentionally keep the shared no-op runtime step and do not create
+  plotting-only runtime fields. Derived diagnostics, such as a combined land/sea
+  surface temperature used only for plots, belong in diagnostics or examples.
+  Use `HostRuntimeComponent` for non-differentiable adapters and implement
+  `step_host_runtime_state()`; host-backed adapters must run through
+  `Coupler.run()` so VerCOR can select the Python host runtime path. Optional
+  hooks include `initialize()`, `create_runtime_payload()`,
   `prefill_runtime_state_fields()`, and `validate_runtime_state()`.
 - Internal runtime API: the `vercor.runtime` package owns
   `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime

@@ -142,6 +142,55 @@ def test_component_setup_validation_reports_missing_required_attributes() -> Non
 
 
 @pytest.mark.fast_always
+def test_component_data_layout_validation_accepts_canonical_grid_fields() -> None:
+    grid = make_test_grid(
+        name="layout",
+        longitude=np.asarray([0.0, 1.0, 2.0]),
+        latitude=np.asarray([-1.0, 1.0]),
+    )
+    component = DummyComponent(name="ATM", grid=grid)
+    component.data = {
+        "snapshot_2d": jnp.zeros(grid.shape, dtype=jnp.float64),
+        "time_surface_3d": jnp.zeros((12, *grid.shape), dtype=jnp.float64),
+        "level_snapshot_3d": jnp.zeros((4, *grid.shape), dtype=jnp.float64),
+        "time_level_4d": jnp.zeros((12, 4, *grid.shape), dtype=jnp.float64),
+    }
+
+    state = create_runtime_component_state(
+        component, contract=RuntimeComponentContract()
+    )
+
+    assert state.data.get("snapshot_2d").shape == grid.shape
+    assert state.data.get("time_surface_3d").shape == (12, *grid.shape)
+    assert state.data.get("level_snapshot_3d").shape == (4, *grid.shape)
+    assert state.data.get("time_level_4d").shape == (12, 4, *grid.shape)
+
+
+@pytest.mark.fast_always
+def test_component_data_layout_validation_rejects_non_grid_data_fields() -> None:
+    grid = make_test_grid(
+        name="layout",
+        longitude=np.asarray([0.0, 1.0, 2.0]),
+        latitude=np.asarray([-1.0, 1.0]),
+    )
+    component = DummyComponent(name="ATM", grid=grid)
+    component.data = {
+        "legacy_monthly_temperature": jnp.zeros((3, 2, 12), dtype=jnp.float64),
+        "hyai": jnp.zeros((4,), dtype=jnp.float64),
+    }
+
+    with pytest.raises(
+        ComponentError,
+        match=(
+            "Component 'ATM' data field 'legacy_monthly_temperature'.*"
+            r"shape \(3, 2, 12\).*canonical.*"
+            r"\(nTime, nLat, nLon\)"
+        ),
+    ):
+        create_runtime_component_state(component, contract=RuntimeComponentContract())
+
+
+@pytest.mark.fast_always
 def test_host_component_rejects_scanned_runtime_with_clear_error() -> None:
     grid = make_test_grid(name="host")
     component = _HostStepOnlyComponent(name="ATM", grid=grid)
@@ -343,8 +392,8 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     runtime_coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
-    monthly = jnp.zeros((*grid.shape, 12), dtype=jnp.float64)
-    monthly = monthly.at[:, :, 0].set(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
+    monthly = jnp.zeros((12, *grid.shape), dtype=jnp.float64)
+    monthly = monthly.at[0].set(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
     component.settings.apply_time_interpolation = True
     component.settings.get_field_time_slice = False
     component.data["temperature"] = monthly
@@ -358,7 +407,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     )
     assert_allclose_compact(
         component_state.outgoing.get("temperature"),
-        np.asarray(monthly[:, :, 0]).T,
+        np.asarray(monthly[0]),
     )
 
     runtime_coupler = Coupler(

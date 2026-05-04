@@ -346,9 +346,9 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [0.75], [0.25], [0]),
     )
-    forcing = jnp.zeros((2, 3, 12), dtype=jnp.float64)
-    forcing = forcing.at[:, :, 0].set(4.0)
-    forcing = forcing.at[:, :, 1].set(8.0)
+    forcing = jnp.zeros((12, 2, 3), dtype=jnp.float64)
+    forcing = forcing.at[0].set(4.0)
+    forcing = forcing.at[1].set(8.0)
 
     def send_loss(field: jax.Array) -> jax.Array:
         state = RuntimeComponentState(
@@ -374,11 +374,11 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
     out = sent_state.outgoing.get("temperature")
     gradient = jax.grad(send_loss)(forcing)
 
-    assert out.shape == (3, 2)
-    assert_allclose_compact(out, np.full((3, 2), 5.0))
-    assert_allclose_compact(gradient[:, :, 0], np.full((2, 3), 0.75))
-    assert_allclose_compact(gradient[:, :, 1], np.full((2, 3), 0.25))
-    assert_allclose_compact(gradient[:, :, 2:], np.zeros((2, 3, 10)))
+    assert out.shape == (2, 3)
+    assert_allclose_compact(out, np.full((2, 3), 5.0))
+    assert_allclose_compact(gradient[0], np.full((2, 3), 0.75))
+    assert_allclose_compact(gradient[1], np.full((2, 3), 0.25))
+    assert_allclose_compact(gradient[2:], np.zeros((10, 2, 3)))
 
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:

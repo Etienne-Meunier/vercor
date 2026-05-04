@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
@@ -22,7 +23,7 @@ def _prepare_era5_land_runtime_fields(
         jnp.asarray(longitude),
         jnp.asarray(latitude),
         jnp.asarray(binary_mask).T,
-        jnp.asarray(land_surface_temperature),
+        canonicalize_time_last_surface_field(land_surface_temperature),
     )
 
 

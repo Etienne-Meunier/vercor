@@ -6,6 +6,10 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.field_layout import (
+    canonicalize_time_last_level_field,
+    canonicalize_time_last_surface_field,
+)
 from vercor.fluxes.utilities import (
     compute_air_density,
     get_altitudes_hybrid_sigma_levels,
@@ -38,8 +42,8 @@ def _compute_monthly_diagnostics(
     """Compute ERA5 diagnostics for one monthly slice on the runtime JAX path."""
 
     surface_pressure_array = jnp.asarray(surface_pressure)
-    temperature_3d_array = jnp.asarray(temperature_3d)
-    specific_humidity_3d_array = jnp.asarray(specific_humidity_3d)
+    temperature_3d_array = jnp.asarray(temperature_3d).transpose((1, 2, 0))
+    specific_humidity_3d_array = jnp.asarray(specific_humidity_3d).transpose((1, 2, 0))
     temperature_array = jnp.asarray(temperature)
     hyai_array = jnp.asarray(hyai)
     hybi_array = jnp.asarray(hybi)
@@ -115,84 +119,90 @@ class ERA5Atmosphere(DataComponent, ComponentForcingData):
 
         self.settings.apply_time_interpolation = True
 
-        self.data["hyai"] = self._read_forcing("hyai", where="model_level")[
-            -3:
-        ]  # L135-L137
-        self.data["hybi"] = self._read_forcing("hybi", where="model_level")[
-            -3:
-        ]  # L135-L137
-        self.data["hyam"] = self._read_forcing("hyam", where="model_level")[
-            -2:
-        ]  # L136-L137
-        self.data["hybm"] = self._read_forcing("hybm", where="model_level")[
-            -2:
-        ]  # L136-L137
+        self.hyai: jax.Array = jnp.asarray(
+            self._read_forcing("hyai", where="model_level")[-3:]
+        )  # L135-L137
+        self.hybi: jax.Array = jnp.asarray(
+            self._read_forcing("hybi", where="model_level")[-3:]
+        )  # L135-L137
+        self.hyam: jax.Array = jnp.asarray(
+            self._read_forcing("hyam", where="model_level")[-2:]
+        )  # L136-L137
+        self.hybm: jax.Array = jnp.asarray(
+            self._read_forcing("hybm", where="model_level")[-2:]
+        )  # L136-L137
 
         lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
         # Units: [Pa]
-        self.data["surface_pressure"] = _decode_surface_pressure(lnsp)
+        self.data["surface_pressure"] = _decode_surface_pressure(
+            canonicalize_time_last_surface_field(lnsp)
+        )
         # Units: [kg/kg]
-        self.data["specific_humidity_3d"] = self._read_forcing(
-            "q", where="model_level", flip_y=True
-        )[
-            ..., 1:, :
-        ]  # L136-L137
+        self.data["specific_humidity_3d"] = canonicalize_time_last_level_field(
+            self._read_forcing("q", where="model_level", flip_y=True)[
+                ..., 1:, :
+            ]  # L136-L137
+        )
         # Units: [K]
-        self.data["temperature_3d"] = self._read_forcing(
-            "t", where="model_level", flip_y=True
-        )[
-            ..., 1:, :
-        ]  # L136-L137
+        self.data["temperature_3d"] = canonicalize_time_last_level_field(
+            self._read_forcing("t", where="model_level", flip_y=True)[
+                ..., 1:, :
+            ]  # L136-L137
+        )
         # Units: [m/s]
-        self.data["u_velocity"] = self._read_forcing(
-            "u", where="model_level", flip_y=True
-        )[
-            :, :, 1, :
-        ]  # L136
+        self.data["u_velocity"] = canonicalize_time_last_surface_field(
+            self._read_forcing("u", where="model_level", flip_y=True)[
+                :, :, 1, :
+            ]  # L136
+        )
         # Units: [m/s]
-        self.data["v_velocity"] = self._read_forcing(
-            "v", where="model_level", flip_y=True
-        )[
-            :, :, 1, :
-        ]  # L136
+        self.data["v_velocity"] = canonicalize_time_last_surface_field(
+            self._read_forcing("v", where="model_level", flip_y=True)[
+                :, :, 1, :
+            ]  # L136
+        )
 
         # tcc = self._read_forcing("tcc", where="surface", flip_y=True)
         # Units: [W/m²]
-        self.data["net_shortwave_radiation_flux"] = self._read_forcing(
-            "msnswrf", where="surface", flip_y=True
+        self.data["net_shortwave_radiation_flux"] = (
+            canonicalize_time_last_surface_field(
+                self._read_forcing("msnswrf", where="surface", flip_y=True)
+            )
         )
         # Units: [W/m²]
-        self.data["downward_longwave_radiation_flux"] = self._read_forcing(
-            "msdwlwrf", where="surface", flip_y=True
+        self.data["downward_longwave_radiation_flux"] = (
+            canonicalize_time_last_surface_field(
+                self._read_forcing("msdwlwrf", where="surface", flip_y=True)
+            )
         )
         # Units: [kg/kg]
         self.data["specific_humidity"] = self.data["specific_humidity_3d"][
-            ..., 0, :
+            :, 0, :, :
         ]  # L136
         # Units: [K]
-        self.data["temperature"] = self.data["temperature_3d"][..., 0, :]  # L136
+        self.data["temperature"] = self.data["temperature_3d"][:, 0, :, :]  # L136
 
     def initialize(self, context: ComponentInitContext) -> None:
         diagnostics = [
             _compute_monthly_diagnostics(
                 context.settings,
-                self.data["surface_pressure"][..., month_index],
-                self.data["hyai"],
-                self.data["hybi"],
-                self.data["hyam"],
-                self.data["hybm"],
-                self.data["temperature_3d"][..., month_index],
-                self.data["specific_humidity_3d"][..., month_index],
-                self.data["temperature"][..., month_index],
+                self.data["surface_pressure"][month_index],
+                self.hyai,
+                self.hybi,
+                self.hyam,
+                self.hybm,
+                self.data["temperature_3d"][month_index],
+                self.data["specific_humidity_3d"][month_index],
+                self.data["temperature"][month_index],
             )
-            for month_index in range(int(self.data["surface_pressure"].shape[-1]))
+            for month_index in range(int(self.data["surface_pressure"].shape[0]))
         ]
         self.data["model_level_height"] = jnp.stack(
             [item[0] for item in diagnostics],
-            axis=-1,
+            axis=0,
         )
-        self.data["density"] = jnp.stack([item[1] for item in diagnostics], axis=-1)
+        self.data["density"] = jnp.stack([item[1] for item in diagnostics], axis=0)
         self.data["potential_temperature"] = jnp.stack(
             [item[2] for item in diagnostics],
-            axis=-1,
+            axis=0,
         )
