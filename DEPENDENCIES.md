@@ -28,7 +28,7 @@
 28. `vercor/components/data/jcm_land.py` - JCM land forcing adapter with canonical data-field layout, JAX-backed coordinate conversion, and runtime storage built on (10, 11, 16)
 29. `vercor/components/data/camulator_land.py` - CAMulator land forcing adapter with JAX-backed runtime temperature storage and forcing-only CAMulator config loading built on (1, 9, 10, 16)
 30. `vercor/jax_logging.py` - callback-backed logger protocol and setup helper for Python and traced JAX runtime diagnostics
-31. `vercor/runtime/interrupts.py` - internal terminal-signal runtime cancellation controller with host and JAX callback checkpoints built on JAX callback errors and Python signal handling
+31. `vercor/runtime/interrupts.py` - internal terminal-signal runtime cancellation controller with host and JAX callback checkpoints, plus wakeup-fd polling for compiled runtime signals, built on JAX callback errors and Python signal handling
 32. `vercor/runtime/contexts.py` - immutable component initialization and runtime step context payloads built on clock, run-sequence, settings helpers, and (30)
 33. `vercor/runtime/views.py` - explicit runtime component metadata/field view used by diagnostics and output built on (10)
 34. `vercor/diagnostics.py` - runtime-view means tables, plotting helpers, and plotting-only derived field helpers built on (5, 33)

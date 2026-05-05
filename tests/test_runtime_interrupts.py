@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 import signal
 from typing import Any, cast
 
@@ -67,6 +68,16 @@ def _block_until_ready(value: Any) -> Any:
     return value
 
 
+def _write_wakeup_signal(
+    controller: RuntimeInterruptController,
+    signum: signal.Signals,
+) -> None:
+    wakeup = getattr(controller, "_wakeup")
+    write_fd = getattr(wakeup, "_write_fd")
+    assert write_fd is not None
+    os.write(write_fd, bytes([int(signum)]))
+
+
 def test_signal_scope_registers_and_restores_terminal_handlers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -116,6 +127,21 @@ def test_terminal_signals_request_runtime_interruption(
 
     assert isinstance(excinfo.value, KeyboardInterrupt)
     assert excinfo.value.signum == int(signum)
+
+
+def test_checkpoint_observes_wakeup_fd_signal_without_python_handler() -> None:
+    controller = RuntimeInterruptController(signals=(signal.SIGINT,))
+
+    with controller.signal_scope():
+        _write_wakeup_signal(controller, signal.SIGTERM)
+        controller.checkpoint("ignored wakeup signal")
+        assert controller.requested_signal is None
+
+        _write_wakeup_signal(controller, signal.SIGINT)
+        with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
+            controller.checkpoint("wakeup fd checkpoint")
+
+    assert excinfo.value.signum == int(signal.SIGINT)
 
 
 def test_unrelated_jax_runtime_errors_are_preserved() -> None:
@@ -171,6 +197,32 @@ def test_compiled_scanned_runtime_translates_interrupt_callback_error(
     )
 
     with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
+        coupler.run(donate_state=False)
+
+    assert isinstance(excinfo.value.__cause__, JaxRuntimeError)
+
+
+def test_compiled_scanned_runtime_observes_wakeup_fd_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coupler = _make_pure_coupler()
+    original_checkpoint = coupler._runtime_interrupts.checkpoint
+    injected = False
+
+    def write_wakeup_once_then_checkpoint(label: str = "runtime") -> None:
+        nonlocal injected
+        if not injected:
+            injected = True
+            _write_wakeup_signal(coupler._runtime_interrupts, signal.SIGTSTP)
+        original_checkpoint(label)
+
+    monkeypatch.setattr(
+        coupler._runtime_interrupts,
+        "checkpoint",
+        write_wakeup_once_then_checkpoint,
+    )
+
+    with pytest.raises(RuntimeInterrupted, match="SIGTSTP") as excinfo:
         coupler.run(donate_state=False)
 
     assert isinstance(excinfo.value.__cause__, JaxRuntimeError)

@@ -171,11 +171,14 @@ carry.
 interrupt controller. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request
 graceful runtime cancellation and are restored to their previous handlers when
 the run exits. The host runtime checks the controller at step and component
-boundaries. The JIT-scanned runtime inserts explicit ordered
-`jax.debug.callback` checkpoints at the same boundaries so compiled integrations
-can observe terminal shortcut commands independently of logging level.
-Interrupt callback failures are translated back to a `KeyboardInterrupt`
-subclass, while unrelated JAX runtime failures are preserved.
+boundaries. The controller also installs a temporary nonblocking wakeup fd so
+signals delivered while the main thread is inside a compiled XLA call are
+recorded before Python signal handlers run. The JIT-scanned runtime inserts
+explicit ordered `jax.debug.callback` checkpoints at the same boundaries; those
+callbacks drain the wakeup fd and observe terminal shortcut commands
+independently of logging level. Interrupt callback failures are translated back
+to a `KeyboardInterrupt` subclass, while unrelated JAX runtime failures are
+preserved.
 
 ---
 

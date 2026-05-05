@@ -4,6 +4,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from types import FrameType
 from typing import Any, NoReturn
+import os
 import signal
 import threading
 
@@ -43,6 +44,7 @@ class RuntimeInterruptController:
         self._signals = tuple(int(signum) for signum in selected_signals)
         self._requested_signal: int | None = None
         self._previous_handlers: dict[int, Any] = {}
+        self._wakeup = _SignalWakeupPipe(self._signals)
         self._scope_depth = 0
 
     @property
@@ -72,14 +74,16 @@ class RuntimeInterruptController:
             return
 
         self._previous_handlers = {}
-        for signum in self._signals:
-            self._previous_handlers[signum] = signal.getsignal(signum)
-            signal.signal(signum, self.request_from_signal)
-        self._scope_depth = 1
         try:
+            for signum in self._signals:
+                self._previous_handlers[signum] = signal.getsignal(signum)
+                signal.signal(signum, self.request_from_signal)
+            self._wakeup.install()
+            self._scope_depth = 1
             yield
         finally:
             self._scope_depth = 0
+            self._wakeup.restore()
             for signum, handler in self._previous_handlers.items():
                 signal.signal(signum, handler)
             self._previous_handlers = {}
@@ -101,12 +105,21 @@ class RuntimeInterruptController:
         """Clear any pending cancellation request."""
 
         self._requested_signal = None
+        self._wakeup.drain()
 
     def checkpoint(self, label: str = "runtime") -> None:
         """Raise ``RuntimeInterrupted`` when a terminal signal is pending."""
 
+        self._request_from_wakeup_fd()
         if self._requested_signal is not None:
             raise RuntimeInterrupted(self._requested_signal, label)
+
+    def _request_from_wakeup_fd(self) -> None:
+        """Promote pending wakeup-fd bytes into a runtime interruption request."""
+
+        signum = self._wakeup.drain()
+        if signum is not None:
+            self.request(signum)
 
     def scanned_checkpoint(
         self,
@@ -143,6 +156,90 @@ class RuntimeInterruptController:
 
 def _can_install_signal_handlers() -> bool:
     return threading.current_thread() is threading.main_thread()
+
+
+class _SignalWakeupPipe:
+    """Small nonblocking pipe used by ``signal.set_wakeup_fd``."""
+
+    def __init__(self, signals: Sequence[int]) -> None:
+        self._signals = frozenset(signals)
+        self._read_fd: int | None = None
+        self._write_fd: int | None = None
+        self._previous_fd: int | None = None
+
+    def install(self) -> None:
+        """Install this pipe as the process wakeup fd."""
+
+        if self._read_fd is not None:
+            return
+
+        read_fd, write_fd = os.pipe()
+        try:
+            os.set_blocking(read_fd, False)
+            os.set_blocking(write_fd, False)
+            self._previous_fd = signal.set_wakeup_fd(
+                write_fd,
+                warn_on_full_buffer=False,
+            )
+        except BaseException:
+            _close_fd(read_fd)
+            _close_fd(write_fd)
+            self._previous_fd = None
+            raise
+
+        self._read_fd = read_fd
+        self._write_fd = write_fd
+
+    def restore(self) -> None:
+        """Restore the previous process wakeup fd and close this pipe."""
+
+        read_fd = self._read_fd
+        write_fd = self._write_fd
+        previous_fd = self._previous_fd
+        self._read_fd = None
+        self._write_fd = None
+        self._previous_fd = None
+
+        try:
+            if previous_fd is not None:
+                signal.set_wakeup_fd(previous_fd, warn_on_full_buffer=False)
+        finally:
+            _close_fd(read_fd)
+            _close_fd(write_fd)
+
+    def drain(self) -> int | None:
+        """Return the first configured signal number drained from the pipe."""
+
+        if self._read_fd is None:
+            return None
+
+        requested_signal: int | None = None
+        while True:
+            try:
+                data = os.read(self._read_fd, 4096)
+            except BlockingIOError:
+                break
+            except InterruptedError:
+                continue
+            except OSError:
+                break
+            if not data:
+                break
+
+            for signum in data:
+                if requested_signal is None and signum in self._signals:
+                    requested_signal = signum
+
+        return requested_signal
+
+
+def _close_fd(fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        os.close(fd)
+    except OSError:
+        return
 
 
 def _signal_name(signum: int | None) -> str:

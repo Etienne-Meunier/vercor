@@ -1,5 +1,48 @@
 # 2026-05-05
 
+## Compiled Runtime Wakeup-Fd Interrupt Handling
+
+- Added wakeup-fd polling to the runtime interrupt controller so terminal
+  signals delivered while the main thread is inside compiled XLA work can be
+  observed by existing scanned-runtime callback checkpoints.
+- `RuntimeInterruptController.signal_scope()` now installs and restores a
+  temporary nonblocking wakeup pipe alongside the existing terminal signal
+  handlers.
+- Runtime checkpoints now drain pending wakeup-fd signal bytes before checking
+  the shared pending interrupt request, so host and scanned runtimes keep one
+  cancellation path.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document wakeup-fd polling as
+  the compiled-runtime signal bridge.
+- Failed approaches / corrections:
+  - The first regression tests failed as expected because the controller had no
+    `_wakeup` bridge and compiled callbacks surfaced the missing path as a
+    `JaxRuntimeError`.
+
+## Validation (Compiled Runtime Wakeup-Fd Interrupt Handling, 2026-05-05)
+
+- `conda run -n scipy pytest tests/ -v --fast --tb=short`
+  - passed before implementation (`68 passed`)
+- `conda run -n scipy pytest tests/test_runtime_interrupts.py::test_checkpoint_observes_wakeup_fd_signal_without_python_handler tests/test_runtime_interrupts.py::test_compiled_scanned_runtime_observes_wakeup_fd_interrupt -q --tb=short`
+  - failed as expected before implementation because
+    `RuntimeInterruptController` had no `_wakeup` bridge
+  - passed after implementation (`2 passed`)
+- `conda run -n scipy pytest tests/test_runtime_interrupts.py -q --tb=short`
+  - passed (`10 passed`)
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left 103 files unchanged
+- `conda run -n scipy pytest tests/test_runtime_interrupts.py -q --tb=short`
+  - passed after formatting (`10 passed`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`103 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Unified Runtime Interrupt Handling
 
 - Added an internal runtime interrupt controller for terminal shortcut
