@@ -1,5 +1,50 @@
 # 2026-05-05
 
+## Unified Runtime Interrupt Handling
+
+- Added an internal runtime interrupt controller for terminal shortcut
+  cancellation across both host and JIT-scanned coupler integrations.
+- `Coupler.run()` now installs temporary handlers for `SIGINT`, `SIGTERM`, and
+  `SIGTSTP`, restoring previous handlers when the run exits.
+- Host runtime steps and components now share explicit interruption
+  checkpoints with the scanned runtime.
+- The scanned runtime now inserts ordered `jax.debug.callback` checkpoints that
+  are independent of progress logging, so compiled scans can observe pending
+  terminal interrupts even when info logging is disabled.
+- Interrupt callback failures from JAX are translated back to a
+  `KeyboardInterrupt` subclass while unrelated JAX runtime errors are preserved.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the interrupt boundary.
+- Failed approaches / corrections:
+  - The initial red tests failed at collection because
+    `vercor.runtime.interrupts` did not exist.
+  - After adding the controller but before wiring `Coupler.run()`, the host
+    integration test still surfaced a raw `KeyboardInterrupt`; wrapping `run()`
+    in the controller signal scope and adding host checkpoints fixed the path.
+
+## Validation (Unified Runtime Interrupt Handling, 2026-05-05)
+
+- `conda run -n scipy pytest tests/test_runtime_interrupts.py -q --tb=short`
+  - failed as expected before implementation because the interrupt module was
+    missing
+  - passed after implementation (`8 passed`)
+- `conda run -n scipy pytest tests/test_coupler_coverage.py tests/test_runtime_run_cache.py tests/test_runtime_state.py -q --tb=short`
+  - passed (`37 passed`)
+- `conda run -n scipy pytest tests/test_runtime_interrupts.py tests/test_coupler_coverage.py tests/test_runtime_run_cache.py -q --tb=short`
+  - passed (`35 passed`)
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `vercor/runtime/interrupts.py` and
+    `tests/test_runtime_interrupts.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`103 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed (`68 passed`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Scanned Runtime Progress Logging
 
 - Added host-equivalent step and component progress logging to the pure

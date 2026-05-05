@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, cast
 
 import jax
 import jax.numpy as jnp
+from jax.errors import JaxRuntimeError
 
 from vercor.clock import Clock
 from vercor.components.base import Component, validate_component_setup
@@ -49,6 +50,7 @@ from vercor.runtime.driver import (
     prime_runtime_outgoing,
     step_runtime_component,
 )
+from vercor.runtime.interrupts import RuntimeInterruptController
 from vercor.runtime.time import (
     build_runtime_step_info,
     initial_runtime_step_info,
@@ -141,6 +143,11 @@ class Coupler:
         tuple[Any, ...],
         Callable[[RuntimeCouplerState], RuntimeCouplerState],
     ] = field(default_factory=dict, init=False, repr=False)
+    _runtime_interrupts: RuntimeInterruptController = field(
+        default_factory=RuntimeInterruptController,
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         """Apply the configured logging threshold at construction time."""
@@ -584,20 +591,27 @@ class Coupler:
         )
         self._validate_runtime_state(runtime_state)
 
-        host_names = host_component_names(self.components)
-        if not host_names:
-            return self._compiled_scanned_runtime(donate_state=donate_state)(
-                runtime_state
-            )
+        with self._runtime_interrupts.signal_scope():
+            host_names = host_component_names(self.components)
+            if not host_names:
+                try:
+                    return self._compiled_scanned_runtime(donate_state=donate_state)(
+                        runtime_state
+                    )
+                except JaxRuntimeError as error:
+                    self._runtime_interrupts.raise_if_jax_callback_interrupted(
+                        error,
+                        "compiled scanned runtime",
+                    )
 
-        if donate_state:
-            names = ", ".join(host_names)
-            raise CouplerError(
-                "Runtime state donation is only supported for differentiable "
-                f"components; host-backed component(s) require non-donating run(): {names}"
-            )
+            if donate_state:
+                names = ", ".join(host_names)
+                raise CouplerError(
+                    "Runtime state donation is only supported for differentiable "
+                    f"components; host-backed component(s) require non-donating run(): {names}"
+                )
 
-        return self._run_host_runtime(runtime_state)
+            return self._run_host_runtime(runtime_state)
 
     def _run_host_runtime(
         self,
@@ -608,10 +622,12 @@ class Coupler:
         dispatch_context = self._runtime_dispatch_context()
 
         for n, time, dt in self.clock.iter():
+            self._runtime_interrupts.checkpoint("host runtime step")
             self.logger.info(_runtime_step_progress_message(n, time, dt))
             step_info = scalar_runtime_step_info(time, self.clock, self.settings)
 
             for cname in self.run_sequence:
+                self._runtime_interrupts.checkpoint(f"host runtime component {cname}")
                 self.logger.info(_runtime_component_progress_message(cname))
                 runtime_state = step_runtime_component(
                     runtime_state,
@@ -622,6 +638,8 @@ class Coupler:
                     time=time,
                     logger=self.logger,
                 )
+                self._runtime_interrupts.checkpoint(f"host runtime component {cname}")
+            self._runtime_interrupts.checkpoint("host runtime step")
 
         return runtime_state
 
@@ -671,6 +689,7 @@ class Coupler:
             ),
             tuple(sorted((key, id(value)) for key, value in self._regridders.items())),
             id(self.logger),
+            id(self._runtime_interrupts),
             effective_log_level(self.logger, self.log_level),
             tuple(
                 (name, contract.imports, contract.exports)
@@ -738,8 +757,16 @@ class Coupler:
             scan_input: tuple[RuntimeArray, RuntimeStepInfo],
         ) -> tuple[RuntimeCouplerState, None]:
             step_index, step_info = scan_input
+            self._runtime_interrupts.scanned_checkpoint(
+                "scanned runtime step",
+                step_index,
+            )
             log_scanned_step_progress(step_index)
             for cname in self.run_sequence:
+                self._runtime_interrupts.scanned_checkpoint(
+                    f"scanned runtime component {cname}",
+                    step_index,
+                )
                 log_scanned_component_progress(cname)
                 state = step_runtime_component(
                     state,
@@ -749,12 +776,26 @@ class Coupler:
                     allow_host_runtime=False,
                     logger=self.logger,
                 )
+                self._runtime_interrupts.scanned_checkpoint(
+                    f"scanned runtime component {cname}",
+                    step_index,
+                )
+            self._runtime_interrupts.scanned_checkpoint(
+                "scanned runtime step",
+                step_index,
+            )
             return state, None
 
-        final_state, _ = jax.lax.scan(
-            step_all_components,
-            runtime_state,
-            (step_indices, step_infos),
-            length=self.clock.steps,
-        )
+        try:
+            final_state, _ = jax.lax.scan(
+                step_all_components,
+                runtime_state,
+                (step_indices, step_infos),
+                length=self.clock.steps,
+            )
+        except JaxRuntimeError as error:
+            self._runtime_interrupts.raise_if_jax_callback_interrupted(
+                error,
+                "scanned runtime",
+            )
         return final_state

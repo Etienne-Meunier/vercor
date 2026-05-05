@@ -165,6 +165,18 @@ the host, then selects the per-step label inside ordered callbacks so progress
 logging remains traceable without putting Python datetime objects in the scan
 carry.
 
+### Runtime interruption across host and scanned integrations
+
+`Coupler.run()` owns terminal-signal cancellation through an internal runtime
+interrupt controller. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request
+graceful runtime cancellation and are restored to their previous handlers when
+the run exits. The host runtime checks the controller at step and component
+boundaries. The JIT-scanned runtime inserts explicit ordered
+`jax.debug.callback` checkpoints at the same boundaries so compiled integrations
+can observe terminal shortcut commands independently of logging level.
+Interrupt callback failures are translated back to a `KeyboardInterrupt`
+subclass, while unrelated JAX runtime failures are preserved.
+
 ---
 
 ## 3. Module Specifications
