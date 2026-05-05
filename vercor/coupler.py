@@ -113,6 +113,8 @@ class Coupler:
                 grid cells of the forcing or boundary conditions is transferred to
                 destination grid cells, reflecting the partial coverage of source grid cells
                 within destination grid cells.
+        _compiled_runtime_cache: mapping of static runtime topology keys to cached compiled runtime functions
+        _runtime_interrupts: controller for signaling and handling runtime interrupts across host and JAX-traced runtime paths
     """
 
     clock: Clock
