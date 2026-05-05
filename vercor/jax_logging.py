@@ -31,6 +31,44 @@ class LoggerLike(Protocol):
         """Return whether a level is enabled."""
 
 
+def logger_enabled_for(logger: Any, level: int) -> bool:
+    """Return whether ``logger`` should emit ``level`` host-side messages."""
+
+    is_enabled_for = getattr(logger, "isEnabledFor", None)
+    if callable(is_enabled_for):
+        return bool(is_enabled_for(level))
+    return True
+
+
+def emit_host_log(
+    logger: Any,
+    level: int,
+    message: object,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    """Emit a formatted log record on the host without adding a JAX callback."""
+
+    if not logger_enabled_for(logger, level):
+        return
+
+    formatted = _format_message(message, args, kwargs)
+    if isinstance(logger, JaxCallbackLogger):
+        logger.logger.log(level, formatted)
+        return
+
+    log = getattr(logger, "log", None)
+    if callable(log):
+        log(level, formatted)
+        return
+
+    level_name = logging.getLevelName(level)
+    if isinstance(level_name, str):
+        method = getattr(logger, level_name.lower(), None)
+        if callable(method):
+            method(formatted)
+
+
 def normalize_log_level(level: int | str) -> int:
     """Return a standard ``logging`` integer level from a string or integer."""
 
@@ -110,7 +148,7 @@ class JaxCallbackLogger:
         self._log(logging.ERROR, message, *args, **kwargs)
 
     def _log(self, level: int, message: object, *args: Any, **kwargs: Any) -> None:
-        if not self.logger.isEnabledFor(level):
+        if not logger_enabled_for(self.logger, level):
             return
 
         static_args, dynamic_args, dynamic_arg_indices = _partition_dynamic(args)
@@ -125,9 +163,12 @@ class JaxCallbackLogger:
             formatted_kwargs = dict(static_kwargs)
             for name in dynamic_kwarg_names:
                 formatted_kwargs[name] = _host_value(callback_kwargs[name])
-            self.logger.log(
+            emit_host_log(
+                self,
                 level,
-                _format_message(message, tuple(formatted_args), formatted_kwargs),
+                message,
+                *tuple(formatted_args),
+                **formatted_kwargs,
             )
 
         jax.debug.callback(

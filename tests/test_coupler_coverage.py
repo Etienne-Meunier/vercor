@@ -197,6 +197,38 @@ def test_scanned_runtime_passes_callback_logger_to_components(
     assert "scanned ATM 4.0" in caplog.text
 
 
+def test_scanned_runtime_logs_host_equivalent_progress_messages(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger_name = "VerCOR.test.scanned-runtime-progress"
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2),
+        log_level="INFO",
+    )
+    coupler.logger = setup_logger(level="INFO", name=logger_name)
+    caplog.set_level(logging.INFO, logger=logger_name)
+    coupler.components = {
+        "ATM": cast(Any, _LoggingRunComponent("ATM")),
+        "OCN": cast(Any, _LoggingRunComponent("OCN")),
+    }
+    coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
+
+    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+    jax.effects_barrier()
+
+    assert final_state.component_names == ("ATM", "OCN")
+    assert (
+        " ====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
+        in caplog.text
+    )
+    assert (
+        " ====== Step: 00001 ====== Date: 2000-01-01 00:01:00 ====== Δt: 0:01:00 "
+        in caplog.text
+    )
+    assert caplog.text.count(" Run component: ATM") == 2
+    assert caplog.text.count(" Run component: OCN") == 2
+
+
 def test_scanned_runtime_suppresses_info_below_log_level(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -215,6 +247,8 @@ def test_scanned_runtime_suppresses_info_below_log_level(
 
     assert final_state.component_names == ("ATM",)
     assert "scanned ATM" not in caplog.text
+    assert " ====== Step:" not in caplog.text
+    assert " Run component:" not in caplog.text
 
 
 @pytest.mark.fast_always

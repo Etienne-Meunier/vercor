@@ -159,6 +159,11 @@ instantiation with `Coupler(..., log_level=...)`; disabled levels are filtered
 before callbacks enter the traced graph. Runtime hooks should pass traced values
 as logger arguments, for example `logger.info("Mean SST: {}", jnp.mean(sst))`,
 instead of converting tracers with `float(...)` or `int(...)`.
+The host and scanned coupler runtime paths emit the same step and component
+progress messages. The scanned path precomputes datetime and timestep labels on
+the host, then selects the per-step label inside ordered callbacks so progress
+logging remains traceable without putting Python datetime objects in the scan
+carry.
 
 ---
 

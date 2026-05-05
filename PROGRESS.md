@@ -1,5 +1,43 @@
 # 2026-05-05
 
+## Scanned Runtime Progress Logging
+
+- Added host-equivalent step and component progress logging to the pure
+  `jax.lax.scan` runtime path.
+- Centralized runtime progress message formatting so the host and scanned loops
+  share the same step-header and component-run strings.
+- Added host-side log emission for ordered JAX callbacks, allowing scanned
+  progress callbacks to write through callback-backed, standard Python, or
+  lightweight test loggers without nesting another callback.
+- Updated `DESIGN.md` to document that scanned runtime progress labels are
+  precomputed on the host and selected inside ordered callbacks.
+- Failed approaches / corrections:
+  - The new regression test failed before implementation because scanned
+    runtime logs only contained component-internal callback messages and lacked
+    the outer step/component progress lines.
+
+## Validation (Scanned Runtime Progress Logging, 2026-05-05)
+
+- `conda run -n scipy pytest tests/test_coupler_coverage.py::test_scanned_runtime_logs_host_equivalent_progress_messages -q --tb=short`
+  - failed as expected before implementation because step headers were missing
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_coupler_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_coupler_coverage.py::test_scanned_runtime_suppresses_info_below_log_level -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left 101 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`101 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## JAXGCM Forcing Payload Scan Shape Stability
 
 - Added a focused regression test for scanned JAXGCM runtime payloads whose

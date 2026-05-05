@@ -17,7 +17,9 @@ from vercor.exchange import Exchange
 from vercor.jax_logging import (
     JaxCallbackLogger,
     LoggerLike,
+    emit_host_log,
     effective_log_level,
+    logger_enabled_for,
     setup_logger,
 )
 from vercor.regridders import (
@@ -62,6 +64,18 @@ from vercor.grid_masks import (
     compute_ocn_lnd_masks_on_atm_grid,
 )
 from vercor.types import RuntimeArray
+
+
+def _runtime_step_progress_message(n: int, time: object, dt: object) -> str:
+    """Return the shared host/scanned runtime step progress message."""
+
+    return f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
+
+
+def _runtime_component_progress_message(component_name: str) -> str:
+    """Return the shared host/scanned runtime component progress message."""
+
+    return f" Run component: {component_name}"
 
 
 @dataclass
@@ -594,13 +608,11 @@ class Coupler:
         dispatch_context = self._runtime_dispatch_context()
 
         for n, time, dt in self.clock.iter():
-            self.logger.info(
-                f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
-            )
+            self.logger.info(_runtime_step_progress_message(n, time, dt))
             step_info = scalar_runtime_step_info(time, self.clock, self.settings)
 
             for cname in self.run_sequence:
-                self.logger.info(f" Run component: {cname}")
+                self.logger.info(_runtime_component_progress_message(cname))
                 runtime_state = step_runtime_component(
                     runtime_state,
                     cname,
@@ -687,12 +699,48 @@ class Coupler:
         if validate_state:
             self._validate_runtime_state(runtime_state)
         step_infos = build_runtime_step_info(self.clock, self.settings)
+        step_indices = jnp.arange(self.clock.steps)
+        step_progress_messages = tuple(
+            _runtime_step_progress_message(n, time, dt)
+            for n, time, dt in self.clock.iter()
+        )
         dispatch_context = self._runtime_dispatch_context()
 
+        def log_scanned_step_progress(step_index: RuntimeArray) -> None:
+            if not logger_enabled_for(self.logger, logging.INFO):
+                return
+
+            def emit(index: RuntimeArray) -> None:
+                host_index = int(jax.device_get(index).item())
+                emit_host_log(
+                    self.logger,
+                    logging.INFO,
+                    step_progress_messages[host_index],
+                )
+
+            jax.debug.callback(emit, step_index, ordered=True)
+
+        def log_scanned_component_progress(component_name: str) -> None:
+            if not logger_enabled_for(self.logger, logging.INFO):
+                return
+
+            jax.debug.callback(
+                lambda: emit_host_log(
+                    self.logger,
+                    logging.INFO,
+                    _runtime_component_progress_message(component_name),
+                ),
+                ordered=True,
+            )
+
         def step_all_components(
-            state: RuntimeCouplerState, step_info: RuntimeStepInfo
+            state: RuntimeCouplerState,
+            scan_input: tuple[RuntimeArray, RuntimeStepInfo],
         ) -> tuple[RuntimeCouplerState, None]:
+            step_index, step_info = scan_input
+            log_scanned_step_progress(step_index)
             for cname in self.run_sequence:
+                log_scanned_component_progress(cname)
                 state = step_runtime_component(
                     state,
                     cname,
@@ -706,7 +754,7 @@ class Coupler:
         final_state, _ = jax.lax.scan(
             step_all_components,
             runtime_state,
-            step_infos,
+            (step_indices, step_infos),
             length=self.clock.steps,
         )
         return final_state
