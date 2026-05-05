@@ -128,8 +128,11 @@ immutable runtime containers used during traced integration.
   `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime
   contexts, dispatch contexts, and runtime helper functions. These containers
   carry immutable arrays and static metadata through JAX tracing. They are
-  required for differentiability and stable scan carry structure, but they are
-  not exported from the package top level.
+  required for differentiability and stable scan carry structure. Runtime
+  payload pytrees carried through `jax.lax.scan` must preserve every leaf's
+  shape and dtype between input and output; per-step slices or adapted forcing
+  objects should be local values unless they are shape-stable runtime state.
+  Internal runtime containers are not exported from the package top level.
 
 ### Precision and dtype policy
 

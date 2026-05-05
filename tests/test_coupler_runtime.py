@@ -1333,6 +1333,36 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     assert np.any(np.asarray(gradient) != 0.0)
 
 
+def test_jax_gcm_runtime_keeps_time_dependent_forcing_payload_shape_stable() -> None:
+    grid = make_test_grid(name="jcm-runtime-forcing-template")
+    component = _make_jax_gcm_component(grid)
+    forcing_template = _FakeJCMForcing(
+        stl_am=jnp.zeros((*grid.shape, 365), dtype=jnp.float64),
+        sea_surface_temperature=jnp.zeros((*grid.shape, 365), dtype=jnp.float64),
+    )
+    cast(Any, component).forcing = forcing_template
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.components = {"ATM": component}
+    coupler.run_sequence = RunSequence(order=["ATM"])
+
+    initial_state = coupler.create_runtime_state()
+    final_state = jax.jit(lambda state: coupler._run_scanned_runtime(state))(
+        initial_state
+    )
+    atmosphere_state = final_state.get_component_state("ATM")
+    payload = atmosphere_state.runtime_payload
+
+    assert atmosphere_state.data.get("temperature").shape == grid.shape
+    assert payload is not None
+    assert payload.forcing.stl_am.shape == forcing_template.stl_am.shape
+    assert (
+        payload.forcing.sea_surface_temperature.shape
+        == forcing_template.sea_surface_temperature.shape
+    )
+
+
 def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> None:
     grid = make_test_grid(name="data-jcm-runtime")
     sea_surface_temperature = jnp.asarray(

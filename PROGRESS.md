@@ -1,3 +1,43 @@
+# 2026-05-05
+
+## JAXGCM Forcing Payload Scan Shape Stability
+
+- Added a focused regression test for scanned JAXGCM runtime payloads whose
+  forcing template carries time-dependent fields.
+- Kept `JAXGCMRuntimePayload.forcing` shape-stable across `jax.lax.scan` by
+  using the copied exchange-forcing object only for the local model step and
+  preserving the original forcing template in the returned payload.
+- Updated `DESIGN.md` to document that runtime payload pytrees carried through
+  `jax.lax.scan` must preserve leaf shapes and dtypes.
+- Failed approaches / corrections:
+  - The regression test failed as expected before implementation with a
+    `scan body function carry input and carry output must have equal types`
+    error because forcing leaves changed from `(nLat, nLon, nTime)` to
+    `(nLat, nLon)`.
+  - Avoided changing public component APIs or storing per-step forcing slices in
+    the payload, since that would keep the scan carry shape unstable for
+    time-dependent forcing templates.
+
+## Validation (JAXGCM Forcing Payload Scan Shape Stability, 2026-05-05)
+
+- `conda run -n scipy pytest tests/test_coupler_runtime.py::test_jax_gcm_runtime_keeps_time_dependent_forcing_payload_shape_stable -q --tb=short`
+  - failed as expected before implementation with the scan carry shape mismatch
+  - passed after preserving the forcing template in the runtime payload
+- `conda run -n scipy pytest tests/test_coupler_runtime.py::test_jax_gcm_runtime_keeps_time_dependent_forcing_payload_shape_stable tests/test_coupler_runtime.py::test_jax_gcm_runs_inside_runtime_under_jit_and_grad tests/test_coupler_runtime.py::test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp tests/test_external_components_coverage.py::test_jax_gcm_step_maps_outputs_and_respects_output_gate -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_coupler_runtime.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`101 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-05-04
 
 ## Centralized VerCOR Dtype Policy

@@ -496,7 +496,7 @@ class JAXGCM(Component):
         self,
         component_state: "RuntimeComponentState",
         settings: Any,
-    ) -> tuple["RuntimeComponentState", Predictions]:
+    ) -> tuple["RuntimeComponentState", Predictions, Any]:
         """Advance JAXGCM runtime state and return the raw prediction."""
 
         payload = component_state.runtime_payload
@@ -523,11 +523,14 @@ class JAXGCM(Component):
                 as_jax_real_array(self.model.terrain.fmask, settings).T,
             )
         )
-        forcing = payload.forcing.copy(
+        applied_forcing = payload.forcing.copy(
             stl_am=land_surface_temperature_forcing.T,
             sea_surface_temperature=sea_surface_temperature_forcing.T,
         )
-        jcm_state, prediction = self._step_function(payload.jcm_state, forcing)
+        jcm_state, prediction = self._step_function(
+            payload.jcm_state,
+            applied_forcing,
+        )
         averaged_prediction = mean_leaf(
             unwrap_leading_dims(stack_objects([prediction])), axis=0
         )
@@ -559,9 +562,10 @@ class JAXGCM(Component):
 
         return (
             component_state.with_data(data).with_runtime_payload(
-                JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=forcing)
+                JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=payload.forcing)
             ),
             prediction,
+            applied_forcing,
         )
 
     def step_runtime_state(
@@ -581,7 +585,11 @@ class JAXGCM(Component):
                 ),
             )
 
-        stepped_state, prediction = self._step_jax_gcm_component_state(
+        (
+            stepped_state,
+            prediction,
+            applied_forcing,
+        ) = self._step_jax_gcm_component_state(
             component_state,
             context.settings,
         )
@@ -592,7 +600,7 @@ class JAXGCM(Component):
         payload = stepped_state.runtime_payload
         if isinstance(payload, JAXGCMRuntimePayload):
             self._state = payload.jcm_state
-            self.forcing = payload.forcing
+            self.forcing = applied_forcing
         self._predictions_list.append(prediction)
 
         _, _, _, cold_surface_cells = _cleanup_surface_temperature_fields(
