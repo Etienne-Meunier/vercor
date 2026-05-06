@@ -9,6 +9,7 @@ from vercor.grid import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
+from vercor.jax_logging import LoggerLike, get_default_logger
 from vercor.regridders.conservative import ConservativeRectilinearRegridder
 from vercor.regridders.helpers import compute_land_mask
 from vercor.types import RuntimeArray
@@ -90,10 +91,12 @@ def check_remap_conservation(
     regridder: ConservativeRectilinearRegridder,
     ocean_binary_mask_on_ocn_grid: RuntimeArray,
     ocn_fmask_on_atm_grid: RuntimeArray,
+    logger: LoggerLike | None = None,
 ) -> None:
     """Validate conservative ocean-mask remapping mass conservation when comparable."""
 
     do_not_check_mass = False
+    log = logger if logger is not None else get_default_logger()
 
     if regridder.interpolator is not None and isinstance(
         regridder.interpolator, ConservativeRectilinearRemapper
@@ -102,9 +105,9 @@ def check_remap_conservation(
         dst_lat = regridder.interpolator.dst_lat_b
         if bool((src_lat[-1] != dst_lat[-1]) | (src_lat[0] != dst_lat[0])):
             do_not_check_mass = True
-            print(
+            log.warning(
                 "Skipping mass conservation check for regridding ocean mask to atmospheric grid "
-                "due to different latitude bounds.\n"
+                "due to different latitude bounds."
             )
 
         src_total_mass = regridder.interpolator.get_src_total_mass(

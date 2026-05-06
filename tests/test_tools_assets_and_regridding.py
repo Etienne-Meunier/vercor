@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import hashlib
+import logging
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -22,6 +23,7 @@ from vercor.grid_masks import (
     create_lnd_mask_from_ocn,
 )
 from vercor.grid import RectilinearGrid
+from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 
 def test_asset_base_url_normalizes_and_handles_empty(
@@ -181,7 +183,7 @@ def test_check_total_lnd_ocn_mask_sum_success_and_failure() -> None:
 
 @pytest.mark.fast_always
 def test_check_remap_conservation_handles_skip_and_mismatch(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     class DummyRemapper:
         def __init__(
@@ -209,6 +211,7 @@ def test_check_remap_conservation_handles_skip_and_mismatch(
     monkeypatch.setattr(
         grid_masks_module, "ConservativeRectilinearRemapper", DummyRemapper
     )
+    caplog.set_level(logging.WARNING, logger=DEFAULT_LOGGER_NAME)
 
     skip_interp = DummyRemapper(
         src_lat_b=np.array([-90.0, 0.0, 90.0]),
@@ -221,7 +224,7 @@ def test_check_remap_conservation_handles_skip_and_mismatch(
         np.ones((2, 2)),
         np.ones((2, 2)),
     )
-    assert "Skipping mass conservation check" in capsys.readouterr().out
+    assert "Skipping mass conservation check" in caplog.text
 
     mismatch_interp = DummyRemapper(
         src_lat_b=np.array([-90.0, 0.0, 90.0]),

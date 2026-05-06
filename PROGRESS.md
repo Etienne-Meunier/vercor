@@ -1,5 +1,47 @@
 # 2026-05-06
 
+## Coupler Lifecycle Logging
+
+- Added `DEFAULT_LOGGER_NAME` and `get_default_logger()` as the shared default
+  VerCOR host logger boundary.
+- Replaced active `print(...)` calls reached by coupler initialization, runtime,
+  and final-output paths with logging through either the coupler logger or the
+  default `VerCOR` Python logger.
+- Threaded the coupler logger into mask conservation checks during
+  `Coupler.initialize()` and added optional logger injection for CAMulator
+  initialization/noise helpers and JAXGCM output writes.
+- Kept standalone diagnostics and examples unchanged because their stdout
+  behavior is user-facing and outside the coupler lifecycle scope.
+- Updated `DESIGN.md` to document the default logger fallback and explicit
+  coupler logger injection boundary.
+- Failed approaches / corrections:
+  - The first red test run failed during collection because
+    `DEFAULT_LOGGER_NAME` and `get_default_logger()` did not exist yet.
+  - The first green test run exposed that optional CREDIT imports are absent in
+    the local environment; the CAMulator logging test now monkeypatches those
+    optional symbols explicitly.
+  - The first mypy run exposed that the test recording logger had narrower
+    method signatures than `LoggerLike`; the helper now matches the protocol.
+
+## Validation (Coupler Lifecycle Logging, 2026-05-06)
+
+- `conda run -n scipy pytest tests/test_coupler_coverage.py::test_default_logger_uses_vercor_logger_name tests/test_tools_assets_and_regridding.py::test_check_remap_conservation_handles_skip_and_mismatch tests/test_camulator_component_kernels.py::test_camulator_constructor_logs_save_forecast_path tests/test_camulator_component_kernels.py::test_add_init_noise_logs_through_injected_logger tests/test_camulator_component_kernels.py::test_initialize_camulator_logs_lifecycle_through_injected_logger tests/test_external_components_coverage.py::test_jax_gcm_write_output_persists_mean_dataset -q --tb=short`
+  - failed as expected before implementation because the default logger
+    interface was missing
+  - passed after implementation (`6 passed`)
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left 104 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`104 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Dynamic Settings Attribute Refactor
 
 - Removed per-setting `@property` descriptors from `VercorSettings`; settings

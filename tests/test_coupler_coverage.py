@@ -21,6 +21,7 @@ from vercor.runtime.contexts import RuntimeStepContext
 from vercor.coupler import Coupler, setup_logger
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
+from vercor.jax_logging import DEFAULT_LOGGER_NAME, get_default_logger
 from vercor.regridders.bilinear import bilinear
 from vercor.regridders.conservative import conservative
 from vercor.run_sequence import RunSequence
@@ -122,6 +123,13 @@ def _dispatch_runtime_fields(
         coupler.exchanges,
         coupler._regridders,
     )
+
+
+def test_default_logger_uses_vercor_logger_name() -> None:
+    logger = get_default_logger()
+
+    assert DEFAULT_LOGGER_NAME == "VerCOR"
+    assert logger.name == DEFAULT_LOGGER_NAME
 
 
 def test_coupler_accepts_log_level_at_instantiation() -> None:

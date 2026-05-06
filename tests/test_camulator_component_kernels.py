@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -33,17 +34,36 @@ from vercor.runtime import (
 from vercor.runtime.components import create_runtime_component_state
 from vercor.run_sequence import RunSequence
 from vercor.settings import VercorSettings
+from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 
 class _RecordingLogger:
     def __init__(self) -> None:
         self.messages: list[str] = []
 
-    def info(self, message: str, *args: Any) -> None:
-        self.messages.append(message.format(*args) if args else message)
+    def _record(self, message: object, *args: Any, **kwargs: Any) -> None:
+        _ = kwargs
+        message_text = str(message)
+        self.messages.append(message_text.format(*args) if args else message_text)
 
-    def warning(self, message: str, *args: Any) -> None:
-        self.messages.append(message.format(*args) if args else message)
+    def info(self, message: object, *args: Any, **kwargs: Any) -> None:
+        self._record(message, *args, **kwargs)
+
+    def warning(self, message: object, *args: Any, **kwargs: Any) -> None:
+        self._record(message, *args, **kwargs)
+
+    def debug(self, message: object, *args: Any, **kwargs: Any) -> None:
+        self._record(message, *args, **kwargs)
+
+    def error(self, message: object, *args: Any, **kwargs: Any) -> None:
+        self._record(message, *args, **kwargs)
+
+    def setLevel(self, level: int | str) -> None:
+        _ = level
+
+    def isEnabledFor(self, level: int) -> bool:
+        _ = level
+        return True
 
 
 def _runtime_component_state(
@@ -283,6 +303,169 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
+
+
+def test_camulator_constructor_logs_save_forecast_path(
+    monkeypatch: Any, caplog: Any
+) -> None:
+    latlons = SimpleNamespace(
+        longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
+        latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
+    )
+    monkeypatch.setattr(
+        camulator_module,
+        "initialize_camulator",
+        lambda **kwargs: {
+            "conf": {
+                "data": {
+                    "dynamic_forcing_variables": ["U"],
+                    "lead_time_periods": 6,
+                },
+                "predict": {
+                    "save_forecast": "/tmp/camulator-output",
+                    "timesteps_fast_climate": 1,
+                },
+            },
+            "stepper": SimpleNamespace(),
+            "forcing_dataset": xr.Dataset(),
+            "static_forcing": object(),
+            "initial_state": object(),
+            "latlons": latlons,
+            "metadata": {},
+            "device": "cpu",
+            "state_transformer": object(),
+        },
+    )
+    caplog.set_level(logging.INFO, logger=DEFAULT_LOGGER_NAME)
+
+    CAMulatorGCM(
+        config_path="dummy.yaml",
+        device="cpu",
+        output_subfolder_name="member-001",
+    )
+
+    assert "Saving outputs to: /tmp/camulator-output/member-001" in caplog.text
+
+
+def test_add_init_noise_logs_through_injected_logger(
+    monkeypatch: Any,
+) -> None:
+    logger = _RecordingLogger()
+    state = torch.ones((1, 1), dtype=torch.float32)
+    monkeypatch.setattr(camulator_module.torch, "randn_like", torch.zeros_like)
+
+    actual = camulator_module.add_init_noise(state, noise_std=0.125, logger=logger)
+
+    assert torch.equal(actual, state)
+    assert logger.messages == ["Adding initial condition noise (std=0.125)"]
+
+
+def test_initialize_camulator_logs_lifecycle_through_injected_logger(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    logger = _RecordingLogger()
+    config_path = tmp_path / "camulator.yml"
+    config_path.write_text("predict: {}\n", encoding="utf-8")
+
+    class _Model:
+        def to(self, device: Any) -> "_Model":
+            _ = device
+            return self
+
+        def eval(self) -> None:
+            return None
+
+    class _Transformer:
+        def transform_dataset(self, dataset: Any) -> Any:
+            return dataset
+
+    class _Dataset:
+        def chunk(self, chunks: Any) -> "_Dataset":
+            _ = chunks
+            return self
+
+    stepper = SimpleNamespace(
+        flag_mass=True,
+        flag_water=False,
+        flag_energy=True,
+        enable_wind_filtering=False,
+    )
+
+    conf = {
+        "data": {
+            "forcing_chunk_size": 4,
+            "scaler_type": "std_new",
+            "static_variables": ["LAND"],
+        },
+        "loss": {"latitude_weights": "latlon.nc"},
+        "predict": {
+            "forcing_file": "forcing.nc",
+            "init_cond_fast_climate": "initial.pt",
+            "mode": None,
+        },
+    }
+
+    monkeypatch.setattr(camulator_state_module, "CREDIT_AVAILABLE", True)
+    monkeypatch.setattr(
+        camulator_state_module.yaml,
+        "load",
+        lambda config_file, Loader: conf,
+    )
+    monkeypatch.setattr(
+        camulator_state_module,
+        "credit_main_parser",
+        lambda parsed, parse_training, parse_predict, print_summary: parsed,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        camulator_state_module, "load_transforms", lambda conf: None, raising=False
+    )
+    monkeypatch.setattr(
+        camulator_state_module,
+        "Normalize_ERA5_and_Forcing",
+        lambda conf: _Transformer(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        camulator_state_module,
+        "load_model_name",
+        lambda conf, model_name, load_weights: _Model(),
+        raising=False,
+    )
+    monkeypatch.setattr(camulator_state_module.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(
+        camulator_state_module.torch,
+        "load",
+        lambda path, map_location: torch.zeros((1, 1), dtype=torch.float32),
+    )
+    monkeypatch.setattr(
+        camulator_state_module.xr, "open_dataset", lambda path, **kwargs: _Dataset()
+    )
+    monkeypatch.setattr(
+        camulator_state_module,
+        "_prepare_static_forcing_tensor",
+        lambda forcing_ds, static_variables, device: torch.zeros((1, 1)),
+    )
+    monkeypatch.setattr(
+        camulator_state_module, "load_metadata", lambda conf: {}, raising=False
+    )
+    monkeypatch.setattr(
+        camulator_state_module, "CAMulatorStepper", lambda model, conf, device: stepper
+    )
+
+    camulator_state_module.initialize_camulator(
+        str(config_path),
+        model_name="checkpoint.pt",
+        device="cpu",
+        logger=logger,
+    )
+
+    assert logger.messages[:3] == [
+        f"Initializing CAMulator from config: {config_path}",
+        "Using device: cpu",
+        "Loading transforms...",
+    ]
+    assert "Initialization complete!" in logger.messages
 
 
 def test_camulator_land_stores_jax_runtime_arrays(

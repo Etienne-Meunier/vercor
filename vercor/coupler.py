@@ -344,6 +344,7 @@ class Coupler:
             regridder,
             ocean_binary_mask,
             self.ocn_fmask_on_atm_grid,
+            logger=self.logger,
         )
 
         check_total_lnd_ocn_mask_sum(

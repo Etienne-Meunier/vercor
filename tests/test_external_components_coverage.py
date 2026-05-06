@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, cast
@@ -639,7 +640,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     monkeypatch.setattr(
         component,
         "_write_output",
-        lambda output: written.__setitem__("path", output),
+        lambda output, logger=None: written.__setitem__("path", output),
     )
 
     coupler = _make_coupler(
@@ -717,7 +718,9 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     assert written["path"] == "jcm.averages.2000-01-02.nc"
 
 
-def test_jax_gcm_write_output_persists_mean_dataset(tmp_path: Path) -> None:
+def test_jax_gcm_write_output_persists_mean_dataset(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     component = jax_gcm_module.JAXGCM.__new__(jax_gcm_module.JAXGCM)
     dataset = xr.Dataset(
         {
@@ -738,12 +741,17 @@ def test_jax_gcm_write_output_persists_mean_dataset(tmp_path: Path) -> None:
     component._predictions_list = [_PredictionDataset(dataset=dataset)]
 
     output = tmp_path / "jcm_output.nc"
-    component._write_output(str(output))
+    logger_name = "VerCOR.test.jax-gcm-output"
+    logger = logging.getLogger(logger_name)
+    caplog.set_level(logging.INFO, logger=logger_name)
+
+    component._write_output(str(output), logger=logger)
 
     with xr.open_dataset(output) as actual:
         assert actual["temperature"].shape == (1, 1, 1, 1, 1, 1)
         assert np.isclose(float(actual["temperature"].values.squeeze()), 0.5)
     assert component._predictions_list == []
+    assert f"Output file: {output}" in caplog.text
 
 
 def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(

@@ -42,6 +42,7 @@ from vercor.dtypes import (
     jax_zeros,
 )
 from vercor.grid import RectilinearGrid
+from vercor.jax_logging import LoggerLike, get_default_logger
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.components import (
     validate_runtime_data_field_exists,
@@ -618,7 +619,10 @@ class JAXGCM(Component):
             dt=timedelta(seconds=context.dt_seconds),
         ):
             date_time = time.strftime("%Y-%m-%d")
-            self._write_output(output=f"jcm.averages.{date_time}.nc")
+            self._write_output(
+                output=f"jcm.averages.{date_time}.nc",
+                logger=logger,
+            )
 
         return stepped_state
 
@@ -662,7 +666,11 @@ class JAXGCM(Component):
             frequency=cast(Literal["day", "month", "year"], frequency),
         )
 
-    def _write_output(self, output: str) -> None:
+    def _write_output(
+        self,
+        output: str,
+        logger: LoggerLike | None = None,
+    ) -> None:
         ds = cast(
             xr.Dataset,
             xr.merge(
@@ -670,7 +678,8 @@ class JAXGCM(Component):
             ),
         )
 
-        print(f"Output file: {output:s}")
+        log = logger if logger is not None else get_default_logger()
+        log.info(f"Output file: {output:s}")
 
         t_end = ds.time.isel(time=-1)
         ds.mean(dim="time", keep_attrs=True, keepdims=True).assign_coords(

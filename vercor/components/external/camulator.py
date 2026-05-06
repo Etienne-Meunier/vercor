@@ -8,6 +8,8 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 
+from vercor.jax_logging import LoggerLike, get_default_logger
+
 from vercor.components.external.camulator_state import (
     initialize_camulator,
     parse_datetime_from_config,
@@ -25,7 +27,9 @@ import torch
 try:
     from credit.output import make_xarray, save_netcdf_increment
 except ModuleNotFoundError:
-    print("Credit module not found. Please install credit to use CAMulator.")
+    get_default_logger().warning(
+        "Credit module not found. Please install credit to use CAMulator."
+    )
 
 from vercor.components.base import HostRuntimeComponent
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full, jax_ones
@@ -336,7 +340,11 @@ def _map_camulator_prediction_to_runtime_fields(
     )
 
 
-def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor:
+def add_init_noise(
+    state: torch.Tensor,
+    noise_std: float = 0.05,
+    logger: LoggerLike | None = None,
+) -> torch.Tensor:
     """
     Add random noise to initial conditions for ensemble generation.
 
@@ -347,7 +355,8 @@ def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor
     Returns:
         state_with_noise: Perturbed state
     """
-    print(f"Adding initial condition noise (std={noise_std})")
+    log = logger if logger is not None else get_default_logger()
+    log.info(f"Adding initial condition noise (std={noise_std})")
     noise = torch.randn_like(state) * noise_std
     return state + noise
 
@@ -370,8 +379,10 @@ class CAMulatorGCM(HostRuntimeComponent):
         do_spinup: bool = False,
         device: str = "cuda",
         output_cpus_number: int = 8,
+        logger: LoggerLike | None = None,
     ) -> None:
 
+        self.logger = logger if logger is not None else get_default_logger()
         self.config_path = config_path
         self.model_weights_path = model_weights_path
         self.device = device
@@ -385,6 +396,7 @@ class CAMulatorGCM(HostRuntimeComponent):
             config_path=self.config_path,
             model_name=self.model_weights_path,
             device=self.device,
+            logger=self.logger,
         )
 
         # Unpack context
@@ -406,7 +418,9 @@ class CAMulatorGCM(HostRuntimeComponent):
             self.conf["predict"]["save_forecast"] = str(
                 Path(base).expanduser() / self.save_append
             )
-            print(f"Saving outputs to: {self.conf['predict']['save_forecast']}")
+            self.logger.info(
+                f"Saving outputs to: {self.conf['predict']['save_forecast']}"
+            )
 
         # Setup for time-stepping
         self.df_vars = self.conf["data"]["dynamic_forcing_variables"]
@@ -448,7 +462,11 @@ class CAMulatorGCM(HostRuntimeComponent):
 
         # Add noise to initial conditions if requested
         if self.init_noise is not None:
-            self.state = add_init_noise(self.state, noise_std=self.init_noise)
+            self.state = add_init_noise(
+                self.state,
+                noise_std=self.init_noise,
+                logger=logger,
+            )
 
         # Trace model for performance (optional but recommended)
         logger.info("Tracing model with torch.jit...")

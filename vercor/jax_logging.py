@@ -7,6 +7,8 @@ from typing import Any, Protocol, runtime_checkable
 
 import jax
 
+DEFAULT_LOGGER_NAME = "VerCOR"
+
 
 @runtime_checkable
 class LoggerLike(Protocol):
@@ -78,6 +80,12 @@ def normalize_log_level(level: int | str) -> int:
             raise ValueError(f"Unknown logging level: {level}")
         return normalized
     return int(level)
+
+
+def get_default_logger() -> logging.Logger:
+    """Return the default Python logger used for VerCOR host-side messages."""
+
+    return logging.getLogger(DEFAULT_LOGGER_NAME)
 
 
 def effective_log_level(logger: LoggerLike, default: int | str = logging.INFO) -> int:
@@ -181,7 +189,7 @@ class JaxCallbackLogger:
 
 def setup_logger(
     level: int | str = logging.INFO,
-    name: str = "VerCOR",
+    name: str = DEFAULT_LOGGER_NAME,
 ) -> JaxCallbackLogger:
     """Set up and return the callback-backed VerCOR logger."""
 
@@ -190,7 +198,9 @@ def setup_logger(
         format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    logger = logging.getLogger(name)
+    logger = (
+        get_default_logger() if name == DEFAULT_LOGGER_NAME else logging.getLogger(name)
+    )
     logger.setLevel(normalize_log_level(level))
     return JaxCallbackLogger(logger)
 

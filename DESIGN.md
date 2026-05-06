@@ -181,6 +181,11 @@ instantiation with `Coupler(..., log_level=...)`; disabled levels are filtered
 before callbacks enter the traced graph. Runtime hooks should pass traced values
 as logger arguments, for example `logger.info("Mean SST: {}", jnp.mean(sst))`,
 instead of converting tracers with `float(...)` or `int(...)`.
+Initialization, runtime, and finalization helpers that are reached outside a
+coupler context use the default `VerCOR` Python logger from
+`vercor.jax_logging.get_default_logger()`. Helpers reached from
+`Coupler.initialize()`, `Coupler.run()`, or component runtime contexts receive
+the coupler logger explicitly instead of writing directly to stdout.
 The host and scanned coupler runtime paths emit the same step and component
 progress messages. The scanned path precomputes datetime and timestep labels on
 the host, then selects the per-step label inside ordered callbacks so progress
