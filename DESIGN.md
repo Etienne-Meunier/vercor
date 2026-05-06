@@ -145,12 +145,16 @@ independent `VercorSettings()` instance populated from those defaults at
 construction time, so setup-time changes on one owner do not leak into another.
 
 For backward-compatible call sites, `settings.enable_x64` and similar attribute
-reads return setting values, and assigning an existing attribute updates only
-that value. New custom settings must be introduced explicitly with
-`add_setting()` or passed as keyword arguments to `VercorSettings(...)`; existing
-settings should be updated with `set_value()` where production code is making an
-intentional configuration change. `ComponentSettings` is a compatibility alias
-for `VercorSettings`, not a separate settings class.
+reads resolve setting values dynamically through `__getattr__`, and assigning an
+existing attribute updates only that value through `__setattr__`. Known default
+settings are declared as class-level annotations so static type checkers retain
+useful types without per-setting runtime property descriptors. New custom
+settings must be introduced explicitly with `add_setting()` or passed as keyword
+arguments to `VercorSettings(...)`; existing settings should be updated with
+`set_value()` where production code is making an intentional configuration
+change. `dir(settings)` includes default and custom setting names for
+introspection. `ComponentSettings` is a compatibility alias for
+`VercorSettings`, not a separate settings class.
 
 ### Precision and dtype policy
 

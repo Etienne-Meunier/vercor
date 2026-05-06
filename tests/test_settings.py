@@ -8,6 +8,7 @@ from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
 from vercor.components.base import DataComponent
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy, SupportsEnableX64
 from vercor.settings import (
     DEFAULT_SETTINGS,
     ComponentSettings,
@@ -81,11 +82,47 @@ def test_attribute_access_and_assignment_are_compatible() -> None:
 
     settings.enable_x64 = True
     settings.year_in_seconds = 12.0
+    settings.cappa = 0.287
 
     assert settings.get_value("enable_x64") is True
     assert settings.get_metadata("year_in_seconds").value == 12.0
+    assert settings.get_metadata("cappa") == Settings(
+        0.287,
+        DEFAULT_SETTINGS["cappa"].description,
+        DEFAULT_SETTINGS["cappa"].units,
+    )
     with pytest.raises(AttributeError, match="new_parameter"):
         settings.new_parameter = 1
+
+
+def test_known_setting_attributes_are_typed_annotations_not_descriptors() -> None:
+    annotations = VercorSettings.__annotations__
+
+    for name in DEFAULT_SETTINGS:
+        assert name in annotations
+        assert name not in vars(VercorSettings)
+    assert isinstance(VercorSettings.dtype_policy, property)
+
+
+def test_dir_lists_default_and_custom_settings() -> None:
+    settings = VercorSettings(custom_parameter=3.0)
+
+    names = dir(settings)
+
+    assert "enable_x64" in names
+    assert "cappa" in names
+    assert "custom_parameter" in names
+    assert "dtype_policy" in names
+
+
+def _precision_protocol_value(settings: SupportsEnableX64) -> bool:
+    return DTypePolicy.from_settings(settings).enable_x64
+
+
+def test_settings_satisfy_precision_protocol_after_dynamic_refactor() -> None:
+    settings = VercorSettings(enable_x64=True)
+
+    assert _precision_protocol_value(settings) is True
 
 
 def test_component_settings_alias_points_to_single_settings_class() -> None:

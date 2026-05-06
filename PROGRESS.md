@@ -1,5 +1,46 @@
 # 2026-05-06
 
+## Dynamic Settings Attribute Refactor
+
+- Removed per-setting `@property` descriptors from `VercorSettings`; settings
+  now read and write through the existing `__getattr__` / `__setattr__`
+  metadata path.
+- Added class-level annotations for default settings so `mypy` still sees known
+  precision, timing, and physical-constant attributes with concrete types.
+- Kept `dtype_policy` as the only computed settings property because it is not a
+  stored setting value.
+- Added `__dir__` support so default and custom settings appear in
+  introspection/autocomplete.
+- Added regression coverage for dynamic settings descriptors, metadata
+  preservation through dot assignment, `dir()` output, and precision-protocol
+  compatibility.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the dynamic settings
+  boundary.
+- Failed approaches / corrections:
+  - The first red test run failed as expected because default setting names were
+    not class-level annotations and custom settings were absent from `dir()`.
+
+## Validation (Dynamic Settings Attribute Refactor, 2026-05-06)
+
+- `conda run -n scipy pytest tests/test_settings.py -q --tb=short`
+  - failed as expected before implementation because default settings were not
+    class-level annotations and custom settings were absent from `dir()`
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_settings.py tests/test_dtypes.py tests/test_fluxes_utilities.py tests/test_camulator_component_kernels.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left 104 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`104 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Unified Metadata-Backed Settings Container
 
 - Replaced the separate `VercorSettings` and `ComponentSettings` dataclasses

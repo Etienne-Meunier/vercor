@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 from vercor.dtypes import DTypePolicy
 
@@ -85,9 +85,44 @@ def _copy_settings(settings: dict[str, Settings]) -> dict[str, Settings]:
 
 
 class VercorSettings:
-    """Mutable metadata-backed settings container for couplers and components."""
+    """Mutable metadata-backed settings container for couplers and components.
+
+    Known default settings are class-level annotations for static type checkers;
+    runtime values live in ``_settings`` and are resolved dynamically.
+    """
 
     _settings: dict[str, Settings]
+    enable_x64: bool
+    identifier: str
+    missval: float
+    apply_time_interpolation: bool
+    get_field_time_slice: bool
+    year_in_seconds: float
+    earth_radius: float
+    gravity: float
+    rhoAir: float
+    rdair: float
+    cpdair: float
+    zvir: float
+    p0: float
+    mwdair: float
+    cpwv: float
+    cpvir: float
+    cappa: float
+    latice: float
+    rgas: float
+    umin_ocean: float
+    umin_ice: float
+    karman: float
+    stefBoltz: float
+    ocean_emissivity: float
+    ice_emissivity: float
+    snow_emissivity: float
+    latvap: float
+    latfresh: float
+    gamma_blk: float
+    zref: float
+    ztref: float
 
     def __init__(self, **kwargs: Any) -> None:
         """Create settings from VerCOR defaults plus optional overrides."""
@@ -135,160 +170,18 @@ class VercorSettings:
 
         return name in self._settings
 
+    def __dir__(self) -> list[str]:
+        """Return normal instance attributes plus configured setting names."""
+
+        names = set(super().__dir__())
+        names.update(self._settings)
+        return sorted(names)
+
     def __repr__(self) -> str:
         values = ", ".join(
             f"{name}={record.value!r}" for name, record in self._settings.items()
         )
         return f"{self.__class__.__name__}({values})"
-
-    def _bool_value(self, name: str) -> bool:
-        return cast(bool, self.get_value(name))
-
-    def _float_value(self, name: str) -> float:
-        return cast(float, self.get_value(name))
-
-    def _str_value(self, name: str) -> str:
-        return cast(str, self.get_value(name))
-
-    @property
-    def enable_x64(self) -> bool:
-        return self._bool_value("enable_x64")
-
-    @enable_x64.setter
-    def enable_x64(self, value: Any) -> None:
-        self.set_value("enable_x64", value)
-
-    @property
-    def identifier(self) -> str:
-        return self._str_value("identifier")
-
-    @property
-    def missval(self) -> float:
-        return self._float_value("missval")
-
-    @property
-    def apply_time_interpolation(self) -> bool:
-        return self._bool_value("apply_time_interpolation")
-
-    @apply_time_interpolation.setter
-    def apply_time_interpolation(self, value: Any) -> None:
-        self.set_value("apply_time_interpolation", value)
-
-    @property
-    def get_field_time_slice(self) -> bool:
-        return self._bool_value("get_field_time_slice")
-
-    @get_field_time_slice.setter
-    def get_field_time_slice(self, value: Any) -> None:
-        self.set_value("get_field_time_slice", value)
-
-    @property
-    def year_in_seconds(self) -> float:
-        return self._float_value("year_in_seconds")
-
-    @year_in_seconds.setter
-    def year_in_seconds(self, value: Any) -> None:
-        self.set_value("year_in_seconds", value)
-
-    @property
-    def earth_radius(self) -> float:
-        return self._float_value("earth_radius")
-
-    @property
-    def gravity(self) -> float:
-        return self._float_value("gravity")
-
-    @property
-    def rhoAir(self) -> float:
-        return self._float_value("rhoAir")
-
-    @property
-    def rdair(self) -> float:
-        return self._float_value("rdair")
-
-    @property
-    def cpdair(self) -> float:
-        return self._float_value("cpdair")
-
-    @property
-    def zvir(self) -> float:
-        return self._float_value("zvir")
-
-    @property
-    def p0(self) -> float:
-        return self._float_value("p0")
-
-    @property
-    def mwdair(self) -> float:
-        return self._float_value("mwdair")
-
-    @property
-    def cpwv(self) -> float:
-        return self._float_value("cpwv")
-
-    @property
-    def cpvir(self) -> float:
-        return self._float_value("cpvir")
-
-    @property
-    def cappa(self) -> float:
-        return self._float_value("cappa")
-
-    @property
-    def latice(self) -> float:
-        return self._float_value("latice")
-
-    @property
-    def rgas(self) -> float:
-        return self._float_value("rgas")
-
-    @property
-    def umin_ocean(self) -> float:
-        return self._float_value("umin_ocean")
-
-    @property
-    def umin_ice(self) -> float:
-        return self._float_value("umin_ice")
-
-    @property
-    def karman(self) -> float:
-        return self._float_value("karman")
-
-    @property
-    def stefBoltz(self) -> float:
-        return self._float_value("stefBoltz")
-
-    @property
-    def ocean_emissivity(self) -> float:
-        return self._float_value("ocean_emissivity")
-
-    @property
-    def ice_emissivity(self) -> float:
-        return self._float_value("ice_emissivity")
-
-    @property
-    def snow_emissivity(self) -> float:
-        return self._float_value("snow_emissivity")
-
-    @property
-    def latvap(self) -> float:
-        return self._float_value("latvap")
-
-    @property
-    def latfresh(self) -> float:
-        return self._float_value("latfresh")
-
-    @property
-    def gamma_blk(self) -> float:
-        return self._float_value("gamma_blk")
-
-    @property
-    def zref(self) -> float:
-        return self._float_value("zref")
-
-    @property
-    def ztref(self) -> float:
-        return self._float_value("ztref")
 
     def add_setting(
         self,

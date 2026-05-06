@@ -1,5 +1,5 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
-2. `vercor/settings.py` - unified metadata-backed `VercorSettings` container, default settings records, physical constants, runtime/component settings, and settings-bound dtype policy consumed by translated kernels
+2. `vercor/settings.py` - unified metadata-backed `VercorSettings` container with dynamic attribute access, typed known-setting annotations, default settings records, physical constants, runtime/component settings, and settings-bound dtype policy consumed by translated kernels
 3. `vercor/fluxes/utilities.py` - JAX-native scalar/array thermodynamic helpers built on (1, 2)
 4. `vercor/fluxes/bulk_formula_cesm.py` - JAX-native atmosphere-ocean / atmosphere-ice bulk flux kernels built on (1, 2, 3)
 5. `vercor/host_arrays.py` - explicit JAX/NumPy host-transfer boundary for non-differentiable adapters and output
