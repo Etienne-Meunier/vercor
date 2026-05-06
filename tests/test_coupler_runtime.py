@@ -31,7 +31,7 @@ from vercor.grid import RectilinearGrid
 from vercor.regridders import bilinear, conservative
 from vercor.run_sequence import RunSequence
 from vercor.runtime import RuntimeComponentState, RuntimeCouplerState, RuntimeFieldStore
-from vercor.settings import ComponentSettings
+from vercor.settings import VercorSettings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_field_time_slice,
@@ -101,13 +101,13 @@ def _make_data_component(
     data: dict[str, jax.Array],
     imports: tuple[str, ...] = (),
     exports: tuple[str, ...] = (),
-    settings: ComponentSettings | None = None,
+    settings: VercorSettings | None = None,
 ) -> Any:
     component = object.__new__(component_type)
     component.name = name
     component.grid = grid
     component.data = data
-    component.settings = settings or ComponentSettings()
+    component.settings = settings or VercorSettings()
     _ = imports, exports
     return component
 
@@ -176,7 +176,7 @@ def _make_jax_gcm_component(grid: RectilinearGrid) -> JAXGCM:
     component_any = cast(Any, component)
     component.name = "ATM"
     component.grid = grid
-    component.settings = ComponentSettings()
+    component.settings = VercorSettings()
     component.data = {
         "sea_surface_temperature": jnp.full(grid.shape, 281.0, dtype=jnp.float64),
         "land_surface_temperature": jnp.full(grid.shape, 3.0, dtype=jnp.float64),
@@ -750,7 +750,7 @@ def test_data_forcing_components_run_inside_runtime() -> None:
             grid=grid,
             data={"sea_surface_temperature": monthly_ocean},
             exports=("sea_surface_temperature",),
-            settings=ComponentSettings(apply_time_interpolation=True),
+            settings=VercorSettings(apply_time_interpolation=True),
         ),
         "LND": _make_data_component(
             ERA5Land,
@@ -758,7 +758,7 @@ def test_data_forcing_components_run_inside_runtime() -> None:
             grid=grid,
             data={"land_surface_temperature": monthly_land},
             exports=("land_surface_temperature",),
-            settings=ComponentSettings(apply_time_interpolation=True),
+            settings=VercorSettings(apply_time_interpolation=True),
         ),
         "ATM": _make_data_component(
             ERA5Atmosphere,
@@ -845,7 +845,7 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
         grid=grid,
         data={"sea_surface_temperature": forcing},
         exports=("sea_surface_temperature",),
-        settings=ComponentSettings(get_field_time_slice=True),
+        settings=VercorSettings(get_field_time_slice=True),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 2), dt_seconds=3600.0, steps=1)
@@ -912,7 +912,7 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         grid=ocean_grid,
         data={"sea_surface_temperature": monthly_ocean},
         exports=("sea_surface_temperature",),
-        settings=ComponentSettings(apply_time_interpolation=True),
+        settings=VercorSettings(apply_time_interpolation=True),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
@@ -987,7 +987,7 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
         grid=grid,
         data={"land_surface_temperature": forcing},
         exports=("land_surface_temperature",),
-        settings=ComponentSettings(get_field_time_slice=True),
+        settings=VercorSettings(get_field_time_slice=True),
     )
     atmosphere = _make_data_component(
         ERA5Atmosphere,
@@ -1057,7 +1057,7 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
         grid=grid,
         data={"land_surface_temperature": forcing},
         exports=("land_surface_temperature",),
-        settings=ComponentSettings(get_field_time_slice=True),
+        settings=VercorSettings(get_field_time_slice=True),
     )
     atmosphere = _make_data_component(
         ERA5Atmosphere,
@@ -1131,7 +1131,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         grid=grid,
         data={"land_surface_temperature": forcing},
         exports=("land_surface_temperature",),
-        settings=ComponentSettings(get_field_time_slice=True),
+        settings=VercorSettings(get_field_time_slice=True),
     )
     atmosphere = _make_data_component(
         ERA5Atmosphere,
@@ -1214,7 +1214,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         grid=grid,
         data={"sea_surface_temperature": monthly_ocean},
         exports=("sea_surface_temperature",),
-        settings=ComponentSettings(apply_time_interpolation=True),
+        settings=VercorSettings(apply_time_interpolation=True),
     )
     atmosphere = _make_data_component(
         ERA5Atmosphere,

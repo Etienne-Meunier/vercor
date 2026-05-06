@@ -10,7 +10,7 @@ from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.base import DataComponent
 from vercor.runtime.contexts import ComponentInitContext
-from vercor.settings import ComponentSettings
+from vercor.settings import VercorSettings
 from vercor.components.external.jax_gcm import JAXGCMRuntimePayload
 from vercor.runtime import (
     RuntimeComponentContract,
@@ -23,7 +23,7 @@ from vercor.runtime.components import send_runtime_fields
 
 
 class _RuntimeSendComponent(DataComponent):
-    def __init__(self, settings: ComponentSettings) -> None:
+    def __init__(self, settings: VercorSettings) -> None:
         super().__init__("DATA", make_test_grid(name="runtime-send"))
         self.settings = settings
 
@@ -354,7 +354,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(ComponentSettings(apply_time_interpolation=True))
+    component = _RuntimeSendComponent(VercorSettings(apply_time_interpolation=True))
     contract = RuntimeComponentContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
@@ -396,7 +396,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(ComponentSettings(get_field_time_slice=True))
+    component = _RuntimeSendComponent(VercorSettings(get_field_time_slice=True))
     contract = RuntimeComponentContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],

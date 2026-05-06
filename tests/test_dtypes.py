@@ -42,6 +42,14 @@ def test_settings_enable_x64_maps_real_arrays_to_float64() -> None:
     assert jax_full((2, 3), 1.5, settings).dtype == jnp.float64
 
 
+def test_dtype_policy_reads_updated_settings_value() -> None:
+    settings = VercorSettings(enable_x64=False)
+
+    settings.set_value("enable_x64", True)
+
+    assert settings.dtype_policy == DTypePolicy(enable_x64=True)
+
+
 def test_index_dtype_is_int32_for_both_real_precision_modes() -> None:
     for enable_x64 in (False, True):
         settings = VercorSettings(enable_x64=enable_x64)

@@ -114,7 +114,8 @@ class Coupler:
                 destination grid cells, reflecting the partial coverage of source grid cells
                 within destination grid cells.
         _compiled_runtime_cache: mapping of static runtime topology keys to cached compiled runtime functions
-        _runtime_interrupts: controller for signaling and handling runtime interrupts across host and JAX-traced runtime paths
+        _runtime_interrupts: controller for signaling and handling runtime
+            interrupts across host and JAX-traced runtime paths
     """
 
     clock: Clock
@@ -220,7 +221,7 @@ class Coupler:
         self.logger.info(" Initializing coupler and components")
 
         if enable_x64_computations is not None:
-            self.settings.enable_x64 = enable_x64_computations
+            self.settings.set_value("enable_x64", enable_x64_computations)
 
         self.logger.info(
             f" Setting default precision for JAX computations: {self.settings.enable_x64}"

@@ -75,7 +75,7 @@ class ERA5Ocean(DataComponent, ComponentForcingData):
 
         super().__init__(name, grid=grid)
 
-        self.settings.apply_time_interpolation = True
+        self.settings.set_value("apply_time_interpolation", True)
 
         # Units: [K]
         self.data["sea_surface_temperature"] = _mask_sea_surface_temperature(

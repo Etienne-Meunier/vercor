@@ -12,7 +12,10 @@ import numpy as np
 class SupportsEnableX64(Protocol):
     """Settings-like object exposing VerCOR's real-precision switch."""
 
-    enable_x64: bool
+    @property
+    def enable_x64(self) -> bool:
+        """Return whether 64-bit real arrays are enabled."""
+        ...
 
 
 ShapeLike: TypeAlias = int | Sequence[int]

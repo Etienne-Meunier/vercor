@@ -1,3 +1,53 @@
+# 2026-05-06
+
+## Unified Metadata-Backed Settings Container
+
+- Replaced the separate `VercorSettings` and `ComponentSettings` dataclasses
+  with one metadata-backed `VercorSettings` container populated from
+  `DEFAULT_SETTINGS`.
+- Added `Settings(value, description, units)` metadata records for coupler,
+  component, precision, timing, physical-constant, and bulk-formula settings.
+- Preserved attribute-style reads and existing-setting assignment for
+  compatibility while adding explicit `add_setting()`, `set_value()`,
+  `get_value()`, `get_metadata()`, and `as_values()` APIs.
+- Updated components and the coupler so each instance owns an independent
+  `VercorSettings` container, with `ComponentSettings` retained only as a
+  compatibility alias.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the unified settings
+  boundary.
+- Failed approaches / corrections:
+  - The first red test run failed during collection because `DEFAULT_SETTINGS`
+    and `Settings` did not exist yet.
+  - The first green test run exposed a test fixture bug using `Clock(steps=1)`;
+    the fixture now supplies an explicit start date and timestep.
+  - The first mypy run exposed that the dynamic settings container leaked `Any`
+    through typed flux utilities and no longer satisfied `SupportsEnableX64` as
+    a settable protocol attribute; typed known-setting properties, setters, and
+    a read-only precision protocol fixed the static contract.
+
+## Validation (Unified Metadata-Backed Settings Container, 2026-05-06)
+
+- `conda run -n scipy pytest tests/test_settings.py tests/test_dtypes.py::test_dtype_policy_reads_updated_settings_value -q --tb=short`
+  - failed as expected before implementation because the metadata settings API
+    did not exist
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_settings.py tests/test_dtypes.py tests/test_component_base_coverage.py tests/test_runtime_state.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `vercor/settings.py` and `tests/test_settings.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`104 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_settings.py tests/test_dtypes.py tests/test_component_base_coverage.py tests/test_runtime_state.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed after the final static typing fixes
+
 # 2026-05-05
 
 ## Compiled Runtime Wakeup-Fd Interrupt Handling

@@ -107,8 +107,9 @@ immutable runtime containers used during traced integration.
 - Component-author API: `Component`, `DataComponent`, and
   `HostRuntimeComponent` are the stable extension points. All custom adapters
   seed setup-time fields on `Component.data` and call the base constructor so
-  `name`, `grid`, `data`, and `settings` are available during initialization,
-  execution, and finalization. `Component.data` is a grid-field store, not a
+  `name`, `grid`, `data`, and a component-owned `VercorSettings` container are
+  available during initialization, execution, and finalization. `Component.data`
+  is a grid-field store, not a
   general metadata store: all entries must use one of the canonical layouts
   `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
   `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
@@ -133,6 +134,23 @@ immutable runtime containers used during traced integration.
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.
   Internal runtime containers are not exported from the package top level.
+
+### Settings container
+
+VerCOR uses one metadata-backed `VercorSettings` class for both coupler-level
+and component-level settings. `vercor.settings.DEFAULT_SETTINGS` stores the
+defaults as `Settings(value, description, units)` namedtuple records; unitless
+settings use `"-"` for units. Each `Coupler` and each `Component` receives an
+independent `VercorSettings()` instance populated from those defaults at
+construction time, so setup-time changes on one owner do not leak into another.
+
+For backward-compatible call sites, `settings.enable_x64` and similar attribute
+reads return setting values, and assigning an existing attribute updates only
+that value. New custom settings must be introduced explicitly with
+`add_setting()` or passed as keyword arguments to `VercorSettings(...)`; existing
+settings should be updated with `set_value()` where production code is making an
+intentional configuration change. `ComponentSettings` is a compatibility alias
+for `VercorSettings`, not a separate settings class.
 
 ### Precision and dtype policy
 

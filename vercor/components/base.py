@@ -8,7 +8,7 @@ from vercor.exceptions import ComponentError
 from vercor.field_layout import validate_component_data_layout
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
-from vercor.settings import ComponentSettings
+from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -48,7 +48,7 @@ class Component(ABC):
     name: str
     grid: RectilinearGrid
     data: dict[str, RuntimeArray] = field(default_factory=dict)
-    settings: ComponentSettings = field(default_factory=ComponentSettings)
+    settings: VercorSettings = field(default_factory=VercorSettings)
 
     def initialize(self, context: ComponentInitContext) -> None:
         """Optionally initialize component-owned runtime data before coupling.
@@ -196,10 +196,10 @@ def validate_component_setup(component: Component) -> None:
             f"Component '{component.name}' has invalid setup attribute 'data'; "
             "expected dict[str, RuntimeArray]."
         )
-    if not isinstance(component.settings, ComponentSettings):
+    if not isinstance(component.settings, VercorSettings):
         raise ComponentError(
             f"Component '{component.name}' has invalid setup attribute 'settings'; "
-            "expected ComponentSettings."
+            "expected VercorSettings."
         )
     validate_component_data_layout(
         component_name=component.name,
