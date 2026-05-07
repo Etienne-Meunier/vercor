@@ -134,53 +134,56 @@ class ERA5Atmosphere(DataComponent, ComponentForcingData):
 
         lnsp = self._read_forcing("lnsp", where="model_level", flip_y=True)[..., 0, :]
         # Units: [Pa]
-        self.data["surface_pressure"] = _decode_surface_pressure(
+        surface_pressure = _decode_surface_pressure(
             canonicalize_time_last_surface_field(lnsp)
         )
         # Units: [kg/kg]
-        self.data["specific_humidity_3d"] = canonicalize_time_last_level_field(
+        specific_humidity_3d = canonicalize_time_last_level_field(
             self._read_forcing("q", where="model_level", flip_y=True)[
                 ..., 1:, :
             ]  # L136-L137
         )
         # Units: [K]
-        self.data["temperature_3d"] = canonicalize_time_last_level_field(
+        temperature_3d = canonicalize_time_last_level_field(
             self._read_forcing("t", where="model_level", flip_y=True)[
                 ..., 1:, :
             ]  # L136-L137
         )
-        # Units: [m/s]
-        self.data["u_velocity"] = canonicalize_time_last_surface_field(
-            self._read_forcing("u", where="model_level", flip_y=True)[
-                :, :, 1, :
-            ]  # L136
+        self.seed_fields(
+            {
+                "surface_pressure": surface_pressure,
+                "specific_humidity_3d": specific_humidity_3d,
+                "temperature_3d": temperature_3d,
+                # Units: [m/s], L136
+                "u_velocity": canonicalize_time_last_surface_field(
+                    self._read_forcing("u", where="model_level", flip_y=True)[
+                        :, :, 1, :
+                    ]
+                ),
+                # Units: [m/s], L136
+                "v_velocity": canonicalize_time_last_surface_field(
+                    self._read_forcing("v", where="model_level", flip_y=True)[
+                        :, :, 1, :
+                    ]
+                ),
+                # Units: [W/m²]
+                "net_shortwave_radiation_flux": (
+                    canonicalize_time_last_surface_field(
+                        self._read_forcing("msnswrf", where="surface", flip_y=True)
+                    )
+                ),
+                # Units: [W/m²]
+                "downward_longwave_radiation_flux": (
+                    canonicalize_time_last_surface_field(
+                        self._read_forcing("msdwlwrf", where="surface", flip_y=True)
+                    )
+                ),
+                # Units: [kg/kg], L136
+                "specific_humidity": specific_humidity_3d[:, 0, :, :],
+                # Units: [K], L136
+                "temperature": temperature_3d[:, 0, :, :],
+            }
         )
-        # Units: [m/s]
-        self.data["v_velocity"] = canonicalize_time_last_surface_field(
-            self._read_forcing("v", where="model_level", flip_y=True)[
-                :, :, 1, :
-            ]  # L136
-        )
-
-        # tcc = self._read_forcing("tcc", where="surface", flip_y=True)
-        # Units: [W/m²]
-        self.data["net_shortwave_radiation_flux"] = (
-            canonicalize_time_last_surface_field(
-                self._read_forcing("msnswrf", where="surface", flip_y=True)
-            )
-        )
-        # Units: [W/m²]
-        self.data["downward_longwave_radiation_flux"] = (
-            canonicalize_time_last_surface_field(
-                self._read_forcing("msdwlwrf", where="surface", flip_y=True)
-            )
-        )
-        # Units: [kg/kg]
-        self.data["specific_humidity"] = self.data["specific_humidity_3d"][
-            :, 0, :, :
-        ]  # L136
-        # Units: [K]
-        self.data["temperature"] = self.data["temperature_3d"][:, 0, :, :]  # L136
 
     def initialize(self, context: ComponentInitContext) -> None:
         diagnostics = [
@@ -197,12 +200,16 @@ class ERA5Atmosphere(DataComponent, ComponentForcingData):
             )
             for month_index in range(int(self.data["surface_pressure"].shape[0]))
         ]
-        self.data["model_level_height"] = jnp.stack(
-            [item[0] for item in diagnostics],
-            axis=0,
-        )
-        self.data["density"] = jnp.stack([item[1] for item in diagnostics], axis=0)
-        self.data["potential_temperature"] = jnp.stack(
-            [item[2] for item in diagnostics],
-            axis=0,
+        self.seed_fields(
+            {
+                "model_level_height": jnp.stack(
+                    [item[0] for item in diagnostics],
+                    axis=0,
+                ),
+                "density": jnp.stack([item[1] for item in diagnostics], axis=0),
+                "potential_temperature": jnp.stack(
+                    [item[2] for item in diagnostics],
+                    axis=0,
+                ),
+            }
         )

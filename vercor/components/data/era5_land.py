@@ -78,4 +78,4 @@ class ERA5Land(DataComponent, ComponentForcingData):
         self.settings.set_value("apply_time_interpolation", True)
 
         # Units: [K]
-        self.data["land_surface_temperature"] = land_surface_temperature
+        self.seed_field("land_surface_temperature", land_surface_temperature)

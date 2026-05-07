@@ -113,6 +113,6 @@ class JCMLand(DataComponent):
         self.settings.set_value("get_field_time_slice", True)
 
         # Units: [K]
-        self.data["land_surface_temperature"] = land_surface_temperature
+        self.seed_field("land_surface_temperature", land_surface_temperature)
         # Units: [???]
-        self.data["soil_moisture"] = soil_moisture
+        self.seed_field("soil_moisture", soil_moisture)

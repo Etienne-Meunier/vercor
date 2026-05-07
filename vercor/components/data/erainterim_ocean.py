@@ -150,4 +150,4 @@ class ERAInterimOcean(DataComponent, ComponentForcingData):
         )
 
         # Units: [K]
-        self.data["sea_surface_temperature"] = sst
+        self.seed_field("sea_surface_temperature", sst)

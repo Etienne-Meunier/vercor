@@ -4,10 +4,9 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
-from vercor.dtypes import as_jax_real_array, jax_full, jax_zeros
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime.components import validate_runtime_grid_data_field
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
@@ -61,16 +60,20 @@ class Atmosphere(Component):
         super().__init__(name, grid)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        grid_shape = self.grid.shape
-        zeros = jax_zeros(grid_shape, context.settings)
-
-        self.data["temperature_2m"] = jax_full(
-            grid_shape, _REFERENCE_SURFACE_TEMPERATURE, context.settings
+        self.seed_constant_field(
+            "temperature_2m",
+            _REFERENCE_SURFACE_TEMPERATURE,
+            context.settings,
         )
-        self.data["sensible_heat_flux"] = zeros
-        self.data["latent_heat_flux"] = zeros
-        self.data["u_velocity_10m"] = zeros
-        self.data["v_velocity_10m"] = zeros
+        self.seed_zero_fields(
+            (
+                "sensible_heat_flux",
+                "latent_heat_flux",
+                "u_velocity_10m",
+                "v_velocity_10m",
+            ),
+            context.settings,
+        )
 
     def validate_runtime_state(
         self,
@@ -80,18 +83,14 @@ class Atmosphere(Component):
         """Validate slab-atmosphere runtime fields."""
 
         _ = contract
-        for field_name in (
+        self.require_runtime_fields(
+            component_state,
             "temperature_2m",
             "sensible_heat_flux",
             "latent_heat_flux",
             "u_velocity_10m",
             "v_velocity_10m",
-        ):
-            validate_runtime_grid_data_field(
-                self,
-                component_state,
-                field_name,
-            )
+        )
 
     def step_runtime_state(
         self,
@@ -101,11 +100,13 @@ class Atmosphere(Component):
         """Advance the slab atmosphere on immutable runtime state."""
 
         _ = context
-        data = component_state.data
-        temperature_2m = data.get("temperature_2m")
-        try:
-            sea_surface_temperature = data.get("sea_surface_temperature")
-        except KeyError:
+        temperature_2m = self.runtime_field(component_state, "temperature_2m")
+        if "sea_surface_temperature" in component_state.data.field_names:
+            sea_surface_temperature = self.runtime_field(
+                component_state,
+                "sea_surface_temperature",
+            )
+        else:
             sea_surface_temperature = _default_sea_surface_temperature(temperature_2m)
 
         sensible_heat_flux, latent_heat_flux, updated_temperature_2m = _bulk_flux_step(
@@ -116,9 +117,13 @@ class Atmosphere(Component):
             self.grid.latitude,
             self.grid.longitude,
         )
-        data = data.set("u_velocity_10m", u_velocity_10m)
-        data = data.set("v_velocity_10m", v_velocity_10m)
-        data = data.set("sensible_heat_flux", sensible_heat_flux)
-        data = data.set("latent_heat_flux", latent_heat_flux)
-        data = data.set("temperature_2m", updated_temperature_2m)
-        return component_state.with_data(data)
+        return self.with_runtime_fields(
+            component_state,
+            {
+                "u_velocity_10m": u_velocity_10m,
+                "v_velocity_10m": v_velocity_10m,
+                "sensible_heat_flux": sensible_heat_flux,
+                "latent_heat_flux": latent_heat_flux,
+                "temperature_2m": updated_temperature_2m,
+            },
+        )

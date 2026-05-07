@@ -433,8 +433,9 @@ class VerosGCM(HostRuntimeComponent):
                 context.logger.info(f" Step {i+1} / {self.spinup_steps}")
                 self._veros_state = self._step_function(self._veros_state)
 
-        self.data["sea_surface_temperature"] = _extract_veros_runtime_sst(
-            self._veros_state
+        self.seed_field(
+            "sea_surface_temperature",
+            _extract_veros_runtime_sst(self._veros_state),
         )
 
     def step_host_runtime_state(
@@ -472,8 +473,7 @@ class VerosGCM(HostRuntimeComponent):
             logger=logger,
         )
 
-        data = component_state.data.set(
-            "sea_surface_temperature",
-            _extract_veros_runtime_sst(self._veros_state),
+        return self.with_runtime_fields(
+            component_state,
+            {"sea_surface_temperature": _extract_veros_runtime_sst(self._veros_state)},
         )
-        return component_state.with_data(data)

@@ -4,10 +4,9 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
-from vercor.dtypes import as_jax_real_array, jax_full
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime.components import validate_runtime_grid_data_field
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
@@ -57,8 +56,8 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.data["sea_surface_temperature"] = jax_full(
-            self.grid.shape,
+        self.seed_constant_field(
+            "sea_surface_temperature",
             _REFERENCE_SEA_SURFACE_TEMPERATURE,
             context.settings,
         )
@@ -71,11 +70,7 @@ class Ocean(Component):
         """Validate slab-ocean runtime fields."""
 
         _ = contract
-        validate_runtime_grid_data_field(
-            self,
-            component_state,
-            "sea_surface_temperature",
-        )
+        self.require_runtime_fields(component_state, "sea_surface_temperature")
 
     def step_runtime_state(
         self,
@@ -85,18 +80,22 @@ class Ocean(Component):
         """Advance the slab ocean on immutable runtime state."""
 
         dt_seconds = context.dt_seconds
-        data = component_state.data
-        try:
-            sea_surface_temperature = data.get("sea_surface_temperature")
-        except KeyError:
+        if "sea_surface_temperature" not in component_state.data.field_names:
             return component_state
-        try:
-            sensible_heat_flux = data.get("sensible_heat_flux")
-        except KeyError:
+        sea_surface_temperature = self.runtime_field(
+            component_state,
+            "sea_surface_temperature",
+        )
+        if "sensible_heat_flux" in component_state.data.field_names:
+            sensible_heat_flux = self.runtime_field(
+                component_state,
+                "sensible_heat_flux",
+            )
+        else:
             sensible_heat_flux = jnp.zeros_like(sea_surface_temperature)
-        try:
-            latent_heat_flux = data.get("latent_heat_flux")
-        except KeyError:
+        if "latent_heat_flux" in component_state.data.field_names:
+            latent_heat_flux = self.runtime_field(component_state, "latent_heat_flux")
+        else:
             latent_heat_flux = jnp.zeros_like(sea_surface_temperature)
 
         updated_sst = _advance_sea_surface_temperature(
@@ -110,6 +109,7 @@ class Ocean(Component):
             self.lambda_relax,
             _REFERENCE_SEA_SURFACE_TEMPERATURE,
         )
-        return component_state.with_data(
-            data.set("sea_surface_temperature", updated_sst)
+        return self.with_runtime_fields(
+            component_state,
+            {"sea_surface_temperature": updated_sst},
         )

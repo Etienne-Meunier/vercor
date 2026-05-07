@@ -442,8 +442,10 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     component.model_timestep = timedelta(hours=1)
     component.jitted = False
     component.do_spinup = True
+    component.name = "ATM"
     component.grid = make_test_grid()
     component.data = {}
+    component.settings = VercorSettings()
     component.save_interval = timedelta(days=1)
     component.output_frequency = None
     component.forcing_data = "provided-forcing"
@@ -499,8 +501,10 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
     component.model_timestep = timedelta(hours=1)
     component.jitted = False
     component.do_spinup = False
+    component.name = "ATM"
     component.grid = make_test_grid()
     component.data = {}
+    component.settings = VercorSettings()
     component.save_interval = timedelta(days=1)
     component.output_frequency = None
     component.forcing_data = None
@@ -1051,7 +1055,14 @@ def test_veros_initialize_can_spin_up_and_extract_surface_temperature() -> None:
     component.spinup_time = timedelta(seconds=20.0)
     component.spinup_steps = 2
     component._veros_state = _make_fake_veros_state(surface_temperature=10.0)
+    component.name = "OCN"
+    component.grid = make_test_grid(
+        name="ocn",
+        longitude=np.arange(4.0),
+        latitude=np.arange(4.0),
+    )
     component.data = {}
+    component.settings = VercorSettings()
 
     step_calls = {"count": 0}
 
@@ -1128,7 +1139,14 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component.model_substeps = 2
     component.jitted = False
     component._veros_state = _make_fake_veros_state(surface_temperature=12.0)
-    component.data = {}
+    component.name = "OCN"
+    component.grid = make_test_grid(
+        name="ocn",
+        longitude=np.arange(4.0),
+        latitude=np.arange(4.0),
+    )
+    component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
+    component.settings = VercorSettings()
 
     set_calls: list[tuple[str, np.ndarray]] = []
 
@@ -1189,7 +1207,14 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     component.model_substeps = 0
     component.jitted = False
     component._veros_state = _make_fake_veros_state(surface_temperature=12.0)
-    component.data = {}
+    component.name = "OCN"
+    component.grid = make_test_grid(
+        name="ocn",
+        longitude=np.arange(4.0),
+        latitude=np.arange(4.0),
+    )
+    component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
+    component.settings = VercorSettings()
 
     set_calls: list[tuple[str, np.ndarray]] = []
 

@@ -1,5 +1,58 @@
 # 2026-05-07
 
+## Helper-First Component Wrapping API
+
+- Added `Component.wrap()`, `DataComponent.wrap()`, and
+  `HostRuntimeComponent.wrap()` classmethod constructors while keeping the
+  existing `make_data_component()`, `make_differentiable_component()`, and
+  `make_host_component()` functions as backward-compatible delegates.
+- Extended callable wrappers with declarative `required_fields`,
+  `prefill_fields`, and `field_defaults` metadata so user callables can reserve
+  scan-stable runtime field slots without touching `RuntimeComponentState`.
+- Added grid-shaped seed helpers (`seed_zero_field()`, `seed_zero_fields()`,
+  `seed_constant_field()`) and `require_runtime_fields()` for subclass
+  validators.
+- Refactored bundled data, slab, JAXGCM, CAMulator, and Veros adapters to use
+  helper methods for setup field seeding and runtime field updates where their
+  lifecycle contracts allow it.
+- Added `examples/custom_component_wrapping.py` with data-only, differentiable
+  callable, and host-runtime wrapper examples.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the helper-first
+  component-author API.
+- Failed approaches / corrections:
+  - The red wrapper tests failed as expected because `wrap()` classmethods and
+    seed/default helpers did not exist yet.
+  - Focused external tests exposed lightweight `__new__()` fixtures that skipped
+    base initialization; those fixtures now provide the same minimal base
+    attributes and runtime field slots real initialized components provide.
+  - The first mypy pass rejected the intentionally narrower
+    `DataComponent.wrap()` signature and untyped mixin attributes; the final
+    implementation uses a targeted override ignore plus explicit casts in the
+    shared callable mixin.
+  - The first full-suite run exposed the same base-initialization fixture issue
+    in CAMulator step coverage; the fixture now uses the component runtime-field
+    initializer before host stepping.
+
+## Validation (Helper-First Component Wrapping API, 2026-05-07)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_wrap_classmethods_create_data_differentiable_and_host_components tests/test_component_base_coverage.py::test_wrapped_callable_component_prefills_and_validates_required_fields tests/test_component_base_coverage.py::test_wrapped_callable_component_reports_missing_required_fields tests/test_component_base_coverage.py::test_component_seed_default_helpers_and_required_field_validator -q --tb=short`
+  - failed as expected before implementation because the helper API was missing
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_external_components_coverage.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_camulator_component_kernels.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`105 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## User-Friendly Component Wrapping API
 
 - Added top-level and `vercor.components` factory helpers for common custom

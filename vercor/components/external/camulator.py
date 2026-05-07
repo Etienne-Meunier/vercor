@@ -522,7 +522,7 @@ class CAMulatorGCM(HostRuntimeComponent):
         self.forecast_hour = 1
         self.timestep_counter = 0
 
-        self.data.update(
+        self.seed_fields(
             _initialize_camulator_runtime_fields(self.grid.shape, context.settings)
         )
 
@@ -539,9 +539,8 @@ class CAMulatorGCM(HostRuntimeComponent):
             return component_state
 
         settings = context.settings
-        data = component_state.data
-
         prediction = None
+        last_total_surface_temperature: RuntimeArray | None = None
 
         block_start = self.start_ix + self.timestep_counter * self.model_substeps
         block_end = block_start + self.model_substeps
@@ -600,11 +599,11 @@ class CAMulatorGCM(HostRuntimeComponent):
                 model_input = self.state
 
             total_ts, rescaled_total_ts = _prepare_camulator_surface_forcing(
-                data.get("sea_surface_temperature"),
-                data.get("land_surface_temperature"),
+                self.runtime_field(component_state, "sea_surface_temperature"),
+                self.runtime_field(component_state, "land_surface_temperature"),
                 self.LANDM_COSLAT,
             )
-            data = data.set("total_surface_temperature", total_ts)
+            last_total_surface_temperature = total_ts
 
             # Land surface temperature is already rescaled in the same way as sst
             if logger is not None:
@@ -656,7 +655,7 @@ class CAMulatorGCM(HostRuntimeComponent):
         # Deposit final prediction into data dict for coupling (after chunk loop)
         # ================================================================
 
-        if prediction is None:
+        if prediction is None or last_total_surface_temperature is None:
             raise ValueError(
                 "No CAMulator timesteps were generated from the forcing slice; "
                 "check forcing availability and coupling timestep alignment."
@@ -673,7 +672,11 @@ class CAMulatorGCM(HostRuntimeComponent):
             state_transformer=self.state_transformer,
             prediction=prediction,
         )
-        for field_name, field_value in mapped_fields.items():
-            data = data.set(field_name, field_value)
 
-        return component_state.with_data(data)
+        return self.with_runtime_fields(
+            component_state,
+            {
+                "total_surface_temperature": last_total_surface_temperature,
+                **mapped_fields,
+            },
+        )

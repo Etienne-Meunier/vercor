@@ -4,10 +4,9 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components.base import Component
-from vercor.dtypes import as_jax_real_array, jax_zeros
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime.components import validate_runtime_grid_data_field
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
@@ -31,7 +30,7 @@ class SeaIce(Component):
         super().__init__(name, grid)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.data["ice_fraction"] = jax_zeros(self.grid.shape, context.settings)
+        self.seed_zero_field("ice_fraction", context.settings)
 
     def validate_runtime_state(
         self,
@@ -41,12 +40,11 @@ class SeaIce(Component):
         """Validate slab-sea-ice runtime fields."""
 
         _ = contract
-        for field_name in ("ice_fraction", "sea_surface_temperature"):
-            validate_runtime_grid_data_field(
-                self,
-                component_state,
-                field_name,
-            )
+        self.require_runtime_fields(
+            component_state,
+            "ice_fraction",
+            "sea_surface_temperature",
+        )
 
     def step_runtime_state(
         self,
@@ -56,10 +54,14 @@ class SeaIce(Component):
         """Diagnose slab sea-ice fraction on immutable runtime state."""
 
         _ = context
-        data = component_state.data
-        try:
-            sea_surface_temperature = data.get("sea_surface_temperature")
-        except KeyError:
+        if "sea_surface_temperature" not in component_state.data.field_names:
             return component_state
+        sea_surface_temperature = self.runtime_field(
+            component_state,
+            "sea_surface_temperature",
+        )
         ice_fraction = _diagnose_ice_fraction(sea_surface_temperature)
-        return component_state.with_data(data.set("ice_fraction", ice_fraction))
+        return self.with_runtime_fields(
+            component_state,
+            {"ice_fraction": ice_fraction},
+        )

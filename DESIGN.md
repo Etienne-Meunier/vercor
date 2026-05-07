@@ -105,16 +105,26 @@ immutable runtime containers used during traced integration.
   grids, regridders, and bundled concrete components are the objects users
   compose when configuring a coupled run.
 - Component-author API: `Component`, `DataComponent`, and
-  `HostRuntimeComponent` are the stable extension points. All custom adapters
-  seed setup-time fields on `Component.data` and call the base constructor so
-  `name`, `grid`, `data`, and a component-owned `VercorSettings` container are
-  available during initialization, execution, and finalization. `Component.data`
-  is a grid-field store, not a
+  `HostRuntimeComponent` are the stable extension points. Custom adapters should
+  use the helper-first authoring layer where possible: `DataComponent.wrap()` for
+  data-only fields, `Component.wrap()` for pure callable JAX models, and
+  `HostRuntimeComponent.wrap()` for Python host-side models. The older
+  `make_data_component()`, `make_differentiable_component()`, and
+  `make_host_component()` functions remain backward-compatible delegates to
+  those classmethods. Subclasses should call the base constructor so `name`,
+  `grid`, `data`, and a component-owned `VercorSettings` container are available
+  during initialization, execution, and finalization. `Component.data` is a
+  grid-field store, not a
   general metadata store: all entries must use one of the canonical layouts
   `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
   `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
-  contract before traced execution, and non-grid metadata such as hybrid-level
-  coefficients belongs on component attributes or runtime payloads. Use
+  contract before traced execution. Subclasses should seed fields with
+  `seed_field()`, `seed_fields()`, `seed_zero_field()`, `seed_zero_fields()`, or
+  `seed_constant_field()` rather than mutating `data` directly; step methods
+  should read fields with `runtime_field()` / `runtime_fields()` and return
+  updates with `with_runtime_fields()` where possible. Non-grid metadata such as
+  hybrid-level coefficients belongs on component attributes or runtime payloads.
+  Use
   `Component` for differentiable active models and implement
   `step_runtime_state()`. Use `DataComponent` for forcing/static data adapters
   that intentionally keep the shared no-op runtime step and do not create
@@ -124,15 +134,15 @@ immutable runtime containers used during traced integration.
   `step_host_runtime_state()`; host-backed adapters must run through
   `Coupler.run()` so VerCOR can select the Python host runtime path. Optional
   hooks include `initialize()`, `create_runtime_payload()`,
-  `prefill_runtime_state_fields()`, and `validate_runtime_state()`. For common
-  adapters that only need seeded grid fields plus a runtime callable, users may
-  use `make_data_component()`, `make_differentiable_component()`, or
-  `make_host_component()` instead of writing a subclass. Callable wrappers
-  receive `(fields, context, payload)` and return either a field-update mapping
-  or `ComponentStepResult(fields, payload)` when the runtime payload must be
-  replaced. These helpers still enforce the same stable runtime-state contract:
-  updated fields must already exist through seeded data or exchange prefill, and
-  scanned payload pytrees must keep stable shapes and dtypes.
+  `prefill_runtime_state_fields()`, and `validate_runtime_state()`. Callable
+  wrappers receive `(fields, context, payload)` and return either a field-update
+  mapping or `ComponentStepResult(fields, payload)` when the runtime payload must
+  be replaced. Wrappers can declare `required_fields`, `prefill_fields`, and
+  `field_defaults` so expected exchange inputs and output slots exist before the
+  first scanned step. These helpers still enforce the same stable runtime-state
+  contract: updated fields must already exist through seeded data, wrapper
+  prefill/defaults, or exchange prefill, and scanned payload pytrees must keep
+  stable shapes and dtypes.
 - Internal runtime API: the `vercor.runtime` package owns
   `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime
   contexts, dispatch contexts, and runtime helper functions. These containers

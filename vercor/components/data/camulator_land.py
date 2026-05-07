@@ -12,7 +12,6 @@ from vercor.components.external.camulator_state import (
 
 from vercor.grid import RectilinearGrid
 from vercor.components.base import HostRuntimeComponent
-from vercor.dtypes import jax_full
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.grid_masks import create_lnd_mask_from_ocn
 
@@ -119,9 +118,7 @@ class CAMulatorLand(HostRuntimeComponent):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.data["land_surface_temperature"] = jax_full(
-            self.grid.shape, 283.0, context.settings
-        )
+        self.seed_constant_field("land_surface_temperature", 283.0, context.settings)
 
     def step_host_runtime_state(
         self,
@@ -134,16 +131,16 @@ class CAMulatorLand(HostRuntimeComponent):
         if time is None:
             return component_state
 
-        data = component_state.data
-
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
 
-        data = data.set(
-            "land_surface_temperature",
-            _prepare_camulator_land_surface_temperature(ts["TS"].values),
-        )
-
         self.timestep_counter += 1
 
-        return component_state.with_data(data)
+        return self.with_runtime_fields(
+            component_state,
+            {
+                "land_surface_temperature": (
+                    _prepare_camulator_land_surface_temperature(ts["TS"].values)
+                )
+            },
+        )

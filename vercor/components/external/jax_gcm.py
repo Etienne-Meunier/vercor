@@ -400,7 +400,7 @@ class JAXGCM(Component):
 
         self._step_function = self._generate_step_function(jitted=self.jitted)
 
-        self.data.update(
+        self.seed_fields(
             _default_jax_gcm_grid_fields(
                 self.grid.shape,
                 include_total_surface_temperature=False,
@@ -555,14 +555,18 @@ class JAXGCM(Component):
             averaged_prediction.dynamics.specific_humidity,
         )
 
-        data = data.set("land_surface_temperature", land_surface_temperature)
-        data = data.set("sea_surface_temperature", sea_surface_temperature)
-        data = data.set("total_surface_temperature", total_surface_temperature)
-        for field_name, field_value in mapped_fields.items():
-            data = data.set(field_name, field_value)
+        updated_state = self.with_runtime_fields(
+            component_state,
+            {
+                "land_surface_temperature": land_surface_temperature,
+                "sea_surface_temperature": sea_surface_temperature,
+                "total_surface_temperature": total_surface_temperature,
+                **mapped_fields,
+            },
+        )
 
         return (
-            component_state.with_data(data).with_runtime_payload(
+            updated_state.with_runtime_payload(
                 JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=payload.forcing)
             ),
             prediction,

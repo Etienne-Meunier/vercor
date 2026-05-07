@@ -628,10 +628,21 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     component.static_forcing = torch.zeros((1, 1, 1, 2, 2))
     component.state = torch.zeros((1, 1, 1, 2, 2))
     component.LANDM_COSLAT = jnp.asarray([[0.0, 1.0], [0.5, 0.0]])
-    component.data = {
-        "sea_surface_temperature": jnp.asarray([[1.0, 2.0], [3.0, 4.0]]),
-        "land_surface_temperature": jnp.asarray([[10.0, 20.0], [30.0, 40.0]]),
-    }
+    component.name = "ATM"
+    component.grid = RectilinearGrid(
+        name="atm",
+        longitude=jnp.asarray([0.0, 1.0]),
+        latitude=jnp.asarray([0.0, 1.0]),
+    )
+    component.settings = VercorSettings()
+    component.data = _initialize_camulator_runtime_fields(
+        component.grid.shape,
+        component.settings,
+    )
+    component.data["sea_surface_temperature"] = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+    component.data["land_surface_temperature"] = jnp.asarray(
+        [[10.0, 20.0], [30.0, 40.0]]
+    )
     component.accessor_input = _StepAccessor()
     component.accessor_output = _OutputAccessor()
     component.latlons = SimpleNamespace(
