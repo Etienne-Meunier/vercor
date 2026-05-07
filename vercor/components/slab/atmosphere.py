@@ -9,7 +9,7 @@ from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
+    from vercor.runtime import RuntimeComponentState
 
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -58,38 +58,28 @@ class Atmosphere(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "ATM") -> None:
         super().__init__(name, grid)
-
-    def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_constant_field(
-            "temperature_2m",
-            _REFERENCE_SURFACE_TEMPERATURE,
-            context.settings,
-        )
-        self.seed_zero_fields(
-            (
+        self.declare_fields(
+            inputs=("sea_surface_temperature",),
+            outputs=(
+                "temperature_2m",
                 "sensible_heat_flux",
                 "latent_heat_flux",
                 "u_velocity_10m",
                 "v_velocity_10m",
             ),
-            context.settings,
+            default_fields={"temperature_2m": _REFERENCE_SURFACE_TEMPERATURE},
         )
 
-    def validate_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract",
-    ) -> None:
-        """Validate slab-atmosphere runtime fields."""
-
-        _ = contract
-        self.require_runtime_fields(
-            component_state,
-            "temperature_2m",
-            "sensible_heat_flux",
-            "latent_heat_flux",
-            "u_velocity_10m",
-            "v_velocity_10m",
+    def initialize(self, context: ComponentInitContext) -> None:
+        self.seed_fields(
+            {
+                "temperature_2m": _REFERENCE_SURFACE_TEMPERATURE,
+                "sensible_heat_flux": 0.0,
+                "latent_heat_flux": 0.0,
+                "u_velocity_10m": 0.0,
+                "v_velocity_10m": 0.0,
+            },
+            context.settings,
         )
 
     def step_runtime_state(

@@ -45,6 +45,9 @@ _FieldNames: TypeAlias = Iterable[str]
 _FieldDefaults: TypeAlias = Mapping[str, RuntimeArray] | None
 _AuthorFieldValues: TypeAlias = Mapping[str, object] | None
 
+ComponentSetupContext = ComponentInitContext
+ComponentStepContext = RuntimeStepContext
+
 
 @dataclass(frozen=True)
 class ComponentFieldSpec:
@@ -186,7 +189,7 @@ class Component(ABC):
             )
             or {},
         )
-        return make_differentiable_component(
+        component = make_differentiable_component(
             name=name,
             grid=grid,
             step=step,
@@ -202,6 +205,8 @@ class Component(ABC):
             prefill_fields=field_spec.outputs,
             field_defaults=cast(_FieldDefaults, field_spec.default_fields),
         )
+        component._field_spec = field_spec
+        return component
 
     def declare_fields(
         self,
@@ -239,25 +244,40 @@ class Component(ABC):
         )
         return self._field_spec
 
-    def seed_field(self, name: str, value: RuntimeArray) -> "Component":
+    @property
+    def field_spec(self) -> ComponentFieldSpec:
+        """Return this component's declared author-facing runtime field contract."""
+
+        return _component_field_spec(self)
+
+    def seed_field(
+        self,
+        name: str,
+        value: object,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
         """Seed one setup-time grid field and return this component.
 
         Seeded fields must follow VerCOR's canonical component-data layout so
         runtime state can be created with a stable PyTree structure.
         """
 
-        return self.seed_fields({name: value})
+        return self.seed_fields({name: value}, policy=policy)
 
-    def seed_fields(self, fields: Mapping[str, RuntimeArray]) -> "Component":
+    def seed_fields(
+        self,
+        fields: Mapping[str, object],
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
         """Seed setup-time grid fields and return this component."""
 
-        field_updates = dict(fields)
-        validate_component_data_layout(
+        field_updates = _normalize_author_field_values(
             component_name=self.name,
-            grid_shape=self.grid.shape,
-            data=field_updates,
+            grid=self.grid,
+            fields=fields,
+            policy=self.settings if policy is None else policy,
         )
-        self.data.update(field_updates)
+        self.data.update(field_updates or {})
         return self
 
     def seed_zero_field(
@@ -639,7 +659,7 @@ class HostRuntimeComponent(Component):
             )
             or {},
         )
-        return make_host_component(
+        component = make_host_component(
             name=name,
             grid=grid,
             step=step,
@@ -655,6 +675,8 @@ class HostRuntimeComponent(Component):
             prefill_fields=field_spec.outputs,
             field_defaults=cast(_FieldDefaults, field_spec.default_fields),
         )
+        component._field_spec = field_spec
+        return component
 
     @classmethod
     def wrap(
@@ -966,6 +988,80 @@ def _unique_field_names(field_names: _FieldNames) -> tuple[str, ...]:
         if field_name not in unique:
             unique.append(field_name)
     return tuple(unique)
+
+
+def data_component(
+    name: str,
+    grid: RectilinearGrid,
+    fields: _AuthorFieldValues = None,
+    settings: VercorSettings | None = None,
+) -> DataComponent:
+    """Create a data-only component using the author-friendly field facade."""
+
+    return DataComponent.from_fields(
+        name=name,
+        grid=grid,
+        fields=fields,
+        settings=settings,
+    )
+
+
+def differentiable_component(
+    name: str,
+    grid: RectilinearGrid,
+    step: _ComponentStepCallable,
+    initial_fields: _AuthorFieldValues = None,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    *,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+    required_fields: _FieldNames = (),
+) -> Component:
+    """Create a differentiable component using the author-friendly facade."""
+
+    return Component.from_model(
+        name=name,
+        grid=grid,
+        step=step,
+        initial_fields=initial_fields,
+        payload=payload,
+        settings=settings,
+        inputs=inputs,
+        outputs=outputs,
+        default_fields=default_fields,
+        required_fields=required_fields,
+    )
+
+
+def host_component(
+    name: str,
+    grid: RectilinearGrid,
+    step: _ComponentStepCallable,
+    initial_fields: _AuthorFieldValues = None,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    *,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+    required_fields: _FieldNames = (),
+) -> HostRuntimeComponent:
+    """Create a host-runtime component using the author-friendly facade."""
+
+    return HostRuntimeComponent.from_model(
+        name=name,
+        grid=grid,
+        step=step,
+        initial_fields=initial_fields,
+        payload=payload,
+        settings=settings,
+        inputs=inputs,
+        outputs=outputs,
+        default_fields=default_fields,
+        required_fields=required_fields,
+    )
 
 
 def make_data_component(

@@ -141,6 +141,87 @@ def test_make_data_component_seeds_canonical_fields() -> None:
 
 
 @pytest.mark.fast_always
+def test_convenience_factories_delegate_to_authoring_facade() -> None:
+    grid = make_test_grid(name="author-factories")
+
+    data_component = base_module.data_component(
+        name="OBS",
+        grid=grid,
+        fields={"temperature": 281.0},
+    )
+    assert isinstance(data_component, base_module.DataComponent)
+    assert_allclose_compact(
+        data_component.data["temperature"],
+        np.full(grid.shape, 281.0),
+    )
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: base_module.ComponentStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = payload
+        return {
+            "temperature": fields["temperature"] + fields["forcing"],
+            "tendency": fields["tendency"] + context.dt_seconds,
+        }
+
+    differentiable = base_module.differentiable_component(
+        name="ATM",
+        grid=grid,
+        step=step,
+        initial_fields={"temperature": 280.0},
+        inputs=("forcing",),
+        outputs=("temperature", "tendency"),
+        default_fields={"forcing": 2.0},
+    )
+    assert isinstance(differentiable, base_module.Component)
+    assert differentiable.field_spec.inputs == ("forcing",)
+    assert differentiable.field_spec.outputs == ("temperature", "tendency")
+
+    state = create_runtime_component_state(
+        differentiable,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+    stepped = differentiable.step_runtime_state(
+        state,
+        RuntimeStepContext(dt_seconds=3.0, settings=VercorSettings()),
+    )
+    assert_allclose_compact(
+        stepped.data.get("temperature"),
+        np.full(grid.shape, 282.0),
+    )
+    assert_allclose_compact(
+        stepped.data.get("tendency"),
+        np.full(grid.shape, 3.0),
+    )
+
+    host = base_module.host_component(
+        name="HOST",
+        grid=grid,
+        step=step,
+        initial_fields={"temperature": 1.0},
+        outputs=("temperature",),
+        default_fields={"forcing": 4.0, "tendency": 0.0},
+    )
+    assert isinstance(host, base_module.HostRuntimeComponent)
+    host_state = create_runtime_component_state(
+        host,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+    host_stepped = host.step_host_runtime_state(
+        host_state,
+        RuntimeStepContext(dt_seconds=5.0, settings=VercorSettings()),
+    )
+    assert_allclose_compact(
+        host_stepped.data.get("temperature"),
+        np.full(grid.shape, 5.0),
+    )
+
+
+@pytest.mark.fast_always
 def test_wrap_classmethods_create_data_differentiable_and_host_components() -> None:
     grid = make_test_grid(name="wrap")
 
@@ -259,6 +340,39 @@ def test_from_fields_and_from_model_facade_expand_scalar_defaults() -> None:
         stepped.data.get("tendency"),
         np.full(grid.shape, 3.0),
     )
+
+
+@pytest.mark.fast_always
+def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> None:
+    grid = make_test_grid(name="scalar-seed")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+
+    returned_spec = component.declare_fields(
+        inputs=("forcing",),
+        outputs=("temperature",),
+        required_fields=("humidity",),
+        default_fields={"pressure": 101325.0},
+    )
+    assert component.field_spec == returned_spec
+    assert component.field_spec.inputs == ("forcing",)
+    assert component.field_spec.outputs == ("temperature",)
+    assert component.field_spec.required_fields == ("humidity",)
+    assert "pressure" in component.field_spec.default_fields
+    with pytest.raises(AttributeError):
+        component.field_spec = base_module.ComponentFieldSpec()  # type: ignore[misc]
+
+    component.seed_field("temperature", 280.0)
+    component.seed_fields({"humidity": 0.5, "forcing": jnp.ones(grid.shape)})
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+
+    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.data.get("humidity"), np.full(grid.shape, 0.5))
+    assert_allclose_compact(state.data.get("forcing"), np.ones(grid.shape))
+    assert_allclose_compact(state.data.get("pressure"), np.full(grid.shape, 101325.0))
 
 
 @pytest.mark.fast_always

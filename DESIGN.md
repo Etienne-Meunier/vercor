@@ -106,15 +106,19 @@ immutable runtime containers used during traced integration.
   compose when configuring a coupled run.
 - Component-author API: `Component`, `DataComponent`, and
   `HostRuntimeComponent` are the stable extension points. Custom adapters should
-  use the helper-first authoring layer where possible:
+  use the helper-first authoring layer where possible. The most concise public
+  helpers are `data_component()`, `differentiable_component()`, and
+  `host_component()`, which delegate to the class-level constructors:
   `DataComponent.from_fields()` for data-only fields, `Component.from_model()`
   for pure callable JAX models, and `HostRuntimeComponent.from_model()` for
   Python host-side models. These helpers use author-facing field names:
   `initial_fields` seed model state, `inputs` declare fields the model reads,
   `outputs` declare fields the model writes, and `default_fields` declare
-  concrete fallback fields. Scalar initial/default values expand to grid-shaped
-  constants. `ComponentFieldSpec` and `declare_fields()` provide the same
-  vocabulary for subclasses. The older `wrap()` classmethods and
+  concrete fallback fields. Scalar initial, default, and seeded values expand
+  to grid-shaped constants. `ComponentSetupContext` and `ComponentStepContext`
+  are public aliases for the setup and step contexts passed to author callbacks.
+  `ComponentFieldSpec`, `field_spec`, and `declare_fields()` provide the same
+  vocabulary and read-only introspection for subclasses. The older `wrap()` classmethods and
   `make_data_component()`, `make_differentiable_component()`, and
   `make_host_component()` functions remain backward-compatible delegates to
   the strict array-oriented wrapper path. Subclasses should call the base constructor so `name`,
@@ -125,8 +129,9 @@ immutable runtime containers used during traced integration.
   `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
   `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
   contract before traced execution. Subclasses should seed fields with
-  `seed_field()`, `seed_fields()`, `seed_zero_field()`, `seed_zero_fields()`, or
-  `seed_constant_field()` rather than mutating `data` directly; step methods
+  `seed_field()` or `seed_fields()` for scalar or array-like author values, or
+  with the explicit zero/constant helpers when that reads better, rather than
+  mutating `data` directly; step methods
   should read fields with `runtime_field()`, `runtime_fields()`,
   `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
   with `with_runtime_fields()` where possible. Prefill hooks should use

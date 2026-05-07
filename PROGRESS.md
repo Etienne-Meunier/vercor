@@ -1,5 +1,52 @@
 # 2026-05-07
 
+## Component Authoring API Refinement
+
+- Added concise public authoring helpers: `data_component()`,
+  `differentiable_component()`, and `host_component()` at both the top-level
+  `vercor` package and `vercor.components`.
+- Added public `ComponentSetupContext` and `ComponentStepContext` aliases so
+  examples and user callbacks can type setup/step contexts without importing
+  internal runtime modules.
+- Broadened `seed_field()` and `seed_fields()` to accept scalar and array-like
+  author values, expanding scalars to grid-shaped fields under the selected
+  precision policy.
+- Added read-only `field_spec` introspection for declared
+  `ComponentFieldSpec` contracts and preserved `inputs` / `outputs`
+  declarations through the `from_model()` facade.
+- Refactored the custom wrapping example to use the new public helpers and
+  step-context alias.
+- Refactored slab components to declare their field contracts once, rely on
+  base declaration prefill/validation, and use scalar-friendly setup seeding.
+- Failed approaches / corrections:
+  - The red API run failed as expected because the helper functions, context
+    aliases, and `field_spec` property did not exist yet.
+  - The first green run exposed that declared slab outputs now prefill
+    uninitialized runtime state; slab declarations now provide meaningful
+    scalar defaults for prognostic state fields, and coverage expectations were
+    updated to reflect the declared contract.
+
+## Validation (Component Authoring API Refinement, 2026-05-07)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py tests/test_component_models_coverage.py -q --tb=short`
+  - failed as expected before implementation on missing `data_component()`,
+    `field_spec`, public exports, and slab field declarations
+  - passed after implementation and slab default refinements
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 105 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`105 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Authoring Facade Refinement
 
 - Added the public `ComponentFieldSpec` declaration type and author-friendly

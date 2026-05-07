@@ -67,6 +67,14 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     atmosphere = Atmosphere(grid=grid)
+    assert atmosphere.field_spec.inputs == ("sea_surface_temperature",)
+    assert atmosphere.field_spec.outputs == (
+        "temperature_2m",
+        "sensible_heat_flux",
+        "latent_heat_flux",
+        "u_velocity_10m",
+        "v_velocity_10m",
+    )
     atmosphere.initialize(coupler.init_context())
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
@@ -97,9 +105,15 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     ocean = Ocean(grid=grid)
+    assert ocean.field_spec.inputs == ("sensible_heat_flux", "latent_heat_flux")
+    assert ocean.field_spec.outputs == ("sea_surface_temperature",)
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
     assert ocean.data == {}
-    assert ocean_state.data.field_names == ()
+    assert ocean_state.data.field_names == ("sea_surface_temperature",)
+    assert_allclose_compact(
+        ocean_state.data.get("sea_surface_temperature"),
+        np.full(grid.shape, 288.15),
+    )
 
     ocean.initialize(coupler.init_context())
     ocean.data["sensible_heat_flux"] = np.full(grid.shape, 20.0)
@@ -111,6 +125,8 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert np.all(np.asarray(ocean_sst) > starting_sst)
 
     land = Land(grid=grid)
+    assert land.field_spec.inputs == ("latent_heat_flux",)
+    assert land.field_spec.outputs == ("soil_moisture", "land_surface_temperature")
     land.initialize(coupler.init_context())
     land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
     land_state = _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
@@ -119,9 +135,12 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert np.all(np.asarray(soil_moisture) < 0.3)
 
     seaice = SeaIce(grid=grid)
+    assert seaice.field_spec.inputs == ("sea_surface_temperature",)
+    assert seaice.field_spec.outputs == ("ice_fraction",)
     seaice_state = _step_component(seaice, dt, timestamp, coupler)
     assert seaice.data == {}
-    assert seaice_state.data.field_names == ()
+    assert seaice_state.data.field_names == ("ice_fraction",)
+    assert_allclose_compact(seaice_state.data.get("ice_fraction"), np.zeros(grid.shape))
 
     seaice.initialize(coupler.init_context())
     seaice.data["sea_surface_temperature"] = np.asarray(

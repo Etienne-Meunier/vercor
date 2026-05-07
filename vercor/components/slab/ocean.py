@@ -8,7 +8,7 @@ from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
+    from vercor.runtime import RuntimeComponentState
 
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -46,6 +46,13 @@ class Ocean(Component):
         self, grid: RectilinearGrid, name: str = "OCN", H: float = 30.0
     ) -> None:
         super().__init__(name, grid)
+        self.declare_fields(
+            inputs=("sensible_heat_flux", "latent_heat_flux"),
+            outputs=("sea_surface_temperature",),
+            default_fields={
+                "sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE
+            },
+        )
 
         self.H = H  # mixed-layer depth [m]
         self.rho = 1025.0
@@ -55,21 +62,11 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_constant_field(
+        self.seed_field(
             "sea_surface_temperature",
             _REFERENCE_SEA_SURFACE_TEMPERATURE,
             context.settings,
         )
-
-    def validate_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract",
-    ) -> None:
-        """Validate slab-ocean runtime fields."""
-
-        _ = contract
-        self.require_runtime_fields(component_state, "sea_surface_temperature")
 
     def step_runtime_state(
         self,

@@ -8,6 +8,7 @@ import vercor
 import vercor.components as components_module
 from tests._coverage_support import make_test_grid
 from vercor.components.base import Component, HostRuntimeComponent
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.run_sequence import RunSequence
 from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
 
@@ -18,6 +19,8 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "Clock",
         "Component",
         "ComponentFieldSpec",
+        "ComponentSetupContext",
+        "ComponentStepContext",
         "ComponentStepResult",
         "Coupler",
         "DataComponent",
@@ -25,6 +28,9 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "HostRuntimeComponent",
         "RectilinearGrid",
         "RunSequence",
+        "data_component",
+        "differentiable_component",
+        "host_component",
         "make_data_component",
         "make_differentiable_component",
         "make_host_component",
@@ -46,11 +52,16 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 
     assert vercor.Component is Component
     assert vercor.ComponentFieldSpec is components_module.ComponentFieldSpec
+    assert vercor.ComponentSetupContext is ComponentInitContext
+    assert vercor.ComponentStepContext is RuntimeStepContext
     assert vercor.ComponentStepResult is components_module.ComponentStepResult
     data_component_type = getattr(components_module, "DataComponent", None)
     assert data_component_type is not None
     assert getattr(vercor, "DataComponent", None) is data_component_type
     assert vercor.HostRuntimeComponent is HostRuntimeComponent
+    assert vercor.data_component is components_module.data_component
+    assert vercor.differentiable_component is components_module.differentiable_component
+    assert vercor.host_component is components_module.host_component
     assert vercor.make_data_component is components_module.make_data_component
     assert (
         vercor.make_differentiable_component
@@ -67,18 +78,28 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert components_module.__all__ == [
         "Component",
         "ComponentFieldSpec",
+        "ComponentSetupContext",
+        "ComponentStepContext",
         "ComponentStepResult",
         "DataComponent",
         "HostRuntimeComponent",
+        "data_component",
+        "differentiable_component",
+        "host_component",
         "make_data_component",
         "make_differentiable_component",
         "make_host_component",
     ]
     assert components_module.Component is Component
     assert hasattr(components_module, "ComponentFieldSpec")
+    assert components_module.ComponentSetupContext is ComponentInitContext
+    assert components_module.ComponentStepContext is RuntimeStepContext
     assert hasattr(components_module, "ComponentStepResult")
     assert hasattr(components_module, "DataComponent")
     assert components_module.HostRuntimeComponent is HostRuntimeComponent
+    assert hasattr(components_module, "data_component")
+    assert hasattr(components_module, "differentiable_component")
+    assert hasattr(components_module, "host_component")
     assert hasattr(components_module, "make_data_component")
     assert hasattr(components_module, "make_differentiable_component")
     assert hasattr(components_module, "make_host_component")

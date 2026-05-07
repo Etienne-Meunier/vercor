@@ -9,7 +9,7 @@ from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
+    from vercor.runtime import RuntimeComponentState
 
 
 @jax.jit
@@ -28,23 +28,13 @@ class SeaIce(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "ICE") -> None:
         super().__init__(name, grid)
+        self.declare_fields(
+            inputs=("sea_surface_temperature",),
+            outputs=("ice_fraction",),
+        )
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_zero_field("ice_fraction", context.settings)
-
-    def validate_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract",
-    ) -> None:
-        """Validate slab-sea-ice runtime fields."""
-
-        _ = contract
-        self.require_runtime_fields(
-            component_state,
-            "ice_fraction",
-            "sea_surface_temperature",
-        )
+        self.seed_field("ice_fraction", 0.0, context.settings)
 
     def step_runtime_state(
         self,

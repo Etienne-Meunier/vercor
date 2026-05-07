@@ -118,7 +118,7 @@ class CAMulatorLand(HostRuntimeComponent):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.seed_constant_field("land_surface_temperature", 283.0, context.settings)
+        self.seed_field("land_surface_temperature", 283.0, context.settings)
 
     def step_host_runtime_state(
         self,

@@ -6,7 +6,16 @@ from typing import Any
 
 import jax.numpy as jnp
 
-from vercor import Component, ComponentStepResult, DataComponent, HostRuntimeComponent
+from vercor import (
+    Component,
+    ComponentStepContext,
+    ComponentStepResult,
+    DataComponent,
+    HostRuntimeComponent,
+    data_component,
+    differentiable_component,
+    host_component,
+)
 from vercor.grid import RectilinearGrid
 
 
@@ -23,7 +32,7 @@ def make_example_grid() -> RectilinearGrid:
 def make_data_forcing(grid: RectilinearGrid) -> DataComponent:
     """Wrap static or time-dependent forcing fields without a runtime step."""
 
-    return DataComponent.from_fields(
+    return data_component(
         name="ATM",
         grid=grid,
         fields={
@@ -38,7 +47,7 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
 
     def step(
         fields: Mapping[str, Any],
-        context: Any,
+        context: ComponentStepContext,
         payload: Any | None,
     ) -> Mapping[str, Any]:
         _ = payload
@@ -50,7 +59,7 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
             )
         }
 
-    return Component.from_model(
+    return differentiable_component(
         name="OCN",
         grid=grid,
         step=step,
@@ -77,7 +86,7 @@ def make_host_model(grid: RectilinearGrid) -> HostRuntimeComponent:
 
     def step(
         fields: Mapping[str, Any],
-        context: Any,
+        context: ComponentStepContext,
         payload: Any | None,
     ) -> ComponentStepResult:
         if not isinstance(payload, ToyHostModel):
@@ -88,7 +97,7 @@ def make_host_model(grid: RectilinearGrid) -> HostRuntimeComponent:
             payload=payload,
         )
 
-    return HostRuntimeComponent.from_model(
+    return host_component(
         name="LND",
         grid=grid,
         step=step,

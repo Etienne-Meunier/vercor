@@ -9,7 +9,7 @@ from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.runtime import RuntimeComponentContract, RuntimeComponentState
+    from vercor.runtime import RuntimeComponentState
 
 
 @jax.jit
@@ -32,20 +32,17 @@ class Land(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "LND") -> None:
         super().__init__(name, grid)
+        self.declare_fields(
+            inputs=("latent_heat_flux",),
+            outputs=("soil_moisture", "land_surface_temperature"),
+            default_fields={"soil_moisture": 0.3, "land_surface_temperature": 288.15},
+        )
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_constant_field("soil_moisture", 0.3, context.settings)
-        self.seed_constant_field("land_surface_temperature", 288.15, context.settings)
-
-    def validate_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract",
-    ) -> None:
-        """Validate slab-land runtime fields."""
-
-        _ = contract
-        self.require_runtime_fields(component_state, "soil_moisture")
+        self.seed_fields(
+            {"soil_moisture": 0.3, "land_surface_temperature": 288.15},
+            context.settings,
+        )
 
     def step_runtime_state(
         self,
