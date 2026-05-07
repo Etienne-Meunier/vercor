@@ -1,16 +1,31 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Self, TypeAlias, cast, final
+from typing import TYPE_CHECKING, Any, Self, cast, final
 
 import jax.numpy as jnp
 
 from vercor.dtypes import PrecisionPolicy, jax_full, jax_zeros
+from vercor.components._contracts import (
+    ComponentStepResult as ComponentStepResult,
+)
+from vercor.components._contracts import (
+    AuthorFieldValues as _AuthorFieldValues,
+    AuthorStepCallable as _AuthorStepCallable,
+    ComponentFieldSpec,
+    ComponentStepReturn as _ComponentStepReturn,
+    FieldDefaults as _FieldDefaults,
+    FieldNames as _FieldNames,
+    component_field_spec as _component_field_spec,
+    merge_component_outputs as _merge_component_outputs,
+    normalize_author_field_values as _normalize_author_field_values,
+    required_field_names as _required_field_names,
+    unique_field_names as _unique_field_names,
+)
+from vercor.components._validation import validate_component_setup
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.field_layout import validate_component_data_layout
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
@@ -23,63 +38,9 @@ if TYPE_CHECKING:
     )
 
 
-@dataclass(frozen=True)
-class ComponentStepResult:
-    """Result returned by callable component wrappers.
-
-    Attributes:
-        fields: Runtime data fields to update.
-        payload: Replacement runtime payload. Use a plain mapping return from a
-            callable step when the existing payload should be preserved.
-    """
-
-    fields: Mapping[str, RuntimeArray]
-    payload: Any | None = None
-
-
-_ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | ComponentStepResult
-_ComponentStepCallable: TypeAlias = Callable[
-    [Mapping[str, RuntimeArray], RuntimeStepContext, Any | None],
-    _ComponentStepReturn,
-]
-_AuthorStepCallable: TypeAlias = Callable[..., _ComponentStepReturn]
-_FieldNames: TypeAlias = Iterable[str]
-_FieldDefaults: TypeAlias = Mapping[str, RuntimeArray] | None
-_AuthorFieldValues: TypeAlias = Mapping[str, object] | None
-
 ComponentSetupContext = ComponentInitContext
 ComponentStepContext = RuntimeStepContext
-
-
-@dataclass(frozen=True)
-class ComponentFieldSpec:
-    """Author-facing declaration of a component's runtime data-field contract.
-
-    Attributes:
-        inputs: Fields the model expects to read from runtime data.
-        outputs: Fields the model may write. These are pre-seeded as grid-shaped
-            zeros before traced runtime execution.
-        required_fields: Extra fields that must already exist but should not be
-            pre-seeded by this declaration.
-        default_fields: Field defaults used when runtime state is created.
-    """
-
-    inputs: _FieldNames = ()
-    outputs: _FieldNames = ()
-    required_fields: _FieldNames = ()
-    default_fields: Mapping[str, object] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Normalize field-name iterables once while preserving declaration order."""
-
-        object.__setattr__(self, "inputs", _unique_field_names(self.inputs))
-        object.__setattr__(self, "outputs", _unique_field_names(self.outputs))
-        object.__setattr__(
-            self,
-            "required_fields",
-            _unique_field_names(self.required_fields),
-        )
-        object.__setattr__(self, "default_fields", dict(self.default_fields))
+_PUBLIC_REEXPORTS = (ComponentStepResult, validate_component_setup)
 
 
 @dataclass
@@ -142,7 +103,7 @@ class Component(ABC):
         """
 
         _ = cls
-        return make_differentiable_component(
+        return _make_differentiable_callable_component(
             name=name,
             grid=grid,
             step=step,
@@ -191,7 +152,7 @@ class Component(ABC):
             )
             or {},
         )
-        component = make_differentiable_component(
+        component = _make_differentiable_callable_component(
             name=name,
             grid=grid,
             step=step,
@@ -494,7 +455,9 @@ class Component(ABC):
     ) -> "RuntimeComponentState":
         """Apply a field mapping or ``ComponentStepResult`` to runtime state."""
 
-        return _apply_callable_step_result(self, component_state, result)
+        from vercor.components._callable_wrappers import apply_callable_step_result
+
+        return apply_callable_step_result(self, component_state, result)
 
     def require_runtime_fields(
         self,
@@ -744,7 +707,7 @@ class HostRuntimeComponent(Component):
             )
             or {},
         )
-        component = make_host_component(
+        component = _make_host_callable_component(
             name=name,
             grid=grid,
             step=step,
@@ -785,7 +748,7 @@ class HostRuntimeComponent(Component):
         """
 
         _ = cls
-        return make_host_component(
+        return _make_host_callable_component(
             name=name,
             grid=grid,
             step=step,
@@ -822,373 +785,62 @@ class HostRuntimeComponent(Component):
         """Advance this non-differentiable host adapter by one runtime step."""
 
 
-class _CallableRuntimeMixin:
-    """Shared metadata hooks for callable-backed component wrappers."""
-
-    _payload: Any | None
-    _required_fields: tuple[str, ...]
-    _prefill_fields: tuple[str, ...]
-    _field_defaults: dict[str, RuntimeArray]
-
-    def _initialize_callable_runtime(
-        self,
-        *,
-        payload: Any | None,
-        required_fields: _FieldNames,
-        prefill_fields: _FieldNames,
-        field_defaults: _FieldDefaults,
-    ) -> None:
-        self._payload = payload
-        self._prefill_fields = _unique_field_names(prefill_fields)
-        self._field_defaults = dict(field_defaults or {})
-        component = cast(Component, self)
-        validate_component_data_layout(
-            component_name=component.name,
-            grid_shape=component.grid.shape,
-            data=self._field_defaults,
-        )
-        self._required_fields = _unique_field_names(
-            (
-                *tuple(required_fields),
-                *self._prefill_fields,
-                *tuple(self._field_defaults),
-            )
-        )
-        component._field_spec = ComponentFieldSpec(
-            outputs=self._prefill_fields,
-            required_fields=required_fields,
-            default_fields=self._field_defaults,
-        )
-
-    def create_runtime_payload(self) -> Any | None:
-        """Return the payload supplied to the callable component factory."""
-
-        return self._payload
-
-    def prefill_runtime_state_fields(
-        self,
-        data: dict[str, RuntimeArray],
-        incoming: dict[str, RuntimeArray],
-        outgoing: dict[str, RuntimeArray],
-        contract: RuntimeComponentContract,
-    ) -> None:
-        """Pre-seed callable runtime fields declared by wrapper metadata."""
-
-        component = cast(Component, self)
-        for field_name, field_value in self._field_defaults.items():
-            data.setdefault(field_name, field_value)
-        zeros = jax_zeros(component.grid.shape, component.settings)
-        for field_name in self._prefill_fields:
-            data.setdefault(field_name, zeros)
-        _ = incoming, outgoing, contract
-
-    def validate_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        contract: RuntimeComponentContract,
-    ) -> None:
-        """Validate callable runtime fields declared as required."""
-
-        _ = contract
-        cast(Component, self).require_runtime_fields(
-            component_state,
-            *self._required_fields,
-        )
-
-
-class _CallableComponent(_CallableRuntimeMixin, Component):
-    """Differentiable component backed by a user-provided step callable."""
-
-    _step: _ComponentStepCallable
-    _payload: Any | None
-
-    def __init__(
-        self,
-        name: str,
-        grid: RectilinearGrid,
-        *,
-        step: _AuthorStepCallable,
-        fields: Mapping[str, RuntimeArray] | None = None,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        required_fields: _FieldNames = (),
-        prefill_fields: _FieldNames = (),
-        field_defaults: _FieldDefaults = None,
-    ) -> None:
-        if settings is None:
-            super().__init__(name=name, grid=grid)
-        else:
-            super().__init__(name=name, grid=grid, settings=settings)
-        self._step = _normalize_component_step_callable(step)
-        self._initialize_callable_runtime(
-            payload=payload,
-            required_fields=required_fields,
-            prefill_fields=prefill_fields,
-            field_defaults=field_defaults,
-        )
-        if fields is not None:
-            self.seed_fields(fields)
-
-    def step_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: RuntimeStepContext,
-    ) -> "RuntimeComponentState":
-        """Advance this callable-backed differentiable component one step."""
-
-        return _apply_callable_step_result(
-            self,
-            component_state,
-            self._step(
-                self.runtime_fields(component_state),
-                context,
-                component_state.runtime_payload,
-            ),
-        )
-
-
-class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostRuntimeComponent):
-    """Host-runtime component backed by a user-provided step callable."""
-
-    _step: _ComponentStepCallable
-    _payload: Any | None
-
-    def __init__(
-        self,
-        name: str,
-        grid: RectilinearGrid,
-        *,
-        step: _AuthorStepCallable,
-        fields: Mapping[str, RuntimeArray] | None = None,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        required_fields: _FieldNames = (),
-        prefill_fields: _FieldNames = (),
-        field_defaults: _FieldDefaults = None,
-    ) -> None:
-        if settings is None:
-            super().__init__(name=name, grid=grid)
-        else:
-            super().__init__(name=name, grid=grid, settings=settings)
-        self._step = _normalize_component_step_callable(step)
-        self._initialize_callable_runtime(
-            payload=payload,
-            required_fields=required_fields,
-            prefill_fields=prefill_fields,
-            field_defaults=field_defaults,
-        )
-        if fields is not None:
-            self.seed_fields(fields)
-
-    def step_host_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: RuntimeStepContext,
-    ) -> "RuntimeComponentState":
-        """Advance this callable-backed host component one step."""
-
-        return _apply_callable_step_result(
-            self,
-            component_state,
-            self._step(
-                self.runtime_fields(component_state),
-                context,
-                component_state.runtime_payload,
-            ),
-        )
-
-
-def _apply_callable_step_result(
-    component: Component,
-    component_state: "RuntimeComponentState",
-    result: _ComponentStepReturn,
-) -> "RuntimeComponentState":
-    """Apply a callable wrapper result to runtime state."""
-
-    if isinstance(result, ComponentStepResult):
-        updated_state = component.with_runtime_fields(component_state, result.fields)
-        return updated_state.with_runtime_payload(result.payload)
-
-    return component.with_runtime_fields(component_state, result)
-
-
-def _normalize_author_field_values(
+def _make_differentiable_callable_component(
     *,
-    component_name: str,
+    name: str,
     grid: RectilinearGrid,
-    fields: _AuthorFieldValues,
-    policy: PrecisionPolicy = None,
-) -> dict[str, RuntimeArray] | None:
-    """Return author-provided fields as canonical runtime arrays.
-
-    The additive authoring facade accepts scalar defaults for common setup cases.
-    Scalars are expanded to grid-shaped constants; array-like values are converted
-    to JAX arrays and then validated against VerCOR's canonical component-data
-    layouts.
-    """
-
-    if fields is None:
-        return None
-
-    normalized: dict[str, RuntimeArray] = {}
-    for field_name, field_value in fields.items():
-        field_array = jnp.asarray(field_value)
-        if field_array.shape == ():
-            normalized[field_name] = jax_full(grid.shape, field_value, policy)
-        else:
-            normalized[field_name] = field_array
-
-    validate_component_data_layout(
-        component_name=component_name,
-        grid_shape=grid.shape,
-        data=normalized,
-    )
-    return normalized
-
-
-def _normalize_component_step_callable(
     step: _AuthorStepCallable,
-) -> _ComponentStepCallable:
-    """Adapt supported author step signatures to the runtime wrapper shape."""
+    fields: Mapping[str, RuntimeArray] | None = None,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    required_fields: _FieldNames = (),
+    prefill_fields: _FieldNames = (),
+    field_defaults: _FieldDefaults = None,
+) -> Component:
+    """Create a differentiable callable-backed component through the private runtime."""
 
-    try:
-        step_signature = signature(step)
-    except (TypeError, ValueError) as exc:
-        raise ComponentError(
-            "Component step callable must expose an inspectable signature that "
-            "accepts 1, 2, or 3 positional arguments: fields, optional context, "
-            "and optional payload."
-        ) from exc
+    from vercor.components._callable_wrappers import make_callable_component
 
-    parameters = tuple(step_signature.parameters.values())
-    positional_parameters = tuple(
-        parameter
-        for parameter in parameters
-        if parameter.kind
-        in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
-    )
-    required_positional_parameters = tuple(
-        parameter
-        for parameter in positional_parameters
-        if parameter.default is Parameter.empty
-    )
-    required_keyword_only_parameters = tuple(
-        parameter
-        for parameter in parameters
-        if parameter.kind == Parameter.KEYWORD_ONLY
-        and parameter.default is Parameter.empty
-    )
-    has_varargs = any(
-        parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters
-    )
-
-    if required_keyword_only_parameters:
-        required_names = ", ".join(
-            parameter.name for parameter in required_keyword_only_parameters
-        )
-        raise ComponentError(
-            "Component step callable has required keyword-only argument(s) "
-            f"{required_names}; use 1, 2, or 3 positional arguments instead."
-        )
-
-    if has_varargs:
-        if len(required_positional_parameters) > 3:
-            raise _component_step_signature_error()
-        arity = 3
-    else:
-        if (
-            len(positional_parameters) < 1
-            or len(positional_parameters) > 3
-            or len(required_positional_parameters) > 3
-        ):
-            raise _component_step_signature_error()
-        arity = len(positional_parameters)
-
-    if arity == 1:
-
-        def step_fields_only(
-            fields: Mapping[str, RuntimeArray],
-            context: RuntimeStepContext,
-            payload: Any | None,
-        ) -> _ComponentStepReturn:
-            _ = context, payload
-            return step(fields)
-
-        return step_fields_only
-
-    if arity == 2:
-
-        def step_fields_and_context(
-            fields: Mapping[str, RuntimeArray],
-            context: RuntimeStepContext,
-            payload: Any | None,
-        ) -> _ComponentStepReturn:
-            _ = payload
-            return step(fields, context)
-
-        return step_fields_and_context
-
-    def step_fields_context_payload(
-        fields: Mapping[str, RuntimeArray],
-        context: RuntimeStepContext,
-        payload: Any | None,
-    ) -> _ComponentStepReturn:
-        return step(fields, context, payload)
-
-    return step_fields_context_payload
-
-
-def _component_step_signature_error() -> ComponentError:
-    """Return a consistent author-facing error for unsupported step signatures."""
-
-    return ComponentError(
-        "Component step callable must accept 1, 2, or 3 positional arguments: "
-        "fields, optional context, and optional payload."
+    return make_callable_component(
+        name=name,
+        grid=grid,
+        step=step,
+        fields=fields,
+        payload=payload,
+        settings=settings,
+        required_fields=required_fields,
+        prefill_fields=prefill_fields,
+        field_defaults=field_defaults,
     )
 
 
-def _required_field_names(field_spec: ComponentFieldSpec) -> tuple[str, ...]:
-    """Return all fields that a declaration requires at runtime."""
+def _make_host_callable_component(
+    *,
+    name: str,
+    grid: RectilinearGrid,
+    step: _AuthorStepCallable,
+    fields: Mapping[str, RuntimeArray] | None = None,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    required_fields: _FieldNames = (),
+    prefill_fields: _FieldNames = (),
+    field_defaults: _FieldDefaults = None,
+) -> HostRuntimeComponent:
+    """Create a host-runtime callable-backed component through the private runtime."""
 
-    return _unique_field_names(
-        (
-            *field_spec.inputs,
-            *field_spec.outputs,
-            *field_spec.required_fields,
-            *tuple(field_spec.default_fields),
-        )
+    from vercor.components._callable_wrappers import make_callable_host_component
+
+    return make_callable_host_component(
+        name=name,
+        grid=grid,
+        step=step,
+        fields=fields,
+        payload=payload,
+        settings=settings,
+        required_fields=required_fields,
+        prefill_fields=prefill_fields,
+        field_defaults=field_defaults,
     )
-
-
-def _component_field_spec(component: Component) -> ComponentFieldSpec:
-    """Return the component's declared field spec, tolerating light test fixtures."""
-
-    return getattr(component, "_field_spec", ComponentFieldSpec())
-
-
-def _merge_component_outputs(
-    component: Component,
-    output_names: Iterable[str],
-) -> None:
-    """Merge output names into a component field declaration."""
-
-    field_spec = _component_field_spec(component)
-    component._field_spec = ComponentFieldSpec(
-        inputs=field_spec.inputs,
-        outputs=_unique_field_names((*field_spec.outputs, *tuple(output_names))),
-        required_fields=field_spec.required_fields,
-        default_fields=field_spec.default_fields,
-    )
-
-
-def _unique_field_names(field_names: _FieldNames) -> tuple[str, ...]:
-    """Return field names without duplicates while preserving order."""
-
-    unique: list[str] = []
-    for field_name in field_names:
-        if field_name not in unique:
-            unique.append(field_name)
-    return tuple(unique)
 
 
 def data_component(
@@ -1295,7 +947,9 @@ def make_differentiable_component(
     :class:`ComponentStepResult` to replace both fields and payload.
     """
 
-    return _CallableComponent(
+    from vercor.components._callable_wrappers import make_callable_component
+
+    return make_callable_component(
         name=name,
         grid=grid,
         step=step,
@@ -1322,7 +976,9 @@ def make_host_component(
 ) -> HostRuntimeComponent:
     """Create a host-runtime component from a Python runtime step callable."""
 
-    return _CallableHostRuntimeComponent(
+    from vercor.components._callable_wrappers import make_callable_host_component
+
+    return make_callable_host_component(
         name=name,
         grid=grid,
         step=step,
@@ -1332,44 +988,4 @@ def make_host_component(
         required_fields=required_fields,
         prefill_fields=prefill_fields,
         field_defaults=field_defaults,
-    )
-
-
-def validate_component_setup(component: Component) -> None:
-    """Raise a clear error when a component skipped base initialization."""
-
-    required_attributes = ("name", "grid", "data", "settings")
-    missing = [
-        attribute
-        for attribute in required_attributes
-        if not hasattr(component, attribute)
-    ]
-    if missing:
-        missing_names = ", ".join(missing)
-        raise ComponentError(
-            f"Component '{component.__class__.__name__}' is missing required setup "
-            f"attribute(s): {missing_names}. Call super().__init__(name, grid=...) "
-            "from the component constructor before runtime initialization, "
-            "execution, or finalization."
-        )
-
-    if not isinstance(component.grid, RectilinearGrid):
-        raise ComponentError(
-            f"Component '{component.name}' has invalid setup attribute 'grid'; "
-            "expected RectilinearGrid."
-        )
-    if not isinstance(component.data, dict):
-        raise ComponentError(
-            f"Component '{component.name}' has invalid setup attribute 'data'; "
-            "expected dict[str, RuntimeArray]."
-        )
-    if not isinstance(component.settings, VercorSettings):
-        raise ComponentError(
-            f"Component '{component.name}' has invalid setup attribute 'settings'; "
-            "expected VercorSettings."
-        )
-    validate_component_data_layout(
-        component_name=component.name,
-        grid_shape=component.grid.shape,
-        data=component.data,
     )

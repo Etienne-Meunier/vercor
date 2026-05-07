@@ -431,7 +431,7 @@ class VerosGCM(HostRuntimeComponent):
             inputs=_VEROS_INPUT_FIELD_NAMES,
             outputs=("sea_surface_temperature",),
             default_fields=self.grid_field_defaults(
-                _VEROS_FIELD_DEFAULTS,
+                ("sea_surface_temperature",),
                 overrides=_VEROS_FIELD_DEFAULTS,
             ),
         )

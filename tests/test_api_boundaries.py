@@ -109,6 +109,41 @@ def test_components_package_exports_only_component_author_contracts() -> None:
 
 
 @pytest.mark.fast_always
+def test_component_base_internals_are_private_modules() -> None:
+    base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+    contracts_source = Path("vercor/components/_contracts.py").read_text(
+        encoding="utf-8"
+    )
+    callable_source = Path("vercor/components/_callable_wrappers.py").read_text(
+        encoding="utf-8"
+    )
+    validation_source = Path("vercor/components/_validation.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "class ComponentFieldSpec" in contracts_source
+    assert "class ComponentStepResult" in contracts_source
+    assert "def normalize_author_field_values" in contracts_source
+    assert "class _CallableRuntimeMixin" in callable_source
+    assert "def normalize_component_step_callable" in callable_source
+    assert "def validate_component_setup" in validation_source
+
+    private_markers = (
+        "class _CallableRuntimeMixin",
+        "class _CallableComponent",
+        "class _CallableHostRuntimeComponent",
+        "def _normalize_component_step_callable",
+        "def _component_step_signature_error",
+    )
+    for marker in private_markers:
+        assert marker not in base_source
+
+    assert "_contracts" not in components_module.__all__
+    assert "_callable_wrappers" not in components_module.__all__
+    assert "_validation" not in components_module.__all__
+
+
+@pytest.mark.fast_always
 def test_runtime_state_is_separate_from_public_component_objects() -> None:
     assert hasattr(components_module, "DataComponent")
     component = components_module.DataComponent(

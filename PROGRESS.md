@@ -1,5 +1,55 @@
 # 2026-05-07
 
+## Component API Internal Split
+
+- Split `vercor.components.base` internals into private modules while keeping
+  the public component API non-breaking:
+  - `_contracts.py` owns `ComponentFieldSpec`, `ComponentStepResult`, author
+    field normalization, field-name de-duplication, and field-spec helpers.
+  - `_callable_wrappers.py` owns callable signature normalization,
+    callable-backed differentiable/host component implementations, and
+    field-plus-payload step-result application.
+  - `_validation.py` owns component setup validation.
+- Kept `Component`, `DataComponent`, `HostRuntimeComponent`, top-level helper
+  functions, `wrap()` classmethods, `make_*()` factories, and public context
+  aliases available from the same import locations.
+- Reduced callable factory chaining so classmethods, facade constructors, and
+  compatibility factories share one private constructor per runtime kind.
+- Clarified the Veros default-field declaration by passing the output field name
+  explicitly to `grid_field_defaults(...)`.
+- Failed approaches / corrections:
+  - The red API-boundary test failed as expected before private modules existed.
+  - The first focused component run exposed recursive helper wiring after the
+    factory split; the helpers now import the private callable-wrapper factories.
+
+## Validation (Component API Internal Split, 2026-05-07)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`97 passed, 256 deselected`)
+- `conda run -n scipy pytest tests/test_api_boundaries.py::test_component_base_internals_are_private_modules -q --tb=short`
+  - failed as expected before implementation on missing private modules
+  - passed after the split
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - first failed on recursive helper wiring
+  - passed after wiring private callable-wrapper factory imports
+- `conda run -n scipy pytest tests/test_component_models_coverage.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning; it reformatted `vercor/components/base.py` during the public
+    re-export cleanup and left all 108 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - first reported intentional public re-export imports plus one unused private
+    import
+  - passed after making re-exports explicit and removing the unused import (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`108 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Additive Component Authoring API Polish
 
 - Added small public `Component` helpers for common subclass-author boilerplate:

@@ -128,8 +128,15 @@ immutable runtime containers used during traced integration.
   components remain introspectable whether fields are declared up front or added
   through helper seeding. The older `wrap()` classmethods and
   `make_data_component()`, `make_differentiable_component()`, and
-  `make_host_component()` functions remain backward-compatible delegates to
-  the strict array-oriented wrapper path. Subclasses should call the base constructor so `name`,
+  `make_host_component()` functions remain backward-compatible entry points to
+  the same private callable-wrapper implementation used by the newer facade.
+  `vercor.components.base` is the public compatibility surface; field
+  declarations and author-value normalization live in private
+  `vercor.components._contracts`, callable signature adaptation and
+  callable-backed runtime components live in private
+  `vercor.components._callable_wrappers`, and setup validation lives in private
+  `vercor.components._validation`. These private modules are not exported from
+  `vercor.components`. Subclasses should call the base constructor so `name`,
   `grid`, `data`, and a component-owned `VercorSettings` container are available
   during initialization, execution, and finalization. `Component.data` is a
   grid-field store, not a
