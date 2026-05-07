@@ -112,19 +112,6 @@ def _default_jax_gcm_grid_fields(
     return fields
 
 
-def _prefill_jax_gcm_grid_fields(
-    data: dict[str, RuntimeArray],
-    grid_shape: tuple[int, int],
-) -> None:
-    """Fill missing JAXGCM runtime fields without overwriting component seed data."""
-
-    for field_name, value in _default_jax_gcm_grid_fields(
-        grid_shape,
-        include_total_surface_temperature=True,
-    ).items():
-        data.setdefault(field_name, value)
-
-
 @jax.jit
 def _cleanup_surface_temperature_fields(
     land_surface_temperature: object,
@@ -453,7 +440,14 @@ class JAXGCM(Component):
     ) -> None:
         """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
-        _prefill_jax_gcm_grid_fields(data, self.grid.shape)
+        self.prefill_runtime_fields(
+            data,
+            default_fields=_default_jax_gcm_grid_fields(
+                self.grid.shape,
+                include_total_surface_temperature=True,
+                policy=self.settings,
+            ),
+        )
         sigma_levels = jnp.asarray(self.sigma_levels)
         data.setdefault(
             "pressure",

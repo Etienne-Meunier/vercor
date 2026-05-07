@@ -17,6 +17,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     expected_public_names = {
         "Clock",
         "Component",
+        "ComponentFieldSpec",
         "ComponentStepResult",
         "Coupler",
         "DataComponent",
@@ -44,6 +45,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     assert runtime_internal_names.isdisjoint(set(vercor.__all__))
 
     assert vercor.Component is Component
+    assert vercor.ComponentFieldSpec is components_module.ComponentFieldSpec
     assert vercor.ComponentStepResult is components_module.ComponentStepResult
     data_component_type = getattr(components_module, "DataComponent", None)
     assert data_component_type is not None
@@ -64,6 +66,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 def test_components_package_exports_only_component_author_contracts() -> None:
     assert components_module.__all__ == [
         "Component",
+        "ComponentFieldSpec",
         "ComponentStepResult",
         "DataComponent",
         "HostRuntimeComponent",
@@ -72,6 +75,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         "make_host_component",
     ]
     assert components_module.Component is Component
+    assert hasattr(components_module, "ComponentFieldSpec")
     assert hasattr(components_module, "ComponentStepResult")
     assert hasattr(components_module, "DataComponent")
     assert components_module.HostRuntimeComponent is HostRuntimeComponent

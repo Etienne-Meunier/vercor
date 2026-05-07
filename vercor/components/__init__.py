@@ -1,5 +1,6 @@
 from vercor.components.base import (
     Component,
+    ComponentFieldSpec,
     ComponentStepResult,
     DataComponent,
     HostRuntimeComponent,
@@ -10,6 +11,7 @@ from vercor.components.base import (
 
 __all__ = [
     "Component",
+    "ComponentFieldSpec",
     "ComponentStepResult",
     "DataComponent",
     "HostRuntimeComponent",

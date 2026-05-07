@@ -54,7 +54,7 @@ class SeaIce(Component):
         """Diagnose slab sea-ice fraction on immutable runtime state."""
 
         _ = context
-        if "sea_surface_temperature" not in component_state.data.field_names:
+        if not self.has_runtime_field(component_state, "sea_surface_temperature"):
             return component_state
         sea_surface_temperature = self.runtime_field(
             component_state,

@@ -43,6 +43,38 @@ _ComponentStepCallable: TypeAlias = Callable[
 ]
 _FieldNames: TypeAlias = Iterable[str]
 _FieldDefaults: TypeAlias = Mapping[str, RuntimeArray] | None
+_AuthorFieldValues: TypeAlias = Mapping[str, object] | None
+
+
+@dataclass(frozen=True)
+class ComponentFieldSpec:
+    """Author-facing declaration of a component's runtime data-field contract.
+
+    Attributes:
+        inputs: Fields the model expects to read from runtime data.
+        outputs: Fields the model may write. These are pre-seeded as grid-shaped
+            zeros before traced runtime execution.
+        required_fields: Extra fields that must already exist but should not be
+            pre-seeded by this declaration.
+        default_fields: Field defaults used when runtime state is created.
+    """
+
+    inputs: _FieldNames = ()
+    outputs: _FieldNames = ()
+    required_fields: _FieldNames = ()
+    default_fields: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Normalize field-name iterables once while preserving declaration order."""
+
+        object.__setattr__(self, "inputs", _unique_field_names(self.inputs))
+        object.__setattr__(self, "outputs", _unique_field_names(self.outputs))
+        object.__setattr__(
+            self,
+            "required_fields",
+            _unique_field_names(self.required_fields),
+        )
+        object.__setattr__(self, "default_fields", dict(self.default_fields))
 
 
 @dataclass
@@ -76,6 +108,11 @@ class Component(ABC):
     grid: RectilinearGrid
     data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: VercorSettings = field(default_factory=VercorSettings)
+    _field_spec: ComponentFieldSpec = field(
+        default_factory=ComponentFieldSpec,
+        init=False,
+        repr=False,
+    )
 
     @classmethod
     def wrap(
@@ -111,6 +148,96 @@ class Component(ABC):
             prefill_fields=prefill_fields,
             field_defaults=field_defaults,
         )
+
+    @classmethod
+    def from_model(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        step: _ComponentStepCallable,
+        initial_fields: _AuthorFieldValues = None,
+        payload: Any | None = None,
+        settings: VercorSettings | None = None,
+        *,
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+        required_fields: _FieldNames = (),
+    ) -> "Component":
+        """Create a differentiable component from a user model callable.
+
+        This author-facing constructor mirrors normal Python alternate
+        constructors: ``initial_fields`` seed model state, ``inputs`` declare
+        fields the model reads, ``outputs`` declare fields the model writes, and
+        scalar initial/default values expand to this component's grid shape.
+        """
+
+        _ = cls
+        component_settings = settings if settings is not None else VercorSettings()
+        field_spec = ComponentFieldSpec(
+            inputs=inputs,
+            outputs=outputs,
+            required_fields=required_fields,
+            default_fields=_normalize_author_field_values(
+                component_name=name,
+                grid=grid,
+                fields=default_fields,
+                policy=component_settings,
+            )
+            or {},
+        )
+        return make_differentiable_component(
+            name=name,
+            grid=grid,
+            step=step,
+            fields=_normalize_author_field_values(
+                component_name=name,
+                grid=grid,
+                fields=initial_fields,
+                policy=component_settings,
+            ),
+            payload=payload,
+            settings=component_settings,
+            required_fields=(*field_spec.inputs, *field_spec.required_fields),
+            prefill_fields=field_spec.outputs,
+            field_defaults=cast(_FieldDefaults, field_spec.default_fields),
+        )
+
+    def declare_fields(
+        self,
+        field_spec: ComponentFieldSpec | None = None,
+        *,
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
+        required_fields: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+    ) -> ComponentFieldSpec:
+        """Declare runtime data fields for subclasses using author-facing names.
+
+        The base runtime hooks use this declaration to prefill output/default
+        fields and validate required fields. Subclasses with special lifecycle
+        needs can still override those hooks directly.
+        """
+
+        declared = field_spec or ComponentFieldSpec(
+            inputs=inputs,
+            outputs=outputs,
+            required_fields=required_fields,
+            default_fields=default_fields or {},
+        )
+        self._field_spec = ComponentFieldSpec(
+            inputs=declared.inputs,
+            outputs=declared.outputs,
+            required_fields=declared.required_fields,
+            default_fields=_normalize_author_field_values(
+                component_name=self.name,
+                grid=self.grid,
+                fields=declared.default_fields,
+                policy=self.settings,
+            )
+            or {},
+        )
+        return self._field_spec
 
     def seed_field(self, name: str, value: RuntimeArray) -> "Component":
         """Seed one setup-time grid field and return this component.
@@ -205,6 +332,55 @@ class Component(ABC):
                 f"Runtime data field '{name}' is missing for component '{self.name}'."
             ) from exc
 
+    def has_runtime_field(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+    ) -> bool:
+        """Return whether one runtime data field exists."""
+
+        _ = self
+        return name in component_state.data.field_names
+
+    def runtime_field_or(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+        default: object,
+        policy: PrecisionPolicy = None,
+    ) -> RuntimeArray:
+        """Return one runtime field or a grid-shaped/default array fallback."""
+
+        if self.has_runtime_field(component_state, name):
+            return self.runtime_field(component_state, name)
+        normalized = _normalize_author_field_values(
+            component_name=self.name,
+            grid=self.grid,
+            fields={name: default},
+            policy=self.settings if policy is None else policy,
+        )
+        if normalized is None:
+            raise ComponentError(
+                f"Default runtime field '{name}' could not be normalized for "
+                f"component '{self.name}'."
+            )
+        return normalized[name]
+
+    def runtime_field_or_zeros_like(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+        like: str | RuntimeArray,
+    ) -> RuntimeArray:
+        """Return one runtime field or zeros matching another field/array."""
+
+        if self.has_runtime_field(component_state, name):
+            return self.runtime_field(component_state, name)
+        reference = (
+            self.runtime_field(component_state, like) if isinstance(like, str) else like
+        )
+        return jnp.zeros_like(jnp.asarray(reference))
+
     def with_runtime_fields(
         self,
         component_state: "RuntimeComponentState",
@@ -219,8 +395,9 @@ class Component(ABC):
                     f"Component '{self.name}' returned update for runtime data "
                     f"field '{field_name}', but it is missing from runtime data. "
                     "Seed the field with seed_field()/seed_fields(), include it in "
-                    "factory fields, or declare it through an exchange before "
-                    "runtime execution."
+                    "factory fields, declare it as an output/default in "
+                    "from_model()/declare_fields(), or declare it through an "
+                    "exchange before runtime execution."
                 )
             data = data.set(field_name, field_value)
         return component_state.with_data(data)
@@ -245,6 +422,42 @@ class Component(ABC):
                     f"'{field_name}' for component '{self.name}' has shape "
                     f"{field_shape}, expected {self.grid.shape}"
                 )
+
+    def prefill_runtime_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        field_spec: ComponentFieldSpec | None = None,
+        *,
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+        policy: PrecisionPolicy = None,
+    ) -> None:
+        """Prefill a mutable runtime data mapping with declared fields.
+
+        This helper is intended for ``prefill_runtime_state_fields()`` overrides.
+        Default fields are inserted first, then output fields are inserted as
+        grid-shaped zeros when they are still missing.
+        """
+
+        declared = field_spec or ComponentFieldSpec(
+            outputs=outputs,
+            default_fields=default_fields or {},
+        )
+        normalized_defaults = _normalize_author_field_values(
+            component_name=self.name,
+            grid=self.grid,
+            fields=declared.default_fields,
+            policy=self.settings if policy is None else policy,
+        )
+        for field_name, field_value in (normalized_defaults or {}).items():
+            data.setdefault(field_name, field_value)
+
+        zeros = jax_zeros(
+            self.grid.shape,
+            self.settings if policy is None else policy,
+        )
+        for field_name in _unique_field_names((*declared.outputs, *tuple(outputs))):
+            data.setdefault(field_name, zeros)
 
     def initialize(self, context: ComponentInitContext) -> None:
         """Optionally initialize component-owned runtime data before coupling.
@@ -277,7 +490,8 @@ class Component(ABC):
         those fields must exist before the first JAX scan iteration.
         """
 
-        _ = data, incoming, outgoing, contract
+        self.prefill_runtime_fields(data, _component_field_spec(self))
+        _ = incoming, outgoing, contract
 
     def validate_runtime_state(
         self,
@@ -290,7 +504,10 @@ class Component(ABC):
         non-standard shapes before traced runtime execution begins.
         """
 
-        _ = component_state, contract
+        _ = contract
+        required_fields = _required_field_names(_component_field_spec(self))
+        if required_fields:
+            self.require_runtime_fields(component_state, *required_fields)
 
     @abstractmethod
     def step_runtime_state(
@@ -323,6 +540,35 @@ class DataComponent(Component):
     should inherit :class:`Component` and implement
     :meth:`Component.step_runtime_state` instead.
     """
+
+    @classmethod
+    def from_fields(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        fields: _AuthorFieldValues = None,
+        settings: VercorSettings | None = None,
+    ) -> "DataComponent":
+        """Create a data-only component from user-provided grid fields.
+
+        Scalar field values expand to grid-shaped constants. Use
+        :meth:`wrap` when preserving the older strict array-only behavior is
+        required.
+        """
+
+        if settings is None:
+            component = cls(name=name, grid=grid)
+        else:
+            component = cls(name=name, grid=grid, settings=settings)
+        normalized_fields = _normalize_author_field_values(
+            component_name=name,
+            grid=grid,
+            fields=fields,
+            policy=component.settings,
+        )
+        if normalized_fields is not None:
+            component.seed_fields(normalized_fields)
+        return component
 
     @classmethod
     def wrap(  # type: ignore[override]
@@ -361,6 +607,54 @@ class DataComponent(Component):
 
 class HostRuntimeComponent(Component):
     """Base class for host-backed adapters that cannot run inside JAX scan."""
+
+    @classmethod
+    def from_model(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        step: _ComponentStepCallable,
+        initial_fields: _AuthorFieldValues = None,
+        payload: Any | None = None,
+        settings: VercorSettings | None = None,
+        *,
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+        required_fields: _FieldNames = (),
+    ) -> "HostRuntimeComponent":
+        """Create a host-runtime component from a Python model callable."""
+
+        _ = cls
+        component_settings = settings if settings is not None else VercorSettings()
+        field_spec = ComponentFieldSpec(
+            inputs=inputs,
+            outputs=outputs,
+            required_fields=required_fields,
+            default_fields=_normalize_author_field_values(
+                component_name=name,
+                grid=grid,
+                fields=default_fields,
+                policy=component_settings,
+            )
+            or {},
+        )
+        return make_host_component(
+            name=name,
+            grid=grid,
+            step=step,
+            fields=_normalize_author_field_values(
+                component_name=name,
+                grid=grid,
+                fields=initial_fields,
+                policy=component_settings,
+            ),
+            payload=payload,
+            settings=component_settings,
+            required_fields=(*field_spec.inputs, *field_spec.required_fields),
+            prefill_fields=field_spec.outputs,
+            field_defaults=cast(_FieldDefaults, field_spec.default_fields),
+        )
 
     @classmethod
     def wrap(
@@ -452,6 +746,11 @@ class _CallableRuntimeMixin:
                 *self._prefill_fields,
                 *tuple(self._field_defaults),
             )
+        )
+        component._field_spec = ComponentFieldSpec(
+            outputs=self._prefill_fields,
+            required_fields=required_fields,
+            default_fields=self._field_defaults,
         )
 
     def create_runtime_payload(self) -> Any | None:
@@ -604,6 +903,59 @@ def _apply_callable_step_result(
         return updated_state.with_runtime_payload(result.payload)
 
     return component.with_runtime_fields(component_state, result)
+
+
+def _normalize_author_field_values(
+    *,
+    component_name: str,
+    grid: RectilinearGrid,
+    fields: _AuthorFieldValues,
+    policy: PrecisionPolicy = None,
+) -> dict[str, RuntimeArray] | None:
+    """Return author-provided fields as canonical runtime arrays.
+
+    The additive authoring facade accepts scalar defaults for common setup cases.
+    Scalars are expanded to grid-shaped constants; array-like values are converted
+    to JAX arrays and then validated against VerCOR's canonical component-data
+    layouts.
+    """
+
+    if fields is None:
+        return None
+
+    normalized: dict[str, RuntimeArray] = {}
+    for field_name, field_value in fields.items():
+        field_array = jnp.asarray(field_value)
+        if field_array.shape == ():
+            normalized[field_name] = jax_full(grid.shape, field_value, policy)
+        else:
+            normalized[field_name] = field_array
+
+    validate_component_data_layout(
+        component_name=component_name,
+        grid_shape=grid.shape,
+        data=normalized,
+    )
+    return normalized
+
+
+def _required_field_names(field_spec: ComponentFieldSpec) -> tuple[str, ...]:
+    """Return all fields that a declaration requires at runtime."""
+
+    return _unique_field_names(
+        (
+            *field_spec.inputs,
+            *field_spec.outputs,
+            *field_spec.required_fields,
+            *tuple(field_spec.default_fields),
+        )
+    )
+
+
+def _component_field_spec(component: Component) -> ComponentFieldSpec:
+    """Return the component's declared field spec, tolerating light test fixtures."""
+
+    return getattr(component, "_field_spec", ComponentFieldSpec())
 
 
 def _unique_field_names(field_names: _FieldNames) -> tuple[str, ...]:

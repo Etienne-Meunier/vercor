@@ -203,6 +203,215 @@ def test_wrap_classmethods_create_data_differentiable_and_host_components() -> N
 
 
 @pytest.mark.fast_always
+def test_from_fields_and_from_model_facade_expand_scalar_defaults() -> None:
+    grid = make_test_grid(name="facade")
+
+    data_component = base_module.DataComponent.from_fields(
+        name="OBS",
+        grid=grid,
+        fields={"temperature": 281.0},
+    )
+    assert isinstance(data_component, base_module.DataComponent)
+    assert_allclose_compact(
+        data_component.data["temperature"],
+        np.full(grid.shape, 281.0),
+    )
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = payload
+        return {
+            "temperature": fields["temperature"] + fields["forcing"],
+            "tendency": fields["tendency"] + context.dt_seconds,
+        }
+
+    component = base_module.Component.from_model(
+        name="ATM",
+        grid=grid,
+        step=step,
+        initial_fields={"temperature": 280.0},
+        outputs=("temperature", "tendency"),
+        default_fields={"forcing": 2.0},
+    )
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+
+    component.validate_runtime_state(state, RuntimeComponentContract())
+    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.data.get("forcing"), np.full(grid.shape, 2.0))
+    assert_allclose_compact(state.data.get("tendency"), np.zeros(grid.shape))
+
+    stepped = component.step_runtime_state(
+        state,
+        RuntimeStepContext(dt_seconds=3.0, settings=VercorSettings()),
+    )
+    assert_allclose_compact(
+        stepped.data.get("temperature"),
+        np.full(grid.shape, 282.0),
+    )
+    assert_allclose_compact(
+        stepped.data.get("tendency"),
+        np.full(grid.shape, 3.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_from_model_inputs_validate_missing_fields_without_zero_prefill() -> None:
+    grid = make_test_grid(name="facade-inputs")
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = context, payload
+        return {"temperature": fields["temperature"] + fields["forcing"]}
+
+    component = base_module.Component.from_model(
+        name="ATM",
+        grid=grid,
+        step=step,
+        initial_fields={"temperature": 280.0},
+        inputs=("forcing",),
+        outputs=("temperature",),
+    )
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+
+    with pytest.raises(
+        CouplerError,
+        match="Runtime missing required data field 'forcing' for component 'ATM'",
+    ):
+        component.validate_runtime_state(state, RuntimeComponentContract())
+
+
+@pytest.mark.fast_always
+def test_host_runtime_component_from_model_uses_author_friendly_names() -> None:
+    grid = make_test_grid(name="facade-host")
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = payload
+        return {"temperature": fields["temperature"] + context.dt_seconds}
+
+    component = base_module.HostRuntimeComponent.from_model(
+        name="HOST",
+        grid=grid,
+        step=step,
+        initial_fields={"temperature": 1.0},
+        outputs=("temperature",),
+    )
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+
+    stepped = component.step_host_runtime_state(
+        state,
+        RuntimeStepContext(dt_seconds=5.0, settings=VercorSettings()),
+    )
+    assert_allclose_compact(
+        stepped.data.get("temperature"),
+        np.full(grid.shape, 6.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_subclasses_can_declare_fields_with_author_spec() -> None:
+    grid = make_test_grid(name="declared")
+
+    class DeclaredComponent(base_module.Component):
+        def __init__(self, name: str, grid: Any) -> None:
+            super().__init__(name, grid)
+            self.declare_fields(
+                base_module.ComponentFieldSpec(
+                    inputs=("forcing",),
+                    outputs=("temperature",),
+                    default_fields={"temperature": 280.0},
+                )
+            )
+
+        def step_runtime_state(
+            self,
+            component_state: RuntimeComponentState,
+            context: RuntimeStepContext,
+        ) -> RuntimeComponentState:
+            _ = context
+            return self.with_runtime_fields(
+                component_state,
+                {
+                    "temperature": (
+                        self.runtime_field(component_state, "temperature")
+                        + self.runtime_field(component_state, "forcing")
+                    )
+                },
+            )
+
+    component = DeclaredComponent(name="ATM", grid=grid)
+    missing_input_state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(),
+    )
+    with pytest.raises(
+        CouplerError,
+        match="Runtime missing required data field 'forcing' for component 'ATM'",
+    ):
+        component.validate_runtime_state(
+            missing_input_state, RuntimeComponentContract()
+        )
+
+    contract = RuntimeComponentContract(imports=("forcing",))
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=contract,
+    )
+    component.validate_runtime_state(state, contract)
+    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.data.get("forcing"), np.zeros(grid.shape))
+
+
+@pytest.mark.fast_always
+def test_runtime_field_optional_helpers_return_defaults() -> None:
+    grid = make_test_grid(name="field-defaults")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    component.seed_field("temperature", jnp.full(grid.shape, 280.0))
+    state = create_runtime_component_state(
+        component,
+        contract=RuntimeComponentContract(),
+    )
+
+    assert component.has_runtime_field(state, "temperature")
+    assert not component.has_runtime_field(state, "missing")
+    assert_allclose_compact(
+        component.runtime_field_or(state, "temperature", 1.0),
+        np.full(grid.shape, 280.0),
+    )
+    assert_allclose_compact(
+        component.runtime_field_or(state, "missing", 2.0),
+        np.full(grid.shape, 2.0),
+    )
+    assert_allclose_compact(
+        component.runtime_field_or_zeros_like(state, "missing", "temperature"),
+        np.zeros(grid.shape),
+    )
+
+
+@pytest.mark.fast_always
 def test_wrapped_callable_component_prefills_and_validates_required_fields() -> None:
     grid = make_test_grid(name="wrap-prefill")
 

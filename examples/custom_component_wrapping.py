@@ -23,12 +23,12 @@ def make_example_grid() -> RectilinearGrid:
 def make_data_forcing(grid: RectilinearGrid) -> DataComponent:
     """Wrap static or time-dependent forcing fields without a runtime step."""
 
-    return DataComponent.wrap(
+    return DataComponent.from_fields(
         name="ATM",
         grid=grid,
         fields={
-            "temperature": jnp.full(grid.shape, 288.15),
-            "specific_humidity": jnp.full(grid.shape, 0.01),
+            "temperature": 288.15,
+            "specific_humidity": 0.01,
         },
     )
 
@@ -50,13 +50,14 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
             )
         }
 
-    return Component.wrap(
+    return Component.from_model(
         name="OCN",
         grid=grid,
         step=step,
-        fields={"sea_surface_temperature": jnp.full(grid.shape, 288.15)},
-        required_fields=("net_surface_heat_flux",),
-        prefill_fields=("net_surface_heat_flux",),
+        initial_fields={"sea_surface_temperature": 288.15},
+        inputs=("net_surface_heat_flux",),
+        outputs=("sea_surface_temperature",),
+        default_fields={"net_surface_heat_flux": 0.0},
     )
 
 
@@ -87,13 +88,13 @@ def make_host_model(grid: RectilinearGrid) -> HostRuntimeComponent:
             payload=payload,
         )
 
-    return HostRuntimeComponent.wrap(
+    return HostRuntimeComponent.from_model(
         name="LND",
         grid=grid,
         step=step,
-        fields={"temperature": jnp.full(grid.shape, 283.15)},
+        initial_fields={"temperature": 283.15},
         payload=ToyHostModel(),
-        required_fields=("temperature",),
+        outputs=("temperature",),
     )
 
 

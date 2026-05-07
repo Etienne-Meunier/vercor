@@ -1,5 +1,58 @@
 # 2026-05-07
 
+## Component Authoring Facade Refinement
+
+- Added the public `ComponentFieldSpec` declaration type and author-friendly
+  constructors: `DataComponent.from_fields()`, `Component.from_model()`, and
+  `HostRuntimeComponent.from_model()`.
+- Mapped `inputs`, `outputs`, `default_fields`, and `required_fields` onto the
+  existing runtime prefill/validation machinery without changing runtime state
+  containers or the backward-compatible `wrap()` / `make_*()` APIs.
+- Added scalar-to-grid expansion for facade `initial_fields`, `default_fields`,
+  and data `from_fields()` values.
+- Added subclass helper methods `declare_fields()`, `has_runtime_field()`,
+  `runtime_field_or()`, `runtime_field_or_zeros_like()`, and
+  `prefill_runtime_fields()`.
+- Refactored the custom wrapping example and slab optional-field reads to use
+  the latest helper-first API; kept complex external components as subclasses
+  and used the new prefill helper where it clarified JAXGCM runtime setup.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the new recommended
+  component-author facade.
+- Failed approaches / corrections:
+  - The red facade tests failed as expected because `ComponentFieldSpec`,
+    `from_fields()`, `from_model()`, and optional runtime-field helpers did not
+    exist yet.
+  - The first fast-suite run exposed lightweight fixtures that construct
+    bundled data components with `object.__new__()` and only provide documented
+    base setup attributes; base runtime hooks now treat a missing private field
+    declaration as an empty `ComponentFieldSpec`.
+
+## Validation (Component Authoring Facade Refinement, 2026-05-07)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - failed as expected before implementation because the public facade was
+    missing
+  - passed after implementation (`34 passed`)
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_slab_kernels.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py tests/test_api_boundaries.py -q --tb=short`
+  - passed after slab/example/JAXGCM refactors
+- `conda run -n scipy pytest tests/test_coupler_runtime.py::test_data_forcing_components_run_inside_runtime tests/test_coupler_runtime.py::test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_regridder tests/test_coupler_runtime.py::test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad -q --tb=short`
+  - passed after the lightweight-fixture field-spec fallback
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning; it reformatted `vercor/components/base.py` and
+    `tests/test_component_base_coverage.py` on the first run and left all files
+    unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`105 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - first failed on lightweight fixture components missing `_field_spec`
+  - passed after the base-hook fallback
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Helper-First Component Wrapping API
 
 - Added `Component.wrap()`, `DataComponent.wrap()`, and

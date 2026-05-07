@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING
 
 import jax
-import jax.numpy as jnp
 
 from vercor.components.base import Component
 from vercor.dtypes import as_jax_real_array
@@ -80,23 +79,22 @@ class Ocean(Component):
         """Advance the slab ocean on immutable runtime state."""
 
         dt_seconds = context.dt_seconds
-        if "sea_surface_temperature" not in component_state.data.field_names:
+        if not self.has_runtime_field(component_state, "sea_surface_temperature"):
             return component_state
         sea_surface_temperature = self.runtime_field(
             component_state,
             "sea_surface_temperature",
         )
-        if "sensible_heat_flux" in component_state.data.field_names:
-            sensible_heat_flux = self.runtime_field(
-                component_state,
-                "sensible_heat_flux",
-            )
-        else:
-            sensible_heat_flux = jnp.zeros_like(sea_surface_temperature)
-        if "latent_heat_flux" in component_state.data.field_names:
-            latent_heat_flux = self.runtime_field(component_state, "latent_heat_flux")
-        else:
-            latent_heat_flux = jnp.zeros_like(sea_surface_temperature)
+        sensible_heat_flux = self.runtime_field_or_zeros_like(
+            component_state,
+            "sensible_heat_flux",
+            sea_surface_temperature,
+        )
+        latent_heat_flux = self.runtime_field_or_zeros_like(
+            component_state,
+            "latent_heat_flux",
+            sea_surface_temperature,
+        )
 
         updated_sst = _advance_sea_surface_temperature(
             sea_surface_temperature,

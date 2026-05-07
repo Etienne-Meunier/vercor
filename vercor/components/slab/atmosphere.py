@@ -101,13 +101,11 @@ class Atmosphere(Component):
 
         _ = context
         temperature_2m = self.runtime_field(component_state, "temperature_2m")
-        if "sea_surface_temperature" in component_state.data.field_names:
-            sea_surface_temperature = self.runtime_field(
-                component_state,
-                "sea_surface_temperature",
-            )
-        else:
-            sea_surface_temperature = _default_sea_surface_temperature(temperature_2m)
+        sea_surface_temperature = self.runtime_field_or(
+            component_state,
+            "sea_surface_temperature",
+            _REFERENCE_SURFACE_TEMPERATURE,
+        )
 
         sensible_heat_flux, latent_heat_flux, updated_temperature_2m = _bulk_flux_step(
             temperature_2m,

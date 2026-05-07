@@ -106,12 +106,18 @@ immutable runtime containers used during traced integration.
   compose when configuring a coupled run.
 - Component-author API: `Component`, `DataComponent`, and
   `HostRuntimeComponent` are the stable extension points. Custom adapters should
-  use the helper-first authoring layer where possible: `DataComponent.wrap()` for
-  data-only fields, `Component.wrap()` for pure callable JAX models, and
-  `HostRuntimeComponent.wrap()` for Python host-side models. The older
+  use the helper-first authoring layer where possible:
+  `DataComponent.from_fields()` for data-only fields, `Component.from_model()`
+  for pure callable JAX models, and `HostRuntimeComponent.from_model()` for
+  Python host-side models. These helpers use author-facing field names:
+  `initial_fields` seed model state, `inputs` declare fields the model reads,
+  `outputs` declare fields the model writes, and `default_fields` declare
+  concrete fallback fields. Scalar initial/default values expand to grid-shaped
+  constants. `ComponentFieldSpec` and `declare_fields()` provide the same
+  vocabulary for subclasses. The older `wrap()` classmethods and
   `make_data_component()`, `make_differentiable_component()`, and
   `make_host_component()` functions remain backward-compatible delegates to
-  those classmethods. Subclasses should call the base constructor so `name`,
+  the strict array-oriented wrapper path. Subclasses should call the base constructor so `name`,
   `grid`, `data`, and a component-owned `VercorSettings` container are available
   during initialization, execution, and finalization. `Component.data` is a
   grid-field store, not a
@@ -121,8 +127,10 @@ immutable runtime containers used during traced integration.
   contract before traced execution. Subclasses should seed fields with
   `seed_field()`, `seed_fields()`, `seed_zero_field()`, `seed_zero_fields()`, or
   `seed_constant_field()` rather than mutating `data` directly; step methods
-  should read fields with `runtime_field()` / `runtime_fields()` and return
-  updates with `with_runtime_fields()` where possible. Non-grid metadata such as
+  should read fields with `runtime_field()`, `runtime_fields()`,
+  `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
+  with `with_runtime_fields()` where possible. Prefill hooks should use
+  `prefill_runtime_fields()` for ordinary output/default fields. Non-grid metadata such as
   hybrid-level coefficients belongs on component attributes or runtime payloads.
   Use
   `Component` for differentiable active models and implement
@@ -137,9 +145,10 @@ immutable runtime containers used during traced integration.
   `prefill_runtime_state_fields()`, and `validate_runtime_state()`. Callable
   wrappers receive `(fields, context, payload)` and return either a field-update
   mapping or `ComponentStepResult(fields, payload)` when the runtime payload must
-  be replaced. Wrappers can declare `required_fields`, `prefill_fields`, and
-  `field_defaults` so expected exchange inputs and output slots exist before the
-  first scanned step. These helpers still enforce the same stable runtime-state
+  be replaced. The compatibility wrapper arguments `required_fields`,
+  `prefill_fields`, and `field_defaults` map to the same runtime contract used
+  by the newer `inputs`, `outputs`, and `default_fields` facade. These helpers
+  still enforce the same stable runtime-state
   contract: updated fields must already exist through seeded data, wrapper
   prefill/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.

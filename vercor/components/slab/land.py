@@ -56,10 +56,11 @@ class Land(Component):
 
         dt_seconds = context.dt_seconds
         soil_moisture = self.runtime_field(component_state, "soil_moisture")
-        if "latent_heat_flux" in component_state.data.field_names:
-            latent_heat_flux = self.runtime_field(component_state, "latent_heat_flux")
-        else:
-            latent_heat_flux = jnp.zeros_like(soil_moisture)
+        latent_heat_flux = self.runtime_field_or_zeros_like(
+            component_state,
+            "latent_heat_flux",
+            soil_moisture,
+        )
         updated_soil_moisture = _update_soil_moisture(
             soil_moisture,
             latent_heat_flux,

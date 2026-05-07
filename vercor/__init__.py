@@ -2,6 +2,7 @@ from vercor import fluxes
 from vercor.clock import Clock, DateTime360, DateTime365, CustomDateTime, ModelDateTime
 from vercor.components.base import (
     Component,
+    ComponentFieldSpec,
     ComponentStepResult,
     DataComponent,
     HostRuntimeComponent,
@@ -17,6 +18,7 @@ from vercor.run_sequence import RunSequence
 __all__ = [
     "Coupler",
     "Component",
+    "ComponentFieldSpec",
     "ComponentStepResult",
     "DataComponent",
     "HostRuntimeComponent",
