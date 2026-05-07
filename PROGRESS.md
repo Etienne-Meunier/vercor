@@ -1,5 +1,52 @@
 # 2026-05-07
 
+## Component Authoring API Polish and Adapter Rewrite
+
+- Added flexible callable wrapper signatures: author step callbacks can now use
+  `step(fields)`, `step(fields, context)`, or
+  `step(fields, context, payload)` while the runtime still receives one
+  normalized internal callable shape.
+- Added `field_names` setup introspection and `seed_declared_defaults()` for
+  components whose initialization mirrors their declared `ComponentFieldSpec`
+  defaults.
+- Made `DataComponent` seeding automatically expose seeded fields as declared
+  outputs, so data-only adapters remain introspectable even when fields are
+  added through helper seeding.
+- Refactored slab components to use module-level `ComponentFieldSpec`
+  declarations with complete defaults, and refactored data/external adapters to
+  expose explicit field contracts while preserving existing constructor call
+  sites and runtime behavior.
+- Updated the custom wrapping example to show the shorter
+  `(fields, context)` differentiable callback signature.
+- Failed approaches / corrections:
+  - The red focused run failed as expected on shorter callbacks, unsupported
+    callback signature validation, missing default-seeding/field-name helpers,
+    empty data-component field specs, incomplete slab defaults, and missing
+    bundled adapter field contracts.
+
+## Validation (Component Authoring API Polish and Adapter Rewrite, 2026-05-07)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q --tb=short`
+  - failed as expected before implementation on the missing polished API and
+    bundled adapter declarations
+  - passed after base and adapter refactors
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/test_component_models_coverage.py tests/test_external_components_coverage.py tests/test_slab_kernels.py tests/test_camulator_component_kernels.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted six touched Python files
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`105 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Authoring API Refinement
 
 - Added concise public authoring helpers: `data_component()`,

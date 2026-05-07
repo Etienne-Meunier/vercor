@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentFieldSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
@@ -13,6 +13,23 @@ if TYPE_CHECKING:
 
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
+_ATMOSPHERE_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("sea_surface_temperature",),
+    outputs=(
+        "temperature_2m",
+        "sensible_heat_flux",
+        "latent_heat_flux",
+        "u_velocity_10m",
+        "v_velocity_10m",
+    ),
+    default_fields={
+        "temperature_2m": _REFERENCE_SURFACE_TEMPERATURE,
+        "sensible_heat_flux": 0.0,
+        "latent_heat_flux": 0.0,
+        "u_velocity_10m": 0.0,
+        "v_velocity_10m": 0.0,
+    },
+)
 
 
 @jax.jit
@@ -58,29 +75,10 @@ class Atmosphere(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "ATM") -> None:
         super().__init__(name, grid)
-        self.declare_fields(
-            inputs=("sea_surface_temperature",),
-            outputs=(
-                "temperature_2m",
-                "sensible_heat_flux",
-                "latent_heat_flux",
-                "u_velocity_10m",
-                "v_velocity_10m",
-            ),
-            default_fields={"temperature_2m": _REFERENCE_SURFACE_TEMPERATURE},
-        )
+        self.declare_fields(_ATMOSPHERE_FIELD_SPEC)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_fields(
-            {
-                "temperature_2m": _REFERENCE_SURFACE_TEMPERATURE,
-                "sensible_heat_flux": 0.0,
-                "latent_heat_flux": 0.0,
-                "u_velocity_10m": 0.0,
-                "v_velocity_10m": 0.0,
-            },
-            context.settings,
-        )
+        self.seed_declared_defaults(context.settings)
 
     def step_runtime_state(
         self,

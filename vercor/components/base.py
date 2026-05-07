@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, TypeAlias, cast, final
 
 import jax.numpy as jnp
@@ -41,6 +42,7 @@ _ComponentStepCallable: TypeAlias = Callable[
     [Mapping[str, RuntimeArray], RuntimeStepContext, Any | None],
     _ComponentStepReturn,
 ]
+_AuthorStepCallable: TypeAlias = Callable[..., _ComponentStepReturn]
 _FieldNames: TypeAlias = Iterable[str]
 _FieldDefaults: TypeAlias = Mapping[str, RuntimeArray] | None
 _AuthorFieldValues: TypeAlias = Mapping[str, object] | None
@@ -122,7 +124,7 @@ class Component(ABC):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: _ComponentStepCallable,
+        step: _AuthorStepCallable,
         fields: Mapping[str, RuntimeArray] | None = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
@@ -157,7 +159,7 @@ class Component(ABC):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: _ComponentStepCallable,
+        step: _AuthorStepCallable,
         initial_fields: _AuthorFieldValues = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
@@ -250,6 +252,12 @@ class Component(ABC):
 
         return _component_field_spec(self)
 
+    @property
+    def field_names(self) -> tuple[str, ...]:
+        """Return setup-time field names in insertion order."""
+
+        return tuple(self.data)
+
     def seed_field(
         self,
         name: str,
@@ -278,6 +286,17 @@ class Component(ABC):
             policy=self.settings if policy is None else policy,
         )
         self.data.update(field_updates or {})
+        return self
+
+    def seed_declared_defaults(
+        self,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed this component's declared default fields and return itself."""
+
+        default_fields = _component_field_spec(self).default_fields
+        if default_fields:
+            self.seed_fields(default_fields, policy=policy)
         return self
 
     def seed_zero_field(
@@ -590,6 +609,17 @@ class DataComponent(Component):
             component.seed_fields(normalized_fields)
         return component
 
+    def seed_fields(
+        self,
+        fields: Mapping[str, object],
+        policy: PrecisionPolicy = None,
+    ) -> "DataComponent":
+        """Seed data fields and expose their names as declared outputs."""
+
+        super().seed_fields(fields, policy=policy)
+        _merge_component_outputs(self, fields.keys())
+        return self
+
     @classmethod
     def wrap(  # type: ignore[override]
         cls,
@@ -633,7 +663,7 @@ class HostRuntimeComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: _ComponentStepCallable,
+        step: _AuthorStepCallable,
         initial_fields: _AuthorFieldValues = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
@@ -683,7 +713,7 @@ class HostRuntimeComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: _ComponentStepCallable,
+        step: _AuthorStepCallable,
         fields: Mapping[str, RuntimeArray] | None = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
@@ -822,7 +852,7 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         name: str,
         grid: RectilinearGrid,
         *,
-        step: _ComponentStepCallable,
+        step: _AuthorStepCallable,
         fields: Mapping[str, RuntimeArray] | None = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
@@ -834,7 +864,7 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
             super().__init__(name=name, grid=grid)
         else:
             super().__init__(name=name, grid=grid, settings=settings)
-        self._step = step
+        self._step = _normalize_component_step_callable(step)
         self._initialize_callable_runtime(
             payload=payload,
             required_fields=required_fields,
@@ -873,7 +903,7 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostRuntimeComponent)
         name: str,
         grid: RectilinearGrid,
         *,
-        step: _ComponentStepCallable,
+        step: _AuthorStepCallable,
         fields: Mapping[str, RuntimeArray] | None = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
@@ -885,7 +915,7 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostRuntimeComponent)
             super().__init__(name=name, grid=grid)
         else:
             super().__init__(name=name, grid=grid, settings=settings)
-        self._step = step
+        self._step = _normalize_component_step_callable(step)
         self._initialize_callable_runtime(
             payload=payload,
             required_fields=required_fields,
@@ -961,6 +991,107 @@ def _normalize_author_field_values(
     return normalized
 
 
+def _normalize_component_step_callable(
+    step: _AuthorStepCallable,
+) -> _ComponentStepCallable:
+    """Adapt supported author step signatures to the runtime wrapper shape."""
+
+    try:
+        step_signature = signature(step)
+    except (TypeError, ValueError) as exc:
+        raise ComponentError(
+            "Component step callable must expose an inspectable signature that "
+            "accepts 1, 2, or 3 positional arguments: fields, optional context, "
+            "and optional payload."
+        ) from exc
+
+    parameters = tuple(step_signature.parameters.values())
+    positional_parameters = tuple(
+        parameter
+        for parameter in parameters
+        if parameter.kind
+        in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+    )
+    required_positional_parameters = tuple(
+        parameter
+        for parameter in positional_parameters
+        if parameter.default is Parameter.empty
+    )
+    required_keyword_only_parameters = tuple(
+        parameter
+        for parameter in parameters
+        if parameter.kind == Parameter.KEYWORD_ONLY
+        and parameter.default is Parameter.empty
+    )
+    has_varargs = any(
+        parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters
+    )
+
+    if required_keyword_only_parameters:
+        required_names = ", ".join(
+            parameter.name for parameter in required_keyword_only_parameters
+        )
+        raise ComponentError(
+            "Component step callable has required keyword-only argument(s) "
+            f"{required_names}; use 1, 2, or 3 positional arguments instead."
+        )
+
+    if has_varargs:
+        if len(required_positional_parameters) > 3:
+            raise _component_step_signature_error()
+        arity = 3
+    else:
+        if (
+            len(positional_parameters) < 1
+            or len(positional_parameters) > 3
+            or len(required_positional_parameters) > 3
+        ):
+            raise _component_step_signature_error()
+        arity = len(positional_parameters)
+
+    if arity == 1:
+
+        def step_fields_only(
+            fields: Mapping[str, RuntimeArray],
+            context: RuntimeStepContext,
+            payload: Any | None,
+        ) -> _ComponentStepReturn:
+            _ = context, payload
+            return step(fields)
+
+        return step_fields_only
+
+    if arity == 2:
+
+        def step_fields_and_context(
+            fields: Mapping[str, RuntimeArray],
+            context: RuntimeStepContext,
+            payload: Any | None,
+        ) -> _ComponentStepReturn:
+            _ = payload
+            return step(fields, context)
+
+        return step_fields_and_context
+
+    def step_fields_context_payload(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> _ComponentStepReturn:
+        return step(fields, context, payload)
+
+    return step_fields_context_payload
+
+
+def _component_step_signature_error() -> ComponentError:
+    """Return a consistent author-facing error for unsupported step signatures."""
+
+    return ComponentError(
+        "Component step callable must accept 1, 2, or 3 positional arguments: "
+        "fields, optional context, and optional payload."
+    )
+
+
 def _required_field_names(field_spec: ComponentFieldSpec) -> tuple[str, ...]:
     """Return all fields that a declaration requires at runtime."""
 
@@ -978,6 +1109,21 @@ def _component_field_spec(component: Component) -> ComponentFieldSpec:
     """Return the component's declared field spec, tolerating light test fixtures."""
 
     return getattr(component, "_field_spec", ComponentFieldSpec())
+
+
+def _merge_component_outputs(
+    component: Component,
+    output_names: Iterable[str],
+) -> None:
+    """Merge output names into a component field declaration."""
+
+    field_spec = _component_field_spec(component)
+    component._field_spec = ComponentFieldSpec(
+        inputs=field_spec.inputs,
+        outputs=_unique_field_names((*field_spec.outputs, *tuple(output_names))),
+        required_fields=field_spec.required_fields,
+        default_fields=field_spec.default_fields,
+    )
 
 
 def _unique_field_names(field_names: _FieldNames) -> tuple[str, ...]:
@@ -1009,7 +1155,7 @@ def data_component(
 def differentiable_component(
     name: str,
     grid: RectilinearGrid,
-    step: _ComponentStepCallable,
+    step: _AuthorStepCallable,
     initial_fields: _AuthorFieldValues = None,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
@@ -1038,7 +1184,7 @@ def differentiable_component(
 def host_component(
     name: str,
     grid: RectilinearGrid,
-    step: _ComponentStepCallable,
+    step: _AuthorStepCallable,
     initial_fields: _AuthorFieldValues = None,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
@@ -1078,7 +1224,7 @@ def make_data_component(
 def make_differentiable_component(
     name: str,
     grid: RectilinearGrid,
-    step: _ComponentStepCallable,
+    step: _AuthorStepCallable,
     fields: Mapping[str, RuntimeArray] | None = None,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
@@ -1110,7 +1256,7 @@ def make_differentiable_component(
 def make_host_component(
     name: str,
     grid: RectilinearGrid,
-    step: _ComponentStepCallable,
+    step: _AuthorStepCallable,
     fields: Mapping[str, RuntimeArray] | None = None,
     payload: Any | None = None,
     settings: VercorSettings | None = None,

@@ -343,6 +343,133 @@ def test_from_fields_and_from_model_facade_expand_scalar_defaults() -> None:
 
 
 @pytest.mark.fast_always
+def test_callable_facade_accepts_one_two_and_three_argument_steps() -> None:
+    grid = make_test_grid(name="flex-step")
+
+    def fields_only(fields: Mapping[str, RuntimeArray]) -> Mapping[str, RuntimeArray]:
+        return {"temperature": fields["temperature"] + 1.0}
+
+    def fields_and_context(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+    ) -> Mapping[str, RuntimeArray]:
+        return {"temperature": fields["temperature"] + context.dt_seconds}
+
+    def fields_context_payload(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        assert isinstance(payload, Mapping)
+        return {
+            "temperature": (
+                fields["temperature"] + context.dt_seconds + payload["offset"]
+            )
+        }
+
+    components = (
+        base_module.differentiable_component(
+            name="ONE",
+            grid=grid,
+            step=fields_only,
+            initial_fields={"temperature": 280.0},
+            outputs=("temperature",),
+        ),
+        base_module.differentiable_component(
+            name="TWO",
+            grid=grid,
+            step=fields_and_context,
+            initial_fields={"temperature": 280.0},
+            outputs=("temperature",),
+        ),
+        base_module.differentiable_component(
+            name="THREE",
+            grid=grid,
+            step=fields_context_payload,
+            initial_fields={"temperature": 280.0},
+            payload={"offset": 3.0},
+            outputs=("temperature",),
+        ),
+    )
+
+    for component, expected_temperature in zip(
+        components,
+        (281.0, 282.0, 285.0),
+        strict=True,
+    ):
+        state = create_runtime_component_state(
+            component,
+            prefill_missing=True,
+            contract=RuntimeComponentContract(),
+        )
+        stepped = component.step_runtime_state(
+            state,
+            RuntimeStepContext(dt_seconds=2.0, settings=VercorSettings()),
+        )
+        assert_allclose_compact(
+            stepped.data.get("temperature"),
+            np.full(grid.shape, expected_temperature),
+        )
+
+
+@pytest.mark.fast_always
+def test_callable_facade_rejects_unsupported_step_signature() -> None:
+    grid = make_test_grid(name="bad-step")
+
+    def too_many_arguments(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+        extra: object,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = fields, context, payload, extra
+        return {}
+
+    with pytest.raises(
+        ComponentError,
+        match="step callable.*1, 2, or 3 positional arguments",
+    ):
+        base_module.differentiable_component(
+            name="ATM",
+            grid=grid,
+            step=too_many_arguments,
+        )
+
+
+@pytest.mark.fast_always
+def test_seed_declared_defaults_and_field_names_expose_author_state() -> None:
+    grid = make_test_grid(name="declared-defaults")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    component.declare_fields(
+        outputs=("temperature", "humidity"),
+        default_fields={"temperature": 280.0, "humidity": 0.5},
+    )
+
+    returned = component.seed_declared_defaults()
+
+    assert returned is component
+    assert component.field_names == ("temperature", "humidity")
+    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 280.0))
+    assert_allclose_compact(component.data["humidity"], np.full(grid.shape, 0.5))
+
+
+@pytest.mark.fast_always
+def test_data_component_seeding_updates_declared_outputs() -> None:
+    grid = make_test_grid(name="data-outputs")
+    component = base_module.data_component(
+        name="OBS",
+        grid=grid,
+        fields={"temperature": 281.0},
+    )
+
+    component.seed_field("humidity", 0.5)
+    component.seed_fields({"pressure": 101325.0})
+
+    assert component.field_spec.outputs == ("temperature", "humidity", "pressure")
+    assert component.field_names == ("temperature", "humidity", "pressure")
+
+
+@pytest.mark.fast_always
 def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> None:
     grid = make_test_grid(name="scalar-seed")
     component = _RuntimeOnlyComponent(name="ATM", grid=grid)

@@ -35,6 +35,20 @@ except ImportError:
     )
 
 
+_VEROS_INPUT_FIELD_NAMES = (
+    "model_level_height",
+    "u_velocity",
+    "v_velocity",
+    "potential_temperature",
+    "specific_humidity",
+    "density",
+    "temperature",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+)
+_VEROS_FIELD_DEFAULTS = {"sea_surface_temperature": 283.15}
+
+
 class CustomGlobalFourDegree(GlobalFourDegreeSetup):
     @veros_kernel
     def set_forcing_kernel(state):  # type: ignore
@@ -413,6 +427,11 @@ class VerosGCM(HostRuntimeComponent):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(
+            inputs=_VEROS_INPUT_FIELD_NAMES,
+            outputs=("sea_surface_temperature",),
+            default_fields=_VEROS_FIELD_DEFAULTS,
+        )
 
     def initialize(self, context: ComponentInitContext) -> None:
         dt_seconds = context.dt_seconds

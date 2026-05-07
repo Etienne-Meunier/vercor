@@ -302,6 +302,13 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
+    assert component.field_spec.inputs == (
+        "sea_surface_temperature",
+        "land_surface_temperature",
+    )
+    assert (
+        component.field_spec.outputs == camulator_module._CAMULATOR_RUNTIME_FIELD_NAMES
+    )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
 
 
@@ -522,6 +529,8 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     component.initialize(_make_coupler(start))
+    assert component.field_spec.outputs == ("land_surface_temperature",)
+    assert set(component.field_spec.default_fields) == {"land_surface_temperature"}
     assert isinstance(component.data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(
         component.data["land_surface_temperature"], np.full((2, 2), 283.0)

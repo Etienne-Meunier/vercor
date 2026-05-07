@@ -11,6 +11,8 @@ from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
 
+_ERA5_LAND_FIELD_NAMES = ("land_surface_temperature",)
+
 
 def _prepare_era5_land_runtime_fields(
     longitude: ArrayLike,
@@ -74,6 +76,7 @@ class ERA5Land(DataComponent, ComponentForcingData):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(outputs=_ERA5_LAND_FIELD_NAMES)
 
         self.settings.set_value("apply_time_interpolation", True)
 

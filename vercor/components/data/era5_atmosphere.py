@@ -22,6 +22,21 @@ from vercor.runtime.contexts import ComponentInitContext
 from vercor.settings import VercorSettings
 from vercor.assets import get_forcing_data
 
+_ERA5_ATMOSPHERE_FIELD_NAMES = (
+    "surface_pressure",
+    "specific_humidity_3d",
+    "temperature_3d",
+    "u_velocity",
+    "v_velocity",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+    "specific_humidity",
+    "temperature",
+    "model_level_height",
+    "density",
+    "potential_temperature",
+)
+
 
 def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
     """Convert log surface pressure to physical pressure in Pascals."""
@@ -116,6 +131,7 @@ class ERA5Atmosphere(DataComponent, ComponentForcingData):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(outputs=_ERA5_ATMOSPHERE_FIELD_NAMES)
 
         self.settings.set_value("apply_time_interpolation", True)
 

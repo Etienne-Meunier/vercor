@@ -3,13 +3,20 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentFieldSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentState
+
+
+_LAND_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("latent_heat_flux",),
+    outputs=("soil_moisture", "land_surface_temperature"),
+    default_fields={"soil_moisture": 0.3, "land_surface_temperature": 288.15},
+)
 
 
 @jax.jit
@@ -32,17 +39,10 @@ class Land(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "LND") -> None:
         super().__init__(name, grid)
-        self.declare_fields(
-            inputs=("latent_heat_flux",),
-            outputs=("soil_moisture", "land_surface_temperature"),
-            default_fields={"soil_moisture": 0.3, "land_surface_temperature": 288.15},
-        )
+        self.declare_fields(_LAND_FIELD_SPEC)
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_fields(
-            {"soil_moisture": 0.3, "land_surface_temperature": 288.15},
-            context.settings,
-        )
+        self.seed_declared_defaults(context.settings)
 
     def step_runtime_state(
         self,

@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 import jax
 
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentFieldSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
@@ -12,6 +12,11 @@ if TYPE_CHECKING:
 
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
+_OCEAN_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("sensible_heat_flux", "latent_heat_flux"),
+    outputs=("sea_surface_temperature",),
+    default_fields={"sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE},
+)
 
 
 @jax.jit
@@ -46,13 +51,7 @@ class Ocean(Component):
         self, grid: RectilinearGrid, name: str = "OCN", H: float = 30.0
     ) -> None:
         super().__init__(name, grid)
-        self.declare_fields(
-            inputs=("sensible_heat_flux", "latent_heat_flux"),
-            outputs=("sea_surface_temperature",),
-            default_fields={
-                "sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE
-            },
-        )
+        self.declare_fields(_OCEAN_FIELD_SPEC)
 
         self.H = H  # mixed-layer depth [m]
         self.rho = 1025.0
@@ -62,11 +61,7 @@ class Ocean(Component):
         )  # weak restoring to 15C over ~30 days
 
     def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_field(
-            "sea_surface_temperature",
-            _REFERENCE_SEA_SURFACE_TEMPERATURE,
-            context.settings,
-        )
+        self.seed_declared_defaults(context.settings)
 
     def step_runtime_state(
         self,

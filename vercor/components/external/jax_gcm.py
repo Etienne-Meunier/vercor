@@ -329,6 +329,21 @@ class JAXGCM(Component):
         self.sigma_levels: RuntimeArray = self.model.coords.vertical.centers
 
         super().__init__(name, grid)
+        self.declare_fields(
+            inputs=("land_surface_temperature", "sea_surface_temperature"),
+            outputs=(
+                "land_surface_temperature",
+                "sea_surface_temperature",
+                "total_surface_temperature",
+                *_JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+                "pressure",
+            ),
+            default_fields=_default_jax_gcm_grid_fields(
+                self.grid.shape,
+                include_total_surface_temperature=True,
+                policy=self.settings,
+            ),
+        )
 
     def _generate_step_function(
         self, jitted: bool = True

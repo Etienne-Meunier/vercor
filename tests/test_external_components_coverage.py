@@ -418,6 +418,17 @@ def test_jax_gcm_constructor_builds_jax_backed_grid(
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
     assert isinstance(component.sigma_levels, jax.Array)
+    assert component.field_spec.inputs == (
+        "land_surface_temperature",
+        "sea_surface_temperature",
+    )
+    assert component.field_spec.outputs == (
+        "land_surface_temperature",
+        "sea_surface_temperature",
+        "total_surface_temperature",
+        *jax_gcm_module._JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+        "pressure",
+    )
     assert_allclose_compact(component.grid.longitude, np.asarray([0.0, 180.0]))
     assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
@@ -1116,6 +1127,18 @@ def test_veros_constructor_builds_jax_backed_grid(
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
+    assert component.field_spec.inputs == (
+        "model_level_height",
+        "u_velocity",
+        "v_velocity",
+        "potential_temperature",
+        "specific_humidity",
+        "density",
+        "temperature",
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+    )
+    assert component.field_spec.outputs == ("sea_surface_temperature",)
     assert component.grid.binary_mask.shape == (4, 4)
     expected_mask = np.ones((4, 4))
     expected_mask[1, 0] = 0.0

@@ -11,12 +11,18 @@ from vercor.components.external.camulator_state import (
 )
 
 from vercor.grid import RectilinearGrid
-from vercor.components.base import HostRuntimeComponent
+from vercor.components.base import ComponentFieldSpec, HostRuntimeComponent
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.grid_masks import create_lnd_mask_from_ocn
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentState
+
+
+_CAMULATOR_LAND_FIELD_SPEC = ComponentFieldSpec(
+    outputs=("land_surface_temperature",),
+    default_fields={"land_surface_temperature": 283.0},
+)
 
 
 def _prepare_camulator_land_surface_temperature(
@@ -73,6 +79,7 @@ class CAMulatorLand(HostRuntimeComponent):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(_CAMULATOR_LAND_FIELD_SPEC)
 
     def initialize(self, context: ComponentInitContext) -> None:
         logger = context.logger
@@ -118,7 +125,7 @@ class CAMulatorLand(HostRuntimeComponent):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.seed_field("land_surface_temperature", 283.0, context.settings)
+        self.seed_declared_defaults(context.settings)
 
     def step_host_runtime_state(
         self,

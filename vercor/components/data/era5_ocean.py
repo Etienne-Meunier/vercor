@@ -11,6 +11,8 @@ from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
 
+_ERA5_OCEAN_FIELD_NAMES = ("sea_surface_temperature",)
+
 
 def _ocean_binary_mask_from_land_fraction(land_fraction: ArrayLike) -> jax.Array:
     """Convert a fractional land mask into a binary ocean mask."""
@@ -74,6 +76,7 @@ class ERA5Ocean(DataComponent, ComponentForcingData):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(outputs=_ERA5_OCEAN_FIELD_NAMES)
 
         self.settings.set_value("apply_time_interpolation", True)
 

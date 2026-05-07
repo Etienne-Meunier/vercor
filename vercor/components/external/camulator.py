@@ -440,6 +440,14 @@ class CAMulatorGCM(HostRuntimeComponent):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(
+            inputs=("sea_surface_temperature", "land_surface_temperature"),
+            outputs=_CAMULATOR_RUNTIME_FIELD_NAMES,
+            default_fields=_initialize_camulator_runtime_fields(
+                self.grid.shape,
+                self.settings,
+            ),
+        )
 
     def initialize(self, context: ComponentInitContext) -> None:
         logger = context.logger

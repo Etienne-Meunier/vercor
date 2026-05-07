@@ -75,6 +75,9 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
         "u_velocity_10m",
         "v_velocity_10m",
     )
+    assert set(atmosphere.field_spec.default_fields) == set(
+        atmosphere.field_spec.outputs
+    )
     atmosphere.initialize(coupler.init_context())
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
@@ -107,6 +110,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     ocean = Ocean(grid=grid)
     assert ocean.field_spec.inputs == ("sensible_heat_flux", "latent_heat_flux")
     assert ocean.field_spec.outputs == ("sea_surface_temperature",)
+    assert set(ocean.field_spec.default_fields) == {"sea_surface_temperature"}
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
     assert ocean.data == {}
     assert ocean_state.data.field_names == ("sea_surface_temperature",)
@@ -127,6 +131,10 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     land = Land(grid=grid)
     assert land.field_spec.inputs == ("latent_heat_flux",)
     assert land.field_spec.outputs == ("soil_moisture", "land_surface_temperature")
+    assert set(land.field_spec.default_fields) == {
+        "soil_moisture",
+        "land_surface_temperature",
+    }
     land.initialize(coupler.init_context())
     land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
     land_state = _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
@@ -137,6 +145,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     seaice = SeaIce(grid=grid)
     assert seaice.field_spec.inputs == ("sea_surface_temperature",)
     assert seaice.field_spec.outputs == ("ice_fraction",)
+    assert set(seaice.field_spec.default_fields) == {"ice_fraction"}
     seaice_state = _step_component(seaice, dt, timestamp, coupler)
     assert seaice.data == {}
     assert seaice_state.data.field_names == ("ice_fraction",)
@@ -195,6 +204,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
 
     assert component.DATA_FILES["surface"] == str(fake_path)
     assert component.settings.apply_time_interpolation
+    assert component.field_spec.outputs == ("land_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.data["land_surface_temperature"], jax.Array)
@@ -252,6 +262,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
 
     assert component.DATA_FILES["surface"] == str(fake_path)
     assert component.settings.apply_time_interpolation
+    assert component.field_spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(component.grid.latitude, np.asarray([-10.0, 10.0]))
@@ -306,6 +317,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
 
     assert component.DATA_FILES["model_level"] == str(fake_path)
     assert component.settings.apply_time_interpolation
+    assert component.field_spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.data["sea_surface_temperature"], jax.Array)
     assert component.grid.shape == (46, 2)
@@ -474,6 +486,20 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         "surface": str(surface_path),
     }
     assert component.settings.apply_time_interpolation
+    assert component.field_spec.outputs == (
+        "surface_pressure",
+        "specific_humidity_3d",
+        "temperature_3d",
+        "u_velocity",
+        "v_velocity",
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+        "specific_humidity",
+        "temperature",
+        "model_level_height",
+        "density",
+        "potential_temperature",
+    )
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.data["surface_pressure"], jax.Array)
     assert_allclose_compact(component.grid.longitude, forcing["longitude"])
@@ -547,6 +573,10 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.settings.get_field_time_slice
+    assert component.field_spec.outputs == (
+        "land_surface_temperature",
+        "soil_moisture",
+    )
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.data["land_surface_temperature"], jax.Array)
     assert isinstance(component.data["soil_moisture"], jax.Array)

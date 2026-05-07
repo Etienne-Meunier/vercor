@@ -118,7 +118,11 @@ immutable runtime containers used during traced integration.
   to grid-shaped constants. `ComponentSetupContext` and `ComponentStepContext`
   are public aliases for the setup and step contexts passed to author callbacks.
   `ComponentFieldSpec`, `field_spec`, and `declare_fields()` provide the same
-  vocabulary and read-only introspection for subclasses. The older `wrap()` classmethods and
+  vocabulary and read-only introspection for subclasses. `field_names` exposes
+  setup-time seeded field names in insertion order. `DataComponent` seeding
+  automatically records seeded fields as declared outputs, so data-only
+  components remain introspectable whether fields are declared up front or added
+  through helper seeding. The older `wrap()` classmethods and
   `make_data_component()`, `make_differentiable_component()`, and
   `make_host_component()` functions remain backward-compatible delegates to
   the strict array-oriented wrapper path. Subclasses should call the base constructor so `name`,
@@ -134,7 +138,9 @@ immutable runtime containers used during traced integration.
   mutating `data` directly; step methods
   should read fields with `runtime_field()`, `runtime_fields()`,
   `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
-  with `with_runtime_fields()` where possible. Prefill hooks should use
+  with `with_runtime_fields()` where possible. `seed_declared_defaults()` seeds
+  fields from a component's declared defaults and is preferred when
+  initialization mirrors the declared field contract. Prefill hooks should use
   `prefill_runtime_fields()` for ordinary output/default fields. Non-grid metadata such as
   hybrid-level coefficients belongs on component attributes or runtime payloads.
   Use
@@ -148,8 +154,9 @@ immutable runtime containers used during traced integration.
   `Coupler.run()` so VerCOR can select the Python host runtime path. Optional
   hooks include `initialize()`, `create_runtime_payload()`,
   `prefill_runtime_state_fields()`, and `validate_runtime_state()`. Callable
-  wrappers receive `(fields, context, payload)` and return either a field-update
-  mapping or `ComponentStepResult(fields, payload)` when the runtime payload must
+  wrappers may accept `(fields)`, `(fields, context)`, or
+  `(fields, context, payload)` and return either a field-update mapping or
+  `ComponentStepResult(fields, payload)` when the runtime payload must
   be replaced. The compatibility wrapper arguments `required_fields`,
   `prefill_fields`, and `field_defaults` map to the same runtime contract used
   by the newer `inputs`, `outputs`, and `default_fields` facade. These helpers

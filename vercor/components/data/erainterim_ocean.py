@@ -11,6 +11,8 @@ from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
 from vercor.assets import get_forcing_data
 
+_ERAINTERIM_OCEAN_FIELD_NAMES = ("sea_surface_temperature",)
+
 
 def _assemble_erainterim_latitude(
     latitude_core: ArrayLike,
@@ -134,6 +136,7 @@ class ERAInterimOcean(DataComponent, ComponentForcingData):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(outputs=_ERAINTERIM_OCEAN_FIELD_NAMES)
 
         self.settings.set_value("apply_time_interpolation", True)
 

@@ -48,9 +48,7 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
     def step(
         fields: Mapping[str, Any],
         context: ComponentStepContext,
-        payload: Any | None,
     ) -> Mapping[str, Any]:
-        _ = payload
         heat_capacity = 1025.0 * 3990.0 * 30.0
         tendency = fields["net_surface_heat_flux"] / heat_capacity
         return {
