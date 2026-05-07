@@ -17,12 +17,16 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     expected_public_names = {
         "Clock",
         "Component",
+        "ComponentStepResult",
         "Coupler",
         "DataComponent",
         "Exchange",
         "HostRuntimeComponent",
         "RectilinearGrid",
         "RunSequence",
+        "make_data_component",
+        "make_differentiable_component",
+        "make_host_component",
     }
     runtime_internal_names = {
         "ComponentInitContext",
@@ -40,10 +44,17 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     assert runtime_internal_names.isdisjoint(set(vercor.__all__))
 
     assert vercor.Component is Component
+    assert vercor.ComponentStepResult is components_module.ComponentStepResult
     data_component_type = getattr(components_module, "DataComponent", None)
     assert data_component_type is not None
     assert getattr(vercor, "DataComponent", None) is data_component_type
     assert vercor.HostRuntimeComponent is HostRuntimeComponent
+    assert vercor.make_data_component is components_module.make_data_component
+    assert (
+        vercor.make_differentiable_component
+        is components_module.make_differentiable_component
+    )
+    assert vercor.make_host_component is components_module.make_host_component
     assert vercor.RunSequence is RunSequence
     for name in runtime_internal_names:
         assert not hasattr(vercor, name)
@@ -53,12 +64,20 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 def test_components_package_exports_only_component_author_contracts() -> None:
     assert components_module.__all__ == [
         "Component",
+        "ComponentStepResult",
         "DataComponent",
         "HostRuntimeComponent",
+        "make_data_component",
+        "make_differentiable_component",
+        "make_host_component",
     ]
     assert components_module.Component is Component
+    assert hasattr(components_module, "ComponentStepResult")
     assert hasattr(components_module, "DataComponent")
     assert components_module.HostRuntimeComponent is HostRuntimeComponent
+    assert hasattr(components_module, "make_data_component")
+    assert hasattr(components_module, "make_differentiable_component")
+    assert hasattr(components_module, "make_host_component")
     assert not hasattr(components_module, "RuntimeComponentState")
     assert not hasattr(components_module, "ComponentInitContext")
     assert not hasattr(components_module, "RuntimeStepContext")

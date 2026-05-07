@@ -1,3 +1,42 @@
+# 2026-05-07
+
+## User-Friendly Component Wrapping API
+
+- Added top-level and `vercor.components` factory helpers for common custom
+  adapter cases: data-only components, differentiable callable components, and
+  host-runtime callable components.
+- Added `ComponentStepResult` so callable wrappers can update runtime fields
+  while replacing optional runtime payloads for shape-stable model state.
+- Added `Component.seed_field()`, `seed_fields()`, `runtime_fields()`,
+  `runtime_field()`, and `with_runtime_fields()` helpers to keep subclass
+  authors away from direct `RuntimeComponentState` store manipulation in common
+  cases.
+- Kept the existing subclass contracts intact for components that need custom
+  initialization, validation, prefill, or full lifecycle hooks.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the helper layer.
+- Failed approaches / corrections:
+  - The focused red test run failed as expected because the factories, helper
+    methods, `ComponentStepResult`, and public exports did not exist yet.
+
+## Validation (User-Friendly Component Wrapping API, 2026-05-07)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - failed as expected before implementation because the helper API was missing
+  - passed after implementation
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_component_base_coverage.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - first failed on payload tests that treated `Any | None` as a mapping
+  - passed after adding explicit mapping assertions (`104 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-05-06
 
 ## Coupler Lifecycle Logging

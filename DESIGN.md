@@ -124,7 +124,15 @@ immutable runtime containers used during traced integration.
   `step_host_runtime_state()`; host-backed adapters must run through
   `Coupler.run()` so VerCOR can select the Python host runtime path. Optional
   hooks include `initialize()`, `create_runtime_payload()`,
-  `prefill_runtime_state_fields()`, and `validate_runtime_state()`.
+  `prefill_runtime_state_fields()`, and `validate_runtime_state()`. For common
+  adapters that only need seeded grid fields plus a runtime callable, users may
+  use `make_data_component()`, `make_differentiable_component()`, or
+  `make_host_component()` instead of writing a subclass. Callable wrappers
+  receive `(fields, context, payload)` and return either a field-update mapping
+  or `ComponentStepResult(fields, payload)` when the runtime payload must be
+  replaced. These helpers still enforce the same stable runtime-state contract:
+  updated fields must already exist through seeded data or exchange prefill, and
+  scanned payload pytrees must keep stable shapes and dtypes.
 - Internal runtime API: the `vercor.runtime` package owns
   `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime
   contexts, dispatch contexts, and runtime helper functions. These containers

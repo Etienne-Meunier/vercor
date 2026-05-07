@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -36,6 +38,7 @@ from vercor.runtime.components import (
 from vercor.runtime.time import scalar_runtime_step_info
 from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 
 
@@ -119,6 +122,239 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
         sent.outgoing.get("sea_surface_temperature"),
         np.full(grid.shape, 280.0),
     )
+
+
+@pytest.mark.fast_always
+def test_make_data_component_seeds_canonical_fields() -> None:
+    grid = make_test_grid(name="factory-data")
+    component = base_module.make_data_component(
+        name="OBS",
+        grid=grid,
+        fields={"temperature": jnp.full(grid.shape, 281.0)},
+    )
+
+    assert isinstance(component, base_module.DataComponent)
+    assert_allclose_compact(
+        component.data["temperature"],
+        np.full(grid.shape, 281.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_make_data_component_rejects_non_grid_fields_early() -> None:
+    grid = make_test_grid(name="factory-layout")
+
+    with pytest.raises(
+        ComponentError,
+        match="data field 'bad_metadata'.*canonical grid-field layout",
+    ):
+        base_module.make_data_component(
+            name="OBS",
+            grid=grid,
+            fields={"bad_metadata": jnp.zeros((3,), dtype=jnp.float64)},
+        )
+
+
+@pytest.mark.fast_always
+def test_component_helpers_seed_and_update_runtime_fields() -> None:
+    grid = make_test_grid(name="helper-fields")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    component.seed_field("temperature", jnp.ones(grid.shape))
+    component.seed_fields({"humidity": jnp.full(grid.shape, 0.5)})
+    state = create_runtime_component_state(
+        component,
+        contract=RuntimeComponentContract(),
+    )
+
+    fields = component.runtime_fields(state)
+    assert set(fields) == {"temperature", "humidity"}
+    assert_allclose_compact(
+        component.runtime_field(state, "humidity"),
+        np.full(grid.shape, 0.5),
+    )
+
+    updated = component.with_runtime_fields(
+        state,
+        {"temperature": jnp.full(grid.shape, 284.0)},
+    )
+
+    assert_allclose_compact(
+        updated.data.get("temperature"),
+        np.full(grid.shape, 284.0),
+    )
+    assert_allclose_compact(
+        updated.data.get("humidity"),
+        np.full(grid.shape, 0.5),
+    )
+
+
+@pytest.mark.fast_always
+def test_make_differentiable_component_applies_callable_field_updates() -> None:
+    grid = make_test_grid(name="factory-active")
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        assert payload is None
+        return {"temperature": fields["temperature"] + context.dt_seconds}
+
+    component = base_module.make_differentiable_component(
+        name="ATM",
+        grid=grid,
+        fields={"temperature": jnp.ones(grid.shape)},
+        step=step,
+    )
+    state = create_runtime_component_state(
+        component,
+        contract=RuntimeComponentContract(),
+    )
+
+    stepped = component.step_runtime_state(
+        state,
+        RuntimeStepContext(dt_seconds=3.0, settings=VercorSettings()),
+    )
+
+    assert_allclose_compact(
+        stepped.data.get("temperature"),
+        np.full(grid.shape, 4.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_callable_component_preserves_and_replaces_payload() -> None:
+    grid = make_test_grid(name="factory-payload")
+
+    def preserve_payload(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = context
+        assert isinstance(payload, Mapping)
+        return {"temperature": fields["temperature"] + payload["offset"]}
+
+    preserve_component = base_module.make_differentiable_component(
+        name="ATM",
+        grid=grid,
+        fields={"temperature": jnp.ones(grid.shape)},
+        payload={"offset": jnp.asarray(2.0)},
+        step=preserve_payload,
+    )
+    preserve_state = create_runtime_component_state(
+        preserve_component,
+        contract=RuntimeComponentContract(),
+    )
+    preserved = preserve_component.step_runtime_state(
+        preserve_state,
+        RuntimeStepContext(dt_seconds=1.0, settings=VercorSettings()),
+    )
+
+    assert preserved.runtime_payload is preserve_state.runtime_payload
+    assert_allclose_compact(
+        preserved.data.get("temperature"),
+        np.full(grid.shape, 3.0),
+    )
+
+    def replace_payload(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> base_module.ComponentStepResult:
+        _ = context
+        assert isinstance(payload, Mapping)
+        return base_module.ComponentStepResult(
+            fields={"temperature": fields["temperature"] + 1.0},
+            payload={"offset": payload["offset"] + 1.0},
+        )
+
+    replace_component = base_module.make_differentiable_component(
+        name="ATM",
+        grid=grid,
+        fields={"temperature": jnp.ones(grid.shape)},
+        payload={"offset": jnp.asarray(2.0)},
+        step=replace_payload,
+    )
+    replace_state = create_runtime_component_state(
+        replace_component,
+        contract=RuntimeComponentContract(),
+    )
+    replaced = replace_component.step_runtime_state(
+        replace_state,
+        RuntimeStepContext(dt_seconds=1.0, settings=VercorSettings()),
+    )
+
+    assert replaced.runtime_payload is not replace_state.runtime_payload
+    assert_allclose_compact(
+        replaced.data.get("temperature"),
+        np.full(grid.shape, 2.0),
+    )
+    assert isinstance(replaced.runtime_payload, Mapping)
+    assert_allclose_compact(replaced.runtime_payload["offset"], np.asarray(3.0))
+
+
+@pytest.mark.fast_always
+def test_make_host_component_runs_through_coupler_host_runtime() -> None:
+    grid = make_test_grid(name="factory-host")
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = payload
+        return {"temperature": fields["temperature"] + context.dt_seconds}
+
+    component = base_module.make_host_component(
+        name="HOST",
+        grid=grid,
+        fields={"temperature": jnp.ones(grid.shape)},
+        step=step,
+    )
+    coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=5.0, steps=1))
+    coupler.register(component)
+    coupler.set_components_run_sequence(RunSequence(order=["HOST"]))
+
+    final_state = coupler.run()
+
+    assert_allclose_compact(
+        final_state.get_component_state("HOST").data.get("temperature"),
+        np.full(grid.shape, 6.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_callable_component_rejects_unseeded_field_updates() -> None:
+    grid = make_test_grid(name="factory-missing")
+
+    def step(
+        fields: Mapping[str, RuntimeArray],
+        context: RuntimeStepContext,
+        payload: Any | None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = fields, context, payload
+        return {"created_during_step": jnp.zeros(grid.shape)}
+
+    component = base_module.make_differentiable_component(
+        name="ATM",
+        grid=grid,
+        fields={"temperature": jnp.ones(grid.shape)},
+        step=step,
+    )
+    state = create_runtime_component_state(
+        component,
+        contract=RuntimeComponentContract(),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match="created_during_step.*missing from runtime data.*seed_field",
+    ):
+        component.step_runtime_state(
+            state,
+            RuntimeStepContext(dt_seconds=1.0, settings=VercorSettings()),
+        )
 
 
 @pytest.mark.fast_always
