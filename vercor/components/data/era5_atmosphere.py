@@ -133,7 +133,7 @@ class ERA5Atmosphere(DataComponent, ComponentForcingData):
         super().__init__(name, grid=grid)
         self.declare_fields(outputs=_ERA5_ATMOSPHERE_FIELD_NAMES)
 
-        self.settings.set_value("apply_time_interpolation", True)
+        self.update_settings(apply_time_interpolation=True)
 
         self.hyai: jax.Array = jnp.asarray(
             self._read_forcing("hyai", where="model_level")[-3:]

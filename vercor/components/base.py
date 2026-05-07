@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, TypeAlias, cast, final
+from typing import TYPE_CHECKING, Any, Self, TypeAlias, cast, final
 
 import jax.numpy as jnp
 
@@ -258,6 +258,52 @@ class Component(ABC):
 
         return tuple(self.data)
 
+    def update_settings(self, **values: object) -> Self:
+        """Update component settings by name and return this component.
+
+        This is a small convenience for component constructors that need to set
+        one or more existing ``VercorSettings`` values while preserving the
+        settings metadata and chainable authoring style.
+        """
+
+        for setting_name, setting_value in values.items():
+            self.settings.set_value(setting_name, setting_value)
+        return self
+
+    def grid_field_defaults(
+        self,
+        names: _FieldNames,
+        value: object = 0.0,
+        overrides: _AuthorFieldValues = None,
+        policy: PrecisionPolicy = None,
+    ) -> dict[str, RuntimeArray]:
+        """Return grid-shaped default fields for named runtime data fields.
+
+        ``value`` is applied to every name, then ``overrides`` replace specific
+        names. Scalars expand to this component's grid shape; array-like values
+        are validated against the canonical component-data layouts.
+        """
+
+        field_names = _unique_field_names(names)
+        defaults: dict[str, object] = {field_name: value for field_name in field_names}
+        for field_name, field_value in (overrides or {}).items():
+            if field_name not in defaults:
+                raise ComponentError(
+                    f"Default override field '{field_name}' is not declared for "
+                    f"component '{self.name}'."
+                )
+            defaults[field_name] = field_value
+
+        return (
+            _normalize_author_field_values(
+                component_name=self.name,
+                grid=self.grid,
+                fields=defaults,
+                policy=self.settings if policy is None else policy,
+            )
+            or {}
+        )
+
     def seed_field(
         self,
         name: str,
@@ -441,6 +487,15 @@ class Component(ABC):
             data = data.set(field_name, field_value)
         return component_state.with_data(data)
 
+    def apply_step_result(
+        self,
+        component_state: "RuntimeComponentState",
+        result: _ComponentStepReturn,
+    ) -> "RuntimeComponentState":
+        """Apply a field mapping or ``ComponentStepResult`` to runtime state."""
+
+        return _apply_callable_step_result(self, component_state, result)
+
     def require_runtime_fields(
         self,
         component_state: "RuntimeComponentState",
@@ -505,7 +560,7 @@ class Component(ABC):
         time, coupling timestep, run sequence, settings, or logger.
         """
 
-        _ = context
+        self.seed_declared_defaults(context.settings)
 
     def create_runtime_payload(self) -> Any | None:
         """Return optional immutable payload carried by runtime component state.

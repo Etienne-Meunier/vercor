@@ -138,7 +138,7 @@ class ERAInterimOcean(DataComponent, ComponentForcingData):
         super().__init__(name, grid=grid)
         self.declare_fields(outputs=_ERAINTERIM_OCEAN_FIELD_NAMES)
 
-        self.settings.set_value("apply_time_interpolation", True)
+        self.update_settings(apply_time_interpolation=True)
 
         sst = _mask_sea_surface_temperature(
             _assemble_erainterim_field(

@@ -1,5 +1,48 @@
 # 2026-05-07
 
+## Additive Component Authoring API Polish
+
+- Added small public `Component` helpers for common subclass-author boilerplate:
+  `update_settings(...)`, `grid_field_defaults(...)`, and
+  `apply_step_result(...)`.
+- Made the base `Component.initialize()` seed declared defaults automatically,
+  allowing slab components to rely on their module-level field specs without
+  duplicate initialize hooks.
+- Refactored bundled data adapters to use `update_settings(...)`; refactored
+  CAMulator, JAXGCM, and Veros defaults onto `grid_field_defaults(...)` where
+  it keeps field contracts clearer; and used `apply_step_result(...)` for
+  JAXGCM field-plus-payload updates.
+- Updated the custom component wrapping example and design/dependency docs to
+  describe the new helper surface.
+- Failed approaches / corrections:
+  - The red helper tests failed as expected on missing helper methods and base
+    declared-default seeding.
+  - The first focused run exposed a test setup error with
+    `ComponentInitContext.logger`; the test now supplies the required argument.
+  - The first mypy run exposed a tuple/list mismatch for `RunSequence.order`;
+    the test now uses the documented list type.
+
+## Validation (Additive Component Authoring API Polish, 2026-05-07)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_base_initialize_seeds_declared_defaults tests/test_component_base_coverage.py::test_update_settings_is_chainable tests/test_component_base_coverage.py::test_grid_field_defaults_expands_default_value_and_overrides tests/test_component_base_coverage.py::test_apply_step_result_updates_fields_and_payload -q --tb=short`
+  - failed as expected before implementation on missing helper behavior
+  - passed after base helper implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_component_models_coverage.py tests/test_external_components_coverage.py tests/test_camulator_component_kernels.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 105 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - first failed on the `RunSequence.order` tuple/list mismatch in the new test
+  - passed after the test fix (`105 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Authoring API Polish and Adapter Rewrite
 
 - Added flexible callable wrapper signatures: author step callbacks can now use

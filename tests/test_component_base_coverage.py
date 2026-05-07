@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -16,7 +16,7 @@ import vercor.components.base as base_module
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.runtime.contexts import RuntimeStepContext
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.forcing_data import ComponentForcingData
@@ -451,6 +451,83 @@ def test_seed_declared_defaults_and_field_names_expose_author_state() -> None:
     assert component.field_names == ("temperature", "humidity")
     assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 280.0))
     assert_allclose_compact(component.data["humidity"], np.full(grid.shape, 0.5))
+
+
+@pytest.mark.fast_always
+def test_base_initialize_seeds_declared_defaults() -> None:
+    grid = make_test_grid(name="base-initialize")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    component.declare_fields(
+        outputs=("temperature", "humidity"),
+        default_fields={"temperature": 280.0, "humidity": 0.5},
+    )
+
+    component.initialize(
+        ComponentInitContext(
+            start=datetime(2000, 1, 1),
+            dt_seconds=60.0,
+            logger=cast(Any, None),
+            settings=VercorSettings(),
+            run_sequence=RunSequence(order=["ATM"]),
+        )
+    )
+
+    assert component.field_names == ("temperature", "humidity")
+    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 280.0))
+    assert_allclose_compact(component.data["humidity"], np.full(grid.shape, 0.5))
+
+
+@pytest.mark.fast_always
+def test_update_settings_is_chainable() -> None:
+    component = _RuntimeOnlyComponent(name="ATM", grid=make_test_grid())
+
+    returned = component.update_settings(
+        apply_time_interpolation=True,
+        get_field_time_slice=True,
+    )
+
+    assert returned is component
+    assert component.settings.apply_time_interpolation
+    assert component.settings.get_field_time_slice
+
+
+@pytest.mark.fast_always
+def test_grid_field_defaults_expands_default_value_and_overrides() -> None:
+    grid = make_test_grid(name="grid-defaults")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+
+    defaults = component.grid_field_defaults(
+        ("temperature", "humidity", "pressure"),
+        value=0.0,
+        overrides={"temperature": 280.0, "humidity": np.full(grid.shape, 0.5)},
+    )
+
+    assert tuple(defaults) == ("temperature", "humidity", "pressure")
+    assert_allclose_compact(defaults["temperature"], np.full(grid.shape, 280.0))
+    assert_allclose_compact(defaults["humidity"], np.full(grid.shape, 0.5))
+    assert_allclose_compact(defaults["pressure"], np.zeros(grid.shape))
+
+
+@pytest.mark.fast_always
+def test_apply_step_result_updates_fields_and_payload() -> None:
+    grid = make_test_grid(name="apply-step-result")
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    component.seed_field("temperature", 280.0)
+    state = create_runtime_component_state(
+        component,
+        contract=RuntimeComponentContract(),
+    )
+
+    updated = component.apply_step_result(
+        state,
+        base_module.ComponentStepResult(
+            fields={"temperature": jnp.full(grid.shape, 281.0)},
+            payload={"counter": 1},
+        ),
+    )
+
+    assert_allclose_compact(updated.data.get("temperature"), np.full(grid.shape, 281.0))
+    assert updated.runtime_payload == {"counter": 1}
 
 
 @pytest.mark.fast_always

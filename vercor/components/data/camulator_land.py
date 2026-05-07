@@ -125,7 +125,7 @@ class CAMulatorLand(HostRuntimeComponent):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.seed_declared_defaults(context.settings)
+        super().initialize(context)
 
     def step_host_runtime_state(
         self,

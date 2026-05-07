@@ -119,7 +119,11 @@ immutable runtime containers used during traced integration.
   are public aliases for the setup and step contexts passed to author callbacks.
   `ComponentFieldSpec`, `field_spec`, and `declare_fields()` provide the same
   vocabulary and read-only introspection for subclasses. `field_names` exposes
-  setup-time seeded field names in insertion order. `DataComponent` seeding
+  setup-time seeded field names in insertion order. Subclass constructors can
+  use `update_settings(...)` for chainable updates to existing component
+  settings and `grid_field_defaults(...)` to build validated grid-shaped
+  default-field mappings with scalar expansion and field-specific overrides.
+  `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
   components remain introspectable whether fields are declared up front or added
   through helper seeding. The older `wrap()` classmethods and
@@ -138,9 +142,12 @@ immutable runtime containers used during traced integration.
   mutating `data` directly; step methods
   should read fields with `runtime_field()`, `runtime_fields()`,
   `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
-  with `with_runtime_fields()` where possible. `seed_declared_defaults()` seeds
-  fields from a component's declared defaults and is preferred when
-  initialization mirrors the declared field contract. Prefill hooks should use
+  with `with_runtime_fields()` where possible. When a step also needs to replace
+  runtime payload, `apply_step_result()` applies either a field mapping or
+  `ComponentStepResult` through the same validated update path used by callable
+  wrappers. `seed_declared_defaults()` seeds fields from a component's declared
+  defaults, and the base `initialize()` hook now does this automatically when
+  subclasses do not need custom setup. Prefill hooks should use
   `prefill_runtime_fields()` for ordinary output/default fields. Non-grid metadata such as
   hybrid-level coefficients belongs on component attributes or runtime payloads.
   Use

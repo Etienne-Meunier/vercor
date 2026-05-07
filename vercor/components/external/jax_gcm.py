@@ -24,7 +24,7 @@ from jcm.physics_interface import (
 )
 
 from vercor.clock import ModelDateTime
-from vercor.components.base import Component
+from vercor.components.base import Component, ComponentStepResult
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.components.external.jax_gcm_tools import (
     change_jcm_parameter_values,
@@ -35,9 +35,7 @@ from vercor.components.external.jax_gcm_tools import (
     compute_pressure_levels,
 )
 from vercor.dtypes import (
-    PrecisionPolicy,
     as_jax_real_array,
-    jax_full,
     jax_real_dtype,
     jax_zeros,
 )
@@ -89,26 +87,19 @@ _JAXGCM_REQUIRED_GRID_FIELD_NAMES = (
 )
 
 
-def _default_jax_gcm_grid_fields(
-    grid_shape: tuple[int, int],
+def _jax_gcm_default_field_names(
     *,
     include_total_surface_temperature: bool,
-    policy: PrecisionPolicy = None,
-) -> dict[str, RuntimeArray]:
-    """Return default grid-shaped JAXGCM runtime fields."""
+) -> tuple[str, ...]:
+    """Return JAXGCM grid-field default names in stable insertion order."""
 
-    zeros = jax_zeros(grid_shape, policy)
-    fields: dict[str, RuntimeArray] = {
-        field_name: zeros for field_name in _JAXGCM_OUTPUT_GRID_FIELD_NAMES
-    }
-    fields["land_surface_temperature"] = zeros
-    fields["sea_surface_temperature"] = jax_full(
-        grid_shape,
-        _REFERENCE_SURFACE_TEMPERATURE,
-        policy,
+    fields = (
+        *_JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+        "land_surface_temperature",
+        "sea_surface_temperature",
     )
     if include_total_surface_temperature:
-        fields["total_surface_temperature"] = zeros
+        return (*fields, "total_surface_temperature")
     return fields
 
 
@@ -338,10 +329,13 @@ class JAXGCM(Component):
                 *_JAXGCM_OUTPUT_GRID_FIELD_NAMES,
                 "pressure",
             ),
-            default_fields=_default_jax_gcm_grid_fields(
-                self.grid.shape,
-                include_total_surface_temperature=True,
-                policy=self.settings,
+            default_fields=self.grid_field_defaults(
+                _jax_gcm_default_field_names(
+                    include_total_surface_temperature=True,
+                ),
+                overrides={
+                    "sea_surface_temperature": _REFERENCE_SURFACE_TEMPERATURE,
+                },
             ),
         )
 
@@ -403,9 +397,13 @@ class JAXGCM(Component):
         self._step_function = self._generate_step_function(jitted=self.jitted)
 
         self.seed_fields(
-            _default_jax_gcm_grid_fields(
-                self.grid.shape,
-                include_total_surface_temperature=False,
+            self.grid_field_defaults(
+                _jax_gcm_default_field_names(
+                    include_total_surface_temperature=False,
+                ),
+                overrides={
+                    "sea_surface_temperature": _REFERENCE_SURFACE_TEMPERATURE,
+                },
                 policy=context.settings,
             )
         )
@@ -457,10 +455,13 @@ class JAXGCM(Component):
 
         self.prefill_runtime_fields(
             data,
-            default_fields=_default_jax_gcm_grid_fields(
-                self.grid.shape,
-                include_total_surface_temperature=True,
-                policy=self.settings,
+            default_fields=self.grid_field_defaults(
+                _jax_gcm_default_field_names(
+                    include_total_surface_temperature=True,
+                ),
+                overrides={
+                    "sea_surface_temperature": _REFERENCE_SURFACE_TEMPERATURE,
+                },
             ),
         )
         sigma_levels = jnp.asarray(self.sigma_levels)
@@ -564,20 +565,24 @@ class JAXGCM(Component):
             averaged_prediction.dynamics.specific_humidity,
         )
 
-        updated_state = self.with_runtime_fields(
+        updated_state = self.apply_step_result(
             component_state,
-            {
-                "land_surface_temperature": land_surface_temperature,
-                "sea_surface_temperature": sea_surface_temperature,
-                "total_surface_temperature": total_surface_temperature,
-                **mapped_fields,
-            },
+            ComponentStepResult(
+                fields={
+                    "land_surface_temperature": land_surface_temperature,
+                    "sea_surface_temperature": sea_surface_temperature,
+                    "total_surface_temperature": total_surface_temperature,
+                    **mapped_fields,
+                },
+                payload=JAXGCMRuntimePayload(
+                    jcm_state=jcm_state,
+                    forcing=payload.forcing,
+                ),
+            ),
         )
 
         return (
-            updated_state.with_runtime_payload(
-                JAXGCMRuntimePayload(jcm_state=jcm_state, forcing=payload.forcing)
-            ),
+            updated_state,
             prediction,
             applied_forcing,
         )

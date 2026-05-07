@@ -39,7 +39,7 @@ def make_data_forcing(grid: RectilinearGrid) -> DataComponent:
             "temperature": 288.15,
             "specific_humidity": 0.01,
         },
-    )
+    ).update_settings(identifier="example-forcing")
 
 
 def make_differentiable_model(grid: RectilinearGrid) -> Component:

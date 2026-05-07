@@ -430,7 +430,10 @@ class VerosGCM(HostRuntimeComponent):
         self.declare_fields(
             inputs=_VEROS_INPUT_FIELD_NAMES,
             outputs=("sea_surface_temperature",),
-            default_fields=_VEROS_FIELD_DEFAULTS,
+            default_fields=self.grid_field_defaults(
+                _VEROS_FIELD_DEFAULTS,
+                overrides=_VEROS_FIELD_DEFAULTS,
+            ),
         )
 
     def initialize(self, context: ComponentInitContext) -> None:

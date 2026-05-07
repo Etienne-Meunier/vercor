@@ -113,7 +113,7 @@ class JCMLand(DataComponent):
         super().__init__(name, grid=grid)
         self.declare_fields(outputs=_JCM_LAND_FIELD_NAMES)
 
-        self.settings.set_value("get_field_time_slice", True)
+        self.update_settings(get_field_time_slice=True)
 
         # Units: [K]
         self.seed_field("land_surface_temperature", land_surface_temperature)

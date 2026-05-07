@@ -5,7 +5,7 @@ import jax
 from vercor.components.base import Component, ComponentFieldSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
-from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.runtime.contexts import RuntimeStepContext
 
 if TYPE_CHECKING:
     from vercor.runtime import RuntimeComponentState
@@ -59,9 +59,6 @@ class Ocean(Component):
         self.lambda_relax = 1.0 / (
             30.0 * 86400.0
         )  # weak restoring to 15C over ~30 days
-
-    def initialize(self, context: ComponentInitContext) -> None:
-        self.seed_declared_defaults(context.settings)
 
     def step_runtime_state(
         self,

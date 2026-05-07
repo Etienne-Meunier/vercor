@@ -443,10 +443,7 @@ class CAMulatorGCM(HostRuntimeComponent):
         self.declare_fields(
             inputs=("sea_surface_temperature", "land_surface_temperature"),
             outputs=_CAMULATOR_RUNTIME_FIELD_NAMES,
-            default_fields=_initialize_camulator_runtime_fields(
-                self.grid.shape,
-                self.settings,
-            ),
+            default_fields=self.grid_field_defaults(_CAMULATOR_RUNTIME_FIELD_NAMES),
         )
 
     def initialize(self, context: ComponentInitContext) -> None:
@@ -531,7 +528,10 @@ class CAMulatorGCM(HostRuntimeComponent):
         self.timestep_counter = 0
 
         self.seed_fields(
-            _initialize_camulator_runtime_fields(self.grid.shape, context.settings)
+            self.grid_field_defaults(
+                _CAMULATOR_RUNTIME_FIELD_NAMES,
+                policy=context.settings,
+            )
         )
 
     def step_host_runtime_state(
