@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from vercor.grid import RectilinearGrid
-from vercor.runtime import RuntimeComponentState, RuntimeFieldStore
+from vercor.runtime.state import RuntimeComponentState
+from vercor.runtime.stores import RuntimeFieldStore
 
 
 @dataclass(frozen=True)

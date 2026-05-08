@@ -1,19 +1,84 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
 
 import jax
 
 from vercor.clock import Clock, ModelDateTime
-from vercor.runtime import RuntimeStepInfo
+from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.settings import VercorSettings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
     is_leap_year,
 )
+from vercor.types import RuntimeArray
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class RuntimeStepInfo:
+    """Precomputed time-selection metadata for one runtime step."""
+
+    monthly_index_left: RuntimeArray
+    monthly_index_right: RuntimeArray
+    monthly_weight_left: RuntimeArray
+    monthly_weight_right: RuntimeArray
+    daily_index: RuntimeArray
+
+    @classmethod
+    def from_sequences(
+        cls,
+        monthly_index_left: Sequence[int],
+        monthly_index_right: Sequence[int],
+        monthly_weight_left: Sequence[float],
+        monthly_weight_right: Sequence[float],
+        daily_index: Sequence[int],
+    ) -> "RuntimeStepInfo":
+        """Create scan metadata from host-precomputed index and weight arrays."""
+
+        return cls(
+            monthly_index_left=as_jax_index_array(monthly_index_left),
+            monthly_index_right=as_jax_index_array(monthly_index_right),
+            monthly_weight_left=as_jax_real_array(monthly_weight_left),
+            monthly_weight_right=as_jax_real_array(monthly_weight_right),
+            daily_index=as_jax_index_array(daily_index),
+        )
+
+    def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], None]:
+        return (
+            (
+                self.monthly_index_left,
+                self.monthly_index_right,
+                self.monthly_weight_left,
+                self.monthly_weight_right,
+                self.daily_index,
+            ),
+            None,
+        )
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: None, children: tuple[RuntimeArray, ...]
+    ) -> "RuntimeStepInfo":
+        _ = aux_data
+        (
+            monthly_index_left,
+            monthly_index_right,
+            monthly_weight_left,
+            monthly_weight_right,
+            daily_index,
+        ) = children
+        return cls(
+            monthly_index_left=monthly_index_left,
+            monthly_index_right=monthly_index_right,
+            monthly_weight_left=monthly_weight_left,
+            monthly_weight_right=monthly_weight_right,
+            daily_index=daily_index,
+        )
 
 
 def runtime_daily_index(time: datetime | ModelDateTime, year_type: str) -> int:

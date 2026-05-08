@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Mapping
+
+import jax
+import jax.numpy as jnp
+
+from vercor.types import RuntimeArray
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class RuntimeFieldStore:
+    """Immutable named array store used by the runtime."""
+
+    field_names: tuple[str, ...]
+    values: tuple[RuntimeArray, ...]
+
+    @classmethod
+    def empty(cls) -> "RuntimeFieldStore":
+        """Create an empty field store."""
+
+        return cls(field_names=(), values=())
+
+    @classmethod
+    def from_mapping(cls, fields: Mapping[str, RuntimeArray]) -> "RuntimeFieldStore":
+        """Create a field store from a mapping while preserving insertion order."""
+
+        return cls(
+            field_names=tuple(fields.keys()),
+            values=tuple(jnp.array(value, copy=True) for value in fields.values()),
+        )
+
+    def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], tuple[str, ...]]:
+        return self.values, self.field_names
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: tuple[str, ...], children: tuple[RuntimeArray, ...]
+    ) -> "RuntimeFieldStore":
+        return cls(field_names=aux_data, values=children)
+
+    def __contains__(self, name: object) -> bool:
+        """Return whether ``name`` is present in this store."""
+
+        return isinstance(name, str) and name in self.field_names
+
+    def to_mapping(self) -> dict[str, RuntimeArray]:
+        """Return this store as a plain name-to-array mapping."""
+
+        return dict(zip(self.field_names, self.values, strict=True))
+
+    def get(self, name: str) -> RuntimeArray:
+        """Return a field by name."""
+
+        try:
+            index = self.field_names.index(name)
+        except ValueError as exc:
+            raise KeyError(f"Runtime field {name!r} not found") from exc
+        return self.values[index]
+
+    def get_or(self, name: str, default: RuntimeArray) -> RuntimeArray:
+        """Return a field by name, or ``default`` when it is absent."""
+
+        if name in self:
+            return self.get(name)
+        return jnp.asarray(default)
+
+    def get_or_zeros_like(
+        self,
+        name: str,
+        like: str | RuntimeArray,
+    ) -> RuntimeArray:
+        """Return a field by name, or zeros matching another field or array."""
+
+        if name in self:
+            return self.get(name)
+        reference = self.get(like) if isinstance(like, str) else like
+        return jnp.zeros_like(jnp.asarray(reference))
+
+    def set(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
+        """Return a new store with ``name`` replaced or appended."""
+
+        if name not in self:
+            value_array = jnp.array(value, copy=True)
+            return RuntimeFieldStore(
+                field_names=(*self.field_names, name),
+                values=(*self.values, value_array),
+            )
+
+        return self.replace(name, value)
+
+    def replace(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
+        """Return a new store with an existing field replaced."""
+
+        if name not in self:
+            raise KeyError(f"Runtime field {name!r} not found")
+
+        values = tuple(
+            (
+                jnp.array(value, dtype=jnp.asarray(current).dtype, copy=True)
+                if field_name == name
+                else current
+            )
+            for field_name, current in zip(self.field_names, self.values)
+        )
+        return RuntimeFieldStore(field_names=self.field_names, values=values)
+
+    def replace_many(
+        self,
+        fields: Mapping[str, RuntimeArray],
+    ) -> "RuntimeFieldStore":
+        """Return a new store with multiple existing fields replaced."""
+
+        updated = self
+        for field_name, field_value in fields.items():
+            updated = updated.replace(field_name, field_value)
+        return updated

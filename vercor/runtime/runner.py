@@ -18,13 +18,14 @@ from vercor.jax_logging import (
     emit_host_log,
     logger_enabled_for,
 )
-from vercor.runtime import RuntimeComponentContract, RuntimeCouplerState
+from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.driver import (
     RuntimeDispatchContext,
     host_component_names,
     step_runtime_component,
 )
 from vercor.runtime.interrupts import RuntimeInterruptController
+from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.time import build_runtime_step_info, scalar_runtime_step_info
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray

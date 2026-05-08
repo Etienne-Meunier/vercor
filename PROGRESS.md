@@ -1,5 +1,49 @@
 # 2026-05-08
 
+## Runtime Module Ownership Refactor
+
+- Split broad runtime internals into focused modules:
+  `contracts`, `stores`, `exchange_dispatch`, `component_state`,
+  `field_transfer`, `validation`, and `topology`.
+- Moved `RuntimeStepInfo` into `vercor.runtime.time` with the runtime time
+  metadata builders.
+- Kept the internal `vercor.runtime` re-export surface stable and kept
+  `vercor.runtime.components` as a compatibility re-export shim while production
+  imports use the focused modules.
+- Moved exchange topology mask/regridder setup out of `Coupler`; the existing
+  private `Coupler` methods now delegate to `vercor.runtime.topology`.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the focused runtime
+  module ownership.
+- Failed approaches / corrections:
+  - The focused red run failed as expected before implementation because
+    `vercor/runtime/contracts.py` and the other focused runtime modules did not
+    exist.
+
+## Validation (Runtime Module Ownership Refactor, 2026-05-08)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`101 passed, 259 deselected`)
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_module_does_not_own_component_specific_steps tests/test_runtime_state.py::test_runtime_focused_modules_keep_compatibility_reexports -q --tb=short`
+  - failed as expected before implementation on missing focused runtime modules
+  - passed after extracting focused modules and compatibility reexports
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_component_base_coverage.py tests/test_coupler_coverage.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_runtime_state.py` on the first run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - first reported one unused import in `vercor/runtime/topology.py`
+  - passed after removing it (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - first reported `get_component(...)` type mismatches in
+    `vercor/runtime/topology.py`
+  - passed after tightening the topology helper annotations (`118 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Coupler Runtime Adapter Refactor
 
 - Moved runtime coupler-state construction, contract refresh, topology

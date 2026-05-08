@@ -42,7 +42,7 @@ from vercor.dtypes import (
 from vercor.grid import RectilinearGrid
 from vercor.jax_logging import LoggerLike, get_default_logger
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
-from vercor.runtime.components import (
+from vercor.runtime.validation import (
     validate_runtime_data_field_exists,
     validate_runtime_grid_data_field,
 )

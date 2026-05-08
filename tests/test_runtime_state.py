@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import jax
@@ -50,6 +51,33 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_contexts_path = Path("vercor/runtime/contexts.py")
     assert runtime_contexts_path.exists()
     runtime_contexts_source = runtime_contexts_path.read_text(encoding="utf-8")
+    runtime_contracts_path = Path("vercor/runtime/contracts.py")
+    runtime_stores_path = Path("vercor/runtime/stores.py")
+    runtime_exchange_dispatch_path = Path("vercor/runtime/exchange_dispatch.py")
+    runtime_component_state_path = Path("vercor/runtime/component_state.py")
+    runtime_field_transfer_path = Path("vercor/runtime/field_transfer.py")
+    runtime_validation_path = Path("vercor/runtime/validation.py")
+    runtime_topology_path = Path("vercor/runtime/topology.py")
+    assert runtime_contracts_path.exists()
+    assert runtime_stores_path.exists()
+    assert runtime_exchange_dispatch_path.exists()
+    assert runtime_component_state_path.exists()
+    assert runtime_field_transfer_path.exists()
+    assert runtime_validation_path.exists()
+    assert runtime_topology_path.exists()
+    runtime_contracts_source = runtime_contracts_path.read_text(encoding="utf-8")
+    runtime_stores_source = runtime_stores_path.read_text(encoding="utf-8")
+    runtime_exchange_dispatch_source = runtime_exchange_dispatch_path.read_text(
+        encoding="utf-8"
+    )
+    runtime_component_state_source = runtime_component_state_path.read_text(
+        encoding="utf-8"
+    )
+    runtime_field_transfer_source = runtime_field_transfer_path.read_text(
+        encoding="utf-8"
+    )
+    runtime_validation_source = runtime_validation_path.read_text(encoding="utf-8")
+    runtime_topology_source = runtime_topology_path.read_text(encoding="utf-8")
     regridder_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
@@ -103,7 +131,21 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def _runtime_step_info_from_times" not in coupler_source
     assert "def _runtime_daily_index" not in coupler_source
     assert "def _build_runtime_contracts" not in coupler_source
-    assert "def build_runtime_contracts" in runtime_source
+    assert "class RuntimeComponentContract" in runtime_contracts_source
+    assert "def flatten_exchange_fields" in runtime_contracts_source
+    assert "def append_unique_runtime_fields" in runtime_contracts_source
+    assert "def build_runtime_contracts" in runtime_contracts_source
+    assert "def exchange_key_name" in runtime_contracts_source
+    assert "class RuntimeComponentContract" not in runtime_source
+    assert "def build_runtime_contracts" not in runtime_source
+    assert "class RuntimeFieldStore" in runtime_stores_source
+    assert "class RuntimeFieldStore" not in runtime_source
+    assert "class RuntimeComponentState" in runtime_source
+    assert "class RuntimeCouplerState" in runtime_source
+    assert "class RuntimeStepInfo" in runtime_time_source
+    assert "class RuntimeStepInfo" not in runtime_source
+    assert "def dispatch_component_exchanges" in runtime_exchange_dispatch_source
+    assert "def dispatch_component_exchanges" not in runtime_source
     assert not Path("vercor/runtime_contracts.py").exists()
     assert not Path("vercor/runtime.py").exists()
     assert not Path("vercor/runtime_components.py").exists()
@@ -158,11 +200,24 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "import numpy" not in base_source
     assert "class ComponentForcingData" in forcing_data_source
     assert "ComponentForcingData" not in components_source
-    assert "def create_runtime_component_state" in runtime_components_source
-    assert "def receive_runtime_fields" in runtime_components_source
-    assert "def send_runtime_fields" in runtime_components_source
-    assert "def validate_component_runtime_contract_fields" in runtime_components_source
-    assert "RuntimeComponentContract" in runtime_source
+    assert "def create_runtime_component_state" in runtime_component_state_source
+    assert "def prefill_runtime_contract_fields" in runtime_component_state_source
+    assert "def receive_runtime_fields" in runtime_field_transfer_source
+    assert "def send_runtime_fields" in runtime_field_transfer_source
+    assert "def validate_component_runtime_contract_fields" in runtime_validation_source
+    assert "def check_not_empty_import_export_lists" in runtime_validation_source
+    assert "def check_valid_exchange_field_names" in runtime_validation_source
+    assert "def create_runtime_component_state" not in runtime_components_source
+    assert "def receive_runtime_fields" not in runtime_components_source
+    assert "def send_runtime_fields" not in runtime_components_source
+    assert (
+        "def validate_component_runtime_contract_fields"
+        not in runtime_components_source
+    )
+    assert "from vercor.runtime.components import" not in coupler_source
+    assert "from vercor.runtime.components import" not in runtime_coupler_state_source
+    assert "from vercor.runtime.components import" not in runtime_driver_source
+    assert "from vercor.runtime.components import" not in runtime_fields_source
     assert 'def empty(cls) -> "RuntimeComponentContract"' not in runtime_source
     assert "RuntimeComponentContract.empty" not in coupler_source
     assert "RuntimeComponentContract.empty" not in runtime_driver_source
@@ -173,11 +228,19 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "contracts.get(" not in runtime_driver_source
     assert "_runtime_contracts.get(" not in coupler_source
     assert "def subset(" not in runtime_source
-    assert "def to_mapping(" in runtime_source
+    assert "def to_mapping(" in runtime_stores_source
     assert "component_state.data.to_mapping()" not in base_source
     assert "component_state.data.to_mapping()" in runtime_fields_source
     assert "def merge(" not in runtime_source
     assert "_runtime_contracts" in coupler_source
+    assert "def initialize_regridders_and_masks(" in runtime_topology_source
+    assert "def create_exchange_masks(" in runtime_topology_source
+    assert "def validate_land_mask_consistency(" in runtime_topology_source
+    assert "def patch_exchange_masks(" in runtime_topology_source
+    assert "from vercor.runtime.topology import" in coupler_source
+    assert "compute_ocn_lnd_masks_on_atm_grid" not in coupler_source
+    assert "check_total_lnd_ocn_mask_sum" not in coupler_source
+    assert "jax_ones(" not in coupler_source
     assert "class ComponentInitContext" not in base_source
     assert "class RuntimeStepContext" not in base_source
     assert "from vercor.runtime.contexts import" in base_source
@@ -237,6 +300,42 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "old_flux_atmOcn" not in flux_source
     assert "new_flux_atmOcn" not in flux_source
     assert "def compute_ocean_surface_fluxes" in flux_source
+
+
+def test_runtime_focused_modules_keep_compatibility_reexports() -> None:
+    runtime_module = importlib.import_module("vercor.runtime")
+    contracts_module = importlib.import_module("vercor.runtime.contracts")
+    stores_module = importlib.import_module("vercor.runtime.stores")
+    time_module = importlib.import_module("vercor.runtime.time")
+    exchange_dispatch_module = importlib.import_module(
+        "vercor.runtime.exchange_dispatch"
+    )
+    components_module = importlib.import_module("vercor.runtime.components")
+    component_state_module = importlib.import_module("vercor.runtime.component_state")
+    field_transfer_module = importlib.import_module("vercor.runtime.field_transfer")
+    validation_module = importlib.import_module("vercor.runtime.validation")
+
+    assert runtime_module.RuntimeComponentContract is (
+        contracts_module.RuntimeComponentContract
+    )
+    assert runtime_module.RuntimeFieldStore is stores_module.RuntimeFieldStore
+    assert runtime_module.RuntimeStepInfo is time_module.RuntimeStepInfo
+    assert runtime_module.dispatch_component_exchanges is (
+        exchange_dispatch_module.dispatch_component_exchanges
+    )
+    assert components_module.create_runtime_component_state is (
+        component_state_module.create_runtime_component_state
+    )
+    assert components_module.receive_runtime_fields is (
+        field_transfer_module.receive_runtime_fields
+    )
+    assert (
+        components_module.send_runtime_fields
+        is field_transfer_module.send_runtime_fields
+    )
+    assert components_module.validate_component_runtime_contract_fields is (
+        validation_module.validate_component_runtime_contract_fields
+    )
 
 
 def test_examples_use_coupler_runtime_component_view_factory() -> None:

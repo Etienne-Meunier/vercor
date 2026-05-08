@@ -3,11 +3,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-import jax.numpy as jnp
-
 from vercor.clock import Clock
 from vercor.components.base import Component, validate_component_setup
-from vercor.dtypes import jax_ones
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -18,10 +15,6 @@ from vercor.jax_logging import (
     LoggerLike,
     setup_logger,
 )
-from vercor.regridders import (
-    BilinearRectilinearRegridder,
-    ConservativeRectilinearRegridder,
-)
 from vercor.run_sequence import RunSequence
 from vercor.output import write_runtime_component_view_to_netcdf
 from vercor.runtime import (
@@ -29,7 +22,7 @@ from vercor.runtime import (
     RuntimeCouplerState,
 )
 from vercor.runtime.contexts import ComponentInitContext
-from vercor.runtime.components import (
+from vercor.runtime.validation import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
 )
@@ -45,15 +38,15 @@ from vercor.runtime.driver import RuntimeDispatchContext
 from vercor.runtime.interrupts import RuntimeInterruptController
 from vercor.runtime.runner import run_coupler_runtime, run_scanned_runtime
 from vercor.runtime.time import initial_runtime_step_info
+from vercor.runtime.topology import (
+    RuntimeRegridder,
+    create_exchange_masks,
+    initialize_regridders_and_masks,
+    patch_exchange_masks,
+    validate_land_mask_consistency,
+)
 from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
-from vercor.grid_masks import (
-    check_total_lnd_ocn_mask_sum,
-    get_component,
-    grids_identical,
-    check_remap_conservation,
-    compute_ocn_lnd_masks_on_atm_grid,
-)
 from vercor.types import RuntimeArray
 
 
@@ -108,7 +101,7 @@ class Coupler:
     lnd_fmask_on_atm_grid: RuntimeArray = field(init=False)
     _regridders: dict[
         tuple[str, str, str],
-        BilinearRectilinearRegridder | ConservativeRectilinearRegridder,
+        RuntimeRegridder,
     ] = field(default_factory=dict)
     _binary_masks: dict[tuple[str, str, str], RuntimeArray] = field(
         default_factory=dict
@@ -245,43 +238,27 @@ class Coupler:
         self._validate_land_mask_consistency()
         self.logger.info(" LND <--> ATM & OCN <--> ATM masks initialization complete")
 
-        # Build regridders per (source component, destination component) pair
-        # initialize binary and fractional masks for each regridding pair
-        for exchange in self.exchanges:
-            key = (exchange.source, exchange.destination, exchange.interpolation_type)
-
-            if key not in self._regridders:
-                self._regridders[key] = exchange.create(
-                    self.components[exchange.source].grid,
-                    self.components[exchange.destination].grid,
-                )
-                self._binary_masks[key] = jax_ones(
-                    self.components[exchange.destination].grid.shape,
-                    self.settings,
-                )
-                self._fractional_masks[key] = jax_ones(
-                    self.components[exchange.destination].grid.shape,
-                    self.settings,
-                )
-            else:
-                self.logger.warning(
-                    f" Regridder for exchange {exchange.name} already exists, skipping creation"
-                )
+        initialize_regridders_and_masks(
+            components=self.components,
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            binary_masks=self._binary_masks,
+            fractional_masks=self._fractional_masks,
+            settings=self.settings,
+            logger=self.logger,
+        )
 
         self._patch_exchange_masks()
         self.logger.info(" Exchange masks patching complete")
 
     def _patch_exchange_masks(self) -> None:
-        keys = self._binary_masks.keys()
-
-        for key in keys:
-            source, destination, interp_type = key
-            if "bilinear" in interp_type:
-                if source == "OCN" and destination == "ATM":
-                    self._fractional_masks[key] = self.ocn_fmask_on_atm_grid
-                elif source == "LND" and destination == "ATM":
-                    self._binary_masks[key] = self.lnd_bmask_on_atm_grid
-                    self._fractional_masks[key] = self.lnd_fmask_on_atm_grid
+        patch_exchange_masks(
+            binary_masks=self._binary_masks,
+            fractional_masks=self._fractional_masks,
+            ocn_fmask_on_atm_grid=self.ocn_fmask_on_atm_grid,
+            lnd_bmask_on_atm_grid=self.lnd_bmask_on_atm_grid,
+            lnd_fmask_on_atm_grid=self.lnd_fmask_on_atm_grid,
+        )
 
     def _create_exchange_masks(self) -> None:
         """
@@ -289,61 +266,17 @@ class Coupler:
         land, ocean, and atmosphere components.
         """
 
-        land_component = get_component(self.components, "LND")
-        atmosphere_component = get_component(self.components, "ATM")
-        ocean_component = get_component(self.components, "OCN")
-
-        if not grids_identical(land_component.grid, atmosphere_component.grid):
-            raise CouplerError(
-                "Land and atmospheric components must use identical horizontal grids"
-            )
-
-        # Remapping the binary mask from the mask origin component
-        # to the destination component grid
-        regridder = ConservativeRectilinearRegridder(
-            ocean_component.grid,
-            atmosphere_component.grid,
-        )
-
-        ocean_binary_mask = ocean_component.grid.binary_mask
-        if ocean_binary_mask is None:
-            raise ComponentError(
-                f"Ocean component {ocean_component.name} has no binary mask defined"
-            )
-
         (
             self.ocn_fmask_on_atm_grid,
             self.lnd_fmask_on_atm_grid,
             self.lnd_bmask_on_atm_grid,
-        ) = compute_ocn_lnd_masks_on_atm_grid(ocean_binary_mask, regridder)
-
-        check_remap_conservation(
-            regridder,
-            ocean_binary_mask,
-            self.ocn_fmask_on_atm_grid,
-            logger=self.logger,
-        )
-
-        check_total_lnd_ocn_mask_sum(
-            self.lnd_fmask_on_atm_grid, self.ocn_fmask_on_atm_grid
-        )
+        ) = create_exchange_masks(self.components, logger=self.logger)
 
     def _validate_land_mask_consistency(self) -> None:
-        land_component = get_component(self.components, "LND")
-        lnd_mask_from_component = land_component.grid.binary_mask
-        if lnd_mask_from_component is not None:
-            component_mask = jnp.asarray(lnd_mask_from_component)
-            remapped_mask = jnp.asarray(self.lnd_bmask_on_atm_grid)
-            if component_mask.shape != self.lnd_bmask_on_atm_grid.shape:
-                raise CouplerError(
-                    "Land binary mask read from component does not match atmospheric grid shape"
-                )
-            if not bool(jnp.all(component_mask == remapped_mask)):
-                mismatch = int(jnp.count_nonzero(component_mask != remapped_mask))
-                raise CouplerError(
-                    "Land binary mask created from remapped ocean mask does not match component-provided mask "
-                    f"(mismatched points: {mismatch})"
-                )
+        validate_land_mask_consistency(
+            self.components,
+            self.lnd_bmask_on_atm_grid,
+        )
 
     def _runtime_state_from_components(
         self, *, prefill_missing: bool = False
