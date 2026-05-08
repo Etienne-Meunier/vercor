@@ -39,6 +39,14 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     runtime_driver_source = Path("vercor/runtime/driver.py").read_text(encoding="utf-8")
     runtime_time_source = Path("vercor/runtime/time.py").read_text(encoding="utf-8")
+    runtime_coupler_state_path = Path("vercor/runtime/coupler_state.py")
+    runtime_runner_path = Path("vercor/runtime/runner.py")
+    assert runtime_coupler_state_path.exists()
+    assert runtime_runner_path.exists()
+    runtime_coupler_state_source = runtime_coupler_state_path.read_text(
+        encoding="utf-8"
+    )
+    runtime_runner_source = runtime_runner_path.read_text(encoding="utf-8")
     runtime_contexts_path = Path("vercor/runtime/contexts.py")
     assert runtime_contexts_path.exists()
     runtime_contexts_source = runtime_contexts_path.read_text(encoding="utf-8")
@@ -109,19 +117,29 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def step_runtime_component_pure" not in runtime_driver_source
     assert "def step_runtime_component_host_enabled" not in runtime_driver_source
     assert "def compile_runtime" not in coupler_source
-    assert "def _compiled_scanned_runtime" in coupler_source
-    assert "def _run_host_runtime" in coupler_source
-    run_body = coupler_source.split("def run", 1)[1].split("def _run_host_runtime", 1)[
-        0
-    ]
+    assert "def runtime_state_from_components(" in runtime_coupler_state_source
+    assert "def validate_runtime_state(" in runtime_coupler_state_source
+    assert "def runtime_dispatch_context(" in runtime_coupler_state_source
+    assert "def output_masks_for_component(" in runtime_coupler_state_source
+    assert "def run_host_runtime(" in runtime_runner_source
+    assert "def run_scanned_runtime(" in runtime_runner_source
+    assert "def run_coupler_runtime(" in runtime_runner_source
+    assert "def compiled_scanned_runtime(" in runtime_runner_source
+    assert "def compiled_runtime_cache_key(" in runtime_runner_source
+    assert "def _run_host_runtime" not in coupler_source
+    assert "def _compiled_runtime_cache_key" not in coupler_source
+    run_body = coupler_source.split("def run", 1)[1]
     scanned_body = coupler_source.split("def _run_scanned_runtime", 1)[1]
-    host_body = coupler_source.split("def _run_host_runtime", 1)[1].split(
-        "def _compiled_scanned_runtime", 1
-    )[0]
-    assert "host_component_names(self.components)" in run_body
-    assert "_compiled_scanned_runtime(donate_state=donate_state)" in run_body
-    assert host_body.count("self._runtime_dispatch_context()") == 1
-    assert scanned_body.count("self._runtime_dispatch_context()") == 1
+    assert "host_component_names(self.components)" not in run_body
+    assert "host_component_names(components)" in runtime_runner_source
+    assert "run_coupler_runtime(" in run_body
+    assert "run_scanned_runtime(" in scanned_body
+    assert "jax.lax.scan" not in coupler_source
+    assert "jax.debug.callback" not in coupler_source
+    assert "RuntimeFieldStore.from_mapping" not in coupler_source
+    assert "build_runtime_contracts(" not in coupler_source
+    assert "_runtime_step_progress_message" not in coupler_source
+    assert "_runtime_component_progress_message" not in coupler_source
     assert "def _apply_scalar" not in regridder_source
     assert "def _apply_vector" not in regridder_source
     assert "handlers: dict" not in regridder_source

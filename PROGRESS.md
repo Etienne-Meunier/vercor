@@ -1,5 +1,44 @@
 # 2026-05-08
 
+## Coupler Runtime Adapter Refactor
+
+- Moved runtime coupler-state construction, contract refresh, topology
+  validation, dispatch-context creation, outgoing priming, and output-mask lookup
+  into internal `vercor.runtime.coupler_state`.
+- Moved host/scanned runtime execution loops, progress-message formatting,
+  compiled-runtime cache-key creation, JIT wrapping, donation checks, and
+  interrupt translation into internal `vercor.runtime.runner`.
+- Kept the public `Coupler` facade stable while reducing private runtime
+  methods to thin delegates for compatibility with existing internal tests.
+- Updated source-boundary and monkeypatch-based tests so runtime adapter
+  mechanics are asserted under `vercor.runtime` instead of `vercor.coupler`.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the new runtime module
+  ownership.
+- Failed approaches / corrections:
+  - The focused red run failed as expected before implementation because
+    `vercor/runtime/coupler_state.py` and `vercor/runtime/runner.py` did not
+    exist.
+
+## Validation (Coupler Runtime Adapter Refactor, 2026-05-08)
+
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_module_does_not_own_component_specific_steps tests/test_coupler_coverage.py::test_host_and_scanned_run_use_runtime_component_helper -q --tb=short`
+  - failed as expected before implementation on missing runtime modules
+  - passed after extracting runtime state and runner helpers
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_coupler_coverage.py tests/test_coupler_runtime.py tests/test_runtime_run_cache.py tests/test_runtime_interrupts.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_coupler_coverage.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`111 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Runtime Field Adapter Extraction
 
 - Moved the remaining component-facing runtime-field adapter bodies from

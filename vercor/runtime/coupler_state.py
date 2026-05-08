@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+import jax.numpy as jnp
+
+from vercor.components.base import Component
+from vercor.exceptions import CouplerError
+from vercor.exchange import Exchange
+from vercor.runtime import (
+    RuntimeComponentContract,
+    RuntimeCouplerState,
+    RuntimeFieldStore,
+    RuntimeStepInfo,
+    build_runtime_contracts,
+    exchange_key_name,
+)
+from vercor.runtime.components import (
+    create_runtime_component_state,
+    validate_component_runtime_contract_fields,
+)
+from vercor.runtime.driver import RuntimeDispatchContext, prime_runtime_outgoing
+from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
+
+
+def refresh_runtime_contracts(
+    components: Mapping[str, Component],
+    exchanges: Sequence[Exchange],
+    *,
+    validate_endpoints: bool,
+) -> dict[str, RuntimeComponentContract]:
+    """Build runtime import/export contracts for the current coupler topology."""
+
+    return build_runtime_contracts(
+        tuple(components),
+        exchanges,
+        validate_endpoints=validate_endpoints,
+    )
+
+
+def runtime_state_from_components(
+    components: Mapping[str, Component],
+    exchanges: Sequence[Exchange],
+    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
+    binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
+    *,
+    contracts: Mapping[str, RuntimeComponentContract] | None = None,
+    prefill_missing: bool = False,
+) -> RuntimeCouplerState:
+    """Create immutable runtime state from component setup objects."""
+
+    runtime_contracts = (
+        refresh_runtime_contracts(
+            components,
+            exchanges,
+            validate_endpoints=False,
+        )
+        if contracts is None
+        else contracts
+    )
+    runtime_components = tuple(
+        create_runtime_component_state(
+            component,
+            prefill_missing=prefill_missing,
+            contract=runtime_contracts[name],
+        )
+        for name, component in components.items()
+    )
+    runtime_fractional_masks = {
+        exchange_key_name(*key): value for key, value in fractional_masks.items()
+    }
+    runtime_binary_masks = {
+        exchange_key_name(*key): value for key, value in binary_masks.items()
+    }
+    return RuntimeCouplerState(
+        component_names=tuple(components.keys()),
+        components=runtime_components,
+        fractional_masks=RuntimeFieldStore.from_mapping(runtime_fractional_masks),
+        binary_masks=RuntimeFieldStore.from_mapping(runtime_binary_masks),
+    )
+
+
+def runtime_dispatch_context(
+    components: Mapping[str, Component],
+    exchanges: Sequence[Exchange],
+    regridders: Mapping[tuple[str, str, str], Any],
+    contracts: Mapping[str, RuntimeComponentContract],
+    *,
+    dt_seconds: float,
+    settings: VercorSettings,
+) -> RuntimeDispatchContext:
+    """Return static runtime dispatch plumbing for a configured coupler."""
+
+    return RuntimeDispatchContext(
+        components=components,
+        exchanges=exchanges,
+        regridders=regridders,
+        contracts=contracts,
+        dt_seconds=dt_seconds,
+        settings=settings,
+    )
+
+
+def prime_runtime_state(
+    runtime_state: RuntimeCouplerState,
+    run_sequence: Sequence[str],
+    *,
+    dispatch_context: RuntimeDispatchContext,
+    step_info: RuntimeStepInfo,
+) -> RuntimeCouplerState:
+    """Populate outgoing runtime stores before the first exchange dispatch."""
+
+    return prime_runtime_outgoing(
+        runtime_state,
+        run_sequence,
+        dispatch_context=dispatch_context,
+        step_info=step_info,
+    )
+
+
+def validate_runtime_state(
+    runtime_state: RuntimeCouplerState,
+    *,
+    components: Mapping[str, Component],
+    exchanges: Sequence[Exchange],
+    regridders: Mapping[tuple[str, str, str], Any],
+    contracts: Mapping[str, RuntimeComponentContract],
+    run_sequence: Sequence[str] | None,
+) -> None:
+    """Validate that runtime state matches the configured coupler topology."""
+
+    if run_sequence is None:
+        raise CouplerError("Runtime requires a configured component run sequence")
+
+    run_order = tuple(run_sequence)
+    if not run_order:
+        raise CouplerError("Runtime requires a non-empty component run sequence")
+
+    runtime_component_names = set(runtime_state.component_names)
+    for cname in run_order:
+        if cname not in components:
+            raise CouplerError(
+                f"Run-sequence component '{cname}' is not registered in coupler"
+            )
+        if cname not in runtime_component_names:
+            raise CouplerError(
+                f"Run-sequence component '{cname}' is missing from runtime state"
+            )
+
+        component = components[cname]
+        component_state = runtime_state.get_component_state(cname)
+        contract = contracts[cname]
+        validate_component_runtime_contract_fields(
+            component,
+            component_state,
+            contract,
+        )
+        component.validate_runtime_state(
+            component_state,
+            contract,
+        )
+
+    for exchange in exchanges:
+        key = (exchange.source, exchange.destination, exchange.interpolation_type)
+        if exchange.source not in runtime_component_names:
+            raise CouplerError(
+                f"Exchange source component '{exchange.source}' is missing from runtime state"
+            )
+        if exchange.destination not in runtime_component_names:
+            raise CouplerError(
+                f"Exchange destination component '{exchange.destination}' is missing from runtime state"
+            )
+        if key not in regridders:
+            raise CouplerError(
+                "Runtime requires an initialized regridder for exchange "
+                f"{exchange.name}"
+            )
+
+        mask_name = exchange_key_name(*key)
+        if mask_name not in runtime_state.fractional_masks.field_names:
+            raise CouplerError(
+                "Runtime requires an initialized fractional mask for exchange "
+                f"{exchange.name}"
+            )
+        destination_shape = components[exchange.destination].grid.shape
+        mask_shape = jnp.asarray(runtime_state.fractional_masks.get(mask_name)).shape
+        if mask_shape != destination_shape:
+            raise CouplerError(
+                "Runtime fractional mask for exchange "
+                f"{exchange.name} has shape {mask_shape}, expected {destination_shape}"
+            )
+
+
+def output_masks_for_component(
+    name: str,
+    exchanges: Sequence[Exchange],
+    binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
+    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
+) -> dict[str, RuntimeArray]:
+    """Return runtime output mask fields for one destination component."""
+
+    masks = {}
+    for exchange in exchanges:
+        if name != exchange.destination:
+            continue
+
+        key = (exchange.source, name, exchange.interpolation_type)
+        source_destination_name = "_".join(key)
+        masks["bmask_" + source_destination_name] = binary_masks[key]
+        masks["fmask_" + source_destination_name] = fractional_masks[key]
+    return masks

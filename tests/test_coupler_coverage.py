@@ -15,7 +15,6 @@ import pytest
 from tests._coverage_support import DummyComponent, RecordingRegridder, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-import vercor.coupler as coupler_module
 from vercor.components.base import Component, HostRuntimeComponent
 from vercor.runtime.contexts import RuntimeStepContext
 from vercor.coupler import Coupler, setup_logger
@@ -919,9 +918,7 @@ def test_host_and_scanned_run_use_runtime_component_helper(
         return state
 
     monkeypatch.setattr(
-        coupler_module,
-        "step_runtime_component",
-        fake_runtime_step,
+        "vercor.runtime.runner.step_runtime_component", fake_runtime_step
     )
 
     coupler.components = cast(Any, {"ATM": _HostRunComponent("ATM")})

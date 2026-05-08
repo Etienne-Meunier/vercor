@@ -192,7 +192,13 @@ immutable runtime containers used during traced integration.
   carry immutable arrays and static metadata through JAX tracing. They are
   required for differentiability and stable scan carry structure. Runtime
   field stores own name membership, mapping roundtrips, fallback reads, and
-  replacement of existing fields while preserving established dtypes.
+  replacement of existing fields while preserving established dtypes. Runtime
+  coupler-state assembly, topology validation, dispatch-context creation, and
+  final-output mask lookup live in `vercor.runtime.coupler_state`. Host/scanned
+  runtime loops, progress logging, compiled-runtime cache keys, JIT wrapping,
+  donation checks, and interrupt translation live in `vercor.runtime.runner`.
+  `Coupler` delegates to these modules and remains the public setup/finalization
+  facade rather than the owner of runtime adapter mechanics.
   payload pytrees carried through `jax.lax.scan` must preserve every leaf's
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.
@@ -249,25 +255,26 @@ coupler context use the default `VerCOR` Python logger from
 `vercor.jax_logging.get_default_logger()`. Helpers reached from
 `Coupler.initialize()`, `Coupler.run()`, or component runtime contexts receive
 the coupler logger explicitly instead of writing directly to stdout.
-The host and scanned coupler runtime paths emit the same step and component
-progress messages. The scanned path precomputes datetime and timestep labels on
-the host, then selects the per-step label inside ordered callbacks so progress
-logging remains traceable without putting Python datetime objects in the scan
-carry.
+The host and scanned coupler runtime paths in `vercor.runtime.runner` emit the
+same step and component progress messages. The scanned path precomputes datetime
+and timestep labels on the host, then selects the per-step label inside ordered
+callbacks so progress logging remains traceable without putting Python datetime
+objects in the scan carry.
 
 ### Runtime interruption across host and scanned integrations
 
-`Coupler.run()` owns terminal-signal cancellation through an internal runtime
-interrupt controller. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request
-graceful runtime cancellation and are restored to their previous handlers when
-the run exits. The host runtime checks the controller at step and component
-boundaries. The controller also installs a temporary nonblocking wakeup fd so
-signals delivered while the main thread is inside a compiled XLA call are
-recorded before Python signal handlers run. The JIT-scanned runtime inserts
-explicit ordered `jax.debug.callback` checkpoints at the same boundaries; those
-callbacks drain the wakeup fd and observe terminal shortcut commands
-independently of logging level. Interrupt callback failures are translated back
-to a `KeyboardInterrupt` subclass, while unrelated JAX runtime failures are
+`Coupler.run()` provides an internal runtime interrupt controller to
+`vercor.runtime.runner`, which owns host and scanned runtime cancellation
+checkpoints. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request graceful
+runtime cancellation and are restored to their previous handlers when the run
+exits. The host runtime checks the controller at step and component boundaries.
+The controller also installs a temporary nonblocking wakeup fd so signals
+delivered while the main thread is inside a compiled XLA call are recorded
+before Python signal handlers run. The JIT-scanned runtime inserts explicit
+ordered `jax.debug.callback` checkpoints at the same boundaries; those callbacks
+drain the wakeup fd and observe terminal shortcut commands independently of
+logging level. Interrupt callback failures are translated back to a
+`KeyboardInterrupt` subclass, while unrelated JAX runtime failures are
 preserved.
 
 ---

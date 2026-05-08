@@ -1,11 +1,9 @@
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
-import jax
 import jax.numpy as jnp
-from jax.errors import JaxRuntimeError
 
 from vercor.clock import Clock
 from vercor.components.base import Component, validate_component_setup
@@ -18,9 +16,6 @@ from vercor.exchange import Exchange
 from vercor.jax_logging import (
     JaxCallbackLogger,
     LoggerLike,
-    emit_host_log,
-    effective_log_level,
-    logger_enabled_for,
     setup_logger,
 )
 from vercor.regridders import (
@@ -32,30 +27,24 @@ from vercor.output import write_runtime_component_view_to_netcdf
 from vercor.runtime import (
     RuntimeComponentContract,
     RuntimeCouplerState,
-    RuntimeFieldStore,
-    RuntimeStepInfo,
-    build_runtime_contracts,
-    exchange_key_name,
 )
 from vercor.runtime.contexts import ComponentInitContext
 from vercor.runtime.components import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
-    create_runtime_component_state,
-    validate_component_runtime_contract_fields,
 )
-from vercor.runtime.driver import (
-    RuntimeDispatchContext,
-    host_component_names,
-    prime_runtime_outgoing,
-    step_runtime_component,
+from vercor.runtime.coupler_state import (
+    output_masks_for_component,
+    prime_runtime_state,
+    refresh_runtime_contracts,
+    runtime_dispatch_context,
+    runtime_state_from_components,
+    validate_runtime_state as validate_coupler_runtime_state,
 )
+from vercor.runtime.driver import RuntimeDispatchContext
 from vercor.runtime.interrupts import RuntimeInterruptController
-from vercor.runtime.time import (
-    build_runtime_step_info,
-    initial_runtime_step_info,
-    scalar_runtime_step_info,
-)
+from vercor.runtime.runner import run_coupler_runtime, run_scanned_runtime
+from vercor.runtime.time import initial_runtime_step_info
 from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
 from vercor.grid_masks import (
@@ -66,18 +55,6 @@ from vercor.grid_masks import (
     compute_ocn_lnd_masks_on_atm_grid,
 )
 from vercor.types import RuntimeArray
-
-
-def _runtime_step_progress_message(n: int, time: object, dt: object) -> str:
-    """Return the shared host/scanned runtime step progress message."""
-
-    return f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
-
-
-def _runtime_component_progress_message(component_name: str) -> str:
-    """Return the shared host/scanned runtime component progress message."""
-
-    return f" Run component: {component_name}"
 
 
 @dataclass
@@ -252,8 +229,8 @@ class Coupler:
 
             self.logger.info(f" Initialized {name}")
 
-        self._runtime_contracts = build_runtime_contracts(
-            tuple(self.components),
+        self._runtime_contracts = refresh_runtime_contracts(
+            self.components,
             self.exchanges,
             validate_endpoints=True,
         )
@@ -371,102 +348,38 @@ class Coupler:
     def _runtime_state_from_components(
         self, *, prefill_missing: bool = False
     ) -> RuntimeCouplerState:
-        self._runtime_contracts = build_runtime_contracts(
-            tuple(self.components),
+        self._runtime_contracts = refresh_runtime_contracts(
+            self.components,
             self.exchanges,
             validate_endpoints=False,
         )
-        components = tuple(
-            create_runtime_component_state(
-                component,
-                prefill_missing=prefill_missing,
-                contract=self._runtime_contracts[name],
-            )
-            for name, component in self.components.items()
-        )
-        fractional_masks = {
-            exchange_key_name(*key): value
-            for key, value in self._fractional_masks.items()
-        }
-        binary_masks = {
-            exchange_key_name(*key): value for key, value in self._binary_masks.items()
-        }
-        return RuntimeCouplerState(
-            component_names=tuple(self.components.keys()),
-            components=components,
-            fractional_masks=RuntimeFieldStore.from_mapping(fractional_masks),
-            binary_masks=RuntimeFieldStore.from_mapping(binary_masks),
+        return runtime_state_from_components(
+            self.components,
+            self.exchanges,
+            self._fractional_masks,
+            self._binary_masks,
+            contracts=self._runtime_contracts,
+            prefill_missing=prefill_missing,
         )
 
     def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
         if set(self._runtime_contracts) != set(self.components):
-            self._runtime_contracts = build_runtime_contracts(
-                tuple(self.components),
+            self._runtime_contracts = refresh_runtime_contracts(
+                self.components,
                 self.exchanges,
                 validate_endpoints=False,
             )
 
-        if not hasattr(self, "run_sequence"):
-            raise CouplerError("Runtime requires a configured component run sequence")
-
-        run_order = tuple(self.run_sequence)
-        if not run_order:
-            raise CouplerError("Runtime requires a non-empty component run sequence")
-
-        runtime_component_names = set(runtime_state.component_names)
-        for cname in run_order:
-            if cname not in self.components:
-                raise CouplerError(
-                    f"Run-sequence component '{cname}' is not registered in coupler"
-                )
-            if cname not in runtime_component_names:
-                raise CouplerError(
-                    f"Run-sequence component '{cname}' is missing from runtime state"
-                )
-
-            component = self.components[cname]
-            component_state = runtime_state.get_component_state(cname)
-            validate_component_runtime_contract_fields(
-                component,
-                component_state,
-                self._runtime_contracts[cname],
-            )
-            component.validate_runtime_state(
-                component_state,
-                self._runtime_contracts[cname],
-            )
-
-        for exchange in self.exchanges:
-            key = (exchange.source, exchange.destination, exchange.interpolation_type)
-            if exchange.source not in runtime_component_names:
-                raise CouplerError(
-                    f"Exchange source component '{exchange.source}' is missing from runtime state"
-                )
-            if exchange.destination not in runtime_component_names:
-                raise CouplerError(
-                    f"Exchange destination component '{exchange.destination}' is missing from runtime state"
-                )
-            if key not in self._regridders:
-                raise CouplerError(
-                    "Runtime requires an initialized regridder for exchange "
-                    f"{exchange.name}"
-                )
-
-            mask_name = exchange_key_name(*key)
-            if mask_name not in runtime_state.fractional_masks.field_names:
-                raise CouplerError(
-                    "Runtime requires an initialized fractional mask for exchange "
-                    f"{exchange.name}"
-                )
-            destination_shape = self.components[exchange.destination].grid.shape
-            mask_shape = jnp.asarray(
-                runtime_state.fractional_masks.get(mask_name)
-            ).shape
-            if mask_shape != destination_shape:
-                raise CouplerError(
-                    "Runtime fractional mask for exchange "
-                    f"{exchange.name} has shape {mask_shape}, expected {destination_shape}"
-                )
+        validate_coupler_runtime_state(
+            runtime_state,
+            components=self.components,
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            contracts=self._runtime_contracts,
+            run_sequence=(
+                tuple(self.run_sequence) if hasattr(self, "run_sequence") else None
+            ),
+        )
 
     def create_runtime_state(
         self, *, prefill_missing: bool = True
@@ -477,7 +390,7 @@ class Coupler:
             prefill_missing=prefill_missing
         )
         if prefill_missing and hasattr(self, "run_sequence"):
-            runtime_state = prime_runtime_outgoing(
+            runtime_state = prime_runtime_state(
                 runtime_state,
                 tuple(self.run_sequence),
                 dispatch_context=self._runtime_dispatch_context(),
@@ -492,25 +405,21 @@ class Coupler:
     ) -> dict[str, RuntimeArray]:
         """Return runtime output mask fields for one destination component."""
 
-        masks = {}
-        for exchange in self.exchanges:
-            if name != exchange.destination:
-                continue
-
-            key = (exchange.source, name, exchange.interpolation_type)
-            source_destination_name = "_".join(key)
-            masks["bmask_" + source_destination_name] = self._binary_masks[key]
-            masks["fmask_" + source_destination_name] = self._fractional_masks[key]
-        return masks
+        return output_masks_for_component(
+            name,
+            self.exchanges,
+            self._binary_masks,
+            self._fractional_masks,
+        )
 
     def _runtime_dispatch_context(self) -> RuntimeDispatchContext:
         """Return static runtime dispatch plumbing for the current coupler state."""
 
-        return RuntimeDispatchContext(
-            components=self.components,
-            exchanges=self.exchanges,
-            regridders=self._regridders,
-            contracts=self._runtime_contracts,
+        return runtime_dispatch_context(
+            self.components,
+            self.exchanges,
+            self._regridders,
+            self._runtime_contracts,
             dt_seconds=self.clock.dt_seconds,
             settings=self.settings,
         )
@@ -595,115 +504,21 @@ class Coupler:
         )
         self._validate_runtime_state(runtime_state)
 
-        with self._runtime_interrupts.signal_scope():
-            host_names = host_component_names(self.components)
-            if not host_names:
-                try:
-                    return self._compiled_scanned_runtime(donate_state=donate_state)(
-                        runtime_state
-                    )
-                except JaxRuntimeError as error:
-                    self._runtime_interrupts.raise_if_jax_callback_interrupted(
-                        error,
-                        "compiled scanned runtime",
-                    )
-
-            if donate_state:
-                names = ", ".join(host_names)
-                raise CouplerError(
-                    "Runtime state donation is only supported for differentiable "
-                    f"components; host-backed component(s) require non-donating run(): {names}"
-                )
-
-            return self._run_host_runtime(runtime_state)
-
-    def _run_host_runtime(
-        self,
-        runtime_state: RuntimeCouplerState,
-    ) -> RuntimeCouplerState:
-        """Run the host-enabled runtime path for non-differentiable adapters."""
-
-        dispatch_context = self._runtime_dispatch_context()
-
-        for n, time, dt in self.clock.iter():
-            self._runtime_interrupts.checkpoint("host runtime step")
-            self.logger.info(_runtime_step_progress_message(n, time, dt))
-            step_info = scalar_runtime_step_info(time, self.clock, self.settings)
-
-            for cname in self.run_sequence:
-                self._runtime_interrupts.checkpoint(f"host runtime component {cname}")
-                self.logger.info(_runtime_component_progress_message(cname))
-                runtime_state = step_runtime_component(
-                    runtime_state,
-                    cname,
-                    step_info,
-                    dispatch_context=dispatch_context,
-                    allow_host_runtime=True,
-                    time=time,
-                    logger=self.logger,
-                )
-                self._runtime_interrupts.checkpoint(f"host runtime component {cname}")
-            self._runtime_interrupts.checkpoint("host runtime step")
-
-        return runtime_state
-
-    def _compiled_scanned_runtime(
-        self, *, donate_state: bool = True
-    ) -> Callable[[RuntimeCouplerState], RuntimeCouplerState]:
-        """Return a cached JIT-scanned runtime for the current runtime topology."""
-
-        cache_key = self._compiled_runtime_cache_key(donate_state=donate_state)
-        if cache_key in self._compiled_runtime_cache:
-            return self._compiled_runtime_cache[cache_key]
-
-        def scanned_runtime(
-            state: RuntimeCouplerState,
-        ) -> RuntimeCouplerState:
-            return self._run_scanned_runtime(state, validate_state=False)
-
-        if donate_state:
-            compiled_runtime = cast(
-                Callable[[RuntimeCouplerState], RuntimeCouplerState],
-                jax.jit(scanned_runtime, donate_argnums=(0,)),
-            )
-        else:
-            compiled_runtime = cast(
-                Callable[[RuntimeCouplerState], RuntimeCouplerState],
-                jax.jit(scanned_runtime),
-            )
-        self._compiled_runtime_cache[cache_key] = compiled_runtime
-        return compiled_runtime
-
-    def _compiled_runtime_cache_key(self, *, donate_state: bool) -> tuple[Any, ...]:
-        """Return a static cache key for the compiled pure-runtime wrapper."""
-
-        return (
-            donate_state,
-            tuple((name, id(component)) for name, component in self.components.items()),
-            tuple(self.run_sequence),
-            tuple(
-                (
-                    id(exchange),
-                    exchange.source,
-                    exchange.destination,
-                    exchange.interpolation_type,
-                    tuple(exchange.field_names),
-                )
-                for exchange in self.exchanges
-            ),
-            tuple(sorted((key, id(value)) for key, value in self._regridders.items())),
-            id(self.logger),
-            id(self._runtime_interrupts),
-            effective_log_level(self.logger, self.log_level),
-            tuple(
-                (name, contract.imports, contract.exports)
-                for name, contract in sorted(self._runtime_contracts.items())
-            ),
-            repr(self.clock.start),
-            self.clock.dt_seconds,
-            self.clock.steps,
-            self.clock.year_type,
-            self.settings.year_in_seconds,
+        return run_coupler_runtime(
+            runtime_state,
+            components=self.components,
+            run_sequence=tuple(self.run_sequence),
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            contracts=self._runtime_contracts,
+            clock=self.clock,
+            settings=self.settings,
+            logger=self.logger,
+            log_level=self.log_level,
+            dispatch_context=self._runtime_dispatch_context(),
+            compiled_runtime_cache=self._compiled_runtime_cache,
+            interrupts=self._runtime_interrupts,
+            donate_state=donate_state,
         )
 
     def _run_scanned_runtime(
@@ -712,7 +527,7 @@ class Coupler:
         *,
         validate_state: bool = True,
     ) -> RuntimeCouplerState:
-        """Run the unified runtime path under ``jax.lax.scan`` and return state."""
+        """Run the unified scanned runtime path and return state."""
 
         runtime_state = (
             self.create_runtime_state(prefill_missing=True)
@@ -721,85 +536,12 @@ class Coupler:
         )
         if validate_state:
             self._validate_runtime_state(runtime_state)
-        step_infos = build_runtime_step_info(self.clock, self.settings)
-        step_indices = jnp.arange(self.clock.steps)
-        step_progress_messages = tuple(
-            _runtime_step_progress_message(n, time, dt)
-            for n, time, dt in self.clock.iter()
+        return run_scanned_runtime(
+            runtime_state,
+            run_sequence=tuple(self.run_sequence),
+            clock=self.clock,
+            settings=self.settings,
+            logger=self.logger,
+            dispatch_context=self._runtime_dispatch_context(),
+            interrupts=self._runtime_interrupts,
         )
-        dispatch_context = self._runtime_dispatch_context()
-
-        def log_scanned_step_progress(step_index: RuntimeArray) -> None:
-            if not logger_enabled_for(self.logger, logging.INFO):
-                return
-
-            def emit(index: RuntimeArray) -> None:
-                host_index = int(jax.device_get(index).item())
-                emit_host_log(
-                    self.logger,
-                    logging.INFO,
-                    step_progress_messages[host_index],
-                )
-
-            jax.debug.callback(emit, step_index, ordered=True)
-
-        def log_scanned_component_progress(component_name: str) -> None:
-            if not logger_enabled_for(self.logger, logging.INFO):
-                return
-
-            jax.debug.callback(
-                lambda: emit_host_log(
-                    self.logger,
-                    logging.INFO,
-                    _runtime_component_progress_message(component_name),
-                ),
-                ordered=True,
-            )
-
-        def step_all_components(
-            state: RuntimeCouplerState,
-            scan_input: tuple[RuntimeArray, RuntimeStepInfo],
-        ) -> tuple[RuntimeCouplerState, None]:
-            step_index, step_info = scan_input
-            self._runtime_interrupts.scanned_checkpoint(
-                "scanned runtime step",
-                step_index,
-            )
-            log_scanned_step_progress(step_index)
-            for cname in self.run_sequence:
-                self._runtime_interrupts.scanned_checkpoint(
-                    f"scanned runtime component {cname}",
-                    step_index,
-                )
-                log_scanned_component_progress(cname)
-                state = step_runtime_component(
-                    state,
-                    cname,
-                    step_info,
-                    dispatch_context=dispatch_context,
-                    allow_host_runtime=False,
-                    logger=self.logger,
-                )
-                self._runtime_interrupts.scanned_checkpoint(
-                    f"scanned runtime component {cname}",
-                    step_index,
-                )
-            self._runtime_interrupts.scanned_checkpoint(
-                "scanned runtime step",
-                step_index,
-            )
-            return state, None
-
-        try:
-            final_state, _ = jax.lax.scan(
-                step_all_components,
-                runtime_state,
-                (step_indices, step_infos),
-                length=self.clock.steps,
-            )
-        except JaxRuntimeError as error:
-            self._runtime_interrupts.raise_if_jax_callback_interrupted(
-                error,
-                "scanned runtime",
-            )
-        return final_state
