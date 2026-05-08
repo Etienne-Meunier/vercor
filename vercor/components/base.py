@@ -18,9 +18,9 @@ from vercor.components._contracts import (
     component_field_spec as _component_field_spec,
     merge_component_outputs as _merge_component_outputs,
     normalize_author_field_values as _normalize_author_field_values,
-    required_field_names as _required_field_names,
     unique_field_names as _unique_field_names,
 )
+from vercor.components import _runtime_fields as _runtime_field_adapters
 from vercor.components._validation import (
     validate_component_setup as validate_component_setup,
 )
@@ -365,8 +365,7 @@ class Component(ABC):
     ) -> dict[str, RuntimeArray]:
         """Return runtime data fields as a plain name-to-array mapping."""
 
-        _ = self
-        return component_state.data.to_mapping()
+        return _runtime_field_adapters.runtime_fields(self, component_state)
 
     def runtime_field(
         self,
@@ -375,12 +374,7 @@ class Component(ABC):
     ) -> RuntimeArray:
         """Return one runtime data field with a component-oriented error."""
 
-        try:
-            return component_state.data.get(name)
-        except KeyError as exc:
-            raise ComponentError(
-                f"Runtime data field '{name}' is missing for component '{self.name}'."
-            ) from exc
+        return _runtime_field_adapters.runtime_field(self, component_state, name)
 
     def has_runtime_field(
         self,
@@ -389,8 +383,7 @@ class Component(ABC):
     ) -> bool:
         """Return whether one runtime data field exists."""
 
-        _ = self
-        return name in component_state.data
+        return _runtime_field_adapters.has_runtime_field(self, component_state, name)
 
     def runtime_field_or(
         self,
@@ -401,20 +394,13 @@ class Component(ABC):
     ) -> RuntimeArray:
         """Return one runtime field or a grid-shaped/default array fallback."""
 
-        if name in component_state.data:
-            return self.runtime_field(component_state, name)
-        normalized = _normalize_author_field_values(
-            component_name=self.name,
-            grid=self.grid,
-            fields={name: default},
-            policy=self.settings if policy is None else policy,
+        return _runtime_field_adapters.runtime_field_or(
+            self,
+            component_state,
+            name,
+            default,
+            policy,
         )
-        if normalized is None:
-            raise ComponentError(
-                f"Default runtime field '{name}' could not be normalized for "
-                f"component '{self.name}'."
-            )
-        return component_state.data.get_or(name, normalized[name])
 
     def runtime_field_or_zeros_like(
         self,
@@ -424,14 +410,12 @@ class Component(ABC):
     ) -> RuntimeArray:
         """Return one runtime field or zeros matching another field/array."""
 
-        try:
-            return component_state.data.get_or_zeros_like(name, like)
-        except KeyError as exc:
-            missing_name = like if isinstance(like, str) else name
-            raise ComponentError(
-                f"Runtime data field '{missing_name}' is missing for component "
-                f"'{self.name}'."
-            ) from exc
+        return _runtime_field_adapters.runtime_field_or_zeros_like(
+            self,
+            component_state,
+            name,
+            like,
+        )
 
     def with_runtime_fields(
         self,
@@ -440,24 +424,11 @@ class Component(ABC):
     ) -> "RuntimeComponentState":
         """Return ``component_state`` with existing runtime data fields updated."""
 
-        missing_field = next(
-            (
-                field_name
-                for field_name in fields
-                if field_name not in component_state.data
-            ),
-            None,
+        return _runtime_field_adapters.with_runtime_fields(
+            self,
+            component_state,
+            fields,
         )
-        if missing_field is not None:
-            raise ComponentError(
-                f"Component '{self.name}' returned update for runtime data "
-                f"field '{missing_field}', but it is missing from runtime data. "
-                "Seed the field with seed_field()/seed_fields(), include it in "
-                "factory fields, declare it as an output/default in "
-                "from_model()/declare_fields(), or declare it through an "
-                "exchange before runtime execution."
-            )
-        return component_state.with_data(component_state.data.replace_many(fields))
 
     def apply_step_result(
         self,
@@ -477,10 +448,7 @@ class Component(ABC):
     ) -> None:
         """Validate that named runtime data fields use canonical grid layout."""
 
-        from vercor.runtime.components import validate_runtime_component_data_field
-
-        for field_name in names:
-            validate_runtime_component_data_field(self, component_state, field_name)
+        _runtime_field_adapters.require_runtime_fields(self, component_state, *names)
 
     def prefill_runtime_fields(
         self,
@@ -498,25 +466,14 @@ class Component(ABC):
         grid-shaped zeros when they are still missing.
         """
 
-        declared = field_spec or ComponentFieldSpec(
+        _runtime_field_adapters.prefill_runtime_fields(
+            self,
+            data,
+            field_spec,
             outputs=outputs,
-            default_fields=default_fields or {},
+            default_fields=default_fields,
+            policy=policy,
         )
-        normalized_defaults = _normalize_author_field_values(
-            component_name=self.name,
-            grid=self.grid,
-            fields=declared.default_fields,
-            policy=self.settings if policy is None else policy,
-        )
-        for field_name, field_value in (normalized_defaults or {}).items():
-            data.setdefault(field_name, field_value)
-
-        zeros = jax_zeros(
-            self.grid.shape,
-            self.settings if policy is None else policy,
-        )
-        for field_name in _unique_field_names((*declared.outputs, *tuple(outputs))):
-            data.setdefault(field_name, zeros)
 
     def initialize(self, context: ComponentInitContext) -> None:
         """Optionally initialize component-owned runtime data before coupling.
@@ -549,7 +506,7 @@ class Component(ABC):
         those fields must exist before the first JAX scan iteration.
         """
 
-        self.prefill_runtime_fields(data, _component_field_spec(self))
+        _runtime_field_adapters.prefill_declared_runtime_fields(self, data)
         _ = incoming, outgoing, contract
 
     def validate_runtime_state(
@@ -564,9 +521,10 @@ class Component(ABC):
         """
 
         _ = contract
-        required_fields = _required_field_names(_component_field_spec(self))
-        if required_fields:
-            self.require_runtime_fields(component_state, *required_fields)
+        _runtime_field_adapters.validate_declared_runtime_fields(
+            self,
+            component_state,
+        )
 
     @abstractmethod
     def step_runtime_state(

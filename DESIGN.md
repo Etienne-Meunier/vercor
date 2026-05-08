@@ -134,9 +134,11 @@ immutable runtime containers used during traced integration.
   declarations and author-value normalization live in private
   `vercor.components._contracts`, callable signature adaptation and
   callable-backed runtime components live in private
-  `vercor.components._callable_wrappers`, and setup validation lives in private
-  `vercor.components._validation`. These private modules are not exported from
-  `vercor.components`. Subclasses should call the base constructor so `name`,
+  `vercor.components._callable_wrappers`, component-facing runtime-field
+  adapters live in private `vercor.components._runtime_fields`, and setup
+  validation lives in private `vercor.components._validation`. These private
+  modules are not exported from `vercor.components`. Subclasses should call
+  the base constructor so `name`,
   `grid`, `data`, and a component-owned `VercorSettings` container are available
   during initialization, execution, and finalization. `Component.data` is a
   grid-field store, not a
@@ -150,8 +152,9 @@ immutable runtime containers used during traced integration.
   should read fields with `runtime_field()`, `runtime_fields()`,
   `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
   with `with_runtime_fields()` where possible. These component helpers are
-  author-facing adapters over `RuntimeFieldStore` membership, mapping,
-  fallback, and existing-field replacement mechanics owned by the runtime.
+  author-facing adapters in `vercor.components._runtime_fields` over
+  `RuntimeFieldStore` membership, mapping, fallback, and existing-field
+  replacement mechanics owned by the runtime.
   When a step also needs to replace runtime payload, `apply_step_result()`
   applies either a field mapping or `ComponentStepResult` through the same
   validated update path used by callable wrappers.

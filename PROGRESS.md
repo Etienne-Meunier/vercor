@@ -1,5 +1,42 @@
 # 2026-05-08
 
+## Component Runtime Field Adapter Extraction
+
+- Moved the remaining component-facing runtime-field adapter bodies from
+  `vercor.components.base` into private `vercor.components._runtime_fields`.
+- Kept the public component helper methods and signatures stable while making
+  `Component` delegate runtime-field mapping, reads, optional fallbacks,
+  existing-field replacement, prefill, and declared-field validation through the
+  private adapter module.
+- Updated source-boundary tests to assert the adapter mechanics live outside
+  `base.py` and remain unexported from `vercor.components`.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the new private
+  component runtime-field adapter module.
+- Failed approaches / corrections:
+  - The focused red run failed as expected because the updated tests looked for
+    `vercor/components/_runtime_fields.py` before the module existed.
+
+## Validation (Component Runtime Field Adapter Extraction, 2026-05-08)
+
+- `conda run -n scipy pytest tests/test_api_boundaries.py::test_component_base_internals_are_private_modules tests/test_runtime_state.py::test_runtime_module_does_not_own_component_specific_steps tests/test_component_base_coverage.py::test_component_helpers_seed_and_update_runtime_fields -q --tb=short`
+  - failed as expected before implementation on missing
+    `vercor/components/_runtime_fields.py`
+  - passed after extracting the adapter helpers and delegating from `Component`
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py tests/test_runtime_state.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `vercor/components/_runtime_fields.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`109 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Time-Dependent Data Field Runtime Validation Fix
 
 - Fixed the `examples/run_data_driver.py` runtime-state creation failure where

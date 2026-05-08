@@ -893,9 +893,15 @@ def test_component_helpers_seed_and_update_runtime_fields() -> None:
     )
 
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
-    assert "component_state.data.to_mapping()" in base_source
-    assert "component_state.data.replace_many(fields)" in base_source
-    assert "validate_runtime_component_data_field" in base_source
+    runtime_fields_source = Path("vercor/components/_runtime_fields.py").read_text(
+        encoding="utf-8"
+    )
+    assert "component_state.data.to_mapping()" not in base_source
+    assert "component_state.data.replace_many(fields)" not in base_source
+    assert "validate_runtime_component_data_field" not in base_source
+    assert "component_state.data.to_mapping()" in runtime_fields_source
+    assert "component_state.data.replace_many(fields)" in runtime_fields_source
+    assert "validate_runtime_component_data_field" in runtime_fields_source
 
 
 @pytest.mark.fast_always

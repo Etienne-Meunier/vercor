@@ -111,6 +111,9 @@ def test_component_base_internals_are_private_modules() -> None:
     callable_source = Path("vercor/components/_callable_wrappers.py").read_text(
         encoding="utf-8"
     )
+    runtime_fields_source = Path("vercor/components/_runtime_fields.py").read_text(
+        encoding="utf-8"
+    )
     validation_source = Path("vercor/components/_validation.py").read_text(
         encoding="utf-8"
     )
@@ -120,6 +123,14 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "def normalize_author_field_values" in contracts_source
     assert "class _CallableRuntimeMixin" in callable_source
     assert "def normalize_component_step_callable" in callable_source
+    assert "def runtime_fields(" in runtime_fields_source
+    assert "def runtime_field(" in runtime_fields_source
+    assert "def runtime_field_or(" in runtime_fields_source
+    assert "def runtime_field_or_zeros_like(" in runtime_fields_source
+    assert "def with_runtime_fields(" in runtime_fields_source
+    assert "def prefill_runtime_fields(" in runtime_fields_source
+    assert "def require_runtime_fields(" in runtime_fields_source
+    assert "def validate_declared_runtime_fields(" in runtime_fields_source
     assert "def validate_component_setup" in validation_source
     assert "def _author_field_spec(" in base_source
     assert "def _callable_component_from_model(" in base_source
@@ -148,12 +159,16 @@ def test_component_base_internals_are_private_modules() -> None:
         "def make_data_component",
         "def make_differentiable_component",
         "def make_host_component",
+        "component_state.data.to_mapping()",
+        "component_state.data.replace_many(fields)",
+        "validate_runtime_component_data_field",
     )
     for marker in private_markers:
         assert marker not in base_source
 
     assert "_contracts" not in components_module.__all__
     assert "_callable_wrappers" not in components_module.__all__
+    assert "_runtime_fields" not in components_module.__all__
     assert "_validation" not in components_module.__all__
 
 

@@ -45,6 +45,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     regridder_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+    runtime_fields_source = Path("vercor/components/_runtime_fields.py").read_text(
+        encoding="utf-8"
+    )
     components_source = Path("vercor/components/__init__.py").read_text(
         encoding="utf-8"
     )
@@ -153,7 +156,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "_runtime_contracts.get(" not in coupler_source
     assert "def subset(" not in runtime_source
     assert "def to_mapping(" in runtime_source
-    assert "component_state.data.to_mapping()" in base_source
+    assert "component_state.data.to_mapping()" not in base_source
+    assert "component_state.data.to_mapping()" in runtime_fields_source
     assert "def merge(" not in runtime_source
     assert "_runtime_contracts" in coupler_source
     assert "class ComponentInitContext" not in base_source
