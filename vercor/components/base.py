@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Self, cast, final
+from typing import TYPE_CHECKING, Any, Self, final
 
 import jax.numpy as jnp
 
@@ -16,7 +16,6 @@ from vercor.components._contracts import (
     AuthorStepCallable as _AuthorStepCallable,
     ComponentFieldSpec,
     ComponentStepReturn as _ComponentStepReturn,
-    FieldDefaults as _FieldDefaults,
     FieldNames as _FieldNames,
     component_field_spec as _component_field_spec,
     merge_component_outputs as _merge_component_outputs,
@@ -81,41 +80,6 @@ class Component(ABC):
     )
 
     @classmethod
-    def wrap(
-        cls,
-        name: str,
-        grid: RectilinearGrid,
-        step: _AuthorStepCallable,
-        fields: Mapping[str, RuntimeArray] | None = None,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        *,
-        required_fields: _FieldNames = (),
-        prefill_fields: _FieldNames = (),
-        field_defaults: _FieldDefaults = None,
-    ) -> "Component":
-        """Create a differentiable callable-backed component.
-
-        Example:
-            ``Component.wrap("ATM", grid, step=my_step, fields={"temperature": t})``
-            creates an active component whose callable receives ``(fields,
-            context, payload)`` and returns runtime field updates.
-        """
-
-        _ = cls
-        return _make_differentiable_callable_component(
-            name=name,
-            grid=grid,
-            step=step,
-            fields=fields,
-            payload=payload,
-            settings=settings,
-            required_fields=required_fields,
-            prefill_fields=prefill_fields,
-            field_defaults=field_defaults,
-        )
-
-    @classmethod
     def from_model(
         cls,
         name: str,
@@ -139,37 +103,22 @@ class Component(ABC):
         """
 
         _ = cls
-        component_settings = settings if settings is not None else VercorSettings()
-        field_spec = ComponentFieldSpec(
-            inputs=inputs,
-            outputs=outputs,
-            required_fields=required_fields,
-            default_fields=_normalize_author_field_values(
-                component_name=name,
-                grid=grid,
-                fields=default_fields,
-                policy=component_settings,
-            )
-            or {},
-        )
-        component = _make_differentiable_callable_component(
+        from vercor.components._callable_wrappers import make_callable_component
+
+        return make_callable_component(
             name=name,
             grid=grid,
             step=step,
-            fields=_normalize_author_field_values(
-                component_name=name,
-                grid=grid,
-                fields=initial_fields,
-                policy=component_settings,
-            ),
+            initial_fields=initial_fields,
             payload=payload,
-            settings=component_settings,
-            required_fields=(*field_spec.inputs, *field_spec.required_fields),
-            prefill_fields=field_spec.outputs,
-            field_defaults=cast(_FieldDefaults, field_spec.default_fields),
+            settings=settings,
+            field_spec=ComponentFieldSpec(
+                inputs=inputs,
+                outputs=outputs,
+                required_fields=required_fields,
+                default_fields=default_fields or {},
+            ),
         )
-        component._field_spec = field_spec
-        return component
 
     def declare_fields(
         self,
@@ -638,29 +587,6 @@ class DataComponent(Component):
         _merge_component_outputs(self, fields.keys())
         return self
 
-    @classmethod
-    def wrap(  # type: ignore[override]
-        cls,
-        name: str,
-        grid: RectilinearGrid,
-        fields: Mapping[str, RuntimeArray] | None = None,
-        settings: VercorSettings | None = None,
-    ) -> "DataComponent":
-        """Create a data-only component from optional seeded grid fields.
-
-        Example:
-            ``DataComponent.wrap("OBS", grid, fields={"temperature": data})``
-            creates a forcing component with the shared no-op runtime step.
-        """
-
-        if settings is None:
-            component = cls(name=name, grid=grid)
-        else:
-            component = cls(name=name, grid=grid, settings=settings)
-        if fields is not None:
-            component.seed_fields(fields)
-        return component
-
     @final
     def step_runtime_state(
         self,
@@ -694,70 +620,21 @@ class HostRuntimeComponent(Component):
         """Create a host-runtime component from a Python model callable."""
 
         _ = cls
-        component_settings = settings if settings is not None else VercorSettings()
-        field_spec = ComponentFieldSpec(
-            inputs=inputs,
-            outputs=outputs,
-            required_fields=required_fields,
-            default_fields=_normalize_author_field_values(
-                component_name=name,
-                grid=grid,
-                fields=default_fields,
-                policy=component_settings,
-            )
-            or {},
-        )
-        component = _make_host_callable_component(
+        from vercor.components._callable_wrappers import make_callable_host_component
+
+        return make_callable_host_component(
             name=name,
             grid=grid,
             step=step,
-            fields=_normalize_author_field_values(
-                component_name=name,
-                grid=grid,
-                fields=initial_fields,
-                policy=component_settings,
-            ),
-            payload=payload,
-            settings=component_settings,
-            required_fields=(*field_spec.inputs, *field_spec.required_fields),
-            prefill_fields=field_spec.outputs,
-            field_defaults=cast(_FieldDefaults, field_spec.default_fields),
-        )
-        component._field_spec = field_spec
-        return component
-
-    @classmethod
-    def wrap(
-        cls,
-        name: str,
-        grid: RectilinearGrid,
-        step: _AuthorStepCallable,
-        fields: Mapping[str, RuntimeArray] | None = None,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        *,
-        required_fields: _FieldNames = (),
-        prefill_fields: _FieldNames = (),
-        field_defaults: _FieldDefaults = None,
-    ) -> "HostRuntimeComponent":
-        """Create a host-runtime callable-backed component.
-
-        Example:
-            ``HostRuntimeComponent.wrap("ATM", grid, step=python_model_step)``
-            creates a component that runs only through ``Coupler.run()``.
-        """
-
-        _ = cls
-        return _make_host_callable_component(
-            name=name,
-            grid=grid,
-            step=step,
-            fields=fields,
+            initial_fields=initial_fields,
             payload=payload,
             settings=settings,
-            required_fields=required_fields,
-            prefill_fields=prefill_fields,
-            field_defaults=field_defaults,
+            field_spec=ComponentFieldSpec(
+                inputs=inputs,
+                outputs=outputs,
+                required_fields=required_fields,
+                default_fields=default_fields or {},
+            ),
         )
 
     @final
@@ -783,64 +660,6 @@ class HostRuntimeComponent(Component):
         context: RuntimeStepContext,
     ) -> "RuntimeComponentState":
         """Advance this non-differentiable host adapter by one runtime step."""
-
-
-def _make_differentiable_callable_component(
-    *,
-    name: str,
-    grid: RectilinearGrid,
-    step: _AuthorStepCallable,
-    fields: Mapping[str, RuntimeArray] | None = None,
-    payload: Any | None = None,
-    settings: VercorSettings | None = None,
-    required_fields: _FieldNames = (),
-    prefill_fields: _FieldNames = (),
-    field_defaults: _FieldDefaults = None,
-) -> Component:
-    """Create a differentiable callable-backed component through the private runtime."""
-
-    from vercor.components._callable_wrappers import make_callable_component
-
-    return make_callable_component(
-        name=name,
-        grid=grid,
-        step=step,
-        fields=fields,
-        payload=payload,
-        settings=settings,
-        required_fields=required_fields,
-        prefill_fields=prefill_fields,
-        field_defaults=field_defaults,
-    )
-
-
-def _make_host_callable_component(
-    *,
-    name: str,
-    grid: RectilinearGrid,
-    step: _AuthorStepCallable,
-    fields: Mapping[str, RuntimeArray] | None = None,
-    payload: Any | None = None,
-    settings: VercorSettings | None = None,
-    required_fields: _FieldNames = (),
-    prefill_fields: _FieldNames = (),
-    field_defaults: _FieldDefaults = None,
-) -> HostRuntimeComponent:
-    """Create a host-runtime callable-backed component through the private runtime."""
-
-    from vercor.components._callable_wrappers import make_callable_host_component
-
-    return make_callable_host_component(
-        name=name,
-        grid=grid,
-        step=step,
-        fields=fields,
-        payload=payload,
-        settings=settings,
-        required_fields=required_fields,
-        prefill_fields=prefill_fields,
-        field_defaults=field_defaults,
-    )
 
 
 def data_component(
@@ -914,78 +733,4 @@ def host_component(
         outputs=outputs,
         default_fields=default_fields,
         required_fields=required_fields,
-    )
-
-
-def make_data_component(
-    name: str,
-    grid: RectilinearGrid,
-    fields: Mapping[str, RuntimeArray] | None = None,
-    settings: VercorSettings | None = None,
-) -> DataComponent:
-    """Create a data-only component from optional seeded grid fields."""
-
-    return DataComponent.wrap(name=name, grid=grid, fields=fields, settings=settings)
-
-
-def make_differentiable_component(
-    name: str,
-    grid: RectilinearGrid,
-    step: _AuthorStepCallable,
-    fields: Mapping[str, RuntimeArray] | None = None,
-    payload: Any | None = None,
-    settings: VercorSettings | None = None,
-    *,
-    required_fields: _FieldNames = (),
-    prefill_fields: _FieldNames = (),
-    field_defaults: _FieldDefaults = None,
-) -> Component:
-    """Create a differentiable component from a runtime step callable.
-
-    The callable receives ``(fields, context, payload)``. Return a mapping to
-    update data fields while preserving payload, or return
-    :class:`ComponentStepResult` to replace both fields and payload.
-    """
-
-    from vercor.components._callable_wrappers import make_callable_component
-
-    return make_callable_component(
-        name=name,
-        grid=grid,
-        step=step,
-        fields=fields,
-        payload=payload,
-        settings=settings,
-        required_fields=required_fields,
-        prefill_fields=prefill_fields,
-        field_defaults=field_defaults,
-    )
-
-
-def make_host_component(
-    name: str,
-    grid: RectilinearGrid,
-    step: _AuthorStepCallable,
-    fields: Mapping[str, RuntimeArray] | None = None,
-    payload: Any | None = None,
-    settings: VercorSettings | None = None,
-    *,
-    required_fields: _FieldNames = (),
-    prefill_fields: _FieldNames = (),
-    field_defaults: _FieldDefaults = None,
-) -> HostRuntimeComponent:
-    """Create a host-runtime component from a Python runtime step callable."""
-
-    from vercor.components._callable_wrappers import make_callable_host_component
-
-    return make_callable_host_component(
-        name=name,
-        grid=grid,
-        step=step,
-        fields=fields,
-        payload=payload,
-        settings=settings,
-        required_fields=required_fields,
-        prefill_fields=prefill_fields,
-        field_defaults=field_defaults,
     )

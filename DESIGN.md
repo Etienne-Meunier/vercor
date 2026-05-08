@@ -126,11 +126,11 @@ immutable runtime containers used during traced integration.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
   components remain introspectable whether fields are declared up front or added
-  through helper seeding. The older `wrap()` classmethods and
-  `make_data_component()`, `make_differentiable_component()`, and
-  `make_host_component()` functions remain backward-compatible entry points to
-  the same private callable-wrapper implementation used by the newer facade.
-  `vercor.components.base` is the public compatibility surface; field
+  through helper seeding. The legacy `wrap()` classmethods and
+  `make_*_component()` factory functions have been removed; component authors
+  should use the helper facade, class-level `from_fields()` / `from_model()`
+  constructors, or subclasses with `declare_fields(...)`. `vercor.components.base`
+  is the public authoring surface; field
   declarations and author-value normalization live in private
   `vercor.components._contracts`, callable signature adaptation and
   callable-backed runtime components live in private
@@ -171,12 +171,12 @@ immutable runtime containers used during traced integration.
   wrappers may accept `(fields)`, `(fields, context)`, or
   `(fields, context, payload)` and return either a field-update mapping or
   `ComponentStepResult(fields, payload)` when the runtime payload must
-  be replaced. The compatibility wrapper arguments `required_fields`,
-  `prefill_fields`, and `field_defaults` map to the same runtime contract used
-  by the newer `inputs`, `outputs`, and `default_fields` facade. These helpers
-  still enforce the same stable runtime-state
-  contract: updated fields must already exist through seeded data, wrapper
-  prefill/defaults, or exchange prefill, and scanned payload pytrees must keep
+  be replaced. Callable-backed components now declare their runtime contract
+  with the same `ComponentFieldSpec` path used by subclasses, so runtime prefill
+  and validation depend only on `inputs`, `outputs`, `required_fields`, and
+  `default_fields`. These helpers still enforce the same stable runtime-state
+  contract: updated fields must already exist through seeded data, declared
+  outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.
 - Internal runtime API: the `vercor.runtime` package owns
   `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime

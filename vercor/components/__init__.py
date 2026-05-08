@@ -9,9 +9,6 @@ from vercor.components.base import (
     data_component,
     differentiable_component,
     host_component,
-    make_data_component,
-    make_differentiable_component,
-    make_host_component,
 )
 
 __all__ = [
@@ -25,7 +22,4 @@ __all__ = [
     "data_component",
     "differentiable_component",
     "host_component",
-    "make_data_component",
-    "make_differentiable_component",
-    "make_host_component",
 ]

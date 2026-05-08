@@ -1,3 +1,53 @@
+# 2026-05-08
+
+## Component Author API Cleanup
+
+- Removed the legacy public component wrapper/factory surface:
+  `Component.wrap()`, `DataComponent.wrap()`, `HostRuntimeComponent.wrap()`,
+  `make_data_component()`, `make_differentiable_component()`, and
+  `make_host_component()`.
+- Kept the user-facing component author API centered on
+  `data_component()`, `differentiable_component()`, `host_component()`,
+  `DataComponent.from_fields()`, `Component.from_model()`,
+  `HostRuntimeComponent.from_model()`, subclass helpers, and
+  `ComponentFieldSpec`.
+- Collapsed callable-backed component internals so private callable wrappers
+  accept one `ComponentFieldSpec`, call `declare_fields(...)`, and use
+  `seed_fields(...)` rather than carrying legacy `_required_fields`,
+  `_prefill_fields`, or `_field_defaults` metadata.
+- Updated API-boundary and component-base tests to assert the legacy entrypoints
+  stay absent and callable wrappers use the shared declaration path.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to describe the reduced
+  component-author surface.
+- Failed approaches / corrections:
+  - The red focused API cleanup run failed as expected on remaining `wrap()`,
+    `make_*()`, and callable legacy metadata.
+  - The focused component/API run passed after removing the legacy delegates and
+    routing callable wrappers through `ComponentFieldSpec`.
+
+## Validation (Component Author API Cleanup, 2026-05-08)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`98 passed, 256 deselected`)
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_legacy_wrapper_entrypoints_are_removed tests/test_component_base_coverage.py::test_callable_component_prefills_and_validates_declared_fields tests/test_api_boundaries.py::test_top_level_exports_public_orchestration_and_component_author_api tests/test_api_boundaries.py::test_components_package_exports_only_component_author_contracts tests/test_api_boundaries.py::test_component_base_internals_are_private_modules -q --tb=short`
+  - failed as expected before implementation on legacy public entrypoints,
+    legacy callable metadata, and stale exports
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 108 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`108 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-05-07
 
 ## Component API Internal Split

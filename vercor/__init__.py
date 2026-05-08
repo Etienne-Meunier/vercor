@@ -11,9 +11,6 @@ from vercor.components.base import (
     data_component,
     differentiable_component,
     host_component,
-    make_data_component,
-    make_differentiable_component,
-    make_host_component,
 )
 from vercor.coupler import Coupler
 from vercor.exchange import Exchange
@@ -32,9 +29,6 @@ __all__ = [
     "data_component",
     "differentiable_component",
     "host_component",
-    "make_data_component",
-    "make_differentiable_component",
-    "make_host_component",
     "Clock",
     "DateTime360",
     "DateTime365",

@@ -125,9 +125,9 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
 
 
 @pytest.mark.fast_always
-def test_make_data_component_seeds_canonical_fields() -> None:
+def test_data_component_seeds_canonical_fields() -> None:
     grid = make_test_grid(name="factory-data")
-    component = base_module.make_data_component(
+    component = base_module.data_component(
         name="OBS",
         grid=grid,
         fields={"temperature": jnp.full(grid.shape, 281.0)},
@@ -222,65 +222,13 @@ def test_convenience_factories_delegate_to_authoring_facade() -> None:
 
 
 @pytest.mark.fast_always
-def test_wrap_classmethods_create_data_differentiable_and_host_components() -> None:
-    grid = make_test_grid(name="wrap")
-
-    data_component = base_module.DataComponent.wrap(
-        name="OBS",
-        grid=grid,
-        fields={"temperature": jnp.full(grid.shape, 281.0)},
-    )
-    assert isinstance(data_component, base_module.DataComponent)
-    assert_allclose_compact(
-        data_component.data["temperature"],
-        np.full(grid.shape, 281.0),
-    )
-
-    def differentiable_step(
-        fields: Mapping[str, RuntimeArray],
-        context: RuntimeStepContext,
-        payload: Any | None,
-    ) -> Mapping[str, RuntimeArray]:
-        _ = payload
-        return {"temperature": fields["temperature"] + context.dt_seconds}
-
-    differentiable_component = base_module.Component.wrap(
-        name="ATM",
-        grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
-        step=differentiable_step,
-    )
-    differentiable_state = create_runtime_component_state(
-        differentiable_component,
-        contract=RuntimeComponentContract(),
-    )
-    differentiable_stepped = differentiable_component.step_runtime_state(
-        differentiable_state,
-        RuntimeStepContext(dt_seconds=4.0, settings=VercorSettings()),
-    )
-    assert_allclose_compact(
-        differentiable_stepped.data.get("temperature"),
-        np.full(grid.shape, 5.0),
-    )
-
-    host_component = base_module.HostRuntimeComponent.wrap(
-        name="HOST",
-        grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
-        step=differentiable_step,
-    )
-    host_state = create_runtime_component_state(
-        host_component,
-        contract=RuntimeComponentContract(),
-    )
-    host_stepped = host_component.step_host_runtime_state(
-        host_state,
-        RuntimeStepContext(dt_seconds=6.0, settings=VercorSettings()),
-    )
-    assert_allclose_compact(
-        host_stepped.data.get("temperature"),
-        np.full(grid.shape, 7.0),
-    )
+def test_legacy_wrapper_entrypoints_are_removed() -> None:
+    assert not hasattr(base_module.Component, "wrap")
+    assert not hasattr(base_module.DataComponent, "wrap")
+    assert not hasattr(base_module.HostRuntimeComponent, "wrap")
+    assert not hasattr(base_module, "make_data_component")
+    assert not hasattr(base_module, "make_differentiable_component")
+    assert not hasattr(base_module, "make_host_component")
 
 
 @pytest.mark.fast_always
@@ -730,8 +678,8 @@ def test_runtime_field_optional_helpers_return_defaults() -> None:
 
 
 @pytest.mark.fast_always
-def test_wrapped_callable_component_prefills_and_validates_required_fields() -> None:
-    grid = make_test_grid(name="wrap-prefill")
+def test_callable_component_prefills_and_validates_declared_fields() -> None:
+    grid = make_test_grid(name="facade-prefill")
 
     def step(
         fields: Mapping[str, RuntimeArray],
@@ -744,14 +692,16 @@ def test_wrapped_callable_component_prefills_and_validates_required_fields() -> 
             "wind": fields["wind"],
         }
 
-    component = base_module.Component.wrap(
+    component = base_module.Component.from_model(
         name="ATM",
         grid=grid,
         step=step,
-        required_fields=("temperature", "wind"),
-        prefill_fields=("wind",),
-        field_defaults={"temperature": jnp.full(grid.shape, 280.0)},
+        outputs=("temperature", "wind"),
+        default_fields={"temperature": jnp.full(grid.shape, 280.0)},
     )
+    assert not hasattr(component, "_required_fields")
+    assert not hasattr(component, "_prefill_fields")
+    assert not hasattr(component, "_field_defaults")
     state = create_runtime_component_state(
         component,
         prefill_missing=True,
@@ -773,8 +723,8 @@ def test_wrapped_callable_component_prefills_and_validates_required_fields() -> 
 
 
 @pytest.mark.fast_always
-def test_wrapped_callable_component_reports_missing_required_fields() -> None:
-    grid = make_test_grid(name="wrap-required")
+def test_callable_component_reports_missing_declared_inputs() -> None:
+    grid = make_test_grid(name="facade-required")
 
     def step(
         fields: Mapping[str, RuntimeArray],
@@ -784,11 +734,11 @@ def test_wrapped_callable_component_reports_missing_required_fields() -> None:
         _ = context, payload
         return {"temperature": fields["temperature"]}
 
-    component = base_module.Component.wrap(
+    component = base_module.Component.from_model(
         name="ATM",
         grid=grid,
         step=step,
-        required_fields=("temperature",),
+        inputs=("temperature",),
     )
     state = create_runtime_component_state(
         component,
@@ -836,14 +786,14 @@ def test_component_seed_default_helpers_and_required_field_validator() -> None:
 
 
 @pytest.mark.fast_always
-def test_make_data_component_rejects_non_grid_fields_early() -> None:
+def test_data_component_rejects_non_grid_fields_early() -> None:
     grid = make_test_grid(name="factory-layout")
 
     with pytest.raises(
         ComponentError,
         match="data field 'bad_metadata'.*canonical grid-field layout",
     ):
-        base_module.make_data_component(
+        base_module.data_component(
             name="OBS",
             grid=grid,
             fields={"bad_metadata": jnp.zeros((3,), dtype=jnp.float64)},
@@ -884,7 +834,7 @@ def test_component_helpers_seed_and_update_runtime_fields() -> None:
 
 
 @pytest.mark.fast_always
-def test_make_differentiable_component_applies_callable_field_updates() -> None:
+def test_differentiable_component_applies_callable_field_updates() -> None:
     grid = make_test_grid(name="factory-active")
 
     def step(
@@ -895,11 +845,12 @@ def test_make_differentiable_component_applies_callable_field_updates() -> None:
         assert payload is None
         return {"temperature": fields["temperature"] + context.dt_seconds}
 
-    component = base_module.make_differentiable_component(
+    component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
+        initial_fields={"temperature": jnp.ones(grid.shape)},
         step=step,
+        outputs=("temperature",),
     )
     state = create_runtime_component_state(
         component,
@@ -930,12 +881,13 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
         assert isinstance(payload, Mapping)
         return {"temperature": fields["temperature"] + payload["offset"]}
 
-    preserve_component = base_module.make_differentiable_component(
+    preserve_component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
+        initial_fields={"temperature": jnp.ones(grid.shape)},
         payload={"offset": jnp.asarray(2.0)},
         step=preserve_payload,
+        outputs=("temperature",),
     )
     preserve_state = create_runtime_component_state(
         preserve_component,
@@ -964,12 +916,13 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
             payload={"offset": payload["offset"] + 1.0},
         )
 
-    replace_component = base_module.make_differentiable_component(
+    replace_component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
+        initial_fields={"temperature": jnp.ones(grid.shape)},
         payload={"offset": jnp.asarray(2.0)},
         step=replace_payload,
+        outputs=("temperature",),
     )
     replace_state = create_runtime_component_state(
         replace_component,
@@ -990,7 +943,7 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
 
 
 @pytest.mark.fast_always
-def test_make_host_component_runs_through_coupler_host_runtime() -> None:
+def test_host_component_runs_through_coupler_host_runtime() -> None:
     grid = make_test_grid(name="factory-host")
 
     def step(
@@ -1001,11 +954,12 @@ def test_make_host_component_runs_through_coupler_host_runtime() -> None:
         _ = payload
         return {"temperature": fields["temperature"] + context.dt_seconds}
 
-    component = base_module.make_host_component(
+    component = base_module.host_component(
         name="HOST",
         grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
+        initial_fields={"temperature": jnp.ones(grid.shape)},
         step=step,
+        outputs=("temperature",),
     )
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=5.0, steps=1))
     coupler.register(component)
@@ -1031,10 +985,10 @@ def test_callable_component_rejects_unseeded_field_updates() -> None:
         _ = fields, context, payload
         return {"created_during_step": jnp.zeros(grid.shape)}
 
-    component = base_module.make_differentiable_component(
+    component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        fields={"temperature": jnp.ones(grid.shape)},
+        initial_fields={"temperature": jnp.ones(grid.shape)},
         step=step,
     )
     state = create_runtime_component_state(

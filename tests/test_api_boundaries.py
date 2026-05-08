@@ -31,9 +31,6 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "data_component",
         "differentiable_component",
         "host_component",
-        "make_data_component",
-        "make_differentiable_component",
-        "make_host_component",
     }
     runtime_internal_names = {
         "ComponentInitContext",
@@ -46,9 +43,15 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "RuntimeStepContext",
         "RuntimeStepInfo",
     }
+    legacy_component_names = {
+        "make_data_component",
+        "make_differentiable_component",
+        "make_host_component",
+    }
 
     assert expected_public_names.issubset(set(vercor.__all__))
     assert runtime_internal_names.isdisjoint(set(vercor.__all__))
+    assert legacy_component_names.isdisjoint(set(vercor.__all__))
 
     assert vercor.Component is Component
     assert vercor.ComponentFieldSpec is components_module.ComponentFieldSpec
@@ -62,14 +65,8 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     assert vercor.data_component is components_module.data_component
     assert vercor.differentiable_component is components_module.differentiable_component
     assert vercor.host_component is components_module.host_component
-    assert vercor.make_data_component is components_module.make_data_component
-    assert (
-        vercor.make_differentiable_component
-        is components_module.make_differentiable_component
-    )
-    assert vercor.make_host_component is components_module.make_host_component
     assert vercor.RunSequence is RunSequence
-    for name in runtime_internal_names:
+    for name in (*runtime_internal_names, *legacy_component_names):
         assert not hasattr(vercor, name)
 
 
@@ -86,9 +83,6 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         "data_component",
         "differentiable_component",
         "host_component",
-        "make_data_component",
-        "make_differentiable_component",
-        "make_host_component",
     ]
     assert components_module.Component is Component
     assert hasattr(components_module, "ComponentFieldSpec")
@@ -100,9 +94,9 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert hasattr(components_module, "data_component")
     assert hasattr(components_module, "differentiable_component")
     assert hasattr(components_module, "host_component")
-    assert hasattr(components_module, "make_data_component")
-    assert hasattr(components_module, "make_differentiable_component")
-    assert hasattr(components_module, "make_host_component")
+    assert not hasattr(components_module, "make_data_component")
+    assert not hasattr(components_module, "make_differentiable_component")
+    assert not hasattr(components_module, "make_host_component")
     assert not hasattr(components_module, "RuntimeComponentState")
     assert not hasattr(components_module, "ComponentInitContext")
     assert not hasattr(components_module, "RuntimeStepContext")
@@ -127,6 +121,12 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "class _CallableRuntimeMixin" in callable_source
     assert "def normalize_component_step_callable" in callable_source
     assert "def validate_component_setup" in validation_source
+    assert "_required_fields" not in callable_source
+    assert "_prefill_fields" not in callable_source
+    assert "_field_defaults" not in callable_source
+    assert "required_fields:" not in callable_source
+    assert "prefill_fields:" not in callable_source
+    assert "field_defaults:" not in callable_source
 
     private_markers = (
         "class _CallableRuntimeMixin",
@@ -134,6 +134,11 @@ def test_component_base_internals_are_private_modules() -> None:
         "class _CallableHostRuntimeComponent",
         "def _normalize_component_step_callable",
         "def _component_step_signature_error",
+        "def _make_differentiable_callable_component",
+        "def _make_host_callable_component",
+        "def make_data_component",
+        "def make_differentiable_component",
+        "def make_host_component",
     )
     for marker in private_markers:
         assert marker not in base_source
