@@ -475,12 +475,12 @@ class Component(ABC):
         component_state: "RuntimeComponentState",
         *names: str,
     ) -> None:
-        """Validate that named runtime data fields exist and match this grid."""
+        """Validate that named runtime data fields use canonical grid layout."""
 
-        from vercor.runtime.components import validate_runtime_grid_data_field
+        from vercor.runtime.components import validate_runtime_component_data_field
 
         for field_name in names:
-            validate_runtime_grid_data_field(self, component_state, field_name)
+            validate_runtime_component_data_field(self, component_state, field_name)
 
     def prefill_runtime_fields(
         self,

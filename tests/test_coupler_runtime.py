@@ -11,6 +11,7 @@ import pytest
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
+from vercor.components import data_component
 from vercor.components.data.camulator_land import CAMulatorLand
 from vercor.components.data.era5_atmosphere import ERA5Atmosphere
 from vercor.components.data.era5_land import ERA5Land
@@ -830,6 +831,61 @@ def test_data_forcing_components_run_inside_runtime() -> None:
     assert gradient.shape == monthly_ocean.shape
     assert_allclose_compact(gradient[0], np.ones((2, 2)))
     assert_allclose_compact(gradient[1:], np.zeros((11, 2, 2)))
+
+
+def test_public_data_component_monthly_output_validates_and_sends_runtime_slice() -> (
+    None
+):
+    grid = make_test_grid(name="public-data-forcing")
+    monthly_ocean = jnp.zeros((12, *grid.shape), dtype=jnp.float64)
+    first_month = jnp.asarray(
+        [[280.0, 281.0], [282.0, 283.0]],
+        dtype=jnp.float64,
+    )
+    monthly_ocean = monthly_ocean.at[0].set(first_month)
+    ocean = data_component(
+        name="OCN",
+        grid=grid,
+        fields={"sea_surface_temperature": monthly_ocean},
+        settings=VercorSettings(apply_time_interpolation=True),
+    )
+    atmosphere = Atmosphere(grid)
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    )
+    coupler.settings.year_in_seconds = 12.0
+    coupler.components = {"OCN": ocean, "ATM": atmosphere}
+    coupler.run_sequence = RunSequence(order=["OCN", "ATM"])
+    coupler.exchanges = [
+        Exchange(
+            source="OCN",
+            destination="ATM",
+            field_names=["sea_surface_temperature"],
+            regridder_factory=cast(Any, _identity_factory),
+        )
+    ]
+    key = ("OCN", "ATM", "_identity_factory")
+    coupler._regridders = cast(Any, {key: _IdentityRegridder()})
+    coupler._fractional_masks = {key: jnp.ones(grid.shape, dtype=jnp.float64)}
+
+    initial_state = coupler.create_runtime_state()
+    ocean_state = initial_state.get_component_state("OCN")
+    assert ocean_state.data.get("sea_surface_temperature").shape == monthly_ocean.shape
+    assert ocean_state.outgoing.get("sea_surface_temperature").shape == grid.shape
+    assert_allclose_compact(
+        ocean_state.outgoing.get("sea_surface_temperature"),
+        np.asarray(first_month),
+    )
+
+    final_state = jax.jit(lambda state: coupler._run_scanned_runtime(state))(
+        initial_state
+    )
+    received_sst = final_state.get_component_state("ATM").incoming.get(
+        "sea_surface_temperature"
+    )
+
+    assert received_sst.shape == grid.shape
+    assert_allclose_compact(received_sst, np.asarray(first_month))
 
 
 def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridder() -> (

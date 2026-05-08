@@ -1,5 +1,50 @@
 # 2026-05-08
 
+## Time-Dependent Data Field Runtime Validation Fix
+
+- Fixed the `examples/run_data_driver.py` runtime-state creation failure where
+  `ERAInterimOcean` stored monthly `sea_surface_temperature` as
+  `(nTime, nLat, nLon)` but `Component.validate_runtime_state()` required
+  declared component data fields to be exactly `(nLat, nLon)`.
+- Added runtime-owned canonical data-field validation for required component
+  data while preserving strict grid-shape validation for incoming/outgoing
+  exchange stores and component-specific grid-field checks.
+- Updated `Component.require_runtime_fields()` to validate declared data through
+  the canonical component-data layout contract, so time-dependent forcing cubes
+  remain in component data and runtime exchange still sends selected 2-D slices.
+- Added regression coverage for the public `data_component(...)` authoring path
+  with monthly SST forcing and for direct helper validation of canonical
+  time-dependent required fields.
+- Failed approaches / corrections:
+  - The first red helper test had an invalid `RuntimeComponentState` fixture
+    missing incoming/outgoing stores; after fixing the fixture, both focused
+    tests failed on the intended strict shape validator.
+
+## Validation (Time-Dependent Data Field Runtime Validation Fix, 2026-05-08)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`100 passed, 258 deselected`)
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_required_field_validator_accepts_time_dependent_canonical_data tests/test_coupler_runtime.py::test_public_data_component_monthly_output_validates_and_sends_runtime_slice -q --tb=short`
+  - first exposed a test fixture construction error in the helper test
+  - failed as expected after fixture correction on the strict `(nLat, nLon)`
+    required-data validator
+  - passed after routing required component data through canonical layout
+    validation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_coupler_runtime.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted the touched test/runtime files
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`108 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Constructor Boilerplate Tightening
 
 - Audited the post-refactor component authoring surface and preserved the

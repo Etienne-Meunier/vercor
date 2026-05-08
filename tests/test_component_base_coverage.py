@@ -819,6 +819,33 @@ def test_component_seed_default_helpers_and_required_field_validator() -> None:
 
 
 @pytest.mark.fast_always
+def test_required_field_validator_accepts_time_dependent_canonical_data() -> None:
+    grid = make_test_grid(name="time-dependent-required")
+    component = _RuntimeOnlyComponent(name="OCN", grid=grid)
+    monthly_sst = jnp.zeros((12, *grid.shape), dtype=jnp.float64)
+    state = RuntimeComponentState(
+        data=RuntimeFieldStore.from_mapping({"sea_surface_temperature": monthly_sst}),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+    )
+
+    component.require_runtime_fields(state, "sea_surface_temperature")
+
+    bad_state = RuntimeComponentState(
+        data=RuntimeFieldStore.from_mapping(
+            {"bad_metadata": jnp.zeros((3,), dtype=jnp.float64)}
+        ),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+    )
+    with pytest.raises(
+        CouplerError,
+        match="bad_metadata.*canonical grid-field layout",
+    ):
+        component.require_runtime_fields(bad_state, "bad_metadata")
+
+
+@pytest.mark.fast_always
 def test_data_component_rejects_non_grid_fields_early() -> None:
     grid = make_test_grid(name="factory-layout")
 
@@ -868,7 +895,7 @@ def test_component_helpers_seed_and_update_runtime_fields() -> None:
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
     assert "component_state.data.to_mapping()" in base_source
     assert "component_state.data.replace_many(fields)" in base_source
-    assert "validate_runtime_grid_data_field" in base_source
+    assert "validate_runtime_component_data_field" in base_source
 
 
 @pytest.mark.fast_always
