@@ -5,6 +5,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
@@ -151,7 +152,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "contracts.get(" not in runtime_driver_source
     assert "_runtime_contracts.get(" not in coupler_source
     assert "def subset(" not in runtime_source
-    assert "def to_mapping(" not in runtime_source
+    assert "def to_mapping(" in runtime_source
+    assert "component_state.data.to_mapping()" in base_source
     assert "def merge(" not in runtime_source
     assert "_runtime_contracts" in coupler_source
     assert "class ComponentInitContext" not in base_source
@@ -284,6 +286,87 @@ def test_runtime_field_store_replacement_preserves_existing_dtype() -> None:
 
     assert updated.get("temperature").dtype == jnp.float32
     assert_allclose_compact(updated.get("temperature"), np.ones((2, 2)))
+
+
+def test_runtime_field_store_exposes_mapping_membership_and_fallback_helpers() -> None:
+    store = RuntimeFieldStore.from_mapping(
+        {
+            "temperature": jnp.full((2, 2), 280.0, dtype=jnp.float32),
+            "humidity": jnp.full((2, 2), 0.5, dtype=jnp.float32),
+        }
+    )
+
+    fields = store.to_mapping()
+
+    assert "temperature" in store
+    assert "missing" not in store
+    assert tuple(fields) == ("temperature", "humidity")
+    assert_allclose_compact(fields["temperature"], np.full((2, 2), 280.0))
+    assert_allclose_compact(
+        store.get_or("temperature", jnp.zeros((2, 2))),
+        np.full((2, 2), 280.0),
+    )
+    assert_allclose_compact(
+        store.get_or("missing", jnp.full((2, 2), 3.0)),
+        np.full((2, 2), 3.0),
+    )
+    assert_allclose_compact(
+        store.get_or_zeros_like("missing", "temperature"),
+        np.zeros((2, 2)),
+    )
+    assert_allclose_compact(
+        store.get_or_zeros_like("missing", jnp.ones((2, 2))),
+        np.zeros((2, 2)),
+    )
+
+
+def test_runtime_field_store_replace_helpers_preserve_dtype_and_reject_missing() -> (
+    None
+):
+    store = RuntimeFieldStore.from_mapping(
+        {
+            "temperature": jnp.zeros((2, 2), dtype=jnp.float32),
+            "humidity": jnp.ones((2, 2), dtype=jnp.float32),
+        }
+    )
+
+    updated = store.replace("temperature", jnp.full((2, 2), 281.0, dtype=jnp.float64))
+    updated = updated.replace_many(
+        {"humidity": jnp.full((2, 2), 0.75, dtype=jnp.float64)}
+    )
+
+    assert updated.get("temperature").dtype == jnp.float32
+    assert updated.get("humidity").dtype == jnp.float32
+    assert_allclose_compact(updated.get("temperature"), np.full((2, 2), 281.0))
+    assert_allclose_compact(updated.get("humidity"), np.full((2, 2), 0.75))
+    with pytest.raises(KeyError, match="Runtime field 'missing' not found"):
+        store.replace("missing", jnp.zeros((2, 2)))
+    with pytest.raises(KeyError, match="Runtime field 'missing' not found"):
+        store.replace_many(
+            {"temperature": jnp.ones((2, 2)), "missing": jnp.ones((2, 2))}
+        )
+
+
+def test_runtime_field_store_new_helpers_are_jit_compatible() -> None:
+    store = RuntimeFieldStore.from_mapping(
+        {
+            "temperature": jnp.ones((2, 2), dtype=jnp.float32),
+            "humidity": jnp.ones((2, 2), dtype=jnp.float32),
+        }
+    )
+
+    def update(value: RuntimeFieldStore) -> RuntimeFieldStore:
+        return value.replace_many(
+            {
+                "temperature": value.get("temperature") + 2.0,
+                "humidity": value.get_or_zeros_like("missing", "temperature") + 0.25,
+            }
+        )
+
+    updated = jax.jit(update)(store)
+
+    assert_allclose_compact(updated.get("temperature"), np.full((2, 2), 3.0))
+    assert_allclose_compact(updated.get("humidity"), np.full((2, 2), 0.25))
 
 
 def test_runtime_component_and_coupler_state_are_pytrees() -> None:

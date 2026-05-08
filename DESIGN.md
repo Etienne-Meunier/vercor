@@ -149,10 +149,13 @@ immutable runtime containers used during traced integration.
   mutating `data` directly; step methods
   should read fields with `runtime_field()`, `runtime_fields()`,
   `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
-  with `with_runtime_fields()` where possible. When a step also needs to replace
-  runtime payload, `apply_step_result()` applies either a field mapping or
-  `ComponentStepResult` through the same validated update path used by callable
-  wrappers. `seed_declared_defaults()` seeds fields from a component's declared
+  with `with_runtime_fields()` where possible. These component helpers are
+  author-facing adapters over `RuntimeFieldStore` membership, mapping,
+  fallback, and existing-field replacement mechanics owned by the runtime.
+  When a step also needs to replace runtime payload, `apply_step_result()`
+  applies either a field mapping or `ComponentStepResult` through the same
+  validated update path used by callable wrappers.
+  `seed_declared_defaults()` seeds fields from a component's declared
   defaults, and the base `initialize()` hook now does this automatically when
   subclasses do not need custom setup. Prefill hooks should use
   `prefill_runtime_fields()` for ordinary output/default fields. Non-grid metadata such as
@@ -171,10 +174,12 @@ immutable runtime containers used during traced integration.
   wrappers may accept `(fields)`, `(fields, context)`, or
   `(fields, context, payload)` and return either a field-update mapping or
   `ComponentStepResult(fields, payload)` when the runtime payload must
-  be replaced. Callable-backed components now declare their runtime contract
-  with the same `ComponentFieldSpec` path used by subclasses, so runtime prefill
-  and validation depend only on `inputs`, `outputs`, `required_fields`, and
-  `default_fields`. These helpers still enforce the same stable runtime-state
+  be replaced. Callable-backed differentiable and host components share one
+  private construction path, declare their runtime contract with the same
+  `ComponentFieldSpec` path used by subclasses, and apply step results through
+  the runtime-owned field replacement helpers. Runtime prefill and validation
+  depend only on `inputs`, `outputs`, `required_fields`, and `default_fields`.
+  These helpers still enforce the same stable runtime-state
   contract: updated fields must already exist through seeded data, declared
   outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.
@@ -183,6 +188,8 @@ immutable runtime containers used during traced integration.
   contexts, dispatch contexts, and runtime helper functions. These containers
   carry immutable arrays and static metadata through JAX tracing. They are
   required for differentiability and stable scan carry structure. Runtime
+  field stores own name membership, mapping roundtrips, fallback reads, and
+  replacement of existing fields while preserving established dtypes.
   payload pytrees carried through `jax.lax.scan` must preserve every leaf's
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.

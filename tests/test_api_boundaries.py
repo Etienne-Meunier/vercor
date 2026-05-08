@@ -127,6 +127,9 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "required_fields:" not in callable_source
     assert "prefill_fields:" not in callable_source
     assert "field_defaults:" not in callable_source
+    assert "def make_callable_component" not in callable_source
+    assert "def make_callable_host_component" not in callable_source
+    assert "def _create_callable_component" in callable_source
 
     private_markers = (
         "class _CallableRuntimeMixin",
@@ -136,6 +139,8 @@ def test_component_base_internals_are_private_modules() -> None:
         "def _component_step_signature_error",
         "def _make_differentiable_callable_component",
         "def _make_host_callable_component",
+        "def make_callable_component",
+        "def make_callable_host_component",
         "def make_data_component",
         "def make_differentiable_component",
         "def make_host_component",

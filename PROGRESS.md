@@ -1,5 +1,61 @@
 # 2026-05-08
 
+## Component Runtime Boilerplate Refactor
+
+- Moved reusable immutable runtime-field mechanics onto `RuntimeFieldStore`:
+  membership checks, mapping roundtrip, fallback reads, and existing-field
+  replacement helpers.
+- Kept component-author helper names stable while making
+  `runtime_fields()`, optional runtime-field reads, `with_runtime_fields()`,
+  and `require_runtime_fields()` delegate to runtime-owned store/validation
+  logic.
+- Collapsed callable-backed differentiable and host wrapper setup through one
+  private `_create_callable_component(...)` path, while preserving
+  `data_component()`, `differentiable_component()`, `host_component()`,
+  `DataComponent.from_fields()`, `Component.from_model()`, and
+  `HostRuntimeComponent.from_model()`.
+- Updated API-boundary, runtime-state, and component-base tests to assert
+  runtime ownership of the helper mechanics and absence of public-looking
+  callable `make_*` internals.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to describe runtime ownership of
+  field-store mechanics and thin component-facing adapters.
+- Failed approaches / corrections:
+  - The red focused runtime/helper run failed as expected on missing
+    `RuntimeFieldStore.to_mapping()`, `replace()`, `replace_many()`, component
+    delegation, and callable factory cleanup.
+  - The first focused file run exposed an outdated source-regression guard that
+    still forbade `RuntimeFieldStore.to_mapping()`; the guard now asserts that
+    runtime owns it and `Component.runtime_fields()` delegates to it.
+  - The first flake8 run exposed unused re-export imports after deleting the
+    private `_PUBLIC_REEXPORTS` anchor; `vercor.components.base.__all__` now
+    records the base-module public surface explicitly.
+
+## Validation (Component Runtime Boilerplate Refactor, 2026-05-08)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`98 passed, 256 deselected`)
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_field_store_exposes_mapping_membership_and_fallback_helpers tests/test_runtime_state.py::test_runtime_field_store_replace_helpers_preserve_dtype_and_reject_missing tests/test_runtime_state.py::test_runtime_field_store_new_helpers_are_jit_compatible tests/test_component_base_coverage.py::test_component_helpers_seed_and_update_runtime_fields tests/test_api_boundaries.py::test_component_base_internals_are_private_modules -q --tb=short`
+  - failed as expected before implementation on missing runtime-store helpers,
+    component delegation, and callable factory cleanup
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - first failed on the stale `to_mapping()` source guard
+  - passed after updating the architecture guard
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning; it reformatted the touched Python files, then left all 108 files
+    unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - first reported two unused re-export imports in `vercor/components/base.py`
+  - passed after adding explicit base-module `__all__` (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`108 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Author API Cleanup
 
 - Removed the legacy public component wrapper/factory surface:

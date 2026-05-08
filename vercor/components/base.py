@@ -3,9 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Self, final
-
-import jax.numpy as jnp
+from typing import TYPE_CHECKING, Any, Self, cast, final
 
 from vercor.dtypes import PrecisionPolicy, jax_full, jax_zeros
 from vercor.components._contracts import (
@@ -23,8 +21,10 @@ from vercor.components._contracts import (
     required_field_names as _required_field_names,
     unique_field_names as _unique_field_names,
 )
-from vercor.components._validation import validate_component_setup
-from vercor.exceptions import ComponentError, CouplerError
+from vercor.components._validation import (
+    validate_component_setup as validate_component_setup,
+)
+from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
@@ -39,7 +39,20 @@ if TYPE_CHECKING:
 
 ComponentSetupContext = ComponentInitContext
 ComponentStepContext = RuntimeStepContext
-_PUBLIC_REEXPORTS = (ComponentStepResult, validate_component_setup)
+
+__all__ = [
+    "Component",
+    "ComponentFieldSpec",
+    "ComponentSetupContext",
+    "ComponentStepContext",
+    "ComponentStepResult",
+    "DataComponent",
+    "HostRuntimeComponent",
+    "data_component",
+    "differentiable_component",
+    "host_component",
+    "validate_component_setup",
+]
 
 
 @dataclass
@@ -102,10 +115,10 @@ class Component(ABC):
         scalar initial/default values expand to this component's grid shape.
         """
 
-        _ = cls
-        from vercor.components._callable_wrappers import make_callable_component
+        from vercor.components._callable_wrappers import _create_callable_component
 
-        return make_callable_component(
+        return _create_callable_component(
+            runtime_kind="differentiable",
             name=name,
             grid=grid,
             step=step,
@@ -305,13 +318,7 @@ class Component(ABC):
         """Return runtime data fields as a plain name-to-array mapping."""
 
         _ = self
-        return dict(
-            zip(
-                component_state.data.field_names,
-                component_state.data.values,
-                strict=True,
-            )
-        )
+        return component_state.data.to_mapping()
 
     def runtime_field(
         self,
@@ -335,7 +342,7 @@ class Component(ABC):
         """Return whether one runtime data field exists."""
 
         _ = self
-        return name in component_state.data.field_names
+        return name in component_state.data
 
     def runtime_field_or(
         self,
@@ -346,7 +353,7 @@ class Component(ABC):
     ) -> RuntimeArray:
         """Return one runtime field or a grid-shaped/default array fallback."""
 
-        if self.has_runtime_field(component_state, name):
+        if name in component_state.data:
             return self.runtime_field(component_state, name)
         normalized = _normalize_author_field_values(
             component_name=self.name,
@@ -359,7 +366,7 @@ class Component(ABC):
                 f"Default runtime field '{name}' could not be normalized for "
                 f"component '{self.name}'."
             )
-        return normalized[name]
+        return component_state.data.get_or(name, normalized[name])
 
     def runtime_field_or_zeros_like(
         self,
@@ -369,12 +376,14 @@ class Component(ABC):
     ) -> RuntimeArray:
         """Return one runtime field or zeros matching another field/array."""
 
-        if self.has_runtime_field(component_state, name):
-            return self.runtime_field(component_state, name)
-        reference = (
-            self.runtime_field(component_state, like) if isinstance(like, str) else like
-        )
-        return jnp.zeros_like(jnp.asarray(reference))
+        try:
+            return component_state.data.get_or_zeros_like(name, like)
+        except KeyError as exc:
+            missing_name = like if isinstance(like, str) else name
+            raise ComponentError(
+                f"Runtime data field '{missing_name}' is missing for component "
+                f"'{self.name}'."
+            ) from exc
 
     def with_runtime_fields(
         self,
@@ -383,19 +392,24 @@ class Component(ABC):
     ) -> "RuntimeComponentState":
         """Return ``component_state`` with existing runtime data fields updated."""
 
-        data = component_state.data
-        for field_name, field_value in fields.items():
-            if field_name not in data.field_names:
-                raise ComponentError(
-                    f"Component '{self.name}' returned update for runtime data "
-                    f"field '{field_name}', but it is missing from runtime data. "
-                    "Seed the field with seed_field()/seed_fields(), include it in "
-                    "factory fields, declare it as an output/default in "
-                    "from_model()/declare_fields(), or declare it through an "
-                    "exchange before runtime execution."
-                )
-            data = data.set(field_name, field_value)
-        return component_state.with_data(data)
+        missing_field = next(
+            (
+                field_name
+                for field_name in fields
+                if field_name not in component_state.data
+            ),
+            None,
+        )
+        if missing_field is not None:
+            raise ComponentError(
+                f"Component '{self.name}' returned update for runtime data "
+                f"field '{missing_field}', but it is missing from runtime data. "
+                "Seed the field with seed_field()/seed_fields(), include it in "
+                "factory fields, declare it as an output/default in "
+                "from_model()/declare_fields(), or declare it through an "
+                "exchange before runtime execution."
+            )
+        return component_state.with_data(component_state.data.replace_many(fields))
 
     def apply_step_result(
         self,
@@ -415,19 +429,10 @@ class Component(ABC):
     ) -> None:
         """Validate that named runtime data fields exist and match this grid."""
 
+        from vercor.runtime.components import validate_runtime_grid_data_field
+
         for field_name in names:
-            if field_name not in component_state.data.field_names:
-                raise CouplerError(
-                    "Runtime missing required data field "
-                    f"'{field_name}' for component '{self.name}'"
-                )
-            field_shape = jnp.asarray(component_state.data.get(field_name)).shape
-            if field_shape != self.grid.shape:
-                raise CouplerError(
-                    "Runtime required data field "
-                    f"'{field_name}' for component '{self.name}' has shape "
-                    f"{field_shape}, expected {self.grid.shape}"
-                )
+            validate_runtime_grid_data_field(self, component_state, field_name)
 
     def prefill_runtime_fields(
         self,
@@ -557,9 +562,8 @@ class DataComponent(Component):
     ) -> "DataComponent":
         """Create a data-only component from user-provided grid fields.
 
-        Scalar field values expand to grid-shaped constants. Use
-        :meth:`wrap` when preserving the older strict array-only behavior is
-        required.
+        Scalar field values expand to grid-shaped constants and seeded field
+        names are exposed as declared outputs.
         """
 
         if settings is None:
@@ -619,21 +623,24 @@ class HostRuntimeComponent(Component):
     ) -> "HostRuntimeComponent":
         """Create a host-runtime component from a Python model callable."""
 
-        _ = cls
-        from vercor.components._callable_wrappers import make_callable_host_component
+        from vercor.components._callable_wrappers import _create_callable_component
 
-        return make_callable_host_component(
-            name=name,
-            grid=grid,
-            step=step,
-            initial_fields=initial_fields,
-            payload=payload,
-            settings=settings,
-            field_spec=ComponentFieldSpec(
-                inputs=inputs,
-                outputs=outputs,
-                required_fields=required_fields,
-                default_fields=default_fields or {},
+        return cast(
+            "HostRuntimeComponent",
+            _create_callable_component(
+                runtime_kind="host",
+                name=name,
+                grid=grid,
+                step=step,
+                initial_fields=initial_fields,
+                payload=payload,
+                settings=settings,
+                field_spec=ComponentFieldSpec(
+                    inputs=inputs,
+                    outputs=outputs,
+                    required_fields=required_fields,
+                    default_fields=default_fields or {},
+                ),
             ),
         )
 

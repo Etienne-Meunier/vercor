@@ -78,7 +78,7 @@ def validate_runtime_store_field(
     """Validate that a named runtime store field exists and matches the component grid."""
 
     expected_shape = component.grid.shape
-    if field_name not in store.field_names:
+    if field_name not in store:
         raise CouplerError(
             "Runtime missing "
             f"{store_description} field '{field_name}' for component '{component.name}'"
@@ -100,7 +100,7 @@ def validate_runtime_data_field_exists(
 ) -> None:
     """Validate that a named component data field exists in runtime state."""
 
-    if field_name not in component_state.data.field_names:
+    if field_name not in component_state.data:
         raise CouplerError(
             "Runtime missing required data field "
             f"'{field_name}' for component '{component.name}'"

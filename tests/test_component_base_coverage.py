@@ -832,6 +832,11 @@ def test_component_helpers_seed_and_update_runtime_fields() -> None:
         np.full(grid.shape, 0.5),
     )
 
+    base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+    assert "component_state.data.to_mapping()" in base_source
+    assert "component_state.data.replace_many(fields)" in base_source
+    assert "validate_runtime_grid_data_field" in base_source
+
 
 @pytest.mark.fast_always
 def test_differentiable_component_applies_callable_field_updates() -> None:

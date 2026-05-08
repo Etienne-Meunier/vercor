@@ -202,6 +202,16 @@ class RuntimeFieldStore:
     ) -> "RuntimeFieldStore":
         return cls(field_names=aux_data, values=children)
 
+    def __contains__(self, name: object) -> bool:
+        """Return whether ``name`` is present in this store."""
+
+        return isinstance(name, str) and name in self.field_names
+
+    def to_mapping(self) -> dict[str, RuntimeArray]:
+        """Return this store as a plain name-to-array mapping."""
+
+        return dict(zip(self.field_names, self.values, strict=True))
+
     def get(self, name: str) -> RuntimeArray:
         """Return a field by name."""
 
@@ -211,15 +221,42 @@ class RuntimeFieldStore:
             raise KeyError(f"Runtime field {name!r} not found") from exc
         return self.values[index]
 
+    def get_or(self, name: str, default: RuntimeArray) -> RuntimeArray:
+        """Return a field by name, or ``default`` when it is absent."""
+
+        if name in self:
+            return self.get(name)
+        return jnp.asarray(default)
+
+    def get_or_zeros_like(
+        self,
+        name: str,
+        like: str | RuntimeArray,
+    ) -> RuntimeArray:
+        """Return a field by name, or zeros matching another field or array."""
+
+        if name in self:
+            return self.get(name)
+        reference = self.get(like) if isinstance(like, str) else like
+        return jnp.zeros_like(jnp.asarray(reference))
+
     def set(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
         """Return a new store with ``name`` replaced or appended."""
 
-        if name not in self.field_names:
+        if name not in self:
             value_array = jnp.array(value, copy=True)
             return RuntimeFieldStore(
                 field_names=(*self.field_names, name),
                 values=(*self.values, value_array),
             )
+
+        return self.replace(name, value)
+
+    def replace(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
+        """Return a new store with an existing field replaced."""
+
+        if name not in self:
+            raise KeyError(f"Runtime field {name!r} not found")
 
         values = tuple(
             (
@@ -230,6 +267,17 @@ class RuntimeFieldStore:
             for field_name, current in zip(self.field_names, self.values)
         )
         return RuntimeFieldStore(field_names=self.field_names, values=values)
+
+    def replace_many(
+        self,
+        fields: Mapping[str, RuntimeArray],
+    ) -> "RuntimeFieldStore":
+        """Return a new store with multiple existing fields replaced."""
+
+        updated = self
+        for field_name, field_value in fields.items():
+            updated = updated.replace(field_name, field_value)
+        return updated
 
 
 @jax.tree_util.register_pytree_node_class
@@ -417,7 +465,7 @@ def dispatch_component_exchanges(
 
         for field_name in exchange.field_names:
             if isinstance(field_name, tuple):
-                if not all(name in source_fields.field_names for name in field_name):
+                if not all(name in source_fields for name in field_name):
                     raise ExchangerError(
                         f"Not all fields in vector {field_name} are present in source fields"
                     )
@@ -428,7 +476,7 @@ def dispatch_component_exchanges(
                 destination_incoming = destination_incoming.set(field_name[0], u_vector)
                 destination_incoming = destination_incoming.set(field_name[1], v_vector)
             else:
-                if field_name not in source_fields.field_names:
+                if field_name not in source_fields:
                     raise ExchangerError(
                         f"Field {field_name} not present in source fields"
                     )
