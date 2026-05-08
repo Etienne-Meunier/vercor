@@ -291,6 +291,39 @@ def test_from_fields_and_from_model_facade_expand_scalar_defaults() -> None:
 
 
 @pytest.mark.fast_always
+def test_data_component_from_fields_normalizes_author_fields_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grid = make_test_grid(name="facade-normalize-once")
+    real_normalize = base_module._normalize_author_field_values
+    call_count = 0
+
+    def counting_normalize(*args: Any, **kwargs: Any) -> dict[str, RuntimeArray] | None:
+        nonlocal call_count
+        call_count += 1
+        return real_normalize(*args, **kwargs)
+
+    monkeypatch.setattr(
+        base_module,
+        "_normalize_author_field_values",
+        counting_normalize,
+    )
+
+    component = base_module.DataComponent.from_fields(
+        name="OBS",
+        grid=grid,
+        fields={"temperature": 281.0},
+    )
+
+    assert call_count == 1
+    assert component.field_spec.outputs == ("temperature",)
+    assert_allclose_compact(
+        component.data["temperature"],
+        np.full(grid.shape, 281.0),
+    )
+
+
+@pytest.mark.fast_always
 def test_callable_facade_accepts_one_two_and_three_argument_steps() -> None:
     grid = make_test_grid(name="flex-step")
 

@@ -121,6 +121,10 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "class _CallableRuntimeMixin" in callable_source
     assert "def normalize_component_step_callable" in callable_source
     assert "def validate_component_setup" in validation_source
+    assert "def _author_field_spec(" in base_source
+    assert "def _callable_component_from_model(" in base_source
+    assert base_source.count("_callable_component_from_model(") == 3
+    assert base_source.count("_create_callable_component(") == 1
     assert "_required_fields" not in callable_source
     assert "_prefill_fields" not in callable_source
     assert "_field_defaults" not in callable_source

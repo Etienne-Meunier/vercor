@@ -55,6 +55,58 @@ __all__ = [
 ]
 
 
+def _author_field_spec(
+    *,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+    required_fields: _FieldNames = (),
+) -> ComponentFieldSpec:
+    """Build a component field declaration from author constructor arguments."""
+
+    return ComponentFieldSpec(
+        inputs=inputs,
+        outputs=outputs,
+        required_fields=required_fields,
+        default_fields=default_fields or {},
+    )
+
+
+def _callable_component_from_model(
+    *,
+    runtime_kind: str,
+    name: str,
+    grid: RectilinearGrid,
+    step: _AuthorStepCallable,
+    initial_fields: _AuthorFieldValues = None,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+    required_fields: _FieldNames = (),
+) -> "Component":
+    """Create a callable-backed component from the shared author facade."""
+
+    from vercor.components._callable_wrappers import _create_callable_component
+
+    return _create_callable_component(
+        runtime_kind=runtime_kind,
+        name=name,
+        grid=grid,
+        step=step,
+        initial_fields=initial_fields,
+        payload=payload,
+        settings=settings,
+        field_spec=_author_field_spec(
+            inputs=inputs,
+            outputs=outputs,
+            default_fields=default_fields,
+            required_fields=required_fields,
+        ),
+    )
+
+
 @dataclass
 class Component(ABC):
     """Active differentiable component-author contract for VerCOR model adapters.
@@ -115,9 +167,7 @@ class Component(ABC):
         scalar initial/default values expand to this component's grid shape.
         """
 
-        from vercor.components._callable_wrappers import _create_callable_component
-
-        return _create_callable_component(
+        return _callable_component_from_model(
             runtime_kind="differentiable",
             name=name,
             grid=grid,
@@ -125,12 +175,10 @@ class Component(ABC):
             initial_fields=initial_fields,
             payload=payload,
             settings=settings,
-            field_spec=ComponentFieldSpec(
-                inputs=inputs,
-                outputs=outputs,
-                required_fields=required_fields,
-                default_fields=default_fields or {},
-            ),
+            inputs=inputs,
+            outputs=outputs,
+            default_fields=default_fields,
+            required_fields=required_fields,
         )
 
     def declare_fields(
@@ -570,14 +618,8 @@ class DataComponent(Component):
             component = cls(name=name, grid=grid)
         else:
             component = cls(name=name, grid=grid, settings=settings)
-        normalized_fields = _normalize_author_field_values(
-            component_name=name,
-            grid=grid,
-            fields=fields,
-            policy=component.settings,
-        )
-        if normalized_fields is not None:
-            component.seed_fields(normalized_fields)
+        if fields is not None:
+            component.seed_fields(fields)
         return component
 
     def seed_fields(
@@ -623,11 +665,9 @@ class HostRuntimeComponent(Component):
     ) -> "HostRuntimeComponent":
         """Create a host-runtime component from a Python model callable."""
 
-        from vercor.components._callable_wrappers import _create_callable_component
-
         return cast(
             "HostRuntimeComponent",
-            _create_callable_component(
+            _callable_component_from_model(
                 runtime_kind="host",
                 name=name,
                 grid=grid,
@@ -635,12 +675,10 @@ class HostRuntimeComponent(Component):
                 initial_fields=initial_fields,
                 payload=payload,
                 settings=settings,
-                field_spec=ComponentFieldSpec(
-                    inputs=inputs,
-                    outputs=outputs,
-                    required_fields=required_fields,
-                    default_fields=default_fields or {},
-                ),
+                inputs=inputs,
+                outputs=outputs,
+                default_fields=default_fields,
+                required_fields=required_fields,
             ),
         )
 

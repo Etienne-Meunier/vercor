@@ -1,5 +1,51 @@
 # 2026-05-08
 
+## Component Constructor Boilerplate Tightening
+
+- Audited the post-refactor component authoring surface and preserved the
+  documented public API while tightening the remaining constructor internals.
+- Added a private `_author_field_spec(...)` helper so callable-backed
+  differentiable and host constructors build field declarations through one
+  path.
+- Added a private `_callable_component_from_model(...)` helper so
+  `Component.from_model()` and `HostRuntimeComponent.from_model()` delegate to
+  the same callable-wrapper construction path.
+- Simplified `DataComponent.from_fields()` so author field normalization happens
+  once through `seed_fields(...)`, while seeded fields still become declared
+  outputs.
+- Updated component/API boundary tests to guard the shared constructor path and
+  single-normalization behavior.
+- Failed approaches / corrections:
+  - The focused red run failed as expected on missing private constructor
+    helpers and on `DataComponent.from_fields()` normalizing author fields
+    twice.
+  - The source-boundary guard was adjusted to count both constructor call sites
+    through `_callable_component_from_model(...)` while allowing the host path
+    to keep its return-type cast.
+
+## Validation (Component Constructor Boilerplate Tightening, 2026-05-08)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`99 passed, 258 deselected`)
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_data_component_from_fields_normalizes_author_fields_once tests/test_api_boundaries.py::test_component_base_internals_are_private_modules -q --tb=short`
+  - failed as expected before implementation on missing helper functions and
+    double normalization
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 108 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`108 source files`)
+- `conda run -n scipy pytest tests/ -v --fast`
+  - passed (`100 passed, 258 deselected`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Component Runtime Boilerplate Refactor
 
 - Moved reusable immutable runtime-field mechanics onto `RuntimeFieldStore`:
