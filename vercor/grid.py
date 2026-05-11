@@ -7,6 +7,9 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
+from vercor.exceptions import GridError
+from vercor.types import RuntimeArray
+
 
 def _is_strictly_increasing(values: jax.Array) -> bool:
     return bool(jnp.all(jnp.diff(values) > 0.0))
@@ -15,13 +18,13 @@ def _is_strictly_increasing(values: jax.Array) -> bool:
 @dataclass(frozen=True)
 class Grid(abc.ABC):
     name: str
-    binary_mask: Any | None = None  # values of 1 for active, 0 for inactive
+    binary_mask: RuntimeArray | None = None  # values of 1 for active, 0 for inactive
 
     def __post_init__(self) -> None:
         if self.binary_mask is not None:
             mask = jnp.asarray(self.binary_mask)
             if mask.ndim != 2:
-                raise ValueError("Mask must be a 2D array.")
+                raise GridError("Mask must be a 2D array.")
             object.__setattr__(self, "binary_mask", mask)
 
     @property
@@ -44,19 +47,19 @@ class Grid(abc.ABC):
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, init=False, repr=False, kw_only=True)
 class RectilinearGrid(Grid):
-    longitude: Any
-    latitude: Any
-    longitude_edges: Any | None
-    latitude_edges: Any | None
+    longitude: RuntimeArray
+    latitude: RuntimeArray
+    longitude_edges: RuntimeArray | None
+    latitude_edges: RuntimeArray | None
 
     def __init__(
         self,
         name: str,
-        longitude: Any,
-        latitude: Any,
-        longitude_edges: Any | None = None,
-        latitude_edges: Any | None = None,
-        binary_mask: Any | None = None,
+        longitude: RuntimeArray,
+        latitude: RuntimeArray,
+        longitude_edges: RuntimeArray | None = None,
+        latitude_edges: RuntimeArray | None = None,
+        binary_mask: RuntimeArray | None = None,
     ) -> None:
         longitude_array = jnp.asarray(longitude)
         latitude_array = jnp.asarray(latitude)
@@ -69,7 +72,7 @@ class RectilinearGrid(Grid):
         binary_mask_array = None if binary_mask is None else jnp.asarray(binary_mask)
 
         if longitude_array.ndim != 1 or latitude_array.ndim != 1:
-            raise ValueError(
+            raise GridError(
                 "RectilinearGrid expects both longitude and latitude coordinates to be 1D arrays."
             )
 
@@ -77,7 +80,7 @@ class RectilinearGrid(Grid):
             _is_strictly_increasing(longitude_array)
             and _is_strictly_increasing(latitude_array)
         ):
-            raise ValueError("longitude and latitude must be strictly monotonic.")
+            raise GridError("longitude and latitude must be strictly monotonic.")
 
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "binary_mask", binary_mask_array)
