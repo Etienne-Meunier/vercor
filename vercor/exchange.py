@@ -39,7 +39,7 @@ class Exchange:
 
     Attributes:
         source, destination: component names
-        name: exchange name (automatically set to "SOURCE2DESTINATION")
+        name: exchange name (automatically setup from source, destination, and regridder_factory)
         field_names: list of scalar field names and
             tuples of vectors (u-component, v-component)
         regridder_factory: callable that returns a Regridder instance

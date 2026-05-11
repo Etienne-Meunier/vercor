@@ -93,7 +93,7 @@ def check_remap_conservation(
     ocn_fmask_on_atm_grid: RuntimeArray,
     logger: LoggerLike | None = None,
 ) -> None:
-    """Validate conservative ocean-mask remapping mass conservation when comparable."""
+    """Validate conservative ocean-mask remapping mass conservation when grids are comparable."""
 
     do_not_check_mass = False
     log = logger if logger is not None else get_default_logger()

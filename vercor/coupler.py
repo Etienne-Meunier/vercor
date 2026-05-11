@@ -62,6 +62,7 @@ class Coupler:
 
     Attributes:
         clock: Clock instance for managing simulation time
+        log_level: logging threshold for coupler logs (e.g., "INFO", "DEBUG", etc.)
         logger: Logger instance for coupler logging
         run_sequence: sequence of component names defining the call (step) order
         components: mapping of component name to component instance
@@ -83,6 +84,7 @@ class Coupler:
                 grid cells of the forcing or boundary conditions is transferred to
                 destination grid cells, reflecting the partial coverage of source grid cells
                 within destination grid cells.
+        _runtime_contracts: mapping of component name to RuntimeComponentContract instance
         _compiled_runtime_cache: mapping of static runtime topology keys to cached compiled runtime functions
         _runtime_interrupts: controller for signaling and handling runtime
             interrupts across host and JAX-traced runtime paths
@@ -212,7 +214,6 @@ class Coupler:
 
         # Initialize each component
         for name, component in self.components.items():
-            validate_component_setup(component)
             component.initialize(init_context)
 
             if name not in ("ATM", "OCN", "LND", "ICE"):

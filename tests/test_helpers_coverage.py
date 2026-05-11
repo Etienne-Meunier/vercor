@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_allclose_compact
+from vercor.exceptions import GridError
 from vercor.exchange import Exchange
 from vercor.grid import Grid, RectilinearGrid
 from vercor.regridders.helpers import centers_to_edges, compute_land_mask
@@ -31,7 +32,7 @@ def test_grid_and_rectilinear_grid_validations_and_reprs() -> None:
     assert "Grid name:  example" in str(grid)
     assert "longitude_size=3" in repr(grid)
 
-    with pytest.raises(ValueError, match="Mask must be a 2D array"):
+    with pytest.raises(GridError, match="Mask must be a 2D array"):
         ExampleGrid(name="bad-mask", binary_mask=np.ones((2, 3, 1)))
 
     rectilinear = RectilinearGrid(
@@ -43,14 +44,14 @@ def test_grid_and_rectilinear_grid_validations_and_reprs() -> None:
     assert "RectilinearGrid" in str(rectilinear)
     assert "shape=(2, 3)" in repr(rectilinear)
 
-    with pytest.raises(ValueError, match="1D arrays"):
+    with pytest.raises(GridError, match="1D arrays"):
         RectilinearGrid(
             name="bad-dims",
             longitude=np.ones((2, 2)),
             latitude=np.asarray([-10.0, 10.0]),
         )
 
-    with pytest.raises(ValueError, match="strictly monotonic"):
+    with pytest.raises(GridError, match="strictly monotonic"):
         RectilinearGrid(
             name="bad-order",
             longitude=np.asarray([0.0, 10.0, 5.0]),
