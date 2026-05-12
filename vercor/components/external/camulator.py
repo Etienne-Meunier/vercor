@@ -33,6 +33,7 @@ except ModuleNotFoundError:
 
 from vercor.components.base import HostRuntimeComponent
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full, jax_ones
+from vercor.fluxes.utilities import _compute_hybrid_sigma_full_level_altitudes
 from vercor.grid import RectilinearGrid
 from vercor.host_arrays import runtime_array_to_host
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
@@ -201,34 +202,14 @@ def _map_camulator_prediction_arrays(
     temperature_for_height = temperature_3d_array.T
     humidity_for_height = specific_humidity_3d_array.T
     pressure_interfaces_for_height = p_int.T
-    virtual_temperature = temperature_for_height * (1.0 + zvir * humidity_for_height)
-    dlog_p = jnp.log(
-        pressure_interfaces_for_height[:, :, 1:]
-        / pressure_interfaces_for_height[:, :, :-1]
-    )
-    alpha = 1.0 - (
-        pressure_interfaces_for_height[:, :, :-1]
-        / (
-            pressure_interfaces_for_height[:, :, 1:]
-            - pressure_interfaces_for_height[:, :, :-1]
-        )
-        * dlog_p
-    )
-    virtual_temperature *= rdair
-    increment = jnp.flip(virtual_temperature * dlog_p, axis=2)
-    half_level_geopotential = jnp.cumsum(increment, axis=2)
-    padded_half_level_geopotential = jnp.pad(
-        half_level_geopotential, ((0, 0), (0, 0), (1, 0))
-    )
-    full_level_geopotential = (
-        jnp.flip(virtual_temperature * alpha, axis=2)
-        + padded_half_level_geopotential[:, :, :-1]
-    )
-    altitude = (
-        earth_radius
-        * full_level_geopotential
-        / gravity
-        / (earth_radius - full_level_geopotential / gravity)
+    altitude = _compute_hybrid_sigma_full_level_altitudes(
+        temperature_for_height,
+        humidity_for_height,
+        pressure_interfaces_for_height,
+        earth_radius=earth_radius,
+        gravity=gravity,
+        rdair=rdair,
+        zvir=zvir,
     )
     model_level_height = altitude[..., 0].T
 

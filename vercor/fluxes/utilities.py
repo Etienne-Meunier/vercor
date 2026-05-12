@@ -10,6 +10,20 @@ def _as_jax_array(value: ArrayLike) -> jax.Array:
     return as_jax_real_array(value)
 
 
+def _virtual_temperature_from_specific_humidity(
+    temperature: ArrayLike,
+    specific_humidity: ArrayLike,
+    virtual_temperature_correction: float,
+) -> jax.Array:
+    """Return virtual temperature for specific humidity in kg/kg."""
+
+    temperature_array = _as_jax_array(temperature)
+    specific_humidity_array = _as_jax_array(specific_humidity)
+    return temperature_array * (
+        1.0 + virtual_temperature_correction * specific_humidity_array
+    )
+
+
 def qsat(tk: ArrayLike) -> jax.Array:
     """The saturation humidity of air (kg/m^3)
 
@@ -71,16 +85,20 @@ def get_altitudes_hybrid_sigma_levels(
     q: ArrayLike,
     ph: ArrayLike,
 ) -> jax.Array:
-    """Computes the altitudes at ECMWF Integrated Forecasting System
-    (ECMWF-IFS) model half- and full-levels (for 137 levels model reanalysis: L137)
+    """Compute geometric altitudes at ECMWF-IFS hybrid-sigma full levels.
 
     Arguments:
-        t (:obj:`ndarray`): Atmospheric temperture [K]
-        q (:obj:`ndarray`): Atmospheric specific humidity [kg/kg]
-        ph (:obj:`ndarray`): Pressure at half model levels [Pa]
+        t (:obj:`ndarray`): Atmospheric temperature [K], ordered top-to-bottom
+            along the final axis.
+        q (:obj:`ndarray`): Atmospheric specific humidity [kg/kg], ordered
+            top-to-bottom along the final axis.
+        ph (:obj:`ndarray`): Pressure at half model levels [Pa], ordered
+            top-to-bottom along the final axis.
 
     Note:
-        The top level of the atmosphere is excluded
+        The top level of the atmosphere is excluded. Returned full-level
+        altitudes are ordered bottom-to-top along the final axis to preserve
+        the existing consumer contract.
 
     Reference:
         - https://www.ecmwf.int/sites/default/files/elibrary/2015/9210-part-iii-dynamics-and-numerical-procedures.pdf
@@ -90,40 +108,66 @@ def get_altitudes_hybrid_sigma_levels(
         :obj:`ndarray`: Altitudes of the atmospheric full model levels [m]
     """
 
-    # virtual temperature (K)
-    t_array = _as_jax_array(t)
-    q_array = _as_jax_array(q)
+    return _compute_hybrid_sigma_full_level_altitudes(
+        t,
+        q,
+        ph,
+        earth_radius=settings.earth_radius,
+        gravity=settings.gravity,
+        rdair=settings.rdair,
+        zvir=settings.zvir,
+    )
+
+
+def _compute_hybrid_sigma_full_level_altitudes(
+    t: ArrayLike,
+    q: ArrayLike,
+    ph: ArrayLike,
+    *,
+    earth_radius: float,
+    gravity: float,
+    rdair: float,
+    zvir: float,
+) -> jax.Array:
+    """Return bottom-to-top hybrid-sigma full-level geometric altitudes."""
+
     ph_array = _as_jax_array(ph)
+    virtual_temperature = _virtual_temperature_from_specific_humidity(t, q, zvir)
 
-    tv = t_array * (1.0 + settings.zvir * q_array)
-
-    # dlog_p[0] = np.log(ph[:, :, 1:] / 0.1)
-    # alpha[0] = np.log(2)
-    dlog_p = jnp.log(ph_array[:, :, 1:] / ph_array[:, :, :-1])
-    alpha = 1.0 - (
-        (ph_array[:, :, :-1] / (ph_array[:, :, 1:] - ph_array[:, :, :-1])) * dlog_p
-    )
-    tv *= settings.rdair
-
-    # zh is the geopotential of 'half-levels'
-    # integrate zh to next half level
-    increment = jnp.flip(tv * dlog_p, axis=2)
-    zh = jnp.cumsum(increment, axis=2)
-
-    # zf is the geopotential of this full level
-    # integrate from previous (lower) half-level zh to the
-    # full level
-    increment_zh = jnp.pad(zh, ((0, 0), (0, 0), (1, 0)))
-    zf = jnp.flip(tv * alpha, axis=2) + increment_zh[:, :, :-1]
-
-    alt = (
-        settings.earth_radius
-        * zf
-        / settings.gravity
-        / (settings.earth_radius - zf / settings.gravity)
+    lower_half_pressure = ph_array[:, :, :-1]
+    upper_half_pressure = ph_array[:, :, 1:]
+    zero_lower_half_pressure = lower_half_pressure == 0.0
+    safe_lower_half_pressure = jnp.where(
+        zero_lower_half_pressure,
+        0.1,
+        lower_half_pressure,
     )
 
-    return alt[:, :, :]
+    dlog_p = jnp.log(upper_half_pressure / safe_lower_half_pressure)
+    alpha_general = 1.0 - (
+        safe_lower_half_pressure
+        / (upper_half_pressure - safe_lower_half_pressure)
+        * dlog_p
+    )
+    alpha = jnp.where(zero_lower_half_pressure, jnp.log(2.0), alpha_general)
+
+    moist_temperature_rd = virtual_temperature * rdair
+    half_level_geopotential_increment = jnp.flip(
+        moist_temperature_rd * dlog_p,
+        axis=2,
+    )
+    half_level_geopotential = jnp.cumsum(half_level_geopotential_increment, axis=2)
+
+    padded_half_level_geopotential = jnp.pad(
+        half_level_geopotential,
+        ((0, 0), (0, 0), (1, 0)),
+    )
+    full_level_geopotential = (
+        jnp.flip(moist_temperature_rd * alpha, axis=2)
+        + padded_half_level_geopotential[:, :, :-1]
+    )
+    geopotential_height = full_level_geopotential / gravity
+    return earth_radius * geopotential_height / (earth_radius - geopotential_height)
 
 
 def cdn(umps: ArrayLike) -> jax.Array:

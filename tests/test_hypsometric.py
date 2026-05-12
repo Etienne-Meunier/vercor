@@ -130,6 +130,28 @@ def test_humidity_increases_thickness() -> None:
     assert jnp.all(thick_moist > thick_dry)
 
 
+def test_specific_humidity_uses_exact_virtual_temperature_without_mixing_ratio_denominator() -> (
+    None
+):
+    """Specific humidity q should not be treated as water-vapor mixing ratio."""
+
+    g = 9.80665
+    Rd = 287.05
+    Rv = 461.5
+    eps = Rv / Rd
+
+    T = jnp.full((2, 1, 1), 300.0, dtype=jnp.float32)
+    p = jnp.asarray([100000.0, 90000.0], dtype=jnp.float32)[:, None, None]
+    q = jnp.full((2, 1, 1), 0.02, dtype=jnp.float32)
+
+    z = _to_jax_numpy(get_altitudes_sigma_levels(T, p, q, g=g, Rd=Rd, Rv=Rv))
+
+    expected_thickness = (
+        (Rd / g) * 300.0 * (1.0 + (eps - 1.0) * 0.02) * jnp.log(p[0, 0, 0] / p[1, 0, 0])
+    )
+    assert_allclose_compact(z[1, 0, 0] - z[0, 0, 0], expected_thickness, atol=1e-4)
+
+
 def test_z0_accepts_scalar_and_2d_and_3d() -> None:
     nlev, nlat, nlon = 3, 2, 2
     T = jnp.full((nlev, nlat, nlon), 280.0, dtype=jnp.float32)
@@ -201,7 +223,7 @@ def test_reconstruction_from_z_matches_pressure_ratio() -> None:
     q64 = q.astype(jnp.float64)
     p64 = p.astype(jnp.float64)
 
-    Tv = T64 * (1.0 + (eps - 1.0) * q64) / (1.0 - q64)
+    Tv = T64 * (1.0 + (eps - 1.0) * q64)
     Tv_bar = 0.5 * (Tv[:-1] + Tv[1:])
     dz = jnp.diff(z, axis=0)
 

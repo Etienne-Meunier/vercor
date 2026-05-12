@@ -25,6 +25,7 @@ from vercor.components.external.camulator import (
     _prepare_camulator_surface_forcing,
     _torch_tensor_from_jax_array,
 )
+from vercor.fluxes.utilities import get_altitudes_hybrid_sigma_levels
 from vercor.grid import RectilinearGrid
 from vercor.runtime import (
     RuntimeComponentContract,
@@ -200,8 +201,8 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     None
 ):
     settings = VercorSettings()
-    hyai = jnp.asarray([0.01, 0.02, 0.03])
-    hybi = jnp.asarray([0.10, 0.20, 0.30])
+    hyai = jnp.asarray([0.00, 0.05, 0.10])
+    hybi = jnp.asarray([0.00, 0.20, 1.00])
     hyam = jnp.asarray([0.015, 0.025])
     hybm = jnp.asarray([0.15, 0.25])
     u_wind = jnp.asarray(
@@ -265,6 +266,19 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     assert mapped_fields["model_level_height"].shape == (2, 2)
     assert mapped_fields["density"].shape == (2, 2)
     assert mapped_fields["potential_temperature"].shape == (2, 2)
+    pressure_interfaces = (
+        hyai[:, jnp.newaxis, jnp.newaxis] * 100000.0
+        + hybi[:, jnp.newaxis, jnp.newaxis] * surface_pressure[jnp.newaxis, :, :]
+    )
+    expected_model_level_height = get_altitudes_hybrid_sigma_levels(
+        settings,
+        temperature_3d.T,
+        specific_humidity_3d.T,
+        pressure_interfaces.T,
+    )[..., 0].T
+    assert_allclose_compact(
+        mapped_fields["model_level_height"], expected_model_level_height
+    )
     assert np.all(np.isfinite(np.asarray(mapped_fields["model_level_height"])))
     assert np.all(np.isfinite(np.asarray(mapped_fields["density"])))
     assert np.all(np.isfinite(np.asarray(mapped_fields["potential_temperature"])))

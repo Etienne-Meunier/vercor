@@ -1,5 +1,44 @@
 # 2026-05-12
 
+## Hypsometric Altitude Corrections
+
+- Corrected sigma-level virtual temperature for specific humidity by removing
+  the mixing-ratio-style denominator from the hypsometric thickness formula.
+- Added shared JAX-native helpers for specific-humidity virtual temperature and
+  hybrid-sigma full-level geometric altitude calculations.
+- Corrected ECMWF/ERA-style hybrid-sigma altitude calculations when the top
+  half-level pressure is zero by applying the documented top-layer
+  `dlog_p = log(p_next / 0.1)` and `alpha = log(2)` treatment.
+- Routed the CAMulator model-level-height diagnostic through the shared
+  hybrid-sigma altitude helper to remove the duplicated formula path.
+- Failed approaches / corrections:
+  - The first red-test command used the wrong Camulator test node and failed
+    during test collection; rerunning with the exact test name reached the
+    intended sigma and hybrid failures.
+
+## Validation (Hypsometric Altitude Corrections, 2026-05-12)
+
+- `conda run -n scipy pytest tests/test_hypsometric.py::test_specific_humidity_uses_exact_virtual_temperature_without_mixing_ratio_denominator tests/test_fluxes_utilities.py::test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level tests/test_camulator_component_kernels.py::test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions -q --tb=short`
+  - failed as expected before implementation: moist sigma thickness was
+    955.5581 m instead of 936.4468 m, and zero-top hybrid altitude returned
+    `nan` at the top returned level.
+- `conda run -n scipy pytest tests/test_hypsometric.py tests/test_fluxes_utilities.py::test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile tests/test_fluxes_utilities.py::test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level tests/test_camulator_component_kernels.py::test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions -q --tb=short`
+  - passed after implementation.
+- `conda run -n scipy pytest tests/test_hypsometric.py tests/test_fluxes_utilities.py tests/test_camulator_component_kernels.py -q --tb=short`
+  - passed.
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed.
+- `conda run -n scipy black vercor examples tests`
+  - passed.
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_hypsometric.py`.
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`).
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`120 source files`).
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed.
+
 ## Configured Regridder Factory Forwarding
 
 - Extended the public `bilinear()` and `conservative()` factory helpers so

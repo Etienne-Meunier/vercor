@@ -13,6 +13,7 @@ from jcm.physics.speedy.speedy_coords import get_speedy_coords
 from jcm.physics.speedy.params import Parameters
 
 from vercor.dtypes import as_jax_real_array
+from vercor.fluxes.utilities import _virtual_temperature_from_specific_humidity
 from vercor.types import RuntimeArray
 
 
@@ -118,9 +119,9 @@ def get_altitudes_sigma_levels(
       where Tv is virtual temperature derived from T and q.
 
     Notes:
-      - Tv is computed with a more exact relation using q:
-          Tv = T * (1 + (Rv/Rd - 1)*q) / (1 - q)
-        (For small q, this is close to T*(1 + 0.61 q).)
+      - Tv is computed from specific humidity as:
+          Tv = T * (1 + (Rv/Rd - 1)*q)
+        (For typical water-vapor constants this is close to T*(1 + 0.61 q).)
       - Tv_bar between adjacent levels is taken as a simple average.
     """
     T = as_jax_real_array(temperature)
@@ -138,10 +139,9 @@ def get_altitudes_sigma_levels(
 
     nlev, nlat, nlon = T.shape
 
-    # Virtual temperature (more exact form using q)
+    # Virtual temperature for specific humidity q.
     eps = Rv / Rd  # ~1.608
-    Tv = T * (1.0 + (eps - 1.0) * q) / (1.0 - q)
-    # Tv = T * (1. + 0.608 * q)
+    Tv = _virtual_temperature_from_specific_humidity(T, q, eps - 1.0)
 
     # Log-pressure thickness between adjacent levels: ln(p[k-1]/p[k])
     # (works even if p is not strictly monotone, but physically it should be)

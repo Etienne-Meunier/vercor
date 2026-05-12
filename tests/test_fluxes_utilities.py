@@ -117,6 +117,49 @@ def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -
     assert np.all(np.diff(alt, axis=2) > 0.0)
 
 
+def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None:
+    settings = VercorSettings()
+    ph = jnp.asarray([0.0, 1_000.0, 5_000.0, 100_000.0])[None, None, :]
+    t = jnp.full((1, 1, 3), 260.0)
+    q = jnp.zeros((1, 1, 3))
+
+    alt = get_altitudes_hybrid_sigma_levels(settings=settings, t=t, q=q, ph=ph)
+
+    top_down_dlog = jnp.asarray(
+        [
+            jnp.log(ph[0, 0, 1] / 0.1),
+            jnp.log(ph[0, 0, 2] / ph[0, 0, 1]),
+            jnp.log(ph[0, 0, 3] / ph[0, 0, 2]),
+        ]
+    )
+    top_down_alpha = jnp.asarray(
+        [
+            jnp.log(2.0),
+            1.0 - ph[0, 0, 1] / (ph[0, 0, 2] - ph[0, 0, 1]) * top_down_dlog[1],
+            1.0 - ph[0, 0, 2] / (ph[0, 0, 3] - ph[0, 0, 2]) * top_down_dlog[2],
+        ]
+    )
+    moist_temperature_rd = settings.rdair * 260.0
+    expected_bottom_up_geopotential = jnp.asarray(
+        [
+            moist_temperature_rd * top_down_alpha[2],
+            moist_temperature_rd * (top_down_dlog[2] + top_down_alpha[1]),
+            moist_temperature_rd
+            * (top_down_dlog[2] + top_down_dlog[1] + top_down_alpha[0]),
+        ]
+    )
+    geopotential_height = expected_bottom_up_geopotential / settings.gravity
+    expected_alt = (
+        settings.earth_radius
+        * geopotential_height
+        / (settings.earth_radius - geopotential_height)
+    )
+
+    assert alt.shape == (1, 1, 3)
+    assert np.all(np.isfinite(np.asarray(alt)))
+    assert_allclose_compact(alt[0, 0, :], expected_alt, rtol=1e-6, atol=1e-6)
+
+
 def test_density_and_potential_temperature_match_closed_form() -> None:
     settings = VercorSettings()
     pf = np.array([[100_000.0, 90_000.0]])

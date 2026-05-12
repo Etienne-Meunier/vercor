@@ -1,13 +1,13 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
 3. `vercor/settings.py` - unified metadata-backed `VercorSettings` container with dynamic attribute access, typed known-setting annotations, default settings records, physical constants, runtime/component settings, and settings-bound dtype policy consumed by translated kernels
-4. `vercor/fluxes/utilities.py` - JAX-native scalar/array thermodynamic helpers built on (1, 3)
+4. `vercor/fluxes/utilities.py` - JAX-native scalar/array thermodynamic helpers, shared virtual-temperature conversion, and hybrid-sigma altitude kernels built on (1, 3)
 5. `vercor/fluxes/bulk_formula_cesm.py` - JAX-native atmosphere-ocean / atmosphere-ice bulk flux kernels built on (1, 3, 4)
 6. `vercor/host_arrays.py` - explicit JAX/NumPy host-transfer boundary for non-differentiable adapters and output
-7. `vercor/components/external/jax_gcm_tools.py` - existing JAX helper layer used by the JCM adapter; validated for `jax.jit` and built on (1)
+7. `vercor/components/external/jax_gcm_tools.py` - existing JAX helper layer used by the JCM adapter; validated for `jax.jit` and built on (1, 4)
 8. `vercor/components/external/jax_gcm.py` - JCM adapter boundary that stores translated kernel outputs built on (1, 2, 7)
 9. `vercor/components/external/veros_runtime_settings.py` and `vercor/components/external/veros_gcm.py` - explicit Veros host-runtime configuration plus the Veros adapter boundary that converts translated flux outputs back to NumPy for Veros state updates built on (1, 5, 6)
-10. `vercor/components/external/camulator.py` - CAMulator adapter boundary with JAX-backed runtime-field helpers and explicit Torch / xarray output boundaries built on (1, 6)
+10. `vercor/components/external/camulator.py` - CAMulator adapter boundary with JAX-backed runtime-field helpers, shared hybrid-sigma altitude diagnostics, and explicit Torch / xarray output boundaries built on (1, 4, 6)
 11. `vercor/grid.py` - JAX-friendly `RectilinearGrid` holder with eager validation and PyTree registration built on (2)
 12. `vercor/field_layout.py` - canonical component data-field layout validation and time-last forcing normalization helpers built on (11)
 13. `vercor/regridders/helpers.py` - JAX-native rectilinear helper kernels built on (1, 11)
