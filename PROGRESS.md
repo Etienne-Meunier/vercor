@@ -1,5 +1,49 @@
 # 2026-05-12
 
+## Callable Field Seeding API Removal
+
+- Removed the duplicate callable field-seeding keyword from the public
+  `Component.from_model()`, `HostRuntimeComponent.from_model()`,
+  `differentiable_component()`, and `host_component()` APIs.
+- Kept `default_fields` as the single callable author-facing mechanism for
+  concrete runtime field defaults; payload and settings are now keyword-only on
+  callable factories so legacy positional calls fail clearly.
+- Removed the private callable-wrapper setup-time seeding branch and routed
+  callable runtime field creation through declared defaults, outputs, exchanges,
+  or explicit subclass/manual seeding helpers.
+- Updated the custom component wrapping example, component API tests, design
+  docs, and historical progress wording to avoid the removed keyword.
+- Failed approaches / corrections:
+  - The red API tests failed as expected before implementation because callable
+    factories still exposed the removed keyword and accepted it at runtime.
+  - The first type-check run caught the intentionally invalid dynamic keyword
+    test as a static argument-type issue; the test now casts that one call site
+    so mypy does not treat it as a supported production call.
+
+## Validation (Callable Field Seeding API Removal, 2026-05-12)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --fast --tb=short`
+  - failed as expected before implementation on the still-present callable
+    field-seeding keyword
+  - passed after removing the API and updating tests
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed
+- `rg -n "initial"_"fields" vercor examples tests DESIGN.md DEPENDENCIES.md README.md PROGRESS.md`
+  - passed with no matches
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 120 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - first reported one static type issue in the dynamic removed-keyword test
+  - passed after casting that intentionally invalid call site (`120 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Shared PyTree Mixin Refactor
 
 - Added `vercor.pytree.PyTreeNodeMixin` as the shared declarative PyTree base
@@ -556,8 +600,8 @@
 - Mapped `inputs`, `outputs`, `default_fields`, and `required_fields` onto the
   existing runtime prefill/validation machinery without changing runtime state
   containers or the backward-compatible `wrap()` / `make_*()` APIs.
-- Added scalar-to-grid expansion for facade `initial_fields`, `default_fields`,
-  and data `from_fields()` values.
+- Added scalar-to-grid expansion for callable `default_fields` and data
+  `from_fields()` values.
 - Added subclass helper methods `declare_fields()`, `has_runtime_field()`,
   `runtime_field_or()`, `runtime_field_or_zeros_like()`, and
   `prefill_runtime_fields()`.

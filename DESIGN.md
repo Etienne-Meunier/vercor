@@ -126,9 +126,9 @@ immutable runtime containers used during traced integration.
   `DataComponent.from_fields()` for data-only fields, `Component.from_model()`
   for pure callable JAX models, and `HostRuntimeComponent.from_model()` for
   Python host-side models. These helpers use author-facing field names:
-  `initial_fields` seed model state, `inputs` declare fields the model reads,
-  `outputs` declare fields the model writes, and `default_fields` declare
-  concrete fallback fields. Scalar initial, default, and seeded values expand
+  `inputs` declare fields the model reads, `outputs` declare fields the model
+  writes, and `default_fields` declare concrete runtime defaults for fields
+  the model reads or updates. Scalar default and seeded values expand
   to grid-shaped constants. `ComponentSetupContext` and `ComponentStepContext`
   are public aliases for the setup and step contexts passed to author callbacks.
   `ComponentFieldSpec`, `field_spec`, and `declare_fields()` provide the same

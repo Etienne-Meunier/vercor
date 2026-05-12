@@ -61,10 +61,12 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
         name="OCN",
         grid=grid,
         step=step,
-        initial_fields={"sea_surface_temperature": 288.15},
         inputs=("net_surface_heat_flux",),
         outputs=("sea_surface_temperature",),
-        default_fields={"net_surface_heat_flux": 0.0},
+        default_fields={
+            "sea_surface_temperature": 288.15,
+            "net_surface_heat_flux": 0.0,
+        },
     )
 
 
@@ -99,9 +101,9 @@ def make_host_model(grid: RectilinearGrid) -> HostRuntimeComponent:
         name="LND",
         grid=grid,
         step=step,
-        initial_fields={"temperature": 283.15},
         payload=ToyHostModel(),
         outputs=("temperature",),
+        default_fields={"temperature": 283.15},
     )
 
 

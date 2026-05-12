@@ -170,10 +170,9 @@ def test_convenience_factories_delegate_to_authoring_facade() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        initial_fields={"temperature": 280.0},
         inputs=("forcing",),
         outputs=("temperature", "tendency"),
-        default_fields={"forcing": 2.0},
+        default_fields={"temperature": 280.0, "forcing": 2.0},
     )
     assert isinstance(differentiable, base_module.Component)
     assert differentiable.field_spec.inputs == ("forcing",)
@@ -201,9 +200,8 @@ def test_convenience_factories_delegate_to_authoring_facade() -> None:
         name="HOST",
         grid=grid,
         step=step,
-        initial_fields={"temperature": 1.0},
         outputs=("temperature",),
-        default_fields={"forcing": 4.0, "tendency": 0.0},
+        default_fields={"temperature": 1.0, "forcing": 4.0, "tendency": 0.0},
     )
     assert isinstance(host, base_module.HostRuntimeComponent)
     host_state = create_runtime_component_state(
@@ -261,9 +259,8 @@ def test_from_fields_and_from_model_facade_expand_scalar_defaults() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        initial_fields={"temperature": 280.0},
         outputs=("temperature", "tendency"),
-        default_fields={"forcing": 2.0},
+        default_fields={"temperature": 280.0, "forcing": 2.0},
     )
     state = create_runtime_component_state(
         component,
@@ -353,23 +350,23 @@ def test_callable_facade_accepts_one_two_and_three_argument_steps() -> None:
             name="ONE",
             grid=grid,
             step=fields_only,
-            initial_fields={"temperature": 280.0},
             outputs=("temperature",),
+            default_fields={"temperature": 280.0},
         ),
         base_module.differentiable_component(
             name="TWO",
             grid=grid,
             step=fields_and_context,
-            initial_fields={"temperature": 280.0},
             outputs=("temperature",),
+            default_fields={"temperature": 280.0},
         ),
         base_module.differentiable_component(
             name="THREE",
             grid=grid,
             step=fields_context_payload,
-            initial_fields={"temperature": 280.0},
             payload={"offset": 3.0},
             outputs=("temperature",),
+            default_fields={"temperature": 280.0},
         ),
     )
 
@@ -414,6 +411,24 @@ def test_callable_facade_rejects_unsupported_step_signature() -> None:
             name="ATM",
             grid=grid,
             step=too_many_arguments,
+        )
+
+
+@pytest.mark.fast_always
+def test_callable_facade_rejects_removed_legacy_field_seed_keyword() -> None:
+    grid = make_test_grid(name="removed-legacy-field-seed")
+
+    def step(fields: Mapping[str, RuntimeArray]) -> Mapping[str, RuntimeArray]:
+        return {"temperature": fields["temperature"]}
+
+    removed_keyword = "initial" + "_fields"
+    with pytest.raises(TypeError, match=removed_keyword):
+        cast(Any, base_module.differentiable_component)(
+            name="ATM",
+            grid=grid,
+            step=step,
+            **{removed_keyword: {"temperature": 280.0}},
+            outputs=("temperature",),
         )
 
 
@@ -576,9 +591,9 @@ def test_from_model_inputs_validate_missing_fields_without_zero_prefill() -> Non
         name="ATM",
         grid=grid,
         step=step,
-        initial_fields={"temperature": 280.0},
         inputs=("forcing",),
         outputs=("temperature",),
+        default_fields={"temperature": 280.0},
     )
     state = create_runtime_component_state(
         component,
@@ -609,8 +624,8 @@ def test_host_runtime_component_from_model_uses_author_friendly_names() -> None:
         name="HOST",
         grid=grid,
         step=step,
-        initial_fields={"temperature": 1.0},
         outputs=("temperature",),
+        default_fields={"temperature": 1.0},
     )
     state = create_runtime_component_state(
         component,
@@ -919,12 +934,13 @@ def test_differentiable_component_applies_callable_field_updates() -> None:
     component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        initial_fields={"temperature": jnp.ones(grid.shape)},
         step=step,
         outputs=("temperature",),
+        default_fields={"temperature": jnp.ones(grid.shape)},
     )
     state = create_runtime_component_state(
         component,
+        prefill_missing=True,
         contract=RuntimeComponentContract(),
     )
 
@@ -955,13 +971,14 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
     preserve_component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        initial_fields={"temperature": jnp.ones(grid.shape)},
         payload={"offset": jnp.asarray(2.0)},
         step=preserve_payload,
         outputs=("temperature",),
+        default_fields={"temperature": jnp.ones(grid.shape)},
     )
     preserve_state = create_runtime_component_state(
         preserve_component,
+        prefill_missing=True,
         contract=RuntimeComponentContract(),
     )
     preserved = preserve_component.step_runtime_state(
@@ -990,13 +1007,14 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
     replace_component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        initial_fields={"temperature": jnp.ones(grid.shape)},
         payload={"offset": jnp.asarray(2.0)},
         step=replace_payload,
         outputs=("temperature",),
+        default_fields={"temperature": jnp.ones(grid.shape)},
     )
     replace_state = create_runtime_component_state(
         replace_component,
+        prefill_missing=True,
         contract=RuntimeComponentContract(),
     )
     replaced = replace_component.step_runtime_state(
@@ -1028,9 +1046,9 @@ def test_host_component_runs_through_coupler_host_runtime() -> None:
     component = base_module.host_component(
         name="HOST",
         grid=grid,
-        initial_fields={"temperature": jnp.ones(grid.shape)},
         step=step,
         outputs=("temperature",),
+        default_fields={"temperature": jnp.ones(grid.shape)},
     )
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=5.0, steps=1))
     coupler.register(component)
@@ -1059,11 +1077,12 @@ def test_callable_component_rejects_unseeded_field_updates() -> None:
     component = base_module.differentiable_component(
         name="ATM",
         grid=grid,
-        initial_fields={"temperature": jnp.ones(grid.shape)},
         step=step,
+        default_fields={"temperature": jnp.ones(grid.shape)},
     )
     state = create_runtime_component_state(
         component,
+        prefill_missing=True,
         contract=RuntimeComponentContract(),
     )
 

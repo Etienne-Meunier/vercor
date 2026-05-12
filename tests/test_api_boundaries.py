@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from inspect import signature
 from pathlib import Path
 
 import pytest
@@ -100,6 +101,23 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert not hasattr(components_module, "RuntimeComponentState")
     assert not hasattr(components_module, "ComponentInitContext")
     assert not hasattr(components_module, "RuntimeStepContext")
+
+
+@pytest.mark.fast_always
+def test_callable_author_api_does_not_expose_legacy_field_seed_keyword() -> None:
+    public_callables = (
+        components_module.Component.from_model,
+        components_module.HostRuntimeComponent.from_model,
+        components_module.differentiable_component,
+        components_module.host_component,
+    )
+    removed_keyword = "initial" + "_fields"
+
+    for callable_factory in public_callables:
+        parameters = signature(callable_factory).parameters
+        assert removed_keyword not in parameters
+        assert parameters["payload"].kind is parameters["payload"].KEYWORD_ONLY
+        assert parameters["settings"].kind is parameters["settings"].KEYWORD_ONLY
 
 
 @pytest.mark.fast_always

@@ -4,7 +4,6 @@ from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from vercor.components._contracts import (
-    AuthorFieldValues,
     AuthorStepCallable,
     ComponentFieldSpec,
     ComponentStepCallable,
@@ -149,7 +148,6 @@ class _CallableRuntimeMixin:
         name: str,
         grid: RectilinearGrid,
         step: AuthorStepCallable,
-        initial_fields: AuthorFieldValues,
         payload: Any | None,
         settings: VercorSettings | None,
         field_spec: ComponentFieldSpec,
@@ -162,8 +160,6 @@ class _CallableRuntimeMixin:
         self._step = normalize_component_step_callable(step)
         self._payload = payload
         component.declare_fields(field_spec)
-        if initial_fields is not None:
-            component.seed_fields(initial_fields)
 
     def create_runtime_payload(self) -> Any | None:
         """Return the payload supplied to the callable component factory."""
@@ -198,7 +194,6 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         grid: RectilinearGrid,
         *,
         step: AuthorStepCallable,
-        initial_fields: AuthorFieldValues = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
         field_spec: ComponentFieldSpec | None = None,
@@ -207,7 +202,6 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
             name=name,
             grid=grid,
             step=step,
-            initial_fields=initial_fields,
             payload=payload,
             settings=settings,
             field_spec=field_spec or ComponentFieldSpec(),
@@ -235,7 +229,6 @@ class _CallableHostRuntimeComponent(
         grid: RectilinearGrid,
         *,
         step: AuthorStepCallable,
-        initial_fields: AuthorFieldValues = None,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
         field_spec: ComponentFieldSpec | None = None,
@@ -244,7 +237,6 @@ class _CallableHostRuntimeComponent(
             name=name,
             grid=grid,
             step=step,
-            initial_fields=initial_fields,
             payload=payload,
             settings=settings,
             field_spec=field_spec or ComponentFieldSpec(),
@@ -266,7 +258,6 @@ def _create_callable_component(
     *,
     runtime_kind: str,
     step: AuthorStepCallable,
-    initial_fields: AuthorFieldValues = None,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
     field_spec: ComponentFieldSpec | None = None,
@@ -287,7 +278,6 @@ def _create_callable_component(
         name=name,
         grid=grid,
         step=step,
-        initial_fields=initial_fields,
         payload=payload,
         settings=settings,
         field_spec=field_spec,

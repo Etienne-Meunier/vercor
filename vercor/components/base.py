@@ -78,7 +78,6 @@ def _callable_component_from_model(
     name: str,
     grid: RectilinearGrid,
     step: _AuthorStepCallable,
-    initial_fields: _AuthorFieldValues = None,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
     inputs: _FieldNames = (),
@@ -95,7 +94,6 @@ def _callable_component_from_model(
         name=name,
         grid=grid,
         step=step,
-        initial_fields=initial_fields,
         payload=payload,
         settings=settings,
         field_spec=_author_field_spec(
@@ -150,10 +148,9 @@ class Component(ABC):
         name: str,
         grid: RectilinearGrid,
         step: _AuthorStepCallable,
-        initial_fields: _AuthorFieldValues = None,
+        *,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
-        *,
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         default_fields: _AuthorFieldValues = None,
@@ -162,9 +159,10 @@ class Component(ABC):
         """Create a differentiable component from a user model callable.
 
         This author-facing constructor mirrors normal Python alternate
-        constructors: ``initial_fields`` seed model state, ``inputs`` declare
-        fields the model reads, ``outputs`` declare fields the model writes, and
-        scalar initial/default values expand to this component's grid shape.
+        constructors: ``inputs`` declare fields the model reads, ``outputs``
+        declare fields the model writes, and ``default_fields`` declares
+        concrete runtime defaults. Scalar default values expand to this
+        component's grid shape.
         """
 
         return _callable_component_from_model(
@@ -172,7 +170,6 @@ class Component(ABC):
             name=name,
             grid=grid,
             step=step,
-            initial_fields=initial_fields,
             payload=payload,
             settings=settings,
             inputs=inputs,
@@ -612,10 +609,9 @@ class HostRuntimeComponent(Component):
         name: str,
         grid: RectilinearGrid,
         step: _AuthorStepCallable,
-        initial_fields: _AuthorFieldValues = None,
+        *,
         payload: Any | None = None,
         settings: VercorSettings | None = None,
-        *,
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         default_fields: _AuthorFieldValues = None,
@@ -630,7 +626,6 @@ class HostRuntimeComponent(Component):
                 name=name,
                 grid=grid,
                 step=step,
-                initial_fields=initial_fields,
                 payload=payload,
                 settings=settings,
                 inputs=inputs,
@@ -685,10 +680,9 @@ def differentiable_component(
     name: str,
     grid: RectilinearGrid,
     step: _AuthorStepCallable,
-    initial_fields: _AuthorFieldValues = None,
+    *,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
-    *,
     inputs: _FieldNames = (),
     outputs: _FieldNames = (),
     default_fields: _AuthorFieldValues = None,
@@ -700,7 +694,6 @@ def differentiable_component(
         name=name,
         grid=grid,
         step=step,
-        initial_fields=initial_fields,
         payload=payload,
         settings=settings,
         inputs=inputs,
@@ -714,10 +707,9 @@ def host_component(
     name: str,
     grid: RectilinearGrid,
     step: _AuthorStepCallable,
-    initial_fields: _AuthorFieldValues = None,
+    *,
     payload: Any | None = None,
     settings: VercorSettings | None = None,
-    *,
     inputs: _FieldNames = (),
     outputs: _FieldNames = (),
     default_fields: _AuthorFieldValues = None,
@@ -729,7 +721,6 @@ def host_component(
         name=name,
         grid=grid,
         step=step,
-        initial_fields=initial_fields,
         payload=payload,
         settings=settings,
         inputs=inputs,
