@@ -241,3 +241,33 @@ def test_conservative_factory_returns_conservative_rectilinear_regridder() -> No
     assert isinstance(regridder, ConservativeRectilinearRegridder)
     assert regridder.source_grid is src
     assert regridder.destination_grid is dst
+
+
+@pytest.mark.filterwarnings(
+    "ignore:Input has data type int64, but the output has been cast to float64\\.:FutureWarning"
+)
+def test_conservative_factory_forwards_remapper_options() -> None:
+    src = _grid("src", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
+    dst = _grid(
+        "dst",
+        np.array([0.25, 0.75, 1.25, 1.75]),
+        np.array([0.25, 0.75, 1.25, 1.75]),
+    )
+    source_mask = np.array([[True, False], [False, False]])
+
+    regridder = conservative(
+        src,
+        dst,
+        source_mask=source_mask,
+        normalize="fracarea",
+        radius=10.0,
+    )
+
+    interp = regridder.interpolator
+    assert isinstance(interp, ConservativeRectilinearRemapper)
+    assert interp.normalize == "fracarea"
+    assert_allclose_compact(interp.radius, 10.0, rtol=0.0, atol=0.0)
+
+    out = np.asarray(regridder(np.array([[1.0, 2.0], [3.0, 4.0]])))
+    assert np.all(np.isnan(out[0:2, 0:2]))
+    assert_allclose_compact(out[0:2, 2:4], 2.0, rtol=0.0, atol=1e-14)

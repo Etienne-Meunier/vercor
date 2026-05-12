@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 import jax
@@ -12,6 +13,8 @@ from tests.assertions import assert_allclose_compact
 from vercor.exceptions import GridError
 from vercor.exchange import Exchange
 from vercor.grid import Grid, RectilinearGrid
+from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor.regridders.bilinear import bilinear
 from vercor.regridders.helpers import centers_to_edges, compute_land_mask
 from vercor.run_sequence import RunSequence
 
@@ -167,3 +170,39 @@ def test_exchange_create_and_run_sequence_iteration() -> None:
 
     sequence = RunSequence(order=["OCN", "ATM", "LND"])
     assert list(sequence) == ["OCN", "ATM", "LND"]
+
+
+def test_exchange_uses_wrapped_factory_name_and_create_keeps_partial_options() -> None:
+    source_grid = RectilinearGrid(
+        name="src",
+        longitude=np.asarray([0.0, 90.0, 180.0]),
+        latitude=np.asarray([-45.0, 45.0]),
+    )
+    destination_grid = RectilinearGrid(
+        name="dst",
+        longitude=np.asarray([0.0, 180.0]),
+        latitude=np.asarray([-45.0, 0.0, 45.0]),
+    )
+    regridder_factory = partial(
+        bilinear,
+        periodic_longitude=False,
+        extrapolation_mode="nearest",
+        idw_k=4,
+    )
+
+    exchange = Exchange(
+        source="OCN",
+        destination="ATM",
+        field_names=["temperature"],
+        regridder_factory=regridder_factory,
+    )
+    created = exchange.create(source_grid, destination_grid)
+
+    assert exchange.name == "OCN --(bilinear)--> ATM"
+    assert exchange.interpolation_type == "bilinear"
+    assert created.source_grid is source_grid
+    assert created.destination_grid is destination_grid
+    assert isinstance(created.interpolator, BilinearRectilinearInterpolator)
+    assert created.interpolator.periodic is False
+    assert created.interpolator.extrapolation_mode == "nearest"
+    assert created.interpolator.idw_k == 4

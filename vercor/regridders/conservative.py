@@ -60,6 +60,19 @@ class ConservativeRectilinearRegridder(Regridder):
 
 
 def conservative(
-    source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+    source_grid: RectilinearGrid,
+    destination_grid: RectilinearGrid,
+    *,
+    source_mask: Optional[RuntimeArray] = None,
+    normalize: str = "conservation",
+    fill_value: float = float("nan"),
+    radius: float = 6371.0,
 ) -> ConservativeRectilinearRegridder:
-    return ConservativeRectilinearRegridder(source_grid, destination_grid)
+    return ConservativeRectilinearRegridder(
+        source_grid,
+        destination_grid,
+        source_mask=source_mask,
+        normalize=normalize,
+        fill_value=fill_value,
+        radius=radius,
+    )

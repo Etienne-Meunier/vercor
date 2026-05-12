@@ -37,6 +37,23 @@ class BilinearRectilinearRegridder(Regridder):
 
 
 def bilinear(
-    source_grid: RectilinearGrid, destination_grid: RectilinearGrid
+    source_grid: RectilinearGrid,
+    destination_grid: RectilinearGrid,
+    *,
+    periodic_longitude: bool = True,
+    nan_renorm: bool = True,
+    extrapolation_mode: str | None = None,
+    idw_k: int = 8,
+    idw_eps: float = 1e-12,
+    fill_value: float = float("nan"),
 ) -> BilinearRectilinearRegridder:
-    return BilinearRectilinearRegridder(source_grid, destination_grid)
+    return BilinearRectilinearRegridder(
+        source_grid,
+        destination_grid,
+        periodic_longitude=periodic_longitude,
+        nan_renorm=nan_renorm,
+        extrapolation_mode=extrapolation_mode,
+        idw_k=idw_k,
+        idw_eps=idw_eps,
+        fill_value=fill_value,
+    )

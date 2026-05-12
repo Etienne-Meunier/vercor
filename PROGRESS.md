@@ -1,5 +1,43 @@
 # 2026-05-12
 
+## Configured Regridder Factory Forwarding
+
+- Extended the public `bilinear()` and `conservative()` factory helpers so
+  they mirror and forward the existing rectilinear regridder constructor
+  options through keyword-only parameters.
+- Kept `Exchange.create(source_grid, destination_grid)` unchanged and added a
+  private factory-name helper so plain functions, `functools.partial(...)`
+  factories, and callable objects produce stable exchange names and runtime
+  interpolation keys.
+- Added regression coverage for bilinear option forwarding, conservative
+  remapper option forwarding including source-mask behavior, and
+  `Exchange(..., regridder_factory=partial(bilinear, ...))`.
+- Failed approaches / corrections:
+  - The red tests failed as expected before implementation because the public
+    factories rejected forwarded keyword arguments and `Exchange` accessed
+    `__name__` directly on a `functools.partial`.
+
+## Validation (Configured Regridder Factory Forwarding, 2026-05-12)
+
+- `conda run -n scipy pytest tests/test_bilinear_rectilinear_regridder.py::test_bilinear_factory_forwards_interpolator_options tests/test_conservative_rectilinear_regridder.py::test_conservative_factory_forwards_remapper_options tests/test_helpers_coverage.py::test_exchange_uses_wrapped_factory_name_and_create_keeps_partial_options -q --tb=short`
+  - failed as expected before implementation on missing keyword forwarding and
+    partial factory naming
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_bilinear_rectilinear_regridder.py tests/test_conservative_rectilinear_regridder.py tests/test_helpers_coverage.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 120 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`120 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Redundant `required_fields` Component API Removal
 
 - Audited the component contract, runtime-field validation, concrete
