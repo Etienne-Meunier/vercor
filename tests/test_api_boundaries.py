@@ -116,6 +116,7 @@ def test_callable_author_api_does_not_expose_legacy_field_seed_keyword() -> None
     for callable_factory in public_callables:
         parameters = signature(callable_factory).parameters
         assert removed_keyword not in parameters
+        assert "required_fields" not in parameters
         assert parameters["payload"].kind is parameters["payload"].KEYWORD_ONLY
         assert parameters["settings"].kind is parameters["settings"].KEYWORD_ONLY
 

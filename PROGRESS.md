@@ -1,5 +1,54 @@
 # 2026-05-12
 
+## Redundant `required_fields` Component API Removal
+
+- Audited the component contract, runtime-field validation, concrete
+  components, examples, and tests; `required_fields` had no unique behavior
+  beyond `inputs`, which already means "must exist at runtime and is not
+  component-prefilled."
+- Removed the `required_fields` declaration parameter/attribute from
+  `ComponentFieldSpec`, `Component.from_model()`,
+  `HostRuntimeComponent.from_model()`, `differentiable_component()`,
+  `host_component()`, `declare_fields()`, and private forwarding helpers.
+- Kept `require_runtime_fields()` as the imperative validation helper, and
+  renamed the private declaration union helper to
+  `declared_runtime_field_names(...)` so declared `inputs`, `outputs`, and
+  `default_fields` remain validated.
+- Updated API-boundary and component coverage tests to assert stale callers now
+  fail with normal unexpected-keyword `TypeError`, while missing `inputs`,
+  output prefill, and default-field prefill behavior remain covered.
+- Updated `DESIGN.md` so the declared runtime contract vocabulary is only
+  `inputs`, `outputs`, and `default_fields`.
+- Failed approaches / corrections:
+  - The red tests failed as expected before implementation because public
+    signatures still accepted the removed declaration keyword and
+    `ComponentFieldSpec` still exposed the attribute.
+  - The first type-check run after implementation found the new mixed callable
+    test table needed an explicit type annotation; adding it kept the removed
+    keyword test type-clean.
+
+## Validation (Redundant `required_fields` Component API Removal, 2026-05-12)
+
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_required_fields_declaration_api_is_removed tests/test_component_base_coverage.py::test_seed_helpers_accept_scalar_author_values_and_expose_field_spec tests/test_api_boundaries.py::test_callable_author_api_does_not_expose_legacy_field_seed_keyword -q --tb=short`
+  - failed as expected before implementation on the still-present
+    `required_fields` API
+  - passed after removing the API
+- `conda run -n scipy pytest tests/test_component_base_coverage.py tests/test_api_boundaries.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 120 files unchanged
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - first reported one missing test-variable annotation
+  - passed after annotating the removed-keyword call table (`120 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Callable Field Seeding API Removal
 
 - Removed the duplicate callable field-seeding keyword from the public

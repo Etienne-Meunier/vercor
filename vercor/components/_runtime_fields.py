@@ -8,8 +8,8 @@ from vercor.components._contracts import (
     ComponentFieldSpec,
     FieldNames,
     component_field_spec,
+    declared_runtime_field_names,
     normalize_author_field_values,
-    required_field_names,
     unique_field_names,
 )
 from vercor.dtypes import PrecisionPolicy, jax_zeros
@@ -183,6 +183,6 @@ def validate_declared_runtime_fields(
 ) -> None:
     """Validate fields required by the component's declared field contract."""
 
-    required_fields = required_field_names(component_field_spec(component))
-    if required_fields:
-        require_runtime_fields(component, component_state, *required_fields)
+    declared_fields = declared_runtime_field_names(component_field_spec(component))
+    if declared_fields:
+        require_runtime_fields(component, component_state, *declared_fields)

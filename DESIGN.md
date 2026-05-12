@@ -195,7 +195,7 @@ immutable runtime containers used during traced integration.
   private construction path, declare their runtime contract with the same
   `ComponentFieldSpec` path used by subclasses, and apply step results through
   the runtime-owned field replacement helpers. Runtime prefill and validation
-  depend only on `inputs`, `outputs`, `required_fields`, and `default_fields`.
+  depend only on `inputs`, `outputs`, and `default_fields`.
   These helpers still enforce the same stable runtime-state
   contract: updated fields must already exist through seeded data, declared
   outputs/defaults, or exchange prefill, and scanned payload pytrees must keep

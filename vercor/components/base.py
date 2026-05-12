@@ -60,14 +60,12 @@ def _author_field_spec(
     inputs: _FieldNames = (),
     outputs: _FieldNames = (),
     default_fields: _AuthorFieldValues = None,
-    required_fields: _FieldNames = (),
 ) -> ComponentFieldSpec:
     """Build a component field declaration from author constructor arguments."""
 
     return ComponentFieldSpec(
         inputs=inputs,
         outputs=outputs,
-        required_fields=required_fields,
         default_fields=default_fields or {},
     )
 
@@ -83,7 +81,6 @@ def _callable_component_from_model(
     inputs: _FieldNames = (),
     outputs: _FieldNames = (),
     default_fields: _AuthorFieldValues = None,
-    required_fields: _FieldNames = (),
 ) -> "Component":
     """Create a callable-backed component from the shared author facade."""
 
@@ -100,7 +97,6 @@ def _callable_component_from_model(
             inputs=inputs,
             outputs=outputs,
             default_fields=default_fields,
-            required_fields=required_fields,
         ),
     )
 
@@ -154,7 +150,6 @@ class Component(ABC):
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         default_fields: _AuthorFieldValues = None,
-        required_fields: _FieldNames = (),
     ) -> "Component":
         """Create a differentiable component from a user model callable.
 
@@ -175,7 +170,6 @@ class Component(ABC):
             inputs=inputs,
             outputs=outputs,
             default_fields=default_fields,
-            required_fields=required_fields,
         )
 
     def declare_fields(
@@ -184,7 +178,6 @@ class Component(ABC):
         *,
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
-        required_fields: _FieldNames = (),
         default_fields: _AuthorFieldValues = None,
     ) -> ComponentFieldSpec:
         """Declare runtime data fields for subclasses using author-facing names.
@@ -197,13 +190,11 @@ class Component(ABC):
         declared = field_spec or ComponentFieldSpec(
             inputs=inputs,
             outputs=outputs,
-            required_fields=required_fields,
             default_fields=default_fields or {},
         )
         self._field_spec = ComponentFieldSpec(
             inputs=declared.inputs,
             outputs=declared.outputs,
-            required_fields=declared.required_fields,
             default_fields=_normalize_author_field_values(
                 component_name=self.name,
                 grid=self.grid,
@@ -615,7 +606,6 @@ class HostRuntimeComponent(Component):
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         default_fields: _AuthorFieldValues = None,
-        required_fields: _FieldNames = (),
     ) -> "HostRuntimeComponent":
         """Create a host-runtime component from a Python model callable."""
 
@@ -631,7 +621,6 @@ class HostRuntimeComponent(Component):
                 inputs=inputs,
                 outputs=outputs,
                 default_fields=default_fields,
-                required_fields=required_fields,
             ),
         )
 
@@ -686,7 +675,6 @@ def differentiable_component(
     inputs: _FieldNames = (),
     outputs: _FieldNames = (),
     default_fields: _AuthorFieldValues = None,
-    required_fields: _FieldNames = (),
 ) -> Component:
     """Create a differentiable component using the author-friendly facade."""
 
@@ -699,7 +687,6 @@ def differentiable_component(
         inputs=inputs,
         outputs=outputs,
         default_fields=default_fields,
-        required_fields=required_fields,
     )
 
 
@@ -713,7 +700,6 @@ def host_component(
     inputs: _FieldNames = (),
     outputs: _FieldNames = (),
     default_fields: _AuthorFieldValues = None,
-    required_fields: _FieldNames = (),
 ) -> HostRuntimeComponent:
     """Create a host-runtime component using the author-friendly facade."""
 
@@ -726,5 +712,4 @@ def host_component(
         inputs=inputs,
         outputs=outputs,
         default_fields=default_fields,
-        required_fields=required_fields,
     )

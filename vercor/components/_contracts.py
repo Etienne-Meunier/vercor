@@ -46,14 +46,11 @@ class ComponentFieldSpec:
         inputs: Fields the model expects to read from runtime data.
         outputs: Fields the model may write. These are pre-seeded as grid-shaped
             zeros before traced runtime execution.
-        required_fields: Extra fields that must already exist but should not be
-            pre-seeded by this declaration.
         default_fields: Field defaults used when runtime state is created.
     """
 
     inputs: FieldNames = ()
     outputs: FieldNames = ()
-    required_fields: FieldNames = ()
     default_fields: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -61,11 +58,6 @@ class ComponentFieldSpec:
 
         object.__setattr__(self, "inputs", unique_field_names(self.inputs))
         object.__setattr__(self, "outputs", unique_field_names(self.outputs))
-        object.__setattr__(
-            self,
-            "required_fields",
-            unique_field_names(self.required_fields),
-        )
         object.__setattr__(self, "default_fields", dict(self.default_fields))
 
 
@@ -103,14 +95,13 @@ def normalize_author_field_values(
     return normalized
 
 
-def required_field_names(field_spec: ComponentFieldSpec) -> tuple[str, ...]:
-    """Return all fields that a declaration requires at runtime."""
+def declared_runtime_field_names(field_spec: ComponentFieldSpec) -> tuple[str, ...]:
+    """Return all fields that a declaration validates at runtime."""
 
     return unique_field_names(
         (
             *field_spec.inputs,
             *field_spec.outputs,
-            *field_spec.required_fields,
             *tuple(field_spec.default_fields),
         )
     )
@@ -132,7 +123,6 @@ def merge_component_outputs(
     component._field_spec = ComponentFieldSpec(
         inputs=field_spec.inputs,
         outputs=unique_field_names((*field_spec.outputs, *tuple(output_names))),
-        required_fields=field_spec.required_fields,
         default_fields=field_spec.default_fields,
     )
 

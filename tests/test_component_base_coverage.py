@@ -550,13 +550,12 @@ def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> Non
     returned_spec = component.declare_fields(
         inputs=("forcing",),
         outputs=("temperature",),
-        required_fields=("humidity",),
         default_fields={"pressure": 101325.0},
     )
     assert component.field_spec == returned_spec
     assert component.field_spec.inputs == ("forcing",)
     assert component.field_spec.outputs == ("temperature",)
-    assert component.field_spec.required_fields == ("humidity",)
+    assert not hasattr(component.field_spec, "required_fields")
     assert "pressure" in component.field_spec.default_fields
     with pytest.raises(AttributeError):
         component.field_spec = base_module.ComponentFieldSpec()  # type: ignore[misc]
@@ -573,6 +572,41 @@ def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> Non
     assert_allclose_compact(state.data.get("humidity"), np.full(grid.shape, 0.5))
     assert_allclose_compact(state.data.get("forcing"), np.ones(grid.shape))
     assert_allclose_compact(state.data.get("pressure"), np.full(grid.shape, 101325.0))
+
+
+@pytest.mark.fast_always
+def test_required_fields_declaration_api_is_removed() -> None:
+    grid = make_test_grid(name="removed-required-fields")
+
+    def step(fields: Mapping[str, RuntimeArray]) -> Mapping[str, RuntimeArray]:
+        return {"temperature": fields["temperature"]}
+
+    rejected_callables: tuple[tuple[Any, dict[str, Any]], ...] = (
+        (base_module.ComponentFieldSpec, {}),
+        (
+            base_module.Component.from_model,
+            {"name": "ATM", "grid": grid, "step": step},
+        ),
+        (
+            base_module.HostRuntimeComponent.from_model,
+            {"name": "HOST", "grid": grid, "step": step},
+        ),
+        (
+            base_module.differentiable_component,
+            {"name": "ATM", "grid": grid, "step": step},
+        ),
+        (
+            base_module.host_component,
+            {"name": "HOST", "grid": grid, "step": step},
+        ),
+    )
+    for callable_factory, kwargs in rejected_callables:
+        with pytest.raises(TypeError, match="required_fields"):
+            cast(Any, callable_factory)(**kwargs, required_fields=("humidity",))
+
+    component = _RuntimeOnlyComponent(name="ATM", grid=grid)
+    with pytest.raises(TypeError, match="required_fields"):
+        cast(Any, component.declare_fields)(required_fields=("humidity",))
 
 
 @pytest.mark.fast_always
