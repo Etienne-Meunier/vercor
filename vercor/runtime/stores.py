@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping
 
 import jax
@@ -20,6 +20,21 @@ class RuntimeFieldStore(PyTreeNodeMixin):
 
     field_names: tuple[str, ...]
     values: tuple[RuntimeArray, ...]
+    field_indices: dict[str, int] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Build static lookup metadata for name-based runtime access."""
+
+        object.__setattr__(
+            self,
+            "field_indices",
+            {name: index for index, name in enumerate(self.field_names)},
+        )
+
+    def _pytree_post_unflatten(self) -> None:
+        """Restore derived lookup metadata after PyTree unflattening."""
+
+        self.__post_init__()
 
     @classmethod
     def empty(cls) -> "RuntimeFieldStore":
@@ -39,7 +54,7 @@ class RuntimeFieldStore(PyTreeNodeMixin):
     def __contains__(self, name: object) -> bool:
         """Return whether ``name`` is present in this store."""
 
-        return isinstance(name, str) and name in self.field_names
+        return isinstance(name, str) and name in self.field_indices
 
     def to_mapping(self) -> dict[str, RuntimeArray]:
         """Return this store as a plain name-to-array mapping."""
@@ -50,8 +65,10 @@ class RuntimeFieldStore(PyTreeNodeMixin):
         """Return a field by name."""
 
         try:
-            index = self.field_names.index(name)
+            index = self.field_indices[name]
         except ValueError as exc:
+            raise KeyError(f"Runtime field {name!r} not found") from exc
+        except KeyError as exc:
             raise KeyError(f"Runtime field {name!r} not found") from exc
         return self.values[index]
 
@@ -86,6 +103,33 @@ class RuntimeFieldStore(PyTreeNodeMixin):
 
         return self.replace(name, value)
 
+    def set_many(self, fields: Mapping[str, RuntimeArray]) -> "RuntimeFieldStore":
+        """Return a new store with multiple fields replaced or appended."""
+
+        if not fields:
+            return self
+
+        values = list(self.values)
+        appended_names: list[str] = []
+        appended_values: list[RuntimeArray] = []
+        for field_name, field_value in fields.items():
+            if field_name in self.field_indices:
+                index = self.field_indices[field_name]
+                current = values[index]
+                values[index] = jnp.array(
+                    field_value,
+                    dtype=jnp.asarray(current).dtype,
+                    copy=True,
+                )
+            else:
+                appended_names.append(field_name)
+                appended_values.append(jnp.array(field_value, copy=True))
+
+        return RuntimeFieldStore(
+            field_names=(*self.field_names, *appended_names),
+            values=(*values, *appended_values),
+        )
+
     def replace(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
         """Return a new store with an existing field replaced."""
 
@@ -108,7 +152,7 @@ class RuntimeFieldStore(PyTreeNodeMixin):
     ) -> "RuntimeFieldStore":
         """Return a new store with multiple existing fields replaced."""
 
-        updated = self
-        for field_name, field_value in fields.items():
-            updated = updated.replace(field_name, field_value)
-        return updated
+        for field_name in fields:
+            if field_name not in self:
+                raise KeyError(f"Runtime field {field_name!r} not found")
+        return self.set_many(fields)

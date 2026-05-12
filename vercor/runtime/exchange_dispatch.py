@@ -17,6 +17,7 @@ def dispatch_component_exchanges(
 
     destination_component = state.get_component_state(destination_name)
     destination_incoming = destination_component.incoming
+    incoming_updates = {}
 
     for exchange in exchanges:
         if exchange.destination != destination_name:
@@ -38,15 +39,16 @@ def dispatch_component_exchanges(
                     source_fields.get(field_name[0]),
                     source_fields.get(field_name[1]),
                 )
-                destination_incoming = destination_incoming.set(field_name[0], u_vector)
-                destination_incoming = destination_incoming.set(field_name[1], v_vector)
+                incoming_updates[field_name[0]] = u_vector
+                incoming_updates[field_name[1]] = v_vector
             else:
                 if field_name not in source_fields:
                     raise ExchangerError(
                         f"Field {field_name} not present in source fields"
                     )
                 scalar = regrid(source_fields.get(field_name)) * fractional_mask
-                destination_incoming = destination_incoming.set(field_name, scalar)
+                incoming_updates[field_name] = scalar
 
+    destination_incoming = destination_incoming.set_many(incoming_updates)
     destination_component = destination_component.with_incoming(destination_incoming)
     return state.set_component_state(destination_name, destination_component)

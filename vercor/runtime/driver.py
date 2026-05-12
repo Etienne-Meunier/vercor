@@ -24,10 +24,16 @@ class RuntimeDispatchContext:
 
     components: Mapping[str, Component]
     exchanges: Sequence[Exchange]
+    exchanges_by_destination: Mapping[str, tuple[Exchange, ...]]
     regridders: Mapping[tuple[str, str, str], Any]
     contracts: Mapping[str, RuntimeComponentContract]
     dt_seconds: float
     settings: VercorSettings
+
+    def destination_exchanges(self, component_name: str) -> tuple[Exchange, ...]:
+        """Return exchanges targeting ``component_name``."""
+
+        return self.exchanges_by_destination.get(component_name, ())
 
 
 def host_component_names(components: Mapping[str, Component]) -> list[str]:
@@ -55,7 +61,7 @@ def step_runtime_component(
     runtime_state = dispatch_component_exchanges(
         runtime_state,
         component_name,
-        dispatch_context.exchanges,
+        dispatch_context.destination_exchanges(component_name),
         dispatch_context.regridders,
     )
     component_state = runtime_state.get_component_state(component_name)

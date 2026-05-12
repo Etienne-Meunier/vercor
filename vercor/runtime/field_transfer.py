@@ -19,10 +19,14 @@ def receive_runtime_fields(
 ) -> RuntimeComponentState:
     """Move imported incoming runtime fields into component data."""
 
-    data = component_state.data
-    for field_name in contract.imports:
-        data = data.set(field_name, component_state.incoming.get(field_name))
-    return component_state.with_data(data)
+    return component_state.with_data(
+        component_state.data.set_many(
+            {
+                field_name: component_state.incoming.get(field_name)
+                for field_name in contract.imports
+            }
+        )
+    )
 
 
 def _select_runtime_field_for_send(
@@ -59,15 +63,16 @@ def send_runtime_fields(
 ) -> RuntimeComponentState:
     """Move exported component data into outgoing runtime fields."""
 
-    outgoing = component_state.outgoing
-    for field_name in contract.exports:
-        outgoing = outgoing.set(
-            field_name,
-            _select_runtime_field_for_send(
-                component,
-                component_state,
-                field_name,
-                step_info,
-            ),
+    return component_state.with_outgoing(
+        component_state.outgoing.set_many(
+            {
+                field_name: _select_runtime_field_for_send(
+                    component,
+                    component_state,
+                    field_name,
+                    step_info,
+                )
+                for field_name in contract.exports
+            }
         )
-    return component_state.with_outgoing(outgoing)
+    )

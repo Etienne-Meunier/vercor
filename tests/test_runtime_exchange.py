@@ -14,6 +14,7 @@ from vercor.runtime import (
     RuntimeFieldStore,
     dispatch_component_exchanges,
 )
+from vercor.runtime.driver import RuntimeDispatchContext
 
 
 class _ScalingRegridder:
@@ -131,3 +132,34 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     assert_allclose_compact(
         destination.incoming.get("v_velocity"), np.full((2, 2), -3.0)
     )
+
+
+def test_runtime_dispatch_context_groups_exchanges_by_destination() -> None:
+    atm_exchange = Exchange(
+        source="OCN",
+        destination="ATM",
+        field_names=["temperature"],
+        regridder_factory=cast(Any, _factory),
+    )
+    land_exchange = Exchange(
+        source="ATM",
+        destination="LND",
+        field_names=["temperature"],
+        regridder_factory=cast(Any, _factory),
+    )
+
+    context = RuntimeDispatchContext(
+        components={},
+        exchanges=(atm_exchange, land_exchange),
+        exchanges_by_destination={
+            "ATM": (atm_exchange,),
+            "LND": (land_exchange,),
+        },
+        regridders={},
+        contracts={},
+        dt_seconds=60.0,
+        settings=cast(Any, object()),
+    )
+
+    assert context.destination_exchanges("ATM") == (atm_exchange,)
+    assert context.destination_exchanges("OCN") == ()

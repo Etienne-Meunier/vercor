@@ -93,9 +93,17 @@ def runtime_dispatch_context(
 ) -> RuntimeDispatchContext:
     """Return static runtime dispatch plumbing for a configured coupler."""
 
+    exchanges_by_destination: dict[str, list[Exchange]] = {}
+    for exchange in exchanges:
+        exchanges_by_destination.setdefault(exchange.destination, []).append(exchange)
+
     return RuntimeDispatchContext(
         components=components,
         exchanges=exchanges,
+        exchanges_by_destination={
+            name: tuple(destination_exchanges)
+            for name, destination_exchanges in exchanges_by_destination.items()
+        },
         regridders=regridders,
         contracts=contracts,
         dt_seconds=dt_seconds,

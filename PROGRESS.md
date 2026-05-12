@@ -1,5 +1,58 @@
 # 2026-05-12
 
+## Runtime Profiling and Core Dispatch Optimization
+
+- Added `examples/profile_runtime.py`, a compact synthetic slab-coupler profiling
+  harness for the pure JAX scanned runtime with configurable step count, grid
+  size, log level, and optional runtime-state donation timing.
+- Added derived name-to-index lookup caches to `RuntimeFieldStore` and
+  `RuntimeCouplerState`, restoring those caches after PyTree unflattening so
+  traced runtime lookups avoid repeated tuple scans while preserving the public
+  immutable runtime API.
+- Added `RuntimeFieldStore.set_many(...)` and routed receive, send, and exchange
+  dispatch updates through one bulk store rebuild per phase instead of repeated
+  single-field tuple reconstruction.
+- Added destination-grouped exchange metadata to `RuntimeDispatchContext` so
+  scanned component steps only iterate exchanges targeting the active
+  destination component.
+- Profiling note: `log_level="WARNING"` avoids INFO-level per-step JAX host
+  callbacks for performance-sensitive runs while preserving the default
+  `Coupler(log_level="INFO")` behavior.
+- Failed approaches / corrections:
+  - The first profile harness topology left `LND` without any exported exchange,
+    and setup validation correctly rejected the run; adding `LND -> ATM`
+    `soil_moisture` and `ICE -> OCN` `ice_fraction` exchanges made the
+    synthetic topology match the component contracts.
+
+## Validation (Runtime Profiling and Core Dispatch Optimization, 2026-05-12)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`105 passed, 268 deselected`)
+- `conda run -n scipy pytest tests/test_runtime_state.py::test_runtime_field_store_uses_index_cache_for_bulk_set_and_pytree_restore tests/test_runtime_state.py::test_runtime_coupler_state_restores_component_index_cache_after_pytree_roundtrip tests/test_runtime_exchange.py::test_runtime_dispatch_context_groups_exchanges_by_destination tests/test_runtime_run_cache.py::test_runtime_profile_harness_exposes_cli_entrypoint -q --tb=short`
+  - failed as expected before implementation on missing lookup caches, grouped
+    dispatch metadata, and profiling harness
+  - passed after implementation
+- `conda run -n scipy pytest tests/test_runtime_run_cache.py::test_runtime_profile_harness_runs_small_slab_profile -q --tb=short`
+  - passed after correcting the profile harness exchange topology
+- `conda run -n scipy python examples/profile_runtime.py --steps 10 --grid-nx 8 --grid-ny 4 --log-level WARNING --donate-state`
+  - passed with `first_non_donating_s=0.091091`,
+    `cached_non_donating_s=0.004868`, `first_donating_s=0.082407`,
+    `compiled_cache_entries=2`, and `final_state_leaves=46`
+- `conda run -n scipy pytest tests/test_runtime_state.py tests/test_runtime_exchange.py tests/test_runtime_run_cache.py tests/test_coupler_runtime.py -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `examples/profile_runtime.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`121 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Hypsometric Altitude Corrections
 
 - Corrected sigma-level virtual temperature for specific humidity by removing

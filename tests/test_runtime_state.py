@@ -395,6 +395,37 @@ def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> Non
     assert_allclose_compact(updated.get("b"), np.asarray([4.0, 5.0]))
 
 
+def test_runtime_field_store_uses_index_cache_for_bulk_set_and_pytree_restore() -> None:
+    store = RuntimeFieldStore.from_mapping(
+        {
+            "temperature": jnp.zeros((2, 2), dtype=jnp.float32),
+            "humidity": jnp.ones((2, 2), dtype=jnp.float32),
+        }
+    )
+
+    assert store.field_indices == {"temperature": 0, "humidity": 1}
+
+    updated = store.set_many(
+        {
+            "humidity": jnp.full((2, 2), 0.75, dtype=jnp.float64),
+            "pressure": jnp.full((2, 2), 101325.0, dtype=jnp.float64),
+        }
+    )
+    leaves, treedef = jax.tree_util.tree_flatten(updated)
+    restored = jax.tree_util.tree_unflatten(treedef, leaves)
+
+    assert updated.field_names == ("temperature", "humidity", "pressure")
+    assert restored.field_indices == {
+        "temperature": 0,
+        "humidity": 1,
+        "pressure": 2,
+    }
+    assert restored.get("humidity").dtype == jnp.float32
+    assert restored.get("pressure").dtype == jnp.float64
+    assert_allclose_compact(restored.get("humidity"), np.full((2, 2), 0.75))
+    assert_allclose_compact(restored.get("pressure"), np.full((2, 2), 101325.0))
+
+
 def test_runtime_field_store_replacement_preserves_existing_dtype() -> None:
     store = RuntimeFieldStore.from_mapping(
         {"temperature": jnp.zeros((2, 2), dtype=jnp.float32)}
@@ -519,11 +550,34 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
 
     updated = jax.jit(update)(state)
 
+    assert state.component_indices == {"ATM": 0}
+    assert updated.component_indices == {"ATM": 0}
     assert updated.component_names == ("ATM",)
     assert_allclose_compact(
         updated.get_component_state("ATM").data.get("temperature"),
         np.full((2, 2), 3.0),
     )
+
+
+def test_runtime_coupler_state_restores_component_index_cache_after_pytree_roundtrip() -> (
+    None
+):
+    component = RuntimeComponentState(
+        data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        incoming=RuntimeFieldStore.empty(),
+        outgoing=RuntimeFieldStore.empty(),
+    )
+    state = RuntimeCouplerState(
+        component_names=("ATM", "OCN"),
+        components=(component, component),
+        fractional_masks=RuntimeFieldStore.empty(),
+        binary_masks=RuntimeFieldStore.empty(),
+    )
+    leaves, treedef = jax.tree_util.tree_flatten(state)
+    restored = jax.tree_util.tree_unflatten(treedef, leaves)
+
+    assert restored.component_indices == {"ATM": 0, "OCN": 1}
+    assert restored.get_component_state("OCN") is restored.components[1]
 
 
 def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import jax
@@ -78,12 +78,18 @@ class RuntimeCouplerState(PyTreeNodeMixin):
     components: tuple[RuntimeComponentState, ...]
     fractional_masks: RuntimeFieldStore
     binary_masks: RuntimeFieldStore
+    component_indices: dict[str, int] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Validate that component names and states stay aligned."""
 
         if len(self.component_names) != len(self.components):
             raise ValueError("component_names and components must have equal length")
+        object.__setattr__(
+            self,
+            "component_indices",
+            {name: index for index, name in enumerate(self.component_names)},
+        )
 
     def _pytree_post_unflatten(self) -> None:
         """Validate that component names and states stay aligned."""
@@ -94,8 +100,8 @@ class RuntimeCouplerState(PyTreeNodeMixin):
         """Return one component state by name."""
 
         try:
-            index = self.component_names.index(name)
-        except ValueError as exc:
+            index = self.component_indices[name]
+        except KeyError as exc:
             raise KeyError(f"Runtime component {name!r} not found") from exc
         return self.components[index]
 
@@ -104,15 +110,13 @@ class RuntimeCouplerState(PyTreeNodeMixin):
     ) -> "RuntimeCouplerState":
         """Return a new coupler state with one component replaced."""
 
-        if name not in self.component_names:
+        if name not in self.component_indices:
             raise KeyError(f"Runtime component {name!r} not found")
-        components = tuple(
-            component_state if component_name == name else component
-            for component_name, component in zip(self.component_names, self.components)
-        )
+        components = list(self.components)
+        components[self.component_indices[name]] = component_state
         return RuntimeCouplerState(
             component_names=self.component_names,
-            components=components,
+            components=tuple(components),
             fractional_masks=self.fractional_masks,
             binary_masks=self.binary_masks,
         )

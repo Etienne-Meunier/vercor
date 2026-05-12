@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import importlib
 from typing import Any, cast
 
 import jax
@@ -257,3 +258,29 @@ def test_non_donating_run_preserves_runtime_treedef() -> None:
         assert after.data.field_names == before.data.field_names
         assert after.incoming.field_names == before.incoming.field_names
         assert after.outgoing.field_names == before.outgoing.field_names
+
+
+def test_runtime_profile_harness_exposes_cli_entrypoint() -> None:
+    profile_runtime = importlib.import_module("examples.profile_runtime")
+
+    assert callable(profile_runtime.main)
+    parser = profile_runtime.build_parser()
+    args = parser.parse_args(["--steps", "3", "--log-level", "WARNING"])
+    assert args.steps == 3
+    assert args.log_level == "WARNING"
+    assert args.donate_state is False
+
+
+def test_runtime_profile_harness_runs_small_slab_profile() -> None:
+    profile_runtime = importlib.import_module("examples.profile_runtime")
+
+    result = profile_runtime.profile_runtime(
+        steps=1,
+        grid_nx=4,
+        grid_ny=3,
+        log_level="WARNING",
+        donate_state=False,
+    )
+
+    assert result.compiled_cache_entries == 1
+    assert result.final_state_leaves > 0
