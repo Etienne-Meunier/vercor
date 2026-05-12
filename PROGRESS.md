@@ -1,3 +1,47 @@
+# 2026-05-12
+
+## Shared PyTree Mixin Refactor
+
+- Added `vercor.pytree.PyTreeNodeMixin` as the shared declarative PyTree base
+  for immutable JAX-registered containers.
+- Replaced repeated `tree_flatten()` / `tree_unflatten()` implementations with
+  explicit `pytree_children` and `pytree_aux_data` declarations in runtime
+  state, runtime stores, runtime time metadata, `RectilinearGrid`, both
+  rectilinear interpolators/remappers, and the JAXGCM runtime payload.
+- Preserved constructor behavior by reconstructing through `object.__new__` and
+  `object.__setattr__`; derived static remapper state and runtime coupler-state
+  invariants are restored through `_pytree_post_unflatten()`.
+- Added focused PyTree tests for inherited shared methods, array-only round
+  trips, static metadata preservation, and derived remapper state restoration.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to document the shared PyTree mixin
+  convention and module dependency order.
+- Failed approaches / corrections:
+  - The focused red test failed as expected before implementation because
+    `vercor.pytree` did not exist.
+  - A first one-line Perl attempt to mechanically update dependency reference
+    numbers had a syntax error; the reference rewrite was completed with a
+    small mechanical script and then hand-adjusted for the new PyTree module.
+
+## Validation (Shared PyTree Mixin Refactor, 2026-05-12)
+
+- `conda run -n scipy pytest tests/test_pytree.py -q --tb=short`
+  - failed as expected before implementation on missing `vercor.pytree`
+  - passed after adding the mixin and refactoring registered classes
+- `conda run -n scipy pytest tests/test_pytree.py tests/test_runtime_state.py tests/test_helpers_coverage.py tests/test_bilinear_rectilinear_interpolator.py tests/test_conservative_rectilinear_remapper.py tests/test_runtime_run_cache.py -q --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and reformatted `tests/test_pytree.py`
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`120 source files`)
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-05-08
 
 ## Runtime Module Ownership Refactor

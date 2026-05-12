@@ -11,15 +11,38 @@ from vercor.dtypes import (
     jax_real_dtype,
     jax_zeros,
 )
+from vercor.pytree import PyTreeNodeMixin
 from vercor.types import RuntimeArray
 
 
 @jax.tree_util.register_pytree_node_class
-class ConservativeRectilinearRemapper:
+class ConservativeRectilinearRemapper(PyTreeNodeMixin):
     """
     First-order locally conservative area-average remapping.
     Handles arbitrary rectilinear grids, periodicity, and conservation.
     """
+
+    pytree_children = (
+        "src_lon_b",
+        "src_lat_b",
+        "dst_lon_b",
+        "dst_lat_b",
+        "dst_areas",
+        "dst_indices",
+        "src_indices",
+        "overlap_weights",
+        "fracarea_norm",
+    )
+    pytree_aux_data = (
+        "radius",
+        "normalize",
+        "_s_lat_flip",
+        "_d_lat_flip",
+        "n_src_lon",
+        "n_src_lat",
+        "n_dst_lon",
+        "n_dst_lat",
+    )
 
     def __init__(
         self,
@@ -118,6 +141,13 @@ class ConservativeRectilinearRemapper:
             self._n_dst_cells,
         )
 
+    def _pytree_post_unflatten(self) -> None:
+        """Restore derived static remapping state after PyTree unflattening."""
+
+        self._normalize_fracarea = self.normalize == "fracarea"
+        self._n_src_cells = self.n_src_lon * self.n_src_lat
+        self._n_dst_cells = self.n_dst_lon * self.n_dst_lat
+
     @staticmethod
     def _segment_sum(values: jax.Array, indices: jax.Array, size: int) -> jax.Array:
         return jax_zeros((size,)).at[indices].add(values)
@@ -180,85 +210,6 @@ class ConservativeRectilinearRemapper:
             )
         rows, cols, values = self._dense_overlaps_to_triplets(overlap_matrix)
         return rows, cols, jnp.deg2rad(values)
-
-    def tree_flatten(
-        self,
-    ) -> tuple[
-        tuple[jax.Array, ...], tuple[float, str, bool, bool, int, int, int, int]
-    ]:
-        children = (
-            self.src_lon_b,
-            self.src_lat_b,
-            self.dst_lon_b,
-            self.dst_lat_b,
-            self.dst_areas,
-            self.dst_indices,
-            self.src_indices,
-            self.overlap_weights,
-            self.fracarea_norm,
-        )
-        aux_data = (
-            self.radius,
-            self.normalize,
-            self._s_lat_flip,
-            self._d_lat_flip,
-            self.n_src_lon,
-            self.n_src_lat,
-            self.n_dst_lon,
-            self.n_dst_lat,
-        )
-        return children, aux_data
-
-    @classmethod
-    def tree_unflatten(
-        cls,
-        aux_data: tuple[float, str, bool, bool, int, int, int, int],
-        children: tuple[jax.Array, ...],
-    ) -> "ConservativeRectilinearRemapper":
-        (
-            radius,
-            normalize,
-            s_lat_flip,
-            d_lat_flip,
-            n_src_lon,
-            n_src_lat,
-            n_dst_lon,
-            n_dst_lat,
-        ) = aux_data
-        (
-            src_lon_b,
-            src_lat_b,
-            dst_lon_b,
-            dst_lat_b,
-            dst_areas,
-            dst_indices,
-            src_indices,
-            overlap_weights,
-            fracarea_norm,
-        ) = children
-
-        obj = object.__new__(cls)
-        obj.radius = radius
-        obj.normalize = normalize
-        obj._normalize_fracarea = normalize == "fracarea"
-        obj._s_lat_flip = s_lat_flip
-        obj._d_lat_flip = d_lat_flip
-        obj.n_src_lon = n_src_lon
-        obj.n_src_lat = n_src_lat
-        obj.n_dst_lon = n_dst_lon
-        obj.n_dst_lat = n_dst_lat
-        obj._n_src_cells = n_src_lon * n_src_lat
-        obj._n_dst_cells = n_dst_lon * n_dst_lat
-        obj.src_lon_b = src_lon_b
-        obj.src_lat_b = src_lat_b
-        obj.dst_lon_b = dst_lon_b
-        obj.dst_lat_b = dst_lat_b
-        obj.dst_areas = dst_areas
-        obj.dst_indices = dst_indices
-        obj.src_indices = src_indices
-        obj.overlap_weights = overlap_weights
-        obj.fracarea_norm = fracarea_norm
-        return obj
 
     def get_src_areas(self) -> jax.Array:
         """Returns the exact source cell areas (useful for mass verification)."""

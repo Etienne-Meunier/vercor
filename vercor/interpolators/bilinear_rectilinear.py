@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from jax import Array, lax
 
 from vercor.dtypes import as_jax_real_array, jax_full, jax_index_dtype
+from vercor.pytree import PyTreeNodeMixin
 
 
 def _wrap_like(lon_deg: Array, base0_deg: float) -> Array:
@@ -60,7 +61,7 @@ def _all_negative(values: Array) -> bool:
 
 
 @jax.tree_util.register_pytree_node_class
-class BilinearRectilinearInterpolator:
+class BilinearRectilinearInterpolator(PyTreeNodeMixin):
     """
     Bilinear interpolator for rectilinear lat/lon grids with:
 
@@ -72,6 +73,55 @@ class BilinearRectilinearInterpolator:
     - source/target masks
     - nearest / IDW extrapolation for masked-out areas
     """
+
+    pytree_children = (
+        "lon_src_deg",
+        "lat_src_deg",
+        "lon_src_rad",
+        "lat_src_rad",
+        "lon_tgt_deg",
+        "lat_tgt_deg",
+        "lon_tgt_rad",
+        "lat_tgt_rad",
+        "_lon_tgt_flat",
+        "_lat_tgt_flat",
+        "src_mask",
+        "tgt_mask",
+        "i0",
+        "i1",
+        "j0",
+        "j1",
+        "fx",
+        "fy",
+        "w00",
+        "w10",
+        "w01",
+        "w11",
+        "_e_east_t",
+        "_e_north_t",
+        "_e_east_src",
+        "_e_north_src",
+        "_lon_src_2d",
+        "_lat_src_2d",
+        "_lon_src_flat",
+        "_lat_src_flat",
+    )
+    pytree_aux_data = (
+        "periodic",
+        "nan_renorm",
+        "extrapolation_mode",
+        "idw_k",
+        "idw_eps",
+        "fill_value",
+        "nlon",
+        "nlat",
+        "nx_source",
+        "ny_source",
+        "tshape",
+        "_lon_flipped",
+        "lat_ascending",
+        "lat_descending",
+    )
 
     def __init__(
         self,
@@ -170,112 +220,6 @@ class BilinearRectilinearInterpolator:
         self._lat_src_2d = lat_src_2d
         self._lon_src_flat = lon_src_2d.reshape(-1)
         self._lat_src_flat = lat_src_2d.reshape(-1)
-
-    def tree_flatten(self) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
-        children = (
-            self.lon_src_deg,
-            self.lat_src_deg,
-            self.lon_src_rad,
-            self.lat_src_rad,
-            self.lon_tgt_deg,
-            self.lat_tgt_deg,
-            self.lon_tgt_rad,
-            self.lat_tgt_rad,
-            self._lon_tgt_flat,
-            self._lat_tgt_flat,
-            self.src_mask,
-            self.tgt_mask,
-            self.i0,
-            self.i1,
-            self.j0,
-            self.j1,
-            self.fx,
-            self.fy,
-            self.w00,
-            self.w10,
-            self.w01,
-            self.w11,
-            self._e_east_t,
-            self._e_north_t,
-            self._e_east_src,
-            self._e_north_src,
-            self._lon_src_2d,
-            self._lat_src_2d,
-            self._lon_src_flat,
-            self._lat_src_flat,
-        )
-        aux_data = (
-            self.periodic,
-            self.nan_renorm,
-            self.extrapolation_mode,
-            self.idw_k,
-            self.idw_eps,
-            self.fill_value,
-            self.nlon,
-            self.nlat,
-            self.nx_source,
-            self.ny_source,
-            self.tshape,
-            self._lon_flipped,
-            self.lat_ascending,
-            self.lat_descending,
-        )
-        return children, aux_data
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: tuple[Any, ...], children: tuple[Any, ...]
-    ) -> "BilinearRectilinearInterpolator":
-        obj = cls.__new__(cls)
-        (
-            obj.periodic,
-            obj.nan_renorm,
-            obj.extrapolation_mode,
-            obj.idw_k,
-            obj.idw_eps,
-            obj.fill_value,
-            obj.nlon,
-            obj.nlat,
-            obj.nx_source,
-            obj.ny_source,
-            obj.tshape,
-            obj._lon_flipped,
-            obj.lat_ascending,
-            obj.lat_descending,
-        ) = aux_data
-        (
-            obj.lon_src_deg,
-            obj.lat_src_deg,
-            obj.lon_src_rad,
-            obj.lat_src_rad,
-            obj.lon_tgt_deg,
-            obj.lat_tgt_deg,
-            obj.lon_tgt_rad,
-            obj.lat_tgt_rad,
-            obj._lon_tgt_flat,
-            obj._lat_tgt_flat,
-            obj.src_mask,
-            obj.tgt_mask,
-            obj.i0,
-            obj.i1,
-            obj.j0,
-            obj.j1,
-            obj.fx,
-            obj.fy,
-            obj.w00,
-            obj.w10,
-            obj.w01,
-            obj.w11,
-            obj._e_east_t,
-            obj._e_north_t,
-            obj._e_east_src,
-            obj._e_north_src,
-            obj._lon_src_2d,
-            obj._lat_src_2d,
-            obj._lon_src_flat,
-            obj._lat_src_flat,
-        ) = children
-        return obj
 
     def _precompute_cells_and_weights(self) -> None:
         nlon, nlat = self.nlon, self.nlat

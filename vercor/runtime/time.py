@@ -9,6 +9,7 @@ import jax
 
 from vercor.clock import Clock, ModelDateTime
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
+from vercor.pytree import PyTreeNodeMixin
 from vercor.settings import VercorSettings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
@@ -20,8 +21,16 @@ from vercor.types import RuntimeArray
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RuntimeStepInfo:
+class RuntimeStepInfo(PyTreeNodeMixin):
     """Precomputed time-selection metadata for one runtime step."""
+
+    pytree_children = (
+        "monthly_index_left",
+        "monthly_index_right",
+        "monthly_weight_left",
+        "monthly_weight_right",
+        "daily_index",
+    )
 
     monthly_index_left: RuntimeArray
     monthly_index_right: RuntimeArray
@@ -46,38 +55,6 @@ class RuntimeStepInfo:
             monthly_weight_left=as_jax_real_array(monthly_weight_left),
             monthly_weight_right=as_jax_real_array(monthly_weight_right),
             daily_index=as_jax_index_array(daily_index),
-        )
-
-    def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], None]:
-        return (
-            (
-                self.monthly_index_left,
-                self.monthly_index_right,
-                self.monthly_weight_left,
-                self.monthly_weight_right,
-                self.daily_index,
-            ),
-            None,
-        )
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: None, children: tuple[RuntimeArray, ...]
-    ) -> "RuntimeStepInfo":
-        _ = aux_data
-        (
-            monthly_index_left,
-            monthly_index_right,
-            monthly_weight_left,
-            monthly_weight_right,
-            daily_index,
-        ) = children
-        return cls(
-            monthly_index_left=monthly_index_left,
-            monthly_index_right=monthly_index_right,
-            monthly_weight_left=monthly_weight_left,
-            monthly_weight_right=monthly_weight_right,
-            daily_index=daily_index,
         )
 
 

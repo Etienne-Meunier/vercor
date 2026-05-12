@@ -5,6 +5,7 @@ from typing import Any
 
 import jax
 
+from vercor.pytree import PyTreeNodeMixin
 from vercor.runtime.contracts import exchange_key_name
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.types import RuntimeArray
@@ -12,42 +13,15 @@ from vercor.types import RuntimeArray
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RuntimeComponentState:
+class RuntimeComponentState(PyTreeNodeMixin):
     """Immutable runtime state for one component."""
+
+    pytree_children = ("data", "incoming", "outgoing", "runtime_payload")
 
     data: RuntimeFieldStore
     incoming: RuntimeFieldStore
     outgoing: RuntimeFieldStore
     runtime_payload: Any | None = None
-
-    def tree_flatten(
-        self,
-    ) -> tuple[
-        tuple[RuntimeFieldStore, RuntimeFieldStore, RuntimeFieldStore, Any | None],
-        None,
-    ]:
-        children = (self.data, self.incoming, self.outgoing, self.runtime_payload)
-        return children, None
-
-    @classmethod
-    def tree_unflatten(
-        cls,
-        aux_data: None,
-        children: tuple[
-            RuntimeFieldStore,
-            RuntimeFieldStore,
-            RuntimeFieldStore,
-            Any | None,
-        ],
-    ) -> "RuntimeComponentState":
-        _ = aux_data
-        data, incoming, outgoing, runtime_payload = children
-        return cls(
-            data=data,
-            incoming=incoming,
-            outgoing=outgoing,
-            runtime_payload=runtime_payload,
-        )
 
     def with_data(self, data: RuntimeFieldStore) -> "RuntimeComponentState":
         """Return this component state with replaced data."""
@@ -94,8 +68,11 @@ class RuntimeComponentState:
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RuntimeCouplerState:
+class RuntimeCouplerState(PyTreeNodeMixin):
     """Immutable runtime state for the VerCOR runtime core."""
+
+    pytree_children = ("components", "fractional_masks", "binary_masks")
+    pytree_aux_data = ("component_names",)
 
     component_names: tuple[str, ...]
     components: tuple[RuntimeComponentState, ...]
@@ -108,32 +85,10 @@ class RuntimeCouplerState:
         if len(self.component_names) != len(self.components):
             raise ValueError("component_names and components must have equal length")
 
-    def tree_flatten(
-        self,
-    ) -> tuple[
-        tuple[tuple[RuntimeComponentState, ...], RuntimeFieldStore, RuntimeFieldStore],
-        tuple[str, ...],
-    ]:
-        return (
-            (self.components, self.fractional_masks, self.binary_masks),
-            self.component_names,
-        )
+    def _pytree_post_unflatten(self) -> None:
+        """Validate that component names and states stay aligned."""
 
-    @classmethod
-    def tree_unflatten(
-        cls,
-        aux_data: tuple[str, ...],
-        children: tuple[
-            tuple[RuntimeComponentState, ...], RuntimeFieldStore, RuntimeFieldStore
-        ],
-    ) -> "RuntimeCouplerState":
-        components, fractional_masks, binary_masks = children
-        return cls(
-            component_names=aux_data,
-            components=components,
-            fractional_masks=fractional_masks,
-            binary_masks=binary_masks,
-        )
+        self.__post_init__()
 
     def get_component_state(self, name: str) -> RuntimeComponentState:
         """Return one component state by name."""

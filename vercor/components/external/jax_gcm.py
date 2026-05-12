@@ -41,6 +41,7 @@ from vercor.dtypes import (
 )
 from vercor.grid import RectilinearGrid
 from vercor.jax_logging import LoggerLike, get_default_logger
+from vercor.pytree import PyTreeNodeMixin
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.runtime.validation import (
     validate_runtime_data_field_exists,
@@ -240,22 +241,13 @@ class JCMState:
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class JAXGCMRuntimePayload:
+class JAXGCMRuntimePayload(PyTreeNodeMixin):
     """Immutable JAXGCM model state carried by runtime component state."""
+
+    pytree_children = ("jcm_state", "forcing")
 
     jcm_state: Any
     forcing: Any
-
-    def tree_flatten(self) -> tuple[tuple[Any, Any], None]:
-        return (self.jcm_state, self.forcing), None
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: None, children: tuple[Any, Any]
-    ) -> "JAXGCMRuntimePayload":
-        _ = aux_data
-        jcm_state, forcing = children
-        return cls(jcm_state=jcm_state, forcing=forcing)
 
 
 class JAXGCM(Component):

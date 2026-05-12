@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
-from typing import Any
 
 import jax
 import jax.numpy as jnp
 
 from vercor.exceptions import GridError
+from vercor.pytree import PyTreeNodeMixin
 from vercor.types import RuntimeArray
 
 
@@ -46,7 +46,16 @@ class Grid(abc.ABC):
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, init=False, repr=False, kw_only=True)
-class RectilinearGrid(Grid):
+class RectilinearGrid(PyTreeNodeMixin, Grid):
+    pytree_children = (
+        "longitude",
+        "latitude",
+        "longitude_edges",
+        "latitude_edges",
+        "binary_mask",
+    )
+    pytree_aux_data = ("name",)
+
     longitude: RuntimeArray
     latitude: RuntimeArray
     longitude_edges: RuntimeArray | None
@@ -93,28 +102,3 @@ class RectilinearGrid(Grid):
     @property
     def shape(self) -> tuple[int, int]:
         return (int(self.latitude.size), int(self.longitude.size))
-
-    def tree_flatten(self) -> tuple[tuple[Any, ...], tuple[str]]:
-        children = (
-            self.longitude,
-            self.latitude,
-            self.longitude_edges,
-            self.latitude_edges,
-            self.binary_mask,
-        )
-        return children, (self.name,)
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: tuple[str], children: tuple[Any, ...]
-    ) -> "RectilinearGrid":
-        name = aux_data[0]
-        longitude, latitude, longitude_edges, latitude_edges, binary_mask = children
-        obj = object.__new__(cls)
-        object.__setattr__(obj, "name", name)
-        object.__setattr__(obj, "binary_mask", binary_mask)
-        object.__setattr__(obj, "longitude", longitude)
-        object.__setattr__(obj, "latitude", latitude)
-        object.__setattr__(obj, "longitude_edges", longitude_edges)
-        object.__setattr__(obj, "latitude_edges", latitude_edges)
-        return obj

@@ -76,18 +76,32 @@ VerCOR workflows remains future work.
 
 ### Data flow: PyTree-based result objects
 
-Create a JAX helper module for common PyTree utilities & classes (to be reused by many modules),
-such as flattening, tree mapping, etc.
+Shared PyTree mechanics live in `vercor.pytree.PyTreeNodeMixin`. Immutable
+classes registered with `@jax.tree_util.register_pytree_node_class` should
+inherit from the mixin and declare `pytree_children` for traced fields plus
+`pytree_aux_data` for static metadata. The mixin reconstructs objects without
+rerunning constructors, and classes with derived static attributes can restore
+them in `_pytree_post_unflatten()`.
 
-Every module returns a frozen dataclass (registered as a JAX PyTree) containing
-arrays and objects. 
+Every module returns an immutable PyTree container, usually a frozen dataclass,
+containing arrays and objects.
 
 No mutable state. No side effects.
 
 ```python
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RectilinearGrid:
+class RectilinearGrid(PyTreeNodeMixin):
+    pytree_children = (
+        "longitude",
+        "latitude",
+        "longitude_edges",
+        "latitude_edges",
+        "binary_mask",
+    )
+    pytree_aux_data = ("name",)
+
+    name: str
     longitude: Array
     latitude: Array
     longitude_edges: Array

@@ -6,13 +6,17 @@ from typing import Mapping
 import jax
 import jax.numpy as jnp
 
+from vercor.pytree import PyTreeNodeMixin
 from vercor.types import RuntimeArray
 
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RuntimeFieldStore:
+class RuntimeFieldStore(PyTreeNodeMixin):
     """Immutable named array store used by the runtime."""
+
+    pytree_children = ("values",)
+    pytree_aux_data = ("field_names",)
 
     field_names: tuple[str, ...]
     values: tuple[RuntimeArray, ...]
@@ -31,15 +35,6 @@ class RuntimeFieldStore:
             field_names=tuple(fields.keys()),
             values=tuple(jnp.array(value, copy=True) for value in fields.values()),
         )
-
-    def tree_flatten(self) -> tuple[tuple[RuntimeArray, ...], tuple[str, ...]]:
-        return self.values, self.field_names
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: tuple[str, ...], children: tuple[RuntimeArray, ...]
-    ) -> "RuntimeFieldStore":
-        return cls(field_names=aux_data, values=children)
 
     def __contains__(self, name: object) -> bool:
         """Return whether ``name`` is present in this store."""
