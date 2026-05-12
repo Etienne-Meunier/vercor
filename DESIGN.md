@@ -252,9 +252,12 @@ introspection. `ComponentSettings` is a compatibility alias for
 VerCOR-owned array dtypes are centralized in `vercor.dtypes`. Real-valued JAX
 and NumPy arrays use the `VercorSettings.enable_x64` precision switch whenever a
 settings object is available: `False` maps to 32-bit real arrays and `True` maps
-to 64-bit real arrays. Helpers that create arrays without a settings object
-follow the active JAX global `jax_enable_x64` configuration; conversion helpers
-preserve an already-typed real array when no settings object is supplied.
+to 64-bit real arrays. `Coupler.initialize()` treats the coupler setting as the
+run-level precision policy, synchronizes component settings to that policy, and
+recasts component-owned grid/data arrays before runtime state creation. Helpers
+that create arrays without a settings object follow the active JAX global
+`jax_enable_x64` configuration; conversion helpers preserve an already-typed
+real array when no settings object is supplied.
 Integer/index arrays use the canonical 32-bit index dtype in both
 real-precision modes to keep sparse metadata and interpolation indices compact.
 

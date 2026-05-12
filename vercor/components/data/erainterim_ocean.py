@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array, jax_arange
 from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
@@ -22,9 +23,9 @@ def _assemble_erainterim_latitude(
 ) -> jax.Array:
     """Insert the ERA-Interim latitude band into the full global latitude vector."""
     return (
-        jnp.asarray(full_latitude)
+        as_jax_real_array(full_latitude)
         .at[latitude_start:latitude_stop]
-        .set(jnp.asarray(latitude_core))
+        .set(as_jax_real_array(latitude_core))
     )
 
 
@@ -37,7 +38,7 @@ def _assemble_erainterim_field(
     offset: float = 0.0,
 ) -> jax.Array:
     """Embed a `(nlon, nlat_core, time)` field into the full global ocean grid."""
-    core_field_array = jnp.asarray(core_field) + offset
+    core_field_array = as_jax_real_array(core_field) + offset
     full_field = jnp.zeros(
         (
             int(core_field_array.shape[0]),
@@ -54,7 +55,7 @@ def _assemble_erainterim_field(
 
 def _binary_ocean_mask_from_salinity(salinity: ArrayLike) -> jax.Array:
     """Create a binary ocean mask from a full-grid salinity field."""
-    return jnp.where(jnp.asarray(salinity) > 0.0, 1.0, 0.0)[..., 0].T
+    return jnp.where(as_jax_real_array(salinity) > 0.0, 1.0, 0.0)[..., 0].T
 
 
 def _mask_sea_surface_temperature(
@@ -65,7 +66,7 @@ def _mask_sea_surface_temperature(
     return (
         canonicalize_time_last_surface_field(sea_surface_temperature)
         * jnp.where(
-            jnp.asarray(binary_mask) > 0.0,
+            as_jax_real_array(binary_mask) > 0.0,
             1.0,
             jnp.nan,
         )[jnp.newaxis, ...]
@@ -106,7 +107,7 @@ class ERAInterimOcean(DataComponent, ComponentForcingData):
         grid_step = float(longitude[1] - longitude[0])
         yt_bndry = 89.5 if grid_step == 1 else 90.0
         latitude_start = 10 if grid_step == 1 else 3
-        full_latitude = jnp.arange(-yt_bndry, yt_bndry + grid_step, grid_step)
+        full_latitude = jax_arange(-yt_bndry, yt_bndry + grid_step, grid_step)
         latitude_stop = int(full_latitude.size) - latitude_start
         longitude_roll = 90 if grid_step == 1 else 0
 

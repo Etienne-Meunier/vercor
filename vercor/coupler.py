@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional
 
 from vercor.clock import Clock
 from vercor.components.base import Component, validate_component_setup
+from vercor.dtypes import as_jax_real_array
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
@@ -48,6 +49,27 @@ from vercor.runtime.topology import (
 from vercor.runtime.views import RuntimeComponentView
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
+
+
+def _apply_run_precision_to_component(
+    component: Component,
+    settings: VercorSettings,
+) -> None:
+    """Synchronize component-owned setup arrays with the coupler precision."""
+
+    component.settings.set_value("enable_x64", settings.enable_x64)
+    component.grid = component.grid.with_precision(settings)
+    component.data = {
+        field_name: as_jax_real_array(field_value, settings)
+        for field_name, field_value in component.data.items()
+    }
+    field_spec = component.field_spec
+    if field_spec.default_fields:
+        component.declare_fields(
+            inputs=field_spec.inputs,
+            outputs=field_spec.outputs,
+            default_fields=field_spec.default_fields,
+        )
 
 
 @dataclass
@@ -203,6 +225,9 @@ class Coupler:
             import jax
 
             jax.config.update("jax_enable_x64", True)
+
+        for component in self.components.values():
+            _apply_run_precision_to_component(component, self.settings)
 
         init_context = ComponentInitContext(
             start=self.clock.start,

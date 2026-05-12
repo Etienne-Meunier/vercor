@@ -7,6 +7,7 @@ from vercor import Clock, Coupler, Exchange, RunSequence
 from vercor.components.external.jax_gcm import JAXGCM
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.regridders import bilinear, conservative
 from vercor.diagnostics import (
@@ -25,21 +26,21 @@ if __name__ == "__main__":
     # Build components
     atm = JAXGCM(coords, terrain, forcing_data=forcing, jitted=True)
 
-    ocn_binary_mask = jnp.where(jnp.asarray(terrain.fmask) < 1, 1, 0).T
+    ocn_binary_mask = jnp.where(as_jax_real_array(terrain.fmask) < 1, 1, 0).T
     lnd_binary_mask = 1 - ocn_binary_mask
 
     hgrid = atm.model.coords.horizontal
     lnd_grid = RectilinearGrid(
         name="LND",
-        longitude=jnp.rad2deg(jnp.asarray(hgrid.longitudes)),
-        latitude=jnp.rad2deg(jnp.asarray(hgrid.latitudes)),
+        longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
+        latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=lnd_binary_mask,
     )
 
     ocn_grid = RectilinearGrid(
         name="OCN",
-        longitude=jnp.rad2deg(jnp.asarray(hgrid.longitudes)),
-        latitude=jnp.rad2deg(jnp.asarray(hgrid.latitudes)),
+        longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
+        latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=ocn_binary_mask,
     )
 

@@ -6,6 +6,7 @@ from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.forcing import ForcingData
 
 from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.grid import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
@@ -27,8 +28,8 @@ def _jcm_coordinates_in_degrees(
 ) -> tuple[jax.Array, jax.Array]:
     """Convert JCM horizontal coordinates from radians to degrees."""
     return (
-        jnp.rad2deg(jnp.asarray(longitude_radians)),
-        jnp.rad2deg(jnp.asarray(latitude_radians)),
+        jnp.rad2deg(as_jax_real_array(longitude_radians)),
+        jnp.rad2deg(as_jax_real_array(latitude_radians)),
     )
 
 
@@ -42,8 +43,8 @@ def _prepare_jcm_land_runtime_fields(
     longitude, latitude = _jcm_coordinates_in_degrees(
         longitude_radians, latitude_radians
     )
-    land_surface_temperature_array = jnp.asarray(land_surface_temperature)
-    soil_moisture_array = jnp.asarray(soil_moisture)
+    land_surface_temperature_array = as_jax_real_array(land_surface_temperature)
+    soil_moisture_array = as_jax_real_array(soil_moisture)
     if land_surface_temperature_array.ndim == 3:
         prepared_land_surface_temperature = canonicalize_time_last_surface_field(
             land_surface_temperature_array

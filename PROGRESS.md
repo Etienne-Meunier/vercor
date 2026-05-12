@@ -1,5 +1,62 @@
 # 2026-05-12
 
+## Precision Policy Consistency Audit
+
+- Added regression coverage for component field seeding, runtime import/export
+  prefill, and coupler initialization when `enable_x64=False` while the test
+  process has global JAX x64 enabled.
+- Extended `vercor.dtypes` with copy-preserving real-array and real-valued
+  `arange` helpers, keeping index arrays on canonical int32.
+- Made `Coupler.initialize()` cascade the coupler precision policy to registered
+  components and recast component-owned grid/data/default arrays before runtime
+  state creation.
+- Routed component author-field normalization and runtime contract prefill
+  through settings-backed dtype helpers so missing/imported/exported fields do
+  not silently inherit the process-global JAX dtype.
+- Audited representative production array-creation sites in grids, forcing
+  adapters, grid-mask helpers, JAXGCM setup/prefill, runtime scan indices, and
+  runnable examples to use the central dtype helpers or same-dtype construction.
+- Failed approaches / corrections:
+  - The first runtime-prefill red test missed the `create_runtime_component_state`
+    import and failed during test setup; adding the import exposed the intended
+    float64-vs-float32 failure.
+  - Full-field ERA-Interim assembly keeps explicit `dtype=core_field_array.dtype`
+    because it must match the already-normalized source array, not a separate
+    global/default policy.
+
+## Validation (Precision Policy Consistency Audit, 2026-05-12)
+
+- `conda run -n scipy pytest tests/ -v --fast 2>&1 | tail -20`
+  - passed baseline before implementation (`105 passed, 273 deselected`)
+- `conda run -n scipy pytest tests/test_component_base_coverage.py::test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled tests/test_runtime_state.py::test_runtime_contract_prefill_uses_component_float32_policy tests/test_coupler_runtime.py::test_coupler_initialize_cascades_float32_precision_to_component_arrays -q --tb=short`
+  - failed as expected before implementation on component seed, runtime prefill,
+    and grid arrays remaining `float64` under an explicit float32 policy
+  - passed after policy propagation fixes
+- `conda run -n scipy pytest tests/test_dtypes.py tests/test_component_base_coverage.py::test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled tests/test_runtime_state.py::test_runtime_contract_prefill_uses_component_float32_policy tests/test_coupler_runtime.py::test_coupler_initialize_cascades_float32_precision_to_component_arrays tests/test_component_models_coverage.py tests/test_external_components_coverage.py -q --fast --tb=short`
+  - passed after the first production audit edits
+- `conda run -n scipy pytest tests/test_dtypes.py tests/test_runtime_run_cache.py tests/test_runtime_state.py::test_runtime_contract_prefill_uses_component_float32_policy tests/test_coupler_runtime.py::test_coupler_initialize_cascades_float32_precision_to_component_arrays tests/test_component_models_coverage.py tests/test_external_components_coverage.py -q --fast --tb=short`
+  - passed after scan-index and data-adapter follow-up edits
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - first full-suite run found a `JAXGCM.__new__` unit-test fixture without
+    `settings`; `_generate_step_function()` now falls back to the global dtype
+    policy for that lightweight fixture while using component settings in normal
+    construction
+- `conda run -n scipy pytest tests/test_external_components_coverage.py::test_generate_step_function_non_jitted_averages_predictions -q --tb=short`
+  - passed after adding the JAXGCM settings fallback
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 121 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - first reported one unused import after changing runtime scan indices
+  - passed after removing it (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`121 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 ## Runtime Profiling and Core Dispatch Optimization
 
 - Added `examples/profile_runtime.py`, a compact synthetic slab-coupler profiling

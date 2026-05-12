@@ -377,6 +377,19 @@ def _make_initialized_slab_coupler(steps: int) -> Coupler:
     return coupler
 
 
+def test_coupler_initialize_cascades_float32_precision_to_component_arrays() -> None:
+    coupler = _make_initialized_slab_coupler(steps=1)
+
+    for component in coupler.components.values():
+        assert component.settings.enable_x64 is False
+        assert component.grid.longitude.dtype == jnp.float32
+        assert component.grid.latitude.dtype == jnp.float32
+        if component.grid.binary_mask is not None:
+            assert component.grid.binary_mask.dtype == jnp.float32
+        for field_value in component.data.values():
+            assert jnp.asarray(field_value).dtype == jnp.float32
+
+
 def _make_initialized_mixed_grid_slab_coupler(steps: int) -> Coupler:
     atmosphere_longitude = np.asarray([0.0, 1.0], dtype=float)
     atmosphere_latitude = np.asarray([-1.0, 1.0], dtype=float)

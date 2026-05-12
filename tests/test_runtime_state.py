@@ -21,7 +21,10 @@ from vercor.runtime import (
     RuntimeFieldStore,
     RuntimeStepInfo,
 )
-from vercor.runtime.components import send_runtime_fields
+from vercor.runtime.components import (
+    create_runtime_component_state,
+    send_runtime_fields,
+)
 
 
 class _RuntimeSendComponent(DataComponent):
@@ -31,6 +34,26 @@ class _RuntimeSendComponent(DataComponent):
 
     def initialize(self, context: ComponentInitContext) -> None:
         _ = context
+
+
+def test_runtime_contract_prefill_uses_component_float32_policy() -> None:
+    component = DataComponent.from_fields(
+        name="DATA",
+        grid=make_test_grid(name="runtime-prefill-policy"),
+        settings=VercorSettings(enable_x64=False),
+    )
+    state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=RuntimeComponentContract(
+            imports=("in_field",), exports=("out_field",)
+        ),
+    )
+
+    assert state.data.get("in_field").dtype == jnp.float32
+    assert state.incoming.get("in_field").dtype == jnp.float32
+    assert state.data.get("out_field").dtype == jnp.float32
+    assert state.outgoing.get("out_field").dtype == jnp.float32
 
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:

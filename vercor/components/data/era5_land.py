@@ -2,10 +2,10 @@ from pathlib import Path
 from typing import Optional
 
 import jax
-import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
@@ -22,9 +22,9 @@ def _prepare_era5_land_runtime_fields(
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """Normalize ERA5 land forcing arrays for JAX-backed runtime storage."""
     return (
-        jnp.asarray(longitude),
-        jnp.asarray(latitude),
-        jnp.asarray(binary_mask).T,
+        as_jax_real_array(longitude),
+        as_jax_real_array(latitude),
+        as_jax_real_array(binary_mask).T,
         canonicalize_time_last_surface_field(land_surface_temperature),
     )
 

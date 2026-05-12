@@ -23,7 +23,7 @@ def prefill_runtime_contract_fields(
 ) -> None:
     """Add generic import/export fields required for stable runtime execution."""
 
-    zeros = jax_zeros(component.grid.shape)
+    zeros = jax_zeros(component.grid.shape, component.settings)
     for field_name in contract.imports:
         incoming.setdefault(field_name, zeros)
         data.setdefault(field_name, zeros)

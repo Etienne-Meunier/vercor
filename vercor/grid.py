@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
+from vercor.dtypes import PrecisionPolicy, as_jax_real_array
 from vercor.exceptions import GridError
 from vercor.pytree import PyTreeNodeMixin
 from vercor.types import RuntimeArray
@@ -69,16 +70,23 @@ class RectilinearGrid(PyTreeNodeMixin, Grid):
         longitude_edges: RuntimeArray | None = None,
         latitude_edges: RuntimeArray | None = None,
         binary_mask: RuntimeArray | None = None,
+        policy: PrecisionPolicy = None,
     ) -> None:
-        longitude_array = jnp.asarray(longitude)
-        latitude_array = jnp.asarray(latitude)
+        longitude_array = as_jax_real_array(longitude, policy)
+        latitude_array = as_jax_real_array(latitude, policy)
         longitude_edges_array = (
-            None if longitude_edges is None else jnp.asarray(longitude_edges)
+            None
+            if longitude_edges is None
+            else as_jax_real_array(longitude_edges, policy)
         )
         latitude_edges_array = (
-            None if latitude_edges is None else jnp.asarray(latitude_edges)
+            None
+            if latitude_edges is None
+            else as_jax_real_array(latitude_edges, policy)
         )
-        binary_mask_array = None if binary_mask is None else jnp.asarray(binary_mask)
+        binary_mask_array = (
+            None if binary_mask is None else as_jax_real_array(binary_mask, policy)
+        )
 
         if longitude_array.ndim != 1 or latitude_array.ndim != 1:
             raise GridError(
@@ -102,3 +110,16 @@ class RectilinearGrid(PyTreeNodeMixin, Grid):
     @property
     def shape(self) -> tuple[int, int]:
         return (int(self.latitude.size), int(self.longitude.size))
+
+    def with_precision(self, policy: PrecisionPolicy) -> "RectilinearGrid":
+        """Return this grid with real arrays converted to ``policy`` precision."""
+
+        return RectilinearGrid(
+            name=self.name,
+            longitude=self.longitude,
+            latitude=self.latitude,
+            longitude_edges=self.longitude_edges,
+            latitude_edges=self.latitude_edges,
+            binary_mask=self.binary_mask,
+            policy=policy,
+        )

@@ -9,6 +9,7 @@ from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
+from vercor.dtypes import jax_ones
 from vercor.regridders import (
     make_rectilinear_grid,
     bilinear,
@@ -24,7 +25,7 @@ if __name__ == "__main__":
     atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
 
     ocn_grid_shape = (64, 32)
-    binary_mask = jnp.ones(ocn_grid_shape).T.at[:2, :].set(0.0)  # land points
+    binary_mask = jax_ones(ocn_grid_shape).T.at[:2, :].set(0.0)  # land points
     ocn_grid = make_rectilinear_grid(
         "ocn-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0, mask=binary_mask
     )

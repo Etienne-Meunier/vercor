@@ -4,6 +4,7 @@ import h5netcdf
 import jax.numpy as jnp
 import numpy as np
 
+from vercor.dtypes import as_jax_real_array
 from vercor.types import RuntimeArray
 
 
@@ -20,7 +21,7 @@ class ComponentForcingData:
 
         try:
             with h5netcdf.File(self.DATA_FILES[where], "r") as infile:
-                var_obj = jnp.asarray(np.array(infile.variables[variable]).T)
+                var_obj = as_jax_real_array(np.array(infile.variables[variable]).T)
                 if flip_y:
                     return jnp.flip(var_obj, axis=1)
                 return var_obj

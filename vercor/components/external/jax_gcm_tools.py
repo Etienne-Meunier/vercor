@@ -24,7 +24,7 @@ def change_jcm_parameter_values(
     for key, value in parameters.items():
         parameter_group_name, parameter_name = key.split(".")
         default_parameters.__getattribute__(parameter_group_name).__setattr__(
-            parameter_name, jnp.array(value)
+            parameter_name, as_jax_real_array(value)
         )
 
 

@@ -114,6 +114,14 @@ def as_jax_real_array(value: Any, policy: PrecisionPolicy = None) -> jax.Array:
     return jnp.asarray(value, dtype=jax_real_dtype(policy))
 
 
+def jax_real_array_copy(value: Any, policy: PrecisionPolicy = None) -> jax.Array:
+    """Copy ``value`` into a JAX real array using VerCOR's dtype policy."""
+
+    if policy is None:
+        return jnp.array(value, copy=True)
+    return jnp.array(value, dtype=jax_real_dtype(policy), copy=True)
+
+
 def as_jax_index_array(value: Any, policy: PrecisionPolicy = None) -> jax.Array:
     """Convert ``value`` to a JAX array using VerCOR's canonical index dtype."""
 
@@ -151,3 +159,16 @@ def jax_linspace(
     """Return evenly spaced values with VerCOR's canonical real dtype."""
 
     return jnp.linspace(start, stop, num, dtype=jax_real_dtype(policy))
+
+
+def jax_arange(
+    start: Any,
+    stop: Any | None = None,
+    step: Any = 1,
+    policy: PrecisionPolicy = None,
+) -> jax.Array:
+    """Return evenly spaced values with VerCOR's canonical real dtype."""
+
+    if stop is None:
+        return jnp.arange(start, dtype=jax_real_dtype(policy))
+    return jnp.arange(start, stop, step, dtype=jax_real_dtype(policy))

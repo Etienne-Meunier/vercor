@@ -4,9 +4,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
 
-import jax.numpy as jnp
-
-from vercor.dtypes import PrecisionPolicy, jax_full
+from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
 from vercor.field_layout import validate_component_data_layout
 from vercor.grid import RectilinearGrid
 from vercor.runtime.contexts import RuntimeStepContext
@@ -81,7 +79,7 @@ def normalize_author_field_values(
 
     normalized: dict[str, RuntimeArray] = {}
     for field_name, field_value in fields.items():
-        field_array = jnp.asarray(field_value)
+        field_array = as_jax_real_array(field_value, policy)
         if field_array.shape == ():
             normalized[field_name] = jax_full(grid.shape, field_value, policy)
         else:

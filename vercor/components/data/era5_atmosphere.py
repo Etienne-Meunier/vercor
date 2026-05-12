@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import (
     canonicalize_time_last_level_field,
     canonicalize_time_last_surface_field,
@@ -40,7 +41,7 @@ _ERA5_ATMOSPHERE_FIELD_NAMES = (
 
 def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
     """Convert log surface pressure to physical pressure in Pascals."""
-    return jnp.exp(jnp.asarray(lnsp))
+    return jnp.exp(as_jax_real_array(lnsp))
 
 
 def _compute_monthly_diagnostics(
@@ -56,14 +57,19 @@ def _compute_monthly_diagnostics(
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Compute ERA5 diagnostics for one monthly slice on the runtime JAX path."""
 
-    surface_pressure_array = jnp.asarray(surface_pressure)
-    temperature_3d_array = jnp.asarray(temperature_3d).transpose((1, 2, 0))
-    specific_humidity_3d_array = jnp.asarray(specific_humidity_3d).transpose((1, 2, 0))
-    temperature_array = jnp.asarray(temperature)
-    hyai_array = jnp.asarray(hyai)
-    hybi_array = jnp.asarray(hybi)
-    hyam_array = jnp.asarray(hyam)
-    hybm_array = jnp.asarray(hybm)
+    surface_pressure_array = as_jax_real_array(surface_pressure, settings)
+    temperature_3d_array = as_jax_real_array(temperature_3d, settings).transpose(
+        (1, 2, 0)
+    )
+    specific_humidity_3d_array = as_jax_real_array(
+        specific_humidity_3d,
+        settings,
+    ).transpose((1, 2, 0))
+    temperature_array = as_jax_real_array(temperature, settings)
+    hyai_array = as_jax_real_array(hyai, settings)
+    hybi_array = as_jax_real_array(hybi, settings)
+    hyam_array = as_jax_real_array(hyam, settings)
+    hybm_array = as_jax_real_array(hybm, settings)
 
     ph = compute_pressure_levels(surface_pressure_array, hyai_array, hybi_array)
     pf = compute_pressure_levels(surface_pressure_array, hyam_array, hybm_array)
@@ -135,16 +141,16 @@ class ERA5Atmosphere(DataComponent, ComponentForcingData):
 
         self.update_settings(apply_time_interpolation=True)
 
-        self.hyai: jax.Array = jnp.asarray(
+        self.hyai: jax.Array = as_jax_real_array(
             self._read_forcing("hyai", where="model_level")[-3:]
         )  # L135-L137
-        self.hybi: jax.Array = jnp.asarray(
+        self.hybi: jax.Array = as_jax_real_array(
             self._read_forcing("hybi", where="model_level")[-3:]
         )  # L135-L137
-        self.hyam: jax.Array = jnp.asarray(
+        self.hyam: jax.Array = as_jax_real_array(
             self._read_forcing("hyam", where="model_level")[-2:]
         )  # L136-L137
-        self.hybm: jax.Array = jnp.asarray(
+        self.hybm: jax.Array = as_jax_real_array(
             self._read_forcing("hybm", where="model_level")[-2:]
         )  # L136-L137
 

@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
@@ -16,7 +17,7 @@ _ERA5_OCEAN_FIELD_NAMES = ("sea_surface_temperature",)
 
 def _ocean_binary_mask_from_land_fraction(land_fraction: ArrayLike) -> jax.Array:
     """Convert a fractional land mask into a binary ocean mask."""
-    land_fraction_array = jnp.asarray(land_fraction)
+    land_fraction_array = as_jax_real_array(land_fraction)
     return 1.0 - jnp.where(land_fraction_array > 0.0, 1.0, 0.0)
 
 
@@ -28,7 +29,7 @@ def _mask_sea_surface_temperature(
     return (
         canonicalize_time_last_surface_field(sea_surface_temperature)
         * jnp.where(
-            jnp.asarray(binary_mask) > 0.0,
+            as_jax_real_array(binary_mask) > 0.0,
             1.0,
             jnp.nan,
         )[jnp.newaxis, ...]

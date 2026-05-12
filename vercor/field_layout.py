@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
+from vercor.dtypes import as_jax_real_array
 from vercor.exceptions import ComponentError
 from vercor.types import RuntimeArray
 
@@ -55,7 +56,7 @@ def validate_component_data_layout(
 def canonicalize_time_last_surface_field(field: ArrayLike) -> jax.Array:
     """Convert a ``(nLon, nLat, nTime)`` field to ``(nTime, nLat, nLon)``."""
 
-    field_array = jnp.asarray(field)
+    field_array = as_jax_real_array(field)
     if field_array.ndim != 3:
         raise ValueError(
             "Expected a time-last surface field with shape (nLon, nLat, nTime)."
@@ -66,7 +67,7 @@ def canonicalize_time_last_surface_field(field: ArrayLike) -> jax.Array:
 def canonicalize_time_last_level_field(field: ArrayLike) -> jax.Array:
     """Convert ``(nLon, nLat, nLev, nTime)`` to ``(nTime, nLev, nLat, nLon)``."""
 
-    field_array = jnp.asarray(field)
+    field_array = as_jax_real_array(field)
     if field_array.ndim != 4:
         raise ValueError(
             "Expected a time-last level field with shape " "(nLon, nLat, nLev, nTime)."

@@ -2,9 +2,9 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import jax
-import jax.numpy as jnp
 from jax.typing import ArrayLike
 
+from vercor.dtypes import as_jax_real_array
 from vercor.components.external.camulator_state import (
     load_camulator_forcing_context,
     parse_datetime_from_config,
@@ -29,7 +29,7 @@ def _prepare_camulator_land_surface_temperature(
     land_surface_temperature: ArrayLike,
 ) -> jax.Array:
     """Normalize CAMulator land temperature fields for JAX-backed runtime storage."""
-    return jnp.asarray(land_surface_temperature)
+    return as_jax_real_array(land_surface_temperature)
 
 
 class CAMulatorLand(HostRuntimeComponent):

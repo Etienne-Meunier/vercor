@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
-from vercor.dtypes import dtype_policy
+from vercor.dtypes import as_jax_real_array, dtype_policy
 from vercor.exceptions import CouplerError, RegridderError
 from vercor.components.base import Component
 from vercor.grid import RectilinearGrid
@@ -58,9 +58,9 @@ def compute_ocn_lnd_masks_on_atm_grid(
 ) -> tuple[RuntimeArray, RuntimeArray, RuntimeArray]:
     """Compute ocean and land fractional and binary masks on the atmosphere grid."""
 
-    ocean_bmask = jnp.asarray(ocean_binary_mask)
+    ocean_bmask = as_jax_real_array(ocean_binary_mask)
     ocn_fmask_on_atm_grid = jnp.clip(
-        jnp.asarray(regridder(ocean_bmask)),
+        as_jax_real_array(regridder(ocean_bmask)),
         0.0,
         1.0,
     )
@@ -75,7 +75,9 @@ def check_total_lnd_ocn_mask_sum(
 ) -> None:
     """Validate that land and ocean fractional masks sum to one."""
 
-    fmask_sum = jnp.asarray(lnd_fmask_on_atm_grid) + jnp.asarray(ocn_fmask_on_atm_grid)
+    fmask_sum = as_jax_real_array(lnd_fmask_on_atm_grid) + as_jax_real_array(
+        ocn_fmask_on_atm_grid
+    )
     min_fsum = float(jnp.min(fmask_sum))
     max_fsum = float(jnp.max(fmask_sum))
     if not bool(
@@ -142,7 +144,7 @@ def create_lnd_mask_from_ocn(
         atmosphere_grid,
     )
 
-    ocean_binary_mask = jnp.asarray(ocn_grid.binary_mask)
+    ocean_binary_mask = as_jax_real_array(ocn_grid.binary_mask)
 
     (
         ocn_fmask_on_atm_grid,

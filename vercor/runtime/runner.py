@@ -5,7 +5,6 @@ import logging
 from typing import Any, cast
 
 import jax
-import jax.numpy as jnp
 from jax.errors import JaxRuntimeError
 
 from vercor.clock import Clock
@@ -18,6 +17,7 @@ from vercor.jax_logging import (
     emit_host_log,
     logger_enabled_for,
 )
+from vercor.dtypes import as_jax_index_array
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.driver import (
     RuntimeDispatchContext,
@@ -173,7 +173,7 @@ def run_scanned_runtime(
     """Run the unified runtime path under ``jax.lax.scan`` and return state."""
 
     step_infos = build_runtime_step_info(clock, settings)
-    step_indices = jnp.arange(clock.steps)
+    step_indices = as_jax_index_array(range(clock.steps))
     step_progress_messages = tuple(
         runtime_step_progress_message(n, time, dt) for n, time, dt in clock.iter()
     )

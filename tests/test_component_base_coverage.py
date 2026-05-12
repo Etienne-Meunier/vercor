@@ -575,6 +575,23 @@ def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> Non
 
 
 @pytest.mark.fast_always
+def test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled() -> (
+    None
+):
+    grid = make_test_grid(name="seeded-policy")
+    component = base_module.DataComponent.from_fields(
+        name="DATA",
+        grid=grid,
+        fields={
+            "temperature": jnp.asarray([[280.0, 281.0], [282.0, 283.0]]),
+        },
+        settings=VercorSettings(enable_x64=False),
+    )
+
+    assert component.data["temperature"].dtype == jnp.float32
+
+
+@pytest.mark.fast_always
 def test_required_fields_declaration_api_is_removed() -> None:
     grid = make_test_grid(name="removed-required-fields")
 

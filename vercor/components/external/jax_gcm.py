@@ -36,6 +36,7 @@ from vercor.components.external.jax_gcm_tools import (
 )
 from vercor.dtypes import (
     as_jax_real_array,
+    jax_ones,
     jax_real_dtype,
     jax_zeros,
 )
@@ -61,8 +62,10 @@ except ImportError:
     )
 
 
-def asfloat(tree: Any) -> Any:
-    return jax.tree_util.tree_map(lambda arr: arr.astype(jax_real_dtype()), tree)
+def asfloat(tree: Any, policy: Any = None) -> Any:
+    """Cast all leaves in a tree to VerCOR's configured real dtype."""
+
+    return jax.tree_util.tree_map(lambda arr: arr.astype(jax_real_dtype(policy)), tree)
 
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
@@ -302,10 +305,10 @@ class JAXGCM(Component):
         hgrid = self.model.coords.horizontal
         grid = RectilinearGrid(
             name=name,
-            longitude=jnp.rad2deg(jnp.asarray(hgrid.longitudes)),
-            latitude=jnp.rad2deg(jnp.asarray(hgrid.latitudes)),
-            binary_mask=jnp.ones_like(
-                jnp.asarray(self.model.terrain.fmask)
+            longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
+            latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
+            binary_mask=jax_ones(
+                self.model.terrain.fmask.shape
             ).transpose(),  # This is used for interpolation, which all points are valid
         )
 
@@ -337,6 +340,7 @@ class JAXGCM(Component):
         def step_function(
             state: JCMState, forcing: ForcingData
         ) -> tuple[JCMState, Predictions]:
+            precision_policy = getattr(self, "settings", None)
             new_atm_modal_state, predictions = self.model.run_from_state(
                 initial_state=state.metadata,
                 save_interval=self.save_interval / timedelta(days=1),
@@ -348,8 +352,14 @@ class JAXGCM(Component):
             # However, this action will be done by jcm in the new jcm PR.
             return (
                 JCMState(
-                    prog=asfloat(mean_leaf(predictions.dynamics, axis=0)),
-                    phydata=asfloat(mean_leaf(predictions.physics, axis=0)),
+                    prog=asfloat(
+                        mean_leaf(predictions.dynamics, axis=0),
+                        precision_policy,
+                    ),
+                    phydata=asfloat(
+                        mean_leaf(predictions.physics, axis=0),
+                        precision_policy,
+                    ),
                     metadata=new_atm_modal_state,
                 ),
                 predictions,
@@ -459,7 +469,7 @@ class JAXGCM(Component):
         sigma_levels = jnp.asarray(self.sigma_levels)
         data.setdefault(
             "pressure",
-            jax_zeros((sigma_levels.shape[0], *self.grid.shape)),
+            jax_zeros((sigma_levels.shape[0], *self.grid.shape), self.settings),
         )
         _ = incoming, outgoing, contract
 

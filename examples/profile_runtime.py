@@ -7,13 +7,13 @@ import time
 from typing import Sequence
 
 import jax
-import jax.numpy as jnp
 
 from vercor import Clock, Coupler, Exchange, RunSequence
 from vercor.components.slab.atmosphere import Atmosphere
 from vercor.components.slab.land import Land
 from vercor.components.slab.ocean import Ocean
 from vercor.components.slab.seaice import SeaIce
+from vercor.dtypes import jax_ones
 from vercor.regridders import bilinear, conservative, make_rectilinear_grid
 from vercor.runtime import RuntimeCouplerState
 
@@ -88,7 +88,7 @@ def build_slab_coupler(
         -90.0,
         90.0,
     )
-    ocn_mask = jnp.ones((grid_ny, grid_nx)).at[:2, :].set(0.0)
+    ocn_mask = jax_ones((grid_ny, grid_nx)).at[:2, :].set(0.0)
     ocn_grid = make_rectilinear_grid(
         "profile-ocn-grid",
         grid_nx,

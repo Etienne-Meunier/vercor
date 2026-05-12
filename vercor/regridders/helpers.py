@@ -73,7 +73,7 @@ def centers_to_edges(centers: Any, grid_type: str) -> Any:
     edge_end = centers[-1] + d_end
 
     edges = jnp.concatenate(
-        (jnp.asarray([edge_start]), inner_edges, jnp.asarray([edge_end]))
+        (jnp.stack((edge_start,)), inner_edges, jnp.stack((edge_end,)))
     )
 
     if grid_type == "lat":
@@ -119,7 +119,7 @@ def compute_land_mask(ocean_fractional_mask: Any) -> Any:
     fminval = 0.001
     fmaxval = 1.0
 
-    land_binary_mask = 1.0 - jnp.asarray(ocean_fractional_mask)
+    land_binary_mask = 1.0 - as_jax_real_array(ocean_fractional_mask)
     land_binary_mask = jnp.where(land_binary_mask > fmaxval, 1.0, land_binary_mask)
     land_binary_mask = jnp.where(land_binary_mask < fminval, 0.0, land_binary_mask)
 

@@ -4,8 +4,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-import jax.numpy as jnp
-
 from vercor import (
     Component,
     ComponentStepContext,
@@ -16,6 +14,7 @@ from vercor import (
     differentiable_component,
     host_component,
 )
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 
 
@@ -24,8 +23,8 @@ def make_example_grid() -> RectilinearGrid:
 
     return RectilinearGrid(
         name="example-grid",
-        longitude=jnp.asarray([0.0, 90.0]),
-        latitude=jnp.asarray([-30.0, 30.0]),
+        longitude=as_jax_real_array([0.0, 90.0]),
+        latitude=as_jax_real_array([-30.0, 30.0]),
     )
 
 
@@ -78,7 +77,7 @@ class ToyHostModel:
 
     def advance(self, temperature: Any, dt_seconds: float) -> Any:
         self.offset += 0.001 * dt_seconds
-        return jnp.asarray(temperature) + self.offset
+        return as_jax_real_array(temperature) + self.offset
 
 
 def make_host_model(grid: RectilinearGrid) -> HostRuntimeComponent:
