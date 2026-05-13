@@ -16,6 +16,12 @@ class ComponentError(CouplerError):
     pass
 
 
+class GridError(CouplerError):
+    """Base class for exceptions related to grid operations."""
+
+    pass
+
+
 class RegridderError(CouplerError):
     """Base class for exceptions during regridding operations."""
 

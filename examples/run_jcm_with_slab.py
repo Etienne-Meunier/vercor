@@ -1,14 +1,16 @@
 from datetime import datetime
 
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import numpy as np
 
-from vercor import Clock, Coupler, Exchange
-from vercor.components import JAXGCM, Land, Ocean
-from vercor.coupler import RunSequence
+from vercor import Clock, Coupler, Exchange, RunSequence
+from vercor.components.external.jax_gcm import JAXGCM
+from vercor.components.slab.land import Land
+from vercor.components.slab.ocean import Ocean
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
 from vercor.regridders import bilinear, conservative
-from vercor.tools import (
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
@@ -24,21 +26,21 @@ if __name__ == "__main__":
     # Build components
     atm = JAXGCM(coords, terrain, forcing_data=forcing, jitted=True)
 
-    ocn_binary_mask = np.where(terrain.fmask < 1, 1, 0).transpose()
+    ocn_binary_mask = jnp.where(as_jax_real_array(terrain.fmask) < 1, 1, 0).T
     lnd_binary_mask = 1 - ocn_binary_mask
 
     hgrid = atm.model.coords.horizontal
     lnd_grid = RectilinearGrid(
         name="LND",
-        longitude=np.rad2deg(hgrid.longitudes),
-        latitude=np.rad2deg(hgrid.latitudes),
+        longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
+        latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=lnd_binary_mask,
     )
 
     ocn_grid = RectilinearGrid(
         name="OCN",
-        longitude=np.rad2deg(hgrid.longitudes),
-        latitude=np.rad2deg(hgrid.latitudes),
+        longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
+        latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=ocn_binary_mask,
     )
 
@@ -47,13 +49,13 @@ if __name__ == "__main__":
 
     if atm.grid.binary_mask is not None:
         print("Total number of grids = ", atm.grid.binary_mask.size)
-        print("Sum of atm.grid.binary_mask = ", np.sum(atm.grid.binary_mask))
+        print("Sum of atm.grid.binary_mask = ", float(jnp.sum(atm.grid.binary_mask)))
 
     if lnd.grid.binary_mask is not None:
-        print("Sum of lnd.grid.binary_mask = ", np.sum(lnd.grid.binary_mask))
+        print("Sum of lnd.grid.binary_mask = ", float(jnp.sum(lnd.grid.binary_mask)))
 
     if ocn.grid.binary_mask is not None:
-        print("Sum of ocn.grid.binary_mask = ", np.sum(ocn.grid.binary_mask))
+        print("Sum of ocn.grid.binary_mask = ", float(jnp.sum(ocn.grid.binary_mask)))
 
     # Clock and sequence
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
@@ -113,12 +115,16 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(
-        components={"ATM": atm, "OCN": ocn, "LND": lnd},
+        components={
+            "ATM": cpl.runtime_component_view(final_state, "ATM"),
+            "OCN": cpl.runtime_component_view(final_state, "OCN"),
+            "LND": cpl.runtime_component_view(final_state, "LND"),
+        },
         fields=[
             ("sea_surface_temperature", "sst"),
             ("temperature", "temp"),
@@ -132,8 +138,20 @@ if __name__ == "__main__":
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
-            ("ATM", atm, "sea_surface_temperature", "u_velocity", "v_velocity"),
-            ("OCN", ocn, "sea_surface_temperature", "u_velocity", "v_velocity"),
+            (
+                "ATM",
+                cpl.runtime_component_view(final_state, "ATM"),
+                "sea_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
+            (
+                "OCN",
+                cpl.runtime_component_view(final_state, "OCN"),
+                "sea_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
         ],
         figsize=(15, 10),
         quiver_scale=100,

@@ -1,13 +1,13 @@
 from datetime import datetime
 
-import numpy as np
-
-from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Ocean, JCMLand, JAXGCM
+from examples.jax_array_helpers import transposed_host_array
+from vercor import Clock, Coupler, Exchange, RunSequence
+from vercor.components.data.era5_ocean import ERA5Ocean
+from vercor.components.data.jcm_land import JCMLand
+from vercor.components.external.jax_gcm import JAXGCM
 from vercor.components.external.jax_gcm_tools import (
     generate_jcm_coords_forcing_topography_files,
 )
-from vercor.coupler import RunSequence
 from vercor.regridders import bilinear
 
 if __name__ == "__main__":
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     lnd = JCMLand(coords, forcing, ocn.grid)
 
     # Swap mask in JAXGCM with ocean/land masks from ocean model
-    terrain.fmask = np.array(lnd.grid.binary_mask).T  # type: ignore
+    terrain.fmask = transposed_host_array(lnd.grid.binary_mask)  # type: ignore
 
     # Build components
     atm = JAXGCM(
@@ -97,5 +97,5 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)

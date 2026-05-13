@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere, ERA5Land, VerosGCM
-from vercor.coupler import RunSequence
+from vercor import Clock, Coupler, Exchange, RunSequence
+from vercor.components.data.era5_atmosphere import ERA5Atmosphere
+from vercor.components.data.era5_land import ERA5Land
+from vercor.components.external.veros_gcm import VerosGCM
 from vercor.regridders import bilinear
 
 if __name__ == "__main__":
@@ -81,5 +82,5 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)

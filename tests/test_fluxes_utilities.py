@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import jax
+import jax.numpy as jnp
 import numpy as np
 
+from tests.assertions import assert_allclose_compact
 from vercor.fluxes.bulk_formula_cesm import (
-    new_flux_atmOcn,
-    old_flux_atmOcn,
+    compute_ocean_surface_fluxes,
     shr_flux_atmIce,
 )
 from vercor.fluxes.utilities import (
@@ -37,6 +41,14 @@ def _ocean_state(shape: tuple[int, int] = (3, 4)) -> dict[str, np.ndarray]:
         "vs": np.zeros(shape),
         "ts": np.full(shape, 300.0),
     }
+
+
+def _finite_difference_scalar_grad(
+    fn: Callable[[float], jax.Array], x: float, eps: float = 1e-3
+) -> float:
+    upper = float(fn(x + eps))
+    lower = float(fn(x - eps))
+    return (upper - lower) / (2.0 * eps)
 
 
 def test_qsat_is_positive_and_increases_with_temperature() -> None:
@@ -84,7 +96,7 @@ def test_compute_pressure_levels_matches_hybrid_definition() -> None:
 
     assert ph.shape == (2, 2, 3)
     for k in range(3):
-        assert np.allclose(ph[:, :, k], hya[k] + hyb[k] * sp)
+        assert_allclose_compact(ph[:, :, k], hya[k] + hyb[k] * sp)
 
 
 def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -> None:
@@ -105,6 +117,49 @@ def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -
     assert np.all(np.diff(alt, axis=2) > 0.0)
 
 
+def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None:
+    settings = VercorSettings()
+    ph = jnp.asarray([0.0, 1_000.0, 5_000.0, 100_000.0])[None, None, :]
+    t = jnp.full((1, 1, 3), 260.0)
+    q = jnp.zeros((1, 1, 3))
+
+    alt = get_altitudes_hybrid_sigma_levels(settings=settings, t=t, q=q, ph=ph)
+
+    top_down_dlog = jnp.asarray(
+        [
+            jnp.log(ph[0, 0, 1] / 0.1),
+            jnp.log(ph[0, 0, 2] / ph[0, 0, 1]),
+            jnp.log(ph[0, 0, 3] / ph[0, 0, 2]),
+        ]
+    )
+    top_down_alpha = jnp.asarray(
+        [
+            jnp.log(2.0),
+            1.0 - ph[0, 0, 1] / (ph[0, 0, 2] - ph[0, 0, 1]) * top_down_dlog[1],
+            1.0 - ph[0, 0, 2] / (ph[0, 0, 3] - ph[0, 0, 2]) * top_down_dlog[2],
+        ]
+    )
+    moist_temperature_rd = settings.rdair * 260.0
+    expected_bottom_up_geopotential = jnp.asarray(
+        [
+            moist_temperature_rd * top_down_alpha[2],
+            moist_temperature_rd * (top_down_dlog[2] + top_down_alpha[1]),
+            moist_temperature_rd
+            * (top_down_dlog[2] + top_down_dlog[1] + top_down_alpha[0]),
+        ]
+    )
+    geopotential_height = expected_bottom_up_geopotential / settings.gravity
+    expected_alt = (
+        settings.earth_radius
+        * geopotential_height
+        / (settings.earth_radius - geopotential_height)
+    )
+
+    assert alt.shape == (1, 1, 3)
+    assert np.all(np.isfinite(np.asarray(alt)))
+    assert_allclose_compact(alt[0, 0, :], expected_alt, rtol=1e-6, atol=1e-6)
+
+
 def test_density_and_potential_temperature_match_closed_form() -> None:
     settings = VercorSettings()
     pf = np.array([[100_000.0, 90_000.0]])
@@ -116,15 +171,77 @@ def test_density_and_potential_temperature_match_closed_form() -> None:
     expected_rho = settings.mwdair / settings.rgas * pf / t
     expected_theta = t * (settings.p0 / pf) ** settings.cappa
 
-    assert np.allclose(rho, expected_rho)
-    assert np.allclose(theta, expected_theta)
+    assert_allclose_compact(rho, expected_rho)
+    assert_allclose_compact(theta, expected_theta)
 
 
-def test_new_flux_atmOcn_produces_finite_and_physically_consistent_signs() -> None:
+def test_flux_utility_kernels_support_jit() -> None:
+    settings = VercorSettings()
+    tk = jnp.asarray([260.0, 280.0, 300.0])
+    ps = jnp.full(3, 101_325.0)
+    sp = jnp.asarray([[100_000.0, 95_000.0], [101_000.0, 99_000.0]])
+    hya = jnp.asarray([100.0, 1_000.0, 5_000.0])
+    hyb = jnp.asarray([0.0, 0.2, 0.8])
+    t = jnp.full((2, 2, 4), 260.0)
+    q = jnp.full((2, 2, 4), 0.004)
+    ph = jax.jit(compute_pressure_levels)(
+        sp,
+        jnp.asarray([100.0, 1_000.0, 5_000.0, 10_000.0, 20_000.0]),
+        jnp.asarray([0.0, 0.1, 0.3, 0.5, 0.8]),
+    )
+
+    assert_allclose_compact(jax.jit(qsat)(tk), qsat(tk))
+    assert_allclose_compact(jax.jit(qsat_august_eqn)(ps, tk), qsat_august_eqn(ps, tk))
+    assert_allclose_compact(
+        jax.jit(compute_pressure_levels)(sp, hya, hyb),
+        compute_pressure_levels(sp, hya, hyb),
+    )
+    assert_allclose_compact(
+        jax.jit(
+            lambda temp, humid, pressure: get_altitudes_hybrid_sigma_levels(
+                settings, temp, humid, pressure
+            )
+        )(t, q, ph),
+        get_altitudes_hybrid_sigma_levels(settings, t, q, ph),
+    )
+    assert_allclose_compact(
+        jax.jit(cdn)(jnp.asarray([2.0, 8.0, 15.0])), cdn(jnp.asarray([2.0, 8.0, 15.0]))
+    )
+    assert_allclose_compact(
+        jax.jit(psimhu)(jnp.asarray([1.0, 2.0, 4.0])),
+        psimhu(jnp.asarray([1.0, 2.0, 4.0])),
+    )
+    assert_allclose_compact(
+        jax.jit(psixhu)(jnp.asarray([1.0, 2.0, 4.0])),
+        psixhu(jnp.asarray([1.0, 2.0, 4.0])),
+    )
+    assert_allclose_compact(
+        jax.jit(lambda pf, temp: compute_air_density(settings, pf, temp))(
+            jnp.asarray([[100_000.0, 90_000.0]]),
+            jnp.asarray([[300.0, 280.0]]),
+        ),
+        compute_air_density(
+            settings, np.array([[100_000.0, 90_000.0]]), np.array([[300.0, 280.0]])
+        ),
+    )
+    assert_allclose_compact(
+        jax.jit(lambda temp, pf: compute_potential_temperature(settings, temp, pf))(
+            jnp.asarray([[300.0, 280.0]]),
+            jnp.asarray([[100_000.0, 90_000.0]]),
+        ),
+        compute_potential_temperature(
+            settings, np.array([[300.0, 280.0]]), np.array([[100_000.0, 90_000.0]])
+        ),
+    )
+
+
+def test_compute_ocean_surface_fluxes_produces_finite_and_physically_consistent_signs() -> (
+    None
+):
     settings = VercorSettings()
     state = _ocean_state()
 
-    sen, lat, lwup, evap, taux, tauy, *_ = new_flux_atmOcn(
+    sen, lat, lwup, evap, taux, tauy, *_ = compute_ocean_surface_fluxes(
         settings,
         state["mask"],
         state["zbot"],
@@ -152,25 +269,11 @@ def test_new_flux_atmOcn_produces_finite_and_physically_consistent_signs() -> No
     assert np.mean(tauy) > 0.0
 
 
-def test_old_and_new_flux_atmOcn_agree_for_reference_state() -> None:
+def test_compute_ocean_surface_fluxes_matches_reference_state() -> None:
     settings = VercorSettings()
     state = _ocean_state()
 
-    old_out = old_flux_atmOcn(
-        settings,
-        state["mask"],
-        state["rbot"],
-        state["zbot"],
-        state["ubot"],
-        state["vbot"],
-        state["qbot"],
-        state["tbot"],
-        state["thbot"],
-        state["us"],
-        state["vs"],
-        state["ts"],
-    )
-    new_out = new_flux_atmOcn(
+    out = compute_ocean_surface_fluxes(
         settings,
         state["mask"],
         state["zbot"],
@@ -184,17 +287,38 @@ def test_old_and_new_flux_atmOcn_agree_for_reference_state() -> None:
         state["vs"],
         state["ts"],
     )
+    expected_values = np.asarray(
+        [
+            -11.501394048985748,
+            -332.8244500213005,
+            -459.27,
+            -0.0001330765493887647,
+            0.08261268009451078,
+            0.022030048025202875,
+            299.069981902988,
+            0.01106368351883935,
+            65.17383383111927,
+            0.2669262983914628,
+            -0.03514565688237375,
+            -0.00041545971737861595,
+            -55.307247258870916,
+        ]
+    )
 
-    for old_arr, new_arr in zip(old_out, new_out):
-        assert np.allclose(old_arr, new_arr)
+    assert_allclose_compact(
+        np.asarray([np.asarray(arr)[0, 0] for arr in out]),
+        expected_values,
+    )
 
 
-def test_new_flux_atmOcn_respects_mask_for_surface_exchange_outputs() -> None:
+def test_compute_ocean_surface_fluxes_respects_mask_for_surface_exchange_outputs() -> (
+    None
+):
     settings = VercorSettings()
     state = _ocean_state(shape=(2, 3))
     state["mask"] = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
 
-    out = new_flux_atmOcn(
+    out = compute_ocean_surface_fluxes(
         settings,
         state["mask"],
         state["zbot"],
@@ -214,6 +338,89 @@ def test_new_flux_atmOcn_respects_mask_for_surface_exchange_outputs() -> None:
         assert np.all(arr[state["mask"] == 0.0] == 0.0)
 
 
+def test_flux_kernels_support_jit_and_gradients() -> None:
+    settings = VercorSettings()
+    state = _ocean_state(shape=(1, 1))
+    mask = state["mask"]
+    zbot = state["zbot"]
+    ubot = state["ubot"]
+    vbot = state["vbot"]
+    thbot = state["thbot"]
+    qbot = state["qbot"]
+    rbot = state["rbot"]
+    tbot = state["tbot"]
+    us = state["us"]
+    vs = state["vs"]
+
+    jitted_ocean_flux = jax.jit(
+        lambda ts: compute_ocean_surface_fluxes(
+            settings,
+            mask,
+            zbot,
+            ubot,
+            vbot,
+            thbot,
+            qbot,
+            rbot,
+            tbot,
+            us,
+            vs,
+            ts,
+        )
+    )
+    jitted_ice_flux = jax.jit(
+        lambda ts: shr_flux_atmIce(
+            settings,
+            mask,
+            zbot,
+            ubot,
+            vbot,
+            thbot,
+            qbot,
+            rbot,
+            tbot,
+            ts,
+        )
+    )
+
+    ts = jnp.asarray([[300.0]])
+    eager_ocean = compute_ocean_surface_fluxes(
+        settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, us, vs, ts
+    )
+    eager_ice = shr_flux_atmIce(
+        settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, ts
+    )
+
+    for eager_arr, jitted_arr in zip(eager_ocean, jitted_ocean_flux(ts)):
+        assert_allclose_compact(jitted_arr, eager_arr)
+    for eager_arr, jitted_arr in zip(eager_ice, jitted_ice_flux(ts)):
+        assert_allclose_compact(jitted_arr, eager_arr)
+
+    def scalar_sensible_heat(ts_scalar: float) -> jax.Array:
+        ts_array = jnp.full((1, 1), ts_scalar)
+        return jnp.sum(
+            compute_ocean_surface_fluxes(
+                settings,
+                mask,
+                zbot,
+                ubot,
+                vbot,
+                thbot,
+                qbot,
+                rbot,
+                tbot,
+                us,
+                vs,
+                ts_array,
+            )[0]
+        )
+
+    grad_value = float(jax.grad(scalar_sensible_heat)(300.0))
+    finite_diff = _finite_difference_scalar_grad(scalar_sensible_heat, 300.0)
+    assert np.isfinite(grad_value)
+    assert np.isclose(grad_value, finite_diff, rtol=2e-2, atol=1e-3)
+
+
 def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
     settings = VercorSettings()
     shape = (2, 3)
@@ -229,7 +436,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
     qbot = np.full(shape, 0.006)
     rbot = np.full(shape, 1.25)
 
-    base = new_flux_atmOcn(
+    base = compute_ocean_surface_fluxes(
         settings,
         mask,
         zbot,
@@ -244,7 +451,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
         ts,
         use_coldair_outbreak_mod=False,
     )
-    mod = new_flux_atmOcn(
+    mod = compute_ocean_surface_fluxes(
         settings,
         mask,
         zbot,

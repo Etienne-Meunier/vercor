@@ -1,6 +1,10 @@
+from typing import Any
+
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from tests.assertions import assert_array_equal_compact
 from vercor.grid import RectilinearGrid
 from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
@@ -8,9 +12,9 @@ from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpo
 
 def _make_grid(
     name: str,
-    lon: np.ndarray,
-    lat: np.ndarray,
-    mask: np.ndarray | None = None,
+    lon: Any,
+    lat: Any,
+    mask: Any | None = None,
 ) -> RectilinearGrid:
     return RectilinearGrid(name=name, longitude=lon, latitude=lat, binary_mask=mask)
 
@@ -57,8 +61,8 @@ def test_regridder_constructor_propagates_interpolator_options() -> None:
         assert interp.idw_k == 3
         assert np.isclose(interp.idw_eps, 1e-6)
         assert np.isclose(interp.fill_value, -99.0)
-        np.testing.assert_array_equal(interp.src_mask, src_mask)
-        np.testing.assert_array_equal(interp.tgt_mask, dst_mask)
+        assert_array_equal_compact(interp.src_mask, src_mask)
+        assert_array_equal_compact(interp.tgt_mask, dst_mask)
 
 
 def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> None:
@@ -72,7 +76,20 @@ def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> Non
     src = np.arange(9.0).reshape(3, 3)
     out = regridder(src)
 
-    assert isinstance(out, np.ndarray)
+    assert out.shape == dst_grid.shape
+
+
+def test_regridder_scalar_accepts_jax_array_input() -> None:
+    src_grid = _make_grid("src", np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
+    dst_grid = _make_grid("dst", np.array([0.0, 2.0]), np.array([0.0, 2.0]))
+
+    regridder = BilinearRectilinearRegridder(
+        src_grid, dst_grid, periodic_longitude=False
+    )
+
+    src = jnp.arange(9.0).reshape(3, 3)
+    out = regridder(src)
+
     assert out.shape == dst_grid.shape
 
 
@@ -127,6 +144,20 @@ def test_regridder_identical_grid_scalar_short_circuit_returns_input_object() ->
     assert out is src
 
 
+def test_regridder_identical_grid_scalar_short_circuit_with_jax_backed_coords() -> None:
+    lon = jnp.asarray([0.0, 1.0, 2.0])
+    lat = jnp.asarray([0.0, 1.0])
+    src_grid = _make_grid("src", lon, lat)
+    dst_grid = _make_grid("dst", lon, lat)
+
+    regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
+    src = jnp.arange(6.0).reshape(2, 3)
+
+    out = regridder(src)
+
+    assert out is src
+
+
 def test_regridder_identical_grid_vector_short_circuit_returns_input_objects() -> None:
     lon = np.array([0.0, 1.0, 2.0])
     lat = np.array([0.0, 1.0])
@@ -165,3 +196,36 @@ def test_bilinear_factory_returns_bilinear_rectilinear_regridder() -> None:
     assert isinstance(regridder, BilinearRectilinearRegridder)
     assert regridder.source_grid is src_grid
     assert regridder.destination_grid is dst_grid
+
+
+def test_bilinear_factory_forwards_interpolator_options() -> None:
+    src_mask = np.array([[True, False, True], [True, True, False]])
+    dst_mask = np.array([[True, False], [False, True], [True, True]])
+    src_grid = _make_grid(
+        "src", np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0]), mask=src_mask
+    )
+    dst_grid = _make_grid(
+        "dst", np.array([0.0, 2.0]), np.array([0.0, 1.0, 2.0]), mask=dst_mask
+    )
+
+    regridder = bilinear(
+        src_grid,
+        dst_grid,
+        periodic_longitude=False,
+        nan_renorm=False,
+        extrapolation_mode="nearest",
+        idw_k=3,
+        idw_eps=1e-6,
+        fill_value=-99.0,
+    )
+
+    interp = regridder.interpolator
+    assert isinstance(interp, BilinearRectilinearInterpolator)
+    assert interp.periodic is False
+    assert interp.nan_renorm is False
+    assert interp.extrapolation_mode == "nearest"
+    assert interp.idw_k == 3
+    assert np.isclose(interp.idw_eps, 1e-6)
+    assert np.isclose(interp.fill_value, -99.0)
+    assert_array_equal_compact(interp.src_mask, src_mask)
+    assert_array_equal_compact(interp.tgt_mask, dst_mask)

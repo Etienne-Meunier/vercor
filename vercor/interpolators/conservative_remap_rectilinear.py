@@ -1,24 +1,56 @@
-from typing import Optional
+from __future__ import annotations
 
-import numpy as np
-from numpy.typing import NDArray
-from scipy import sparse
-import scipy
+from typing import Any, Optional
+
+import jax
+import jax.numpy as jnp
+
+from vercor.dtypes import (
+    as_jax_real_array,
+    jax_index_dtype,
+    jax_real_dtype,
+    jax_zeros,
+)
+from vercor.pytree import PyTreeNodeMixin
+from vercor.types import RuntimeArray
 
 
-class ConservativeRectilinearRemapper:
+@jax.tree_util.register_pytree_node_class
+class ConservativeRectilinearRemapper(PyTreeNodeMixin):
     """
     First-order locally conservative area-average remapping.
     Handles arbitrary rectilinear grids, periodicity, and conservation.
     """
 
+    pytree_children = (
+        "src_lon_b",
+        "src_lat_b",
+        "dst_lon_b",
+        "dst_lat_b",
+        "dst_areas",
+        "dst_indices",
+        "src_indices",
+        "overlap_weights",
+        "fracarea_norm",
+    )
+    pytree_aux_data = (
+        "radius",
+        "normalize",
+        "_s_lat_flip",
+        "_d_lat_flip",
+        "n_src_lon",
+        "n_src_lat",
+        "n_dst_lon",
+        "n_dst_lat",
+    )
+
     def __init__(
         self,
-        src_lon_edges: NDArray,
-        src_lat_edges: NDArray,
-        dst_lon_edges: NDArray,
-        dst_lat_edges: NDArray,
-        src_mask: Optional[NDArray] = None,
+        src_lon_edges: RuntimeArray,
+        src_lat_edges: RuntimeArray,
+        dst_lon_edges: RuntimeArray,
+        dst_lat_edges: RuntimeArray,
+        src_mask: Optional[RuntimeArray] = None,
         normalize: str = "conservation",
         radius: float = 6371.0,
     ):
@@ -37,212 +69,217 @@ class ConservativeRectilinearRemapper:
             radius (float): Radius of the sphere (km).
         """
 
-        self.radius = radius
+        if normalize not in {"conservation", "fracarea"}:
+            raise ValueError(
+                "normalize must be either 'conservation' or 'fracarea', "
+                f"got {normalize!r}"
+            )
+
+        self.radius = float(radius)
         self.normalize = normalize
+        self._normalize_fracarea = normalize == "fracarea"
 
-        # 1. Standardize and Store Bounds
-        self.src_lon_b = np.asarray(src_lon_edges, dtype=np.float64)
+        # 1. Standardize and store bounds
+        self.src_lon_b = as_jax_real_array(src_lon_edges)
         self.src_lat_b, self._s_lat_flip = self._standardize_lat(src_lat_edges)
-
-        self.dst_lon_b = np.asarray(dst_lon_edges, dtype=np.float64)
+        self.dst_lon_b = as_jax_real_array(dst_lon_edges)
         self.dst_lat_b, self._d_lat_flip = self._standardize_lat(dst_lat_edges)
 
-        self.n_src_lon = len(self.src_lon_b) - 1
-        self.n_src_lat = len(self.src_lat_b) - 1
-        self.n_dst_lon = len(self.dst_lon_b) - 1
-        self.n_dst_lat = len(self.dst_lat_b) - 1
+        self.n_src_lon = self.src_lon_b.shape[0] - 1
+        self.n_src_lat = self.src_lat_b.shape[0] - 1
+        self.n_dst_lon = self.dst_lon_b.shape[0] - 1
+        self.n_dst_lat = self.dst_lat_b.shape[0] - 1
+        self._n_src_cells = self.n_src_lat * self.n_src_lon
+        self._n_dst_cells = self.n_dst_lat * self.n_dst_lon
 
-        # 2. Compute Overlaps
-        W_lon = self._compute_lon_overlaps(self.src_lon_b, self.dst_lon_b)
-
-        # Latitude Overlaps (Sin space)
-        s_sin_lat = np.sin(np.deg2rad(self.src_lat_b))
-        d_sin_lat = np.sin(np.deg2rad(self.dst_lat_b))
-
-        # Fix potential float noise at poles
-        s_sin_lat = np.round(s_sin_lat, 14)
-        d_sin_lat = np.round(d_sin_lat, 14)
-
-        W_lat = self._compute_interval_overlaps(s_sin_lat, d_sin_lat)
-
-        # 3. Combine Weights
-        self.weights: scipy.sparse._csr.csr_matrix = sparse.kron(
-            W_lat, W_lon, format="csr"
+        # 2. Compute 1D overlaps
+        lon_dst_idx, lon_src_idx, lon_overlap = self._compute_lon_overlaps(
+            self.src_lon_b, self.dst_lon_b
         )
 
-        # 4. Masking
+        src_sin_lat = jnp.round(jnp.sin(jnp.deg2rad(self.src_lat_b)), 14)
+        dst_sin_lat = jnp.round(jnp.sin(jnp.deg2rad(self.dst_lat_b)), 14)
+        lat_dst_idx, lat_src_idx, lat_overlap = self._compute_interval_overlaps(
+            src_sin_lat, dst_sin_lat
+        )
+
+        # 3. Combine 1D overlaps into 2D remapping triplets
+        dst_indices = (
+            lat_dst_idx[:, None] * self.n_dst_lon + lon_dst_idx[None, :]
+        ).reshape(-1)
+        src_indices = (
+            lat_src_idx[:, None] * self.n_src_lon + lon_src_idx[None, :]
+        ).reshape(-1)
+        overlap_weights = (
+            (self.radius**2) * (lat_overlap[:, None] * lon_overlap[None, :])
+        ).reshape(-1)
+
+        # 4. Apply source mask eagerly by dropping invalid source entries
         if src_mask is not None:
+            src_mask_array = jnp.asarray(src_mask, dtype=bool)
             if self._s_lat_flip:
-                src_mask = src_mask[::-1, :]
-            flat_mask = src_mask.flatten()
-            valid_diag = sparse.diags((~flat_mask).astype(int))
-            self.weights = self.weights @ valid_diag
-            self.weights.eliminate_zeros()
+                src_mask_array = src_mask_array[::-1, :]
+            valid_src = (~src_mask_array).reshape(-1)
+            keep_indices = jnp.nonzero(valid_src[src_indices])[0]
+            dst_indices = dst_indices[keep_indices]
+            src_indices = src_indices[keep_indices]
+            overlap_weights = overlap_weights[keep_indices]
 
-        # 5. Destination Areas
-        # Calculate geometric area based on provided bounds (even if they overhang)
-        dst_lon_diff = np.abs(np.diff(np.deg2rad(self.dst_lon_b)))
-        dst_lat_diff = np.abs(np.diff(d_sin_lat))
+        self.dst_indices = dst_indices.astype(jax_index_dtype())
+        self.src_indices = src_indices.astype(jax_index_dtype())
+        self.overlap_weights = overlap_weights.astype(jax_real_dtype())
 
-        self.dst_areas = (
-            self.radius**2 * np.outer(dst_lat_diff, dst_lon_diff)
-        ).flatten()
-        self.dst_areas[self.dst_areas <= 1e-15] = np.inf
+        dst_lon_diff = jnp.abs(jnp.diff(jnp.deg2rad(self.dst_lon_b)))
+        dst_lat_diff = jnp.abs(jnp.diff(dst_sin_lat))
+        dst_areas = (
+            (self.radius**2) * jnp.outer(dst_lat_diff, dst_lon_diff)
+        ).reshape(-1)
+        self.dst_areas = jnp.where(dst_areas <= 1e-15, jnp.inf, dst_areas)
+        self.fracarea_norm = self._segment_sum(
+            self.overlap_weights,
+            self.dst_indices,
+            self._n_dst_cells,
+        )
 
-        self.weights *= self.radius**2
+    def _pytree_post_unflatten(self) -> None:
+        """Restore derived static remapping state after PyTree unflattening."""
 
-    def _standardize_lat(self, bounds: NDArray) -> tuple[NDArray, bool]:
+        self._normalize_fracarea = self.normalize == "fracarea"
+        self._n_src_cells = self.n_src_lon * self.n_src_lat
+        self._n_dst_cells = self.n_dst_lon * self.n_dst_lat
+
+    @staticmethod
+    def _segment_sum(values: jax.Array, indices: jax.Array, size: int) -> jax.Array:
+        return jax_zeros((size,)).at[indices].add(values)
+
+    @staticmethod
+    def _standardize_lat(bounds: RuntimeArray) -> tuple[jax.Array, bool]:
         """Ensure latitude bounds are monotonically increasing."""
 
-        b = np.array(bounds, dtype=np.float64)
-        is_flipped = False
+        bounds_array = as_jax_real_array(bounds)
+        is_flipped = bool(bounds_array[0] > bounds_array[-1])
+        return (
+            jnp.flip(bounds_array) if is_flipped else bounds_array,
+            is_flipped,
+        )
 
-        if b[0] > b[-1]:
-            b = b[::-1]
-            is_flipped = True
+    @staticmethod
+    def _compute_dense_interval_overlaps(
+        src_edges: jax.Array, dst_edges: jax.Array
+    ) -> jax.Array:
+        """Return dense destination-by-source overlap lengths."""
 
-        return b, is_flipped
+        src_start = src_edges[:-1][None, :]
+        src_end = src_edges[1:][None, :]
+        dst_start = jnp.minimum(dst_edges[:-1], dst_edges[1:])[:, None]
+        dst_end = jnp.maximum(dst_edges[:-1], dst_edges[1:])[:, None]
+        overlaps = jnp.maximum(
+            0.0, jnp.minimum(dst_end, src_end) - jnp.maximum(dst_start, src_start)
+        )
+        valid_dst = jnp.abs(dst_end - dst_start) > 1e-15
+        return jnp.where(valid_dst, overlaps, 0.0)
+
+    @staticmethod
+    def _dense_overlaps_to_triplets(
+        overlaps: jax.Array,
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """Flatten a dense overlap matrix into sparse triplets."""
+
+        keep = overlaps > 1e-15
+        dst_indices, src_indices = jnp.nonzero(keep)
+        values = overlaps[dst_indices, src_indices]
+        return dst_indices, src_indices, values
 
     def _compute_interval_overlaps(
-        self, src_edges: NDArray, dst_edges: NDArray
-    ) -> sparse.csr_matrix:
-        """1D Overlap calculation (Latitude)."""
-        n_src = len(src_edges) - 1
-        n_dst = len(dst_edges) - 1
-        row_ind, col_ind, data = [], [], []
+        self, src_edges: jax.Array, dst_edges: jax.Array
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """1D overlap calculation (latitude in sin-space)."""
 
-        for i in range(n_dst):
-            d1, d2 = dst_edges[i], dst_edges[i + 1]
-            if abs(d2 - d1) < 1e-15:
-                continue
-
-            idx_start = np.searchsorted(src_edges, d1, side="left") - 1
-            idx_start = max(0, idx_start)
-            idx_end = np.searchsorted(src_edges, d2, side="right")
-            idx_end = min(n_src, idx_end)
-
-            for j in range(idx_start, idx_end):
-                s1, s2 = src_edges[j], src_edges[j + 1]
-                overlap = max(0.0, min(d2, s2) - max(d1, s1))
-                if overlap > 1e-15:
-                    row_ind.append(i)
-                    col_ind.append(j)
-                    data.append(overlap)
-
-        return sparse.csr_matrix((data, (row_ind, col_ind)), shape=(n_dst, n_src))
+        overlap_matrix = self._compute_dense_interval_overlaps(src_edges, dst_edges)
+        return self._dense_overlaps_to_triplets(overlap_matrix)
 
     def _compute_lon_overlaps(
-        self, src_edges: NDArray, dst_edges: NDArray
-    ) -> sparse.csr_matrix:
-        """1D Longitude overlap with periodicity check."""
-        n_src = len(src_edges) - 1
-        n_dst = len(dst_edges) - 1
-        row_ind, col_ind, data = [], [], []
+        self, src_edges: jax.Array, dst_edges: jax.Array
+    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        """1D longitude overlap with periodicity check."""
 
-        for i in range(n_dst):
-            d1, d2 = dst_edges[i], dst_edges[i + 1]
-            if d1 > d2:
-                d1, d2 = d2, d1
+        overlap_matrix = self._compute_dense_interval_overlaps(src_edges, dst_edges)
+        for shift in (360.0, -360.0):
+            overlap_matrix = overlap_matrix + self._compute_dense_interval_overlaps(
+                src_edges, dst_edges + shift
+            )
+        rows, cols, values = self._dense_overlaps_to_triplets(overlap_matrix)
+        return rows, cols, jnp.deg2rad(values)
 
-            # Check overlap against Source, Source-360, Source+360
-            # This handles destination cells that are defined outside 0..360 (e.g. -182.5)
-            # but physically map to the source domain.
-            shifts = [0.0, 360.0, -360.0]
-
-            for shift in shifts:
-                t_s, t_e = d1 + shift, d2 + shift
-
-                # Bounding box check optimization
-                if t_e <= src_edges[0] or t_s >= src_edges[-1]:
-                    continue
-
-                idx_start = np.searchsorted(src_edges, t_s, side="left") - 1
-                idx_start = max(0, idx_start)
-                idx_end = np.searchsorted(src_edges, t_e, side="right")
-                idx_end = min(n_src, idx_end)
-
-                for j in range(idx_start, idx_end):
-                    s1, s2 = src_edges[j], src_edges[j + 1]
-                    overlap = max(0.0, min(t_e, s2) - max(t_s, s1))
-
-                    if overlap > 1e-15:
-                        row_ind.append(i)
-                        col_ind.append(j)
-                        data.append(overlap)
-
-        W = sparse.csr_matrix((data, (row_ind, col_ind)), shape=(n_dst, n_src))
-        W.sum_duplicates()
-        W.data = np.deg2rad(W.data)
-
-        return W
-
-    def get_src_areas(self) -> NDArray:
+    def get_src_areas(self) -> jax.Array:
         """Returns the exact source cell areas (useful for mass verification)."""
-        dlon = np.diff(np.deg2rad(self.src_lon_b))
-        s_sin_lat = np.sin(np.deg2rad(self.src_lat_b))
-        dsinlat = np.abs(np.diff(s_sin_lat))
-        areas = self.radius**2 * np.outer(dsinlat, dlon)
+
+        dlon = jnp.diff(jnp.deg2rad(self.src_lon_b))
+        sin_lat = jnp.sin(jnp.deg2rad(self.src_lat_b))
+        dsinlat = jnp.abs(jnp.diff(sin_lat))
+        areas = (self.radius**2) * dsinlat[:, None] * dlon[None, :]
 
         if self._s_lat_flip:
             areas = areas[::-1, :]
 
         return areas
 
-    def apply_scalar(self, field: NDArray) -> NDArray:
+    def apply_scalar(self, field: Any) -> jax.Array:
         """Apply conservative remapping to a scalar field."""
 
-        if field.shape != (self.n_src_lat, self.n_src_lon):
+        field_array = as_jax_real_array(field)
+        expected_shape = (self.n_src_lat, self.n_src_lon)
+        if field_array.shape != expected_shape:
             raise ValueError(
-                f"Shape mismatch: {field.shape} vs grid ({self.n_src_lat}, {self.n_src_lon})"
+                f"Shape mismatch: {field_array.shape} vs grid {expected_shape}"
             )
 
         if self._s_lat_flip:
-            field = field[::-1, :]
-        flat_field = field.flatten()
-        nan_mask = np.isnan(flat_field)
+            field_array = field_array[::-1, :]
 
-        if np.any(nan_mask):
-            data_clean = np.where(nan_mask, 0.0, flat_field)
-            weighted_sum = self.weights @ data_clean
-            if self.normalize == "fracarea":
-                validity_vec = (~nan_mask).astype(float)
-                norm = self.weights @ validity_vec
-            else:
-                norm = self.dst_areas
+        flat_field = field_array.reshape(-1)
+        clean_field = jnp.where(jnp.isnan(flat_field), 0.0, flat_field)
+        weighted_values = self.overlap_weights * clean_field[self.src_indices]
+        weighted_sum = self._segment_sum(
+            weighted_values,
+            self.dst_indices,
+            self._n_dst_cells,
+        )
+
+        if self._normalize_fracarea:
+            valid = jnp.where(jnp.isnan(flat_field), 0.0, 1.0)
+            norm = self._segment_sum(
+                self.overlap_weights * valid[self.src_indices],
+                self.dst_indices,
+                self._n_dst_cells,
+            )
         else:
-            weighted_sum = self.weights @ flat_field
-            if self.normalize == "fracarea":
-                norm = np.array(self.weights.sum(axis=1)).flatten()
-            else:
-                norm = self.dst_areas
+            norm = self.dst_areas
 
-        result: NDArray = np.zeros_like(weighted_sum)
-        valid = norm > 1e-15
-        result[valid] = weighted_sum[valid] / norm[valid]
-        result[~valid] = np.nan
-
-        result_grid: NDArray = result.reshape((self.n_dst_lat, self.n_dst_lon))
+        result = jnp.where(norm > 1e-15, weighted_sum / norm, jnp.nan)
+        result_grid = result.reshape((self.n_dst_lat, self.n_dst_lon))
 
         if self._d_lat_flip:
             result_grid = result_grid[::-1, :]
 
         return result_grid
 
-    def apply_vector(self, u_src: NDArray, v_src: NDArray) -> tuple[NDArray, NDArray]:
+    def apply_vector(self, u_src: Any, v_src: Any) -> tuple[Any, Any]:
         # To satisfy the interface
         # Avoid errors from MyPy static type checking
         raise RuntimeError("Conservative remapping for vectors not implemented.")
 
-    def get_src_total_mass(self, field_on_src: NDArray) -> float:
+    def get_src_total_mass(self, field_on_src: Any) -> float:
         """Calculate total mass on source grid given field values."""
 
-        src_areas: NDArray = self.get_src_areas()
-        result: float = np.nansum(field_on_src * src_areas)
-        return result
+        field_array = as_jax_real_array(field_on_src)
+        result = jnp.nansum(field_array * self.get_src_areas())
+        return float(result)
 
-    def get_dst_total_mass(self, field_on_dst: NDArray) -> float:
+    def get_dst_total_mass(self, field_on_dst: Any) -> float:
         """Calculate total mass on destination grid given field values."""
 
-        clean_areas: NDArray = np.where(np.isinf(self.dst_areas), 0.0, self.dst_areas)
-        result: float = np.nansum(field_on_dst.flatten() * clean_areas)
-        return result
+        clean_areas = jnp.where(jnp.isinf(self.dst_areas), 0.0, self.dst_areas)
+        field_array = as_jax_real_array(field_on_dst)
+        result = jnp.nansum(field_array.reshape(-1) * clean_areas)
+        return float(result)

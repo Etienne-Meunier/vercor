@@ -12,6 +12,8 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import Sequence
 
+from vercor.jax_logging import get_default_logger
+
 
 @dataclass
 class WindArtifactFilterConfig:
@@ -107,47 +109,6 @@ def wind_filter(
         return field_filtered
 
 
-def post_process_wind_artifacts_deprecated(
-    x: torch.Tensor, conf: dict, enable_filtering: bool = True
-) -> None:
-    """
-    Apply wind artifact filtering post-processing to model state
-
-    Args:
-        x: Model state tensor to filter
-        conf: Configuration dictionary containing variable info
-        enable_filtering: Whether to apply filtering (for easy on/off)
-
-    Returns:
-        None (modifies x in-place)
-    """
-    if not enable_filtering:
-        return
-
-    try:
-        # Extract configuration
-        varname_upper = conf["data"]["variables"]
-        levels = conf["model"]["levels"]
-
-        # Apply wind artifact filtering with sensible defaults
-        apply_wind_artifact_filter_to_tensor(
-            x=x,
-            varname_upper=varname_upper,
-            levels_per_var=levels,
-            mask_level=14,  # Good middle troposphere level
-            target_levels=range(9, 21),  # Upper troposphere where jets occur
-            target_vars=["U", "V", "T", "Qtot"],  # Wind and related fields
-            speed_threshold=3.0193274566643846,  # tuned threshold
-            smooth_sigma=1,  # Light smoothing
-            dilation_zonal=13,  # Wide for jets
-            dilation_meridional=5,  # Narrow for jets
-            falloff_sigma=4.0,  # Smooth transitions
-        )
-    except Exception as e:
-        print(f"Wind artifact filtering failed: {e}")
-        # Continue without filtering rather than crash
-
-
 def post_process_wind_artifacts(
     x: torch.Tensor, conf: dict, enable_filtering: bool = True
 ) -> None:
@@ -179,7 +140,7 @@ def post_process_wind_artifacts(
             falloff_sigma=wf_cfg.falloff_sigma,
         )
     except Exception as e:
-        print(f"Wind artifact filtering failed: {e}")
+        get_default_logger().warning(f"Wind artifact filtering failed: {e}")
 
 
 def apply_wind_artifact_filter_to_tensor(
@@ -213,6 +174,7 @@ def apply_wind_artifact_filter_to_tensor(
     Returns:
         None (modifies x in-place)
     """
+    log = get_default_logger()
 
     # Step 1: Split tensor into variables
     channels = len(varname_upper)
@@ -248,7 +210,7 @@ def apply_wind_artifact_filter_to_tensor(
     # Step 4: Apply mask to target levels of target variables
     for var_name in target_vars:
         if var_name not in var_dict:
-            print(f"Warning: {var_name} not found, skipping")
+            log.warning(f"{var_name} not found, skipping")
             continue
 
         # Find tensor position for this variable
@@ -258,7 +220,7 @@ def apply_wind_artifact_filter_to_tensor(
         # Apply filtering to each target level
         for level in target_levels:
             if level >= var_dict[var_name].shape[1]:
-                print(f"Warning: Level {level} exceeds available levels for {var_name}")
+                log.warning(f"Level {level} exceeds available levels for {var_name}")
                 continue
 
             # Extract 2D slice

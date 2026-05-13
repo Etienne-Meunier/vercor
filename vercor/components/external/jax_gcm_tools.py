@@ -11,7 +11,10 @@ from jcm.forcing import ForcingData
 from jcm.terrain import TerrainData
 from jcm.physics.speedy.speedy_coords import get_speedy_coords
 from jcm.physics.speedy.params import Parameters
-from numpy.typing import NDArray
+
+from vercor.dtypes import as_jax_real_array
+from vercor.fluxes.utilities import _virtual_temperature_from_specific_humidity
+from vercor.types import RuntimeArray
 
 
 def change_jcm_parameter_values(
@@ -21,7 +24,7 @@ def change_jcm_parameter_values(
     for key, value in parameters.items():
         parameter_group_name, parameter_name = key.split(".")
         default_parameters.__getattribute__(parameter_group_name).__setattr__(
-            parameter_name, jnp.array(value)
+            parameter_name, as_jax_real_array(value)
         )
 
 
@@ -40,11 +43,11 @@ def get_default_parameter_values(
 
 
 def compute_pressure_levels(
-    reference_pressure: jnp.ndarray,
-    top_pressure: jnp.ndarray,
-    sigma_levels: NDArray | jnp.ndarray,
-    normalized_surface_pressure: jnp.ndarray,
-) -> jnp.ndarray:
+    reference_pressure: RuntimeArray | float,
+    top_pressure: RuntimeArray | float,
+    sigma_levels: RuntimeArray,
+    normalized_surface_pressure: RuntimeArray,
+) -> jax.Array:
     """
     Compute pressure levels from sigma levels and top pressure.
 
@@ -58,17 +61,17 @@ def compute_pressure_levels(
     Returns:
         pressure_levels: Pressure levels p [Pa], 3D array of shape (nlev, nlat, nlon)
     """
-    p0 = jnp.asarray(reference_pressure, dtype=jnp.float_)
-    p_top = jnp.asarray(top_pressure, dtype=jnp.float_)
-    sigma = jnp.asarray(sigma_levels, dtype=jnp.float_)
-    nps = jnp.asarray(normalized_surface_pressure, dtype=jnp.float_)
+    p0 = as_jax_real_array(reference_pressure)
+    p_top = as_jax_real_array(top_pressure)
+    sigma = as_jax_real_array(sigma_levels)
+    nps = as_jax_real_array(normalized_surface_pressure)
 
     if p_top.ndim != 0:
         raise ValueError("top_pressure must be a scalar array")
     if sigma.ndim != 1:
         raise ValueError("sigma_levels must be a 1D array")
 
-    ps = jnp.asarray(nps * p0, dtype=jnp.float_)[jnp.newaxis, :, :]
+    ps = as_jax_real_array(nps * p0)[jnp.newaxis, :, :]
 
     # Broadcast p_top to the horizontal grid shape (nlat, nlon)
     p_top_bcast = jnp.broadcast_to(p_top, ps.shape)
@@ -82,15 +85,15 @@ def compute_pressure_levels(
 
 
 def get_altitudes_sigma_levels(
-    temperature: jnp.ndarray,
-    pressure: jnp.ndarray,
-    specific_humidity: jnp.ndarray,
+    temperature: RuntimeArray,
+    pressure: RuntimeArray,
+    specific_humidity: RuntimeArray,
     *,
-    z0: float | jnp.ndarray = 0.0,
+    z0: RuntimeArray | float = 0.0,
     g: float = 9.80665,
     Rd: float = 287.05,
     Rv: float = 461.5,
-) -> jnp.ndarray:
+) -> jax.Array:
     """
     Compute geometric altitude z(p) on pressure levels using the Hypsometric Equation.
 
@@ -116,14 +119,14 @@ def get_altitudes_sigma_levels(
       where Tv is virtual temperature derived from T and q.
 
     Notes:
-      - Tv is computed with a more exact relation using q:
-          Tv = T * (1 + (Rv/Rd - 1)*q) / (1 - q)
-        (For small q, this is close to T*(1 + 0.61 q).)
+      - Tv is computed from specific humidity as:
+          Tv = T * (1 + (Rv/Rd - 1)*q)
+        (For typical water-vapor constants this is close to T*(1 + 0.61 q).)
       - Tv_bar between adjacent levels is taken as a simple average.
     """
-    T = jnp.asarray(temperature, dtype=jnp.float_)
-    p = jnp.asarray(pressure, dtype=jnp.float_)
-    q = jnp.asarray(specific_humidity, dtype=jnp.float_)
+    T = as_jax_real_array(temperature)
+    p = as_jax_real_array(pressure)
+    q = as_jax_real_array(specific_humidity)
 
     if T.ndim != 3 or p.ndim != 3 or q.ndim != 3:
         raise ValueError(
@@ -136,10 +139,9 @@ def get_altitudes_sigma_levels(
 
     nlev, nlat, nlon = T.shape
 
-    # Virtual temperature (more exact form using q)
+    # Virtual temperature for specific humidity q.
     eps = Rv / Rd  # ~1.608
-    Tv = T * (1.0 + (eps - 1.0) * q) / (1.0 - q)
-    # Tv = T * (1. + 0.608 * q)
+    Tv = _virtual_temperature_from_specific_humidity(T, q, eps - 1.0)
 
     # Log-pressure thickness between adjacent levels: ln(p[k-1]/p[k])
     # (works even if p is not strictly monotone, but physically it should be)
@@ -152,8 +154,8 @@ def get_altitudes_sigma_levels(
     dz = (Rd / g) * Tv_bar * log_pr  # shape (nlev-1, nlat, nlon)
 
     # Integrate upward from z0 at k=0
-    z = jnp.empty_like(T, dtype=jnp.float_)
-    z0_arr = jnp.asarray(z0, dtype=jnp.float_)
+    z = jnp.empty_like(T)
+    z0_arr = as_jax_real_array(z0)
     if z0_arr.ndim == 0:
         z = z.at[0, :, :].set(z0_arr)
     elif z0_arr.shape == (nlat, nlon):

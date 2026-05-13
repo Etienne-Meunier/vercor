@@ -1,33 +1,22 @@
-"""
-Quick_Climate_V02.py
---------------------
-Refactored CAMulator climate integration with clearer coupling interfaces.
-
-Key improvements:
-- Separated initialization from time-stepping
-- Clear CAMulatorStepper class for coupling
-- Documented state tensor structure
-- Removed dead code
-- Preserved async parallel I/O for performance
-"""
+"""CAMulator host-runtime adapter and JAX-backed exchange-field helpers."""
 
 import os
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 from pathlib import Path
+
+import jax
+import jax.numpy as jnp
+
+from vercor.jax_logging import LoggerLike, get_default_logger
 
 from vercor.components.external.camulator_state import (
     initialize_camulator,
+    parse_datetime_from_config,
     StateVariableAccessor,
-)
-from vercor.fluxes.utilities import (
-    compute_air_density,
-    compute_potential_temperature,
-    get_altitudes_hybrid_sigma_levels,
 )
 
 from datetime import datetime, timedelta
-import numpy as np
 import xarray as xr
 
 # ---------- #
@@ -38,14 +27,21 @@ import torch
 try:
     from credit.output import make_xarray, save_netcdf_increment
 except ModuleNotFoundError:
-    print("Credit module not found. Please install credit to use CAMulator.")
+    get_default_logger().warning(
+        "Credit module not found. Please install credit to use CAMulator."
+    )
 
-from vercor.clock import ModelDateTime
-from vercor.components.base import Component
+from vercor.components.base import HostRuntimeComponent
+from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full, jax_ones
+from vercor.fluxes.utilities import _compute_hybrid_sigma_full_level_altitudes
 from vercor.grid import RectilinearGrid
+from vercor.host_arrays import runtime_array_to_host
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -57,7 +53,279 @@ os.environ["MKL_NUM_THREADS"] = "1"
 # ============================================================================
 
 
-def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor:
+_CAMULATOR_RUNTIME_FIELD_NAMES = (
+    "specific_humidity",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+    "sea_surface_temperature",
+    "land_surface_temperature",
+    "u_velocity",
+    "v_velocity",
+    "temperature",
+    "potential_temperature",
+    "density",
+    "latent_heat_flux",
+    "sensible_heat_flux",
+    "model_level_height",
+    "total_surface_temperature",
+    "temperature_3d",
+    "specific_humidity_3d",
+)
+
+
+def _initialize_camulator_runtime_fields(
+    grid_shape: tuple[int, int],
+    policy: PrecisionPolicy = None,
+) -> dict[str, jax.Array]:
+    """Create JAX-backed zero fields for CAMulator exchange storage."""
+
+    zeros = jax_full(grid_shape, 0.0, policy)
+    return {field_name: zeros for field_name in _CAMULATOR_RUNTIME_FIELD_NAMES}
+
+
+@jax.jit
+def _prepare_camulator_surface_forcing(
+    sea_surface_temperature: object,
+    land_surface_temperature: object,
+    land_mask_coslat: object,
+) -> tuple[jax.Array, jax.Array]:
+    """Prepare CAMulator's rescaled surface-temperature forcing field."""
+
+    sst = jnp.nan_to_num(as_jax_real_array(sea_surface_temperature))
+    skt = jnp.nan_to_num(as_jax_real_array(land_surface_temperature))
+    land_mask = as_jax_real_array(land_mask_coslat)
+
+    total_surface_temperature = jnp.where(land_mask < 1.0, sst + skt, 283.0)
+    rescaled_total_surface_temperature = (
+        total_surface_temperature - jnp.nanmean(total_surface_temperature)
+    ) / jnp.nanstd(total_surface_temperature)
+
+    return total_surface_temperature, rescaled_total_surface_temperature
+
+
+@jax.jit
+def _prepare_camulator_dynamic_forcing_chunk(
+    dynamic_forcing_values: object,
+) -> jax.Array:
+    """Convert xarray forcing values to CAMulator's time-major layout."""
+
+    return as_jax_real_array(dynamic_forcing_values).transpose((1, 0, 2, 3))
+
+
+@jax.jit
+def _prepare_camulator_sst_input(
+    rescaled_total_surface_temperature: object,
+) -> jax.Array:
+    """Expand a rescaled SST field to CAMulator's input tensor layout."""
+
+    return as_jax_real_array(rescaled_total_surface_temperature)[
+        jnp.newaxis, jnp.newaxis, jnp.newaxis, ...
+    ]
+
+
+def _torch_tensor_from_jax_array(
+    array: RuntimeArray,
+    device: str,
+    *,
+    pin_memory: bool = False,
+) -> torch.Tensor:
+    """Transfer a JAX-compatible array through an explicit host-to-Torch boundary."""
+
+    tensor = torch.as_tensor(runtime_array_to_host(array).copy())
+    if pin_memory and device != "cpu" and torch.cuda.is_available():
+        tensor = tensor.pin_memory()
+    return tensor.to(device, non_blocking=True)
+
+
+@jax.jit
+def _map_camulator_prediction_arrays(
+    earth_radius: float,
+    gravity: float,
+    rdair: float,
+    zvir: float,
+    mwdair: float,
+    rgas: float,
+    potential_temperature_reference_pressure: float,
+    cappa: float,
+    stef_boltz: float,
+    camulator_reference_pressure: float,
+    hyai: object,
+    hybi: object,
+    hyam: object,
+    hybm: object,
+    u_wind: object,
+    v_wind: object,
+    surface_temperature: object,
+    temperature_3d: object,
+    specific_humidity_3d: object,
+    net_shortwave_radiation_flux_accumulated: object,
+    net_longwave_radiation_flux_accumulated: object,
+    surface_pressure: object,
+) -> dict[str, jax.Array]:
+    """Map CAMulator tensor outputs into VerCOR runtime exchange fields."""
+
+    hyai_array = as_jax_real_array(hyai).reshape(-1)
+    hybi_array = as_jax_real_array(hybi).reshape(-1)
+    hyam_array = as_jax_real_array(hyam).reshape(-1)
+    hybm_array = as_jax_real_array(hybm).reshape(-1)
+
+    u_velocity = as_jax_real_array(u_wind).squeeze()[-1, :, :]
+    v_velocity = as_jax_real_array(v_wind).squeeze()[-1, :, :]
+    surface_temperature_array = as_jax_real_array(surface_temperature).squeeze()
+    temperature_3d_array = as_jax_real_array(temperature_3d).squeeze()
+    specific_humidity_3d_array = as_jax_real_array(specific_humidity_3d).squeeze()
+    temperature = temperature_3d_array[-1, ...]
+    specific_humidity = specific_humidity_3d_array[-1, ...]
+
+    net_shortwave_radiation_flux = (
+        as_jax_real_array(net_shortwave_radiation_flux_accumulated).squeeze() / 21600.0
+    )
+    net_longwave_radiation_flux = (
+        as_jax_real_array(net_longwave_radiation_flux_accumulated).squeeze() / -21600.0
+    )
+    downward_longwave_radiation_flux = (
+        stef_boltz * surface_temperature_array**4 - net_longwave_radiation_flux
+    )
+
+    surface_pressure_array = as_jax_real_array(surface_pressure).squeeze()
+    p_mid = (
+        hyam_array[:, jnp.newaxis, jnp.newaxis] * camulator_reference_pressure
+        + hybm_array[:, jnp.newaxis, jnp.newaxis]
+        * surface_pressure_array[jnp.newaxis, :, :]
+    )
+    p_int = (
+        hyai_array[:, jnp.newaxis, jnp.newaxis] * camulator_reference_pressure
+        + hybi_array[:, jnp.newaxis, jnp.newaxis]
+        * surface_pressure_array[jnp.newaxis, :, :]
+    )
+
+    temperature_for_height = temperature_3d_array.T
+    humidity_for_height = specific_humidity_3d_array.T
+    pressure_interfaces_for_height = p_int.T
+    altitude = _compute_hybrid_sigma_full_level_altitudes(
+        temperature_for_height,
+        humidity_for_height,
+        pressure_interfaces_for_height,
+        earth_radius=earth_radius,
+        gravity=gravity,
+        rdair=rdair,
+        zvir=zvir,
+    )
+    model_level_height = altitude[..., 0].T
+
+    density = mwdair / rgas * p_mid[-1, :, :] / temperature
+    potential_temperature = (
+        temperature
+        * (potential_temperature_reference_pressure / p_mid[-1, :, :]) ** cappa
+    )
+
+    return {
+        "u_velocity": u_velocity,
+        "v_velocity": v_velocity,
+        "temperature_3d": temperature_3d_array,
+        "specific_humidity_3d": specific_humidity_3d_array,
+        "specific_humidity": specific_humidity,
+        "temperature": temperature,
+        "net_shortwave_radiation_flux": net_shortwave_radiation_flux,
+        "downward_longwave_radiation_flux": downward_longwave_radiation_flux,
+        "model_level_height": model_level_height,
+        "density": density,
+        "potential_temperature": potential_temperature,
+    }
+
+
+def _write_camulator_prediction_output(
+    prediction: torch.Tensor,
+    utc_datetime: datetime,
+    *,
+    latitude: object,
+    longitude: object,
+    init_str: str,
+    lead_time_periods: int,
+    forecast_hour: int,
+    metadata: dict[str, Any],
+    conf: dict[str, Any],
+) -> None:
+    """Write one CAMulator prediction increment through the CREDIT output boundary."""
+
+    upper_air, single_level = make_xarray(
+        prediction.cpu(),
+        utc_datetime,
+        latitude,
+        longitude,
+        conf,
+    )
+    save_netcdf_increment(
+        upper_air,
+        single_level,
+        init_str,
+        lead_time_periods * forecast_hour,
+        metadata,
+        conf,
+    )
+
+
+def _camulator_output_array(
+    accessor: StateVariableAccessor,
+    prediction_out: torch.Tensor,
+    variable_name: str,
+) -> object:
+    """Return one inverse-transformed CAMulator output variable on the host."""
+
+    return runtime_array_to_host(
+        accessor.get_state_var(prediction_out, variable_name).cpu().numpy()
+    )
+
+
+def _map_camulator_prediction_to_runtime_fields(
+    settings: VercorSettings,
+    *,
+    camulator_reference_pressure: float,
+    hyai: torch.Tensor,
+    hybi: torch.Tensor,
+    hyam: torch.Tensor,
+    hybm: torch.Tensor,
+    accessor_output: StateVariableAccessor,
+    state_transformer: Any,
+    prediction: torch.Tensor,
+) -> dict[str, jax.Array]:
+    """Convert one CAMulator prediction into VerCOR runtime exchange fields."""
+
+    prediction_out = state_transformer.inverse_transform(prediction)
+    return cast(
+        dict[str, jax.Array],
+        _map_camulator_prediction_arrays(
+            settings.earth_radius,
+            settings.gravity,
+            settings.rdair,
+            settings.zvir,
+            settings.mwdair,
+            settings.rgas,
+            settings.p0,
+            settings.cappa,
+            settings.stefBoltz,
+            camulator_reference_pressure,
+            runtime_array_to_host(hyai.cpu().numpy()).squeeze(),
+            runtime_array_to_host(hybi.cpu().numpy()).squeeze(),
+            runtime_array_to_host(hyam.cpu().numpy()).squeeze(),
+            runtime_array_to_host(hybm.cpu().numpy()).squeeze(),
+            _camulator_output_array(accessor_output, prediction_out, "U"),
+            _camulator_output_array(accessor_output, prediction_out, "V"),
+            _camulator_output_array(accessor_output, prediction_out, "TS"),
+            _camulator_output_array(accessor_output, prediction_out, "T"),
+            _camulator_output_array(accessor_output, prediction_out, "Qtot"),
+            _camulator_output_array(accessor_output, prediction_out, "FSNS"),
+            _camulator_output_array(accessor_output, prediction_out, "FLNS"),
+            _camulator_output_array(accessor_output, prediction_out, "PS"),
+        ),
+    )
+
+
+def add_init_noise(
+    state: torch.Tensor,
+    noise_std: float = 0.05,
+    logger: LoggerLike | None = None,
+) -> torch.Tensor:
     """
     Add random noise to initial conditions for ensemble generation.
 
@@ -68,40 +336,10 @@ def add_init_noise(state: torch.Tensor, noise_std: float = 0.05) -> torch.Tensor
     Returns:
         state_with_noise: Perturbed state
     """
-    print(f"Adding initial condition noise (std={noise_std})")
+    log = logger if logger is not None else get_default_logger()
+    log.info(f"Adding initial condition noise (std={noise_std})")
     noise = torch.randn_like(state) * noise_std
     return state + noise
-
-
-def parse_datetime_from_config(conf: dict) -> datetime:
-    """
-    Parse datetime from config, handling string, datetime, and cftime objects.
-
-    Args:
-        conf: Configuration dictionary
-
-    Returns:
-        init_dt: Python datetime object
-    """
-    raw_dt = conf["predict"]["start_datetime"]
-
-    if isinstance(raw_dt, str):
-        # Parse "YYYY-MM-DD HH:MM:SS" format
-        return datetime.strptime(raw_dt, "%Y-%m-%d %H:%M:%S")
-    elif isinstance(raw_dt, datetime):
-        # Already a Python datetime
-        return raw_dt
-    else:
-        # Assume it's a cftime object - convert to Python datetime
-        # cftime objects have year, month, day, hour, minute, second attributes
-        return datetime(
-            raw_dt.year,
-            raw_dt.month,
-            raw_dt.day,
-            raw_dt.hour,
-            raw_dt.minute,
-            raw_dt.second,
-        )
 
 
 # ============================================================================
@@ -109,7 +347,7 @@ def parse_datetime_from_config(conf: dict) -> datetime:
 # ============================================================================
 
 
-class CAMulatorGCM(Component):
+class CAMulatorGCM(HostRuntimeComponent):
 
     def __init__(
         self,
@@ -122,8 +360,10 @@ class CAMulatorGCM(Component):
         do_spinup: bool = False,
         device: str = "cuda",
         output_cpus_number: int = 8,
+        logger: LoggerLike | None = None,
     ) -> None:
 
+        self.logger = logger if logger is not None else get_default_logger()
         self.config_path = config_path
         self.model_weights_path = model_weights_path
         self.device = device
@@ -137,6 +377,7 @@ class CAMulatorGCM(Component):
             config_path=self.config_path,
             model_name=self.model_weights_path,
             device=self.device,
+            logger=self.logger,
         )
 
         # Unpack context
@@ -158,37 +399,38 @@ class CAMulatorGCM(Component):
             self.conf["predict"]["save_forecast"] = str(
                 Path(base).expanduser() / self.save_append
             )
-            print(f"Saving outputs to: {self.conf['predict']['save_forecast']}")
+            self.logger.info(
+                f"Saving outputs to: {self.conf['predict']['save_forecast']}"
+            )
 
         # Setup for time-stepping
         self.df_vars = self.conf["data"]["dynamic_forcing_variables"]
-        # Total number of CAMulator steps to run (e.g., 40 for 10-day forecast with 6-hour steps)
-        self.num_ts = self.conf["predict"]["timesteps_fast_climate"]
         # Time step in hours (e.g., 6 for 6-hour steps)
         self.lead_time_periods = self.conf["data"]["lead_time_periods"]
-        # Maximum ???
-        self.chunk_size = self.conf["data"].get("forcing_chunk_size", 32)
-        # post_conf = self.conf["model"]["post_conf"]
-        # lon_lat_level_names = post_conf["global_mass_fixer"]["lon_lat_level_name"]
 
         grid = RectilinearGrid(
             name=name,
             longitude=self.latlons.longitude.values,
             latitude=self.latlons.latitude.values,
-            binary_mask=np.ones(
+            binary_mask=jax_ones(
                 (
                     self.latlons.latitude.values.shape[0],
                     self.latlons.longitude.values.shape[0],
-                ),
+                )
             ),
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(
+            inputs=("sea_surface_temperature", "land_surface_temperature"),
+            outputs=_CAMULATOR_RUNTIME_FIELD_NAMES,
+            default_fields=self.grid_field_defaults(_CAMULATOR_RUNTIME_FIELD_NAMES),
+        )
 
-    def initialize(self, coupler: "Coupler") -> None:
-        logger = coupler.logger
-        self.coupler_start_datetime = coupler.clock.start
-        self.coupling_timestep = timedelta(seconds=coupler.clock.dt_seconds)
+    def initialize(self, context: ComponentInitContext) -> None:
+        logger = context.logger
+        self.coupler_start_datetime = context.start
+        self.coupling_timestep = timedelta(seconds=context.dt_seconds)
         self.spinup_steps = int(
             self.spinup_time.total_seconds() // self.coupling_timestep.total_seconds()
         )
@@ -206,7 +448,11 @@ class CAMulatorGCM(Component):
 
         # Add noise to initial conditions if requested
         if self.init_noise is not None:
-            self.state = add_init_noise(self.state, noise_std=self.init_noise)
+            self.state = add_init_noise(
+                self.state,
+                noise_std=self.init_noise,
+                logger=logger,
+            )
 
         # Trace model for performance (optional but recommended)
         logger.info("Tracing model with torch.jit...")
@@ -262,35 +508,29 @@ class CAMulatorGCM(Component):
         self.forecast_hour = 1
         self.timestep_counter = 0
 
-        zeros = np.zeros(self.grid.shape)
-        self.data["specific_humidity"] = zeros.copy()
-        self.data["net_shortwave_radiation_flux"] = zeros.copy()
-        self.data["downward_longwave_radiation_flux"] = zeros.copy()
-        self.data["sea_surface_temperature"] = zeros.copy()
-        self.data["land_surface_temperature"] = zeros.copy()
-        self.data["u_velocity"] = zeros.copy()
-        self.data["v_velocity"] = zeros.copy()
-        self.data["temperature"] = zeros.copy()
-        self.data["potential_temperature"] = zeros.copy()
-        self.data["density"] = zeros.copy()
-        self.data["latent_heat_flux"] = zeros.copy()
-        self.data["sensible_heat_flux"] = zeros.copy()
-        self.data["model_level_height"] = zeros.copy()
+        self.seed_fields(
+            self.grid_field_defaults(
+                _CAMULATOR_RUNTIME_FIELD_NAMES,
+                policy=context.settings,
+            )
+        )
 
-    def step(
+    def step_host_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance the private host-backed CAMulator atmosphere boundary."""
 
-        settings = coupler.settings
-        logger = coupler.logger
-        data = self.data
+        time = context.time
+        logger = context.logger
+        if time is None:
+            return component_state
 
+        settings = context.settings
         prediction = None
+        last_total_surface_temperature: RuntimeArray | None = None
 
-        # block_end = min(block_start + self.chunk_size, self.start_ix + self.num_ts)
         block_start = self.start_ix + self.timestep_counter * self.model_substeps
         block_end = block_start + self.model_substeps
 
@@ -298,20 +538,21 @@ class CAMulatorGCM(Component):
         ds_slice = self.dynamic_ds.isel(time=slice(block_start, block_end)).load()
         ds_slice_times = ds_slice["time"].values
 
-        # Stack forcing variables into tensor [time, vars, lat, lon]
-        arr_list = [ds_slice[var].values for var in self.dynamic_ds.data_vars]
-        arr = np.stack(arr_list, axis=1)
-
-        # Transfer to GPU once per chunk
-        cpu_tensor = torch.from_numpy(arr).unsqueeze(2).pin_memory()
-        gpu_forcing_chunk = cpu_tensor.to(self.device, non_blocking=True)
+        dynamic_forcing_chunk = _prepare_camulator_dynamic_forcing_chunk(
+            ds_slice.to_array(dim="dynamic_variable").values
+        )
+        gpu_forcing_chunk = _torch_tensor_from_jax_array(
+            dynamic_forcing_chunk[:, :, jnp.newaxis, :, :],
+            self.device,
+            pin_memory=True,
+        )
 
         # Step through each time in the chunk
         for t in range(gpu_forcing_chunk.shape[0]):
             time_obj = ds_slice_times[t]
 
-            # Convert to Python datetime for output formatting
-            # Handle numpy scalar wrapper
+            # Convert to Python datetime for output formatting.
+            # Normalize NumPy scalar time objects before type checks.
             if hasattr(time_obj, "item"):
                 time_obj = time_obj.item()
 
@@ -328,19 +569,15 @@ class CAMulatorGCM(Component):
                     time_obj.second,
                 )
 
-            logger.info(
-                f"    CAMulator step: {self.timestep_counter + 1:05}, time: {utc_datetime}"
-            )
+            if logger is not None:
+                logger.info(
+                    f"    CAMulator step: {self.timestep_counter + 1:05}, time: {utc_datetime}"
+                )
 
             dynamic_forcing_t = gpu_forcing_chunk[t].unsqueeze(0)
 
-            # ================================================================
-            # CORE PHYSICS STEP
-            # This matches the original Quick_Climate.py logic exactly:
-            # - First step (timestep_counter=0): state already has forcing, run model as-is
-            # - Subsequent steps: add forcing to state, then run model
-            # ================================================================
-
+            # CAMulator's first state already contains forcing. Later states need
+            # the next forcing slice appended before inference.
             if self.timestep_counter != 0:
                 # Build forcing from dynamic + static
                 model_input = self.stepper.state_manager.build_input_with_forcing(
@@ -350,25 +587,27 @@ class CAMulatorGCM(Component):
                 # First iteration: initial state already contains forcing
                 model_input = self.state
 
-            # once the coupler has run, set the variable: NOTE this needs to be rescaled for our ML model.
-            # !!! NOTE this needs to be rescaled for our ML model. !!!
-            sst = np.nan_to_num(self.data["sea_surface_temperature"], nan=0.0)
-            skt = np.nan_to_num(self.data["land_surface_temperature"], nan=0.0)
-
-            total_ts = np.where(self.LANDM_COSLAT < 1.0, sst + skt, 283.0)
-            rescaled_total_ts = (total_ts - np.nanmean(total_ts)) / np.nanstd(total_ts)
+            total_ts, rescaled_total_ts = _prepare_camulator_surface_forcing(
+                self.runtime_field(component_state, "sea_surface_temperature"),
+                self.runtime_field(component_state, "land_surface_temperature"),
+                self.LANDM_COSLAT,
+            )
+            last_total_surface_temperature = total_ts
 
             # Land surface temperature is already rescaled in the same way as sst
-            logger.info(
-                f"    Rescaled ts stats - max: {rescaled_total_ts.max():.4f}, min: {rescaled_total_ts.min():.4f}"
-            )
+            if logger is not None:
+                logger.info(
+                    "    Rescaled ts stats - max: "
+                    f"{float(jnp.max(rescaled_total_ts)):.4f}, min: "
+                    f"{float(jnp.min(rescaled_total_ts)):.4f}"
+                )
 
             self.accessor_input.set_state_var(
                 model_input,
                 "SST",
-                torch.tensor(
-                    rescaled_total_ts[np.newaxis, np.newaxis, np.newaxis, ...]
-                ).to(self.device),
+                _torch_tensor_from_jax_array(
+                    _prepare_camulator_sst_input(rescaled_total_ts), self.device
+                ),
             )
 
             # Run model
@@ -378,27 +617,16 @@ class CAMulatorGCM(Component):
             # Apply post-processing
             prediction = self.stepper._apply_postprocessing(prediction, model_input)
 
-            # ================================================================
-            # OUTPUT GENERATION (runs in parallel via multiprocessing)
-            # ================================================================
-
-            # Convert prediction to xarray (fast, on CPU)
-            upper_air, single_level = make_xarray(
-                prediction.cpu(),
+            _write_camulator_prediction_output(
+                prediction,
                 utc_datetime,
-                self.latlons.latitude.values,
-                self.latlons.longitude.values,
-                self.conf,
-            )
-
-            # save to NetCDF (runs in background pool)
-            save_netcdf_increment(
-                upper_air,
-                single_level,
-                self.init_str,
-                self.lead_time_periods * self.forecast_hour,
-                self.metadata,
-                self.conf,
+                latitude=self.latlons.latitude.values,
+                longitude=self.latlons.longitude.values,
+                init_str=self.init_str,
+                lead_time_periods=self.lead_time_periods,
+                forecast_hour=self.forecast_hour,
+                metadata=self.metadata,
+                conf=self.conf,
             )
 
             # ================================================================
@@ -416,80 +644,28 @@ class CAMulatorGCM(Component):
         # Deposit final prediction into data dict for coupling (after chunk loop)
         # ================================================================
 
-        if prediction is None:
+        if prediction is None or last_total_surface_temperature is None:
             raise ValueError(
                 "No CAMulator timesteps were generated from the forcing slice; "
                 "check forcing availability and coupling timestep alignment."
             )
 
-        # get all of the variables for coupling:
-        prediction_out = self.state_transformer.inverse_transform(prediction)
-
-        # Units: [m/s]
-        data["u_velocity"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "U")
-            .cpu()
-            .squeeze()[-1, :, :]
-        )
-        # Units: [m/s]
-        data["v_velocity"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "V")
-            .cpu()
-            .squeeze()[-1, :, :]
-        )
-        # Units: [K]
-        ts = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "TS").cpu()
-        )  # surface temp
-        # Units: [K]
-        data["temperature_3d"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "T").cpu().squeeze()
-        )  # temperature
-        # Units: [kg/kg]
-        data["specific_humidity_3d"] = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "Qtot").cpu().squeeze()
-        )  # specific humidty
-        data["specific_humidity"] = data["specific_humidity_3d"][-1, ...]
-        # Near surface temperature
-        data["temperature"] = data["temperature_3d"][-1, ...]
-        fsns = self.accessor_output.get_state_var(prediction_out, "FSNS")
-        # average radiative flux during 6-hour period in [J/m²] convert to [W/m²]
-        # 6 × 3600 = 21600
-        fsns /= 21600
-        data["net_shortwave_radiation_flux"] = np.asarray(fsns.cpu().squeeze())
-
-        flns = np.asarray(
-            self.accessor_output.get_state_var(prediction_out, "FLNS").cpu()
-        )  # flds ≈ εσTs{^4}flns  # will have to approximate it. where emissivity in CAM = 1
-        flns /= -21600  # J/m² back in CAM units [W/m²]
-        flds = settings.stefBoltz * ts[...] ** 4 - flns
-        # Units: [W/m²]
-        data["downward_longwave_radiation_flux"] = np.asarray(flds.squeeze())
-
-        # Pressure model levels:
-        # Units: [Pa]
-        PS = self.accessor_output.get_state_var(
-            prediction_out, "PS"
-        )  # surface pressure
-        p_mid = np.asarray(
-            (self.hyam * self.P0 + self.hybm * PS).cpu().squeeze()
-        )  # pm(k) = Am(k) P0 + Bm(k) PS
-        p_int = np.asarray(
-            (self.hyai * self.P0 + self.hybi * PS).cpu().squeeze()
-        )  # pi(k) = Ai(k) P0 + Bi(k) PS
-
-        # Units: [m]
-        data["model_level_height"] = get_altitudes_hybrid_sigma_levels(
+        mapped_fields = _map_camulator_prediction_to_runtime_fields(
             settings,
-            data["temperature_3d"].T,
-            data["specific_humidity_3d"].T,
-            p_int[...].T,
-        )[..., 0].T
-        # Units: [kg/m³]
-        data["density"] = compute_air_density(
-            settings, p_mid[-1, :, :], data["temperature"][:, :]
+            camulator_reference_pressure=self.P0,
+            hyai=self.hyai,
+            hybi=self.hybi,
+            hyam=self.hyam,
+            hybm=self.hybm,
+            accessor_output=self.accessor_output,
+            state_transformer=self.state_transformer,
+            prediction=prediction,
         )
-        # Units: [K]
-        data["potential_temperature"] = compute_potential_temperature(
-            settings, data["temperature"][:, :], p_mid[-1, :, :]
+
+        return self.with_runtime_fields(
+            component_state,
+            {
+                "total_surface_temperature": last_total_surface_temperature,
+                **mapped_fields,
+            },
         )

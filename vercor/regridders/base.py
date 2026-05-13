@@ -1,7 +1,6 @@
-from typing import Any, Callable, Tuple, Union
+from typing import Any, Tuple, Union, cast
 
-import numpy as np
-from numpy.typing import NDArray
+import jax.numpy as jnp
 
 from vercor.exceptions import RegridderError
 from vercor.grid import RectilinearGrid
@@ -20,9 +19,9 @@ class Regridder:
         self.interpolator: Union[
             BilinearRectilinearInterpolator, ConservativeRectilinearRemapper, None
         ] = None
+        self._has_identical_grids = self._compute_has_identical_grids()
 
-    @property
-    def has_identical_grids(self) -> bool:
+    def _compute_has_identical_grids(self) -> bool:
         """Check if source and destination grids are identical in shape and coordinates."""
 
         source = self.source_grid
@@ -30,11 +29,21 @@ class Regridder:
 
         shape_condition = source.shape == destination.shape
 
-        coord_condition = np.array_equal(
-            source.latitude, destination.latitude
-        ) and np.array_equal(source.longitude, destination.longitude)
+        if not shape_condition:
+            return False
+
+        coord_condition = bool(
+            jnp.all(jnp.equal(source.latitude, destination.latitude))
+            & jnp.all(jnp.equal(source.longitude, destination.longitude))
+        )
 
         return shape_condition and coord_condition
+
+    @property
+    def has_identical_grids(self) -> bool:
+        """Return whether source and destination grids are identical."""
+
+        return self._has_identical_grids
 
     def _ensure_ready(self, args: Tuple[Any, ...]) -> None:
         """
@@ -47,22 +56,10 @@ class Regridder:
         if len(args) not in (1, 2):
             raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
 
-    def _apply_scalar(self, args: NDArray) -> NDArray:
-        """A wrapper to call scalar interpolation."""
-        assert self.interpolator is not None
-        result: NDArray = self.interpolator.apply_scalar(args)
-        return result
-
-    def _apply_vector(self, v0: NDArray, v1: NDArray) -> Tuple[NDArray, NDArray]:
-        """A wrapper to call vector interpolation."""
-        assert self.interpolator is not None
-        result: Tuple[NDArray, NDArray] = self.interpolator.apply_vector(v0, v1)
-        return result
-
     def __call__(
         self,
-        *args: NDArray,
-    ) -> Union[NDArray, Tuple[NDArray, NDArray]]:
+        *args: Any,
+    ) -> Any:
         """
         Supported calls:
           - apply(scalar_src) -> scalar interpolation
@@ -76,12 +73,10 @@ class Regridder:
         if self.has_identical_grids:
             return args if len(args) == 2 else args[0]
 
-        handlers: dict[int, Callable[..., NDArray | Tuple[NDArray, NDArray]]] = {
-            1: self._apply_scalar,
-            2: self._apply_vector,
-        }
-
-        return handlers[len(args)](*args)
+        assert self.interpolator is not None
+        if len(args) == 1:
+            return self.interpolator.apply_scalar(args[0])
+        return cast(tuple[Any, Any], self.interpolator.apply_vector(args[0], args[1]))
 
     def __str__(self) -> str:
         return (

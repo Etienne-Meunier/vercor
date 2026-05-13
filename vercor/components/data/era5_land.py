@@ -1,17 +1,35 @@
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
-from vercor.clock import CustomDateTime
-from vercor.components import Component, ComponentForcingData
+import jax
+from jax.typing import ArrayLike
+
+from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array
+from vercor.field_layout import canonicalize_time_last_surface_field
+from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_forcing_data
+from vercor.assets import get_forcing_data
 
-if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+_ERA5_LAND_FIELD_NAMES = ("land_surface_temperature",)
 
 
-class ERA5Land(Component, ComponentForcingData):
+def _prepare_era5_land_runtime_fields(
+    longitude: ArrayLike,
+    latitude: ArrayLike,
+    binary_mask: ArrayLike,
+    land_surface_temperature: ArrayLike,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Normalize ERA5 land forcing arrays for JAX-backed runtime storage."""
+    return (
+        as_jax_real_array(longitude),
+        as_jax_real_array(latitude),
+        as_jax_real_array(binary_mask).T,
+        canonicalize_time_last_surface_field(land_surface_temperature),
+    )
+
+
+class ERA5Land(DataComponent, ComponentForcingData):
     def __init__(
         self,
         name: str = "LND",
@@ -39,36 +57,28 @@ class ERA5Land(Component, ComponentForcingData):
             "surface": str(surface_file),
         }
 
-        longitude = self._read_forcing("lon", where="surface")
-        latitude = self._read_forcing("lat", where="surface")
-        binary_mask = self._read_forcing("mask", where="surface").T
-        self.grid = RectilinearGrid(
+        (
+            longitude,
+            latitude,
+            binary_mask,
+            land_surface_temperature,
+        ) = _prepare_era5_land_runtime_fields(
+            self._read_forcing("lon", where="surface"),
+            self._read_forcing("lat", where="surface"),
+            self._read_forcing("mask", where="surface"),
+            self._read_forcing("skt", where="surface"),
+        )
+        grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
             binary_mask=binary_mask,
         )
 
-        super().__init__(name, grid=self.grid)
+        super().__init__(name, grid=grid)
+        self.declare_fields(outputs=_ERA5_LAND_FIELD_NAMES)
 
-        self.settings.apply_time_interpolation = True
+        self.update_settings(apply_time_interpolation=True)
 
         # Units: [K]
-        self.data["land_surface_temperature"] = self._read_forcing(
-            "skt", where="surface"
-        )
-
-    def initialize(self, coupler: "Coupler") -> None:
-        pass
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        """
-        Advance to the next time step in the dataset
-        using time interpolation from one month to another.
-        """
-        pass
+        self.seed_field("land_surface_temperature", land_surface_temperature)

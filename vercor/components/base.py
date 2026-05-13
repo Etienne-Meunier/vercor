@@ -1,470 +1,715 @@
-import abc
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Self, cast, final
 
-import h5netcdf
-import numpy as np
-import xarray as xr
-from numpy.typing import NDArray
-
-from vercor.clock import ModelDateTime, CustomDateTime
+from vercor.dtypes import PrecisionPolicy, jax_full, jax_zeros
+from vercor.components._contracts import (
+    ComponentStepResult as ComponentStepResult,
+)
+from vercor.components._contracts import (
+    AuthorFieldValues as _AuthorFieldValues,
+    AuthorStepCallable as _AuthorStepCallable,
+    ComponentFieldSpec,
+    ComponentStepReturn as _ComponentStepReturn,
+    FieldNames as _FieldNames,
+    component_field_spec as _component_field_spec,
+    merge_component_outputs as _merge_component_outputs,
+    normalize_author_field_values as _normalize_author_field_values,
+    unique_field_names as _unique_field_names,
+)
+from vercor.components import _runtime_fields as _runtime_field_adapters
+from vercor.components._validation import (
+    validate_component_setup as validate_component_setup,
+)
 from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
-from vercor.settings import ComponentSettings
-from vercor.tools import get_field_at_specific_time, get_field_time_slice
-from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import (
+        RuntimeComponentContract,
+        RuntimeComponentState,
+    )
+
+
+ComponentSetupContext = ComponentInitContext
+ComponentStepContext = RuntimeStepContext
+
+__all__ = [
+    "Component",
+    "ComponentFieldSpec",
+    "ComponentSetupContext",
+    "ComponentStepContext",
+    "ComponentStepResult",
+    "DataComponent",
+    "HostRuntimeComponent",
+    "data_component",
+    "differentiable_component",
+    "host_component",
+    "validate_component_setup",
+]
+
+
+def _author_field_spec(
+    *,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+) -> ComponentFieldSpec:
+    """Build a component field declaration from author constructor arguments."""
+
+    return ComponentFieldSpec(
+        inputs=inputs,
+        outputs=outputs,
+        default_fields=default_fields or {},
+    )
+
+
+def _callable_component_from_model(
+    *,
+    runtime_kind: str,
+    name: str,
+    grid: RectilinearGrid,
+    step: _AuthorStepCallable,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+) -> "Component":
+    """Create a callable-backed component from the shared author facade."""
+
+    from vercor.components._callable_wrappers import _create_callable_component
+
+    return _create_callable_component(
+        runtime_kind=runtime_kind,
+        name=name,
+        grid=grid,
+        step=step,
+        payload=payload,
+        settings=settings,
+        field_spec=_author_field_spec(
+            inputs=inputs,
+            outputs=outputs,
+            default_fields=default_fields,
+        ),
+    )
 
 
 @dataclass
-class TimedNamedArray:
-    """Container class for a field (array), its timestamp, and its component name."""
+class Component(ABC):
+    """Active differentiable component-author contract for VerCOR model adapters.
 
-    data: NDArray
-    timestamp: datetime | ModelDateTime
-    component_name: str
+    Component instances own mutable setup-time metadata: name, grid, seed data,
+    and component-specific settings. During coupling, the coupler copies those
+    seed fields into immutable runtime state containers so JAX can trace the
+    integration. Active differentiable components must implement
+    :meth:`step_runtime_state` while preserving its signature. Data-only forcing
+    adapters should inherit :class:`DataComponent`; non-differentiable adapters
+    should inherit :class:`HostRuntimeComponent`.
 
-    def __array__(self, dtype: Optional[NDArray] = None) -> NDArray:
-        """Let NumPy see this as an array transparently."""
-        return np.asarray(self.data, dtype=dtype)
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"├── Component name: {self.component_name!r}\n"
-            f"├── Shape: {self.data.shape}\n"
-            f"└── Timestamp: {self.timestamp!r}"
-        )
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(component_name={self.component_name!r}, "
-            f"shape={self.data.shape}, timestamp={self.timestamp!r})"
-        )
-
-
-@dataclass
-class Shared:
-    _fields: dict[str, TimedNamedArray] = field(default_factory=dict, init=False)
-
-    def _assign_field(self, name: str, value: Any) -> None:
-        # internal attributes
-        if name.startswith("_"):
-            return super().__setattr__(name, value)
-
-        if isinstance(value, TimedNamedArray):
-            self._fields[name] = value
-            return
-
-        if isinstance(value, tuple):
-            if len(value) == 3:
-                data, timestamp, component_name = value
-            else:
-                raise ValueError(
-                    f"Expected tuple of length 3 for field assignment, got length {len(value)}"
-                )
-
-            if not isinstance(timestamp, datetime | ModelDateTime):
-                raise TypeError(
-                    f"When assigning a tuple, the second element must be a datetime, got {type(timestamp)}"
-                )
-
-        else:
-            raise TypeError(
-                "When assigning a field, provide a tuple (data, timestamp, component name)"
-            )
-
-        data = np.asarray(data)
-        self._fields[name] = TimedNamedArray(
-            data=data,
-            timestamp=timestamp,
-            component_name=component_name,
-        )
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        self._assign_field(name, value)
-
-    def __setitem__(self, name: str, value: Any) -> None:
-        self._assign_field(name, value)
-
-    def __getattr__(self, name: str) -> TimedNamedArray:
-        try:
-            return self._fields[name]
-        except KeyError:
-            raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
-
-    def __getitem__(self, name: str) -> TimedNamedArray | None:
-        try:
-            return self._fields[name]
-        except KeyError:
-            print(f"{type(self).__name__!s} has no item {name!r}")
-            return None
-
-    def __str__(self) -> str:
-        field_descriptions = ", ".join(
-            f"{name}({value.component_name})" for name, value in self._fields.items()
-        )
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"└── Fields: {field_descriptions if field_descriptions else 'No fields assigned'}"
-        )
-
-    def __repr__(self) -> str:
-        field_reprs = ", ".join(
-            f"{name}={repr(value)}" for name, value in self._fields.items()
-        )
-        return f"{self.__class__.__name__}({field_reprs})"
-
-    @property
-    def is_empty(self) -> bool:
-        """Check if the Shared object has no fields."""
-        return len(self._fields) == 0
-
-    @property
-    def field_names(self) -> list[str]:
-        """Return a list of all field names in the Shared object."""
-        return list(self._fields.keys())
-
-    def fields(self) -> dict[str, NDArray]:
-        """Return a dictionary of all fields' data arrays."""
-        return {k: v.data for k, v in self._fields.items()}
-
-    def timestamps(self) -> dict[str, datetime | CustomDateTime]:
-        """Return a dictionary of all fields' timestamps."""
-        return {k: v.timestamp for k, v in self._fields.items()}
-
-    def component_names(self) -> dict[str, str]:
-        """Return a dictionary of all fields' component names."""
-        return {k: v.component_name for k, v in self._fields.items()}
-
-
-@dataclass
-class Component(abc.ABC):
-    name: str
-    grid: RectilinearGrid
-    incoming_fields: Shared = field(default_factory=Shared)
-    outgoing_fields: Shared = field(default_factory=Shared)
-    data: dict[str, NDArray] = field(default_factory=dict)
-    settings: ComponentSettings = field(default_factory=ComponentSettings)
-    _fields2import: list[str] = field(default_factory=list)
-    _fields2export: list[str] = field(default_factory=list)
-    """A component's default grid dimensions are (nTime, nLev, nLon, nLat)
-
-    Some components may have different dimensions, e.g., sea-ice (nTime, nLon, nLat) or
-    JCM atmospheric model (nTime, nLev, nLon, nLat).
-
-    One must implement necessary dimensions check and reshaping of fields
-    during import/export if needed.
-
-    Common conventions for exchange fields:
-        - All fields must have SI units.
-        - Surface fluxes are positive downward and negative upward.
+    Common exchange-field conventions:
+        - fields use SI units
+        - surface fluxes are positive downward and negative upward
+        - data fields use canonical trailing horizontal dimensions:
+          (nLat, nLon), (nTime, nLat, nLon), (nLev, nLat, nLon), or
+          (nTime, nLev, nLat, nLon)
 
     Attributes:
         name: component name
         grid: component grid
-        incoming_fields: shared fields received by the current component
-                         from another component(s)
-        outgoing_fields: shared fields to be sent from the current component
-                         to another component(s)
         data: internal storage for component data arrays to/from which fields
-                        are imported/exported
+            seed the runtime state during initialization
         settings: component-specific settings
-        _fields2import: list of field names to import from other components to data
-        _fields2export: list of field names to export to other components from data
     """
 
-    @abc.abstractmethod
-    def initialize(self, coupler: "Coupler") -> None:
-        raise NotImplementedError
+    name: str
+    grid: RectilinearGrid
+    data: dict[str, RuntimeArray] = field(default_factory=dict)
+    settings: VercorSettings = field(default_factory=VercorSettings)
+    _field_spec: ComponentFieldSpec = field(
+        default_factory=ComponentFieldSpec,
+        init=False,
+        repr=False,
+    )
 
-    @abc.abstractmethod
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime,
-        coupler: "Coupler",
-    ) -> None:
-        raise NotImplementedError
+    @classmethod
+    def from_model(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        step: _AuthorStepCallable,
+        *,
+        payload: Any | None = None,
+        settings: VercorSettings | None = None,
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+    ) -> "Component":
+        """Create a differentiable component from a user model callable.
 
-    def finalize(
-        self, coupler: "Coupler", output_file_mask: Optional[Path] = None
-    ) -> None:
-        """Finalize the component by writing its all shared fields (incoming and outgoing)
-        to a netCDF file.
-
-        Arguments:
-            output_file_mask: optional mask to include in the output filename
+        This author-facing constructor mirrors normal Python alternate
+        constructors: ``inputs`` declare fields the model reads, ``outputs``
+        declare fields the model writes, and ``default_fields`` declares
+        concrete runtime defaults. Scalar default values expand to this
+        component's grid shape.
         """
 
-        if output_file_mask is None:
-            filepath = Path(f"{self.name.lower()}_component_shared_fields.nc")
-        else:
-            filepath = Path(f"{self.name.lower()}_{output_file_mask}.nc")
-
-        merged_fields = self.merge_incoming_outgoing_fields()
-        coupler.append_masks_to_output(self.name, merged_fields)
-
-        write_shared_to_netcdf(merged_fields, self.grid, filepath)
-
-    def check_not_empty_import_export_lists(self) -> None:
-        """Check that the component has non-empty and non-overlapping
-        import and export fields.
-        """
-
-        if not self._fields2import:
-            raise ComponentError(
-                f"Component '{self.name}' has no fields to import defined."
-            )
-        if not self._fields2export:
-            raise ComponentError(
-                f"Component '{self.name}' has no fields to export defined."
-            )
-
-        all_fields = set(self._fields2import + self._fields2export)
-        if len(all_fields) < len(self._fields2import) + len(self._fields2export):
-            raise ComponentError(
-                f"Component '{self.name}' has overlapping fields in import/export lists."
-            )
-
-    def export_fields(self) -> Shared:
-        """
-        Prepare and deposit/return the outgoing_fields to be sent/dispatched to another component(s).
-        """
-        # TODO: export only component related fields
-        return self.outgoing_fields
-
-    def import_fields(self, fields: Shared) -> None:
-        """
-        Import fields received from another component(s) into receptor/incoming_fields.
-
-        Arguments:
-            fields: Shared object containing fields to import from another component
-        """
-        # TODO: import only component related fields
-
-        incoming_fields = fields.field_names
-        for name in incoming_fields:
-            self.incoming_fields[name] = fields[name]
-
-    def receive_fields(self, time: datetime | CustomDateTime) -> None:
-        """
-        Receive interpolated fields from receptor/incoming_fields (from another component(s))
-        and store them in data.
-
-        Arguments:
-            time: current simulation (coupler's) time
-        """
-
-        for fld in self._fields2import:
-            try:
-                tna = self.incoming_fields[fld]
-            except KeyError as exc:
-                raise ComponentError(
-                    f"Field '{fld}' required by component '{self.name}' not found in incoming fields."
-                ) from exc
-
-            if tna is not None and tna.timestamp != time:
-                raise ComponentError(
-                    f"Receive field '{fld}' timestamp {tna.timestamp} does not match "
-                    f"current time {time} in component '{self.name}'."
-                )
-
-        self.data.update(self.incoming_fields.fields())
-
-    def send_fields(self, time: datetime | ModelDateTime, coupler: "Coupler") -> None:
-        """
-        Prepare fields from data to be deposited to outgoing_fields,
-        to be later sent to another component(s).
-
-        Arguments:
-            time: current simulation (coupler's) time
-            coupler: Coupler instance for possible time interpolation
-        """
-
-        for fld in self._fields2export:
-            if self.settings.apply_time_interpolation:
-                # for data models with monthly means
-                field2send = get_field_at_specific_time(fld, self.data, coupler)
-            elif self.settings.get_field_time_slice:
-                # for data models with higher frequency data
-                field2send = get_field_time_slice(fld, self.data, time)
-            else:
-                field2send = self.data[fld]
-
-            self.outgoing_fields[fld] = (field2send, time, self.name)
-
-    def check_valid_exchange_field_names(self) -> None:
-        for fld in set(self._fields2import + self._fields2export):
-            if fld not in VALID_EXCHANGE_FIELD_NAMES:
-                raise ComponentError(
-                    f"Field name '{fld}' in component '{self.name}' is not a recognized exchange variable.\n"
-                    f"Replace field name '{fld}' with one of the supported names: {VALID_EXCHANGE_FIELD_NAMES}"
-                )
-
-    def get(self, field_name: str) -> NDArray:
-        """
-        Returns the data array of the specified field from either
-        incoming_fields or outgoing_fields.
-
-        Arguments:
-            field_name (str): name of the field to retrieve
-        """
-
-        in_fields = self.incoming_fields.fields()
-        out_fields = self.outgoing_fields.fields()
-
-        if field_name in in_fields and field_name in out_fields:
-            raise ComponentError(
-                f"Field name '{field_name}' found in both incoming and outgoing fields."
-            )
-
-        if field_name in in_fields:
-            return in_fields[field_name]
-
-        if field_name in out_fields:
-            return out_fields[field_name]
-
-        if field_name in self.data:
-            return self.data[field_name]
-
-        raise ComponentError(
-            f"Field name '{field_name}' not found in incoming, outgoing or internal pool of fields"
+        return _callable_component_from_model(
+            runtime_kind="differentiable",
+            name=name,
+            grid=grid,
+            step=step,
+            payload=payload,
+            settings=settings,
+            inputs=inputs,
+            outputs=outputs,
+            default_fields=default_fields,
         )
 
-    def merge_incoming_outgoing_fields(self) -> Shared:
+    def declare_fields(
+        self,
+        field_spec: ComponentFieldSpec | None = None,
+        *,
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+    ) -> ComponentFieldSpec:
+        """Declare runtime data fields for subclasses using author-facing names.
+
+        The base runtime hooks use this declaration to prefill output/default
+        fields and validate required fields. Subclasses with special lifecycle
+        needs can still override those hooks directly.
         """
-        Merge incoming_fields and outgoing_fields into a single Shared object for further output.
+
+        declared = field_spec or ComponentFieldSpec(
+            inputs=inputs,
+            outputs=outputs,
+            default_fields=default_fields or {},
+        )
+        self._field_spec = ComponentFieldSpec(
+            inputs=declared.inputs,
+            outputs=declared.outputs,
+            default_fields=_normalize_author_field_values(
+                component_name=self.name,
+                grid=self.grid,
+                fields=declared.default_fields,
+                policy=self.settings,
+            )
+            or {},
+        )
+        return self._field_spec
+
+    @property
+    def field_spec(self) -> ComponentFieldSpec:
+        """Return this component's declared author-facing runtime field contract."""
+
+        return _component_field_spec(self)
+
+    @property
+    def field_names(self) -> tuple[str, ...]:
+        """Return setup-time field names in insertion order."""
+
+        return tuple(self.data)
+
+    def update_settings(self, **values: object) -> Self:
+        """Update component settings by name and return this component.
+
+        This is a small convenience for component constructors that need to set
+        one or more existing ``VercorSettings`` values while preserving the
+        settings metadata and chainable authoring style.
         """
 
-        output_fields = Shared()
+        for setting_name, setting_value in values.items():
+            self.settings.set_value(setting_name, setting_value)
+        return self
 
-        for name, tna in self.incoming_fields._fields.items():
-            output_fields[name] = tna
-        for name, tna in self.outgoing_fields._fields.items():
-            output_fields[name] = tna
+    def grid_field_defaults(
+        self,
+        names: _FieldNames,
+        value: object = 0.0,
+        overrides: _AuthorFieldValues = None,
+        policy: PrecisionPolicy = None,
+    ) -> dict[str, RuntimeArray]:
+        """Return grid-shaped default fields for named runtime data fields.
 
-        return output_fields
+        ``value`` is applied to every name, then ``overrides`` replace specific
+        names. Scalars expand to this component's grid shape; array-like values
+        are validated against the canonical component-data layouts.
+        """
+
+        field_names = _unique_field_names(names)
+        defaults: dict[str, object] = {field_name: value for field_name in field_names}
+        for field_name, field_value in (overrides or {}).items():
+            if field_name not in defaults:
+                raise ComponentError(
+                    f"Default override field '{field_name}' is not declared for "
+                    f"component '{self.name}'."
+                )
+            defaults[field_name] = field_value
+
+        return (
+            _normalize_author_field_values(
+                component_name=self.name,
+                grid=self.grid,
+                fields=defaults,
+                policy=self.settings if policy is None else policy,
+            )
+            or {}
+        )
+
+    def seed_field(
+        self,
+        name: str,
+        value: object,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed one setup-time grid field and return this component.
+
+        Seeded fields must follow VerCOR's canonical component-data layout so
+        runtime state can be created with a stable PyTree structure.
+        """
+
+        return self.seed_fields({name: value}, policy=policy)
+
+    def seed_fields(
+        self,
+        fields: Mapping[str, object],
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed setup-time grid fields and return this component."""
+
+        field_updates = _normalize_author_field_values(
+            component_name=self.name,
+            grid=self.grid,
+            fields=fields,
+            policy=self.settings if policy is None else policy,
+        )
+        self.data.update(field_updates or {})
+        return self
+
+    def seed_declared_defaults(
+        self,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed this component's declared default fields and return itself."""
+
+        default_fields = _component_field_spec(self).default_fields
+        if default_fields:
+            self.seed_fields(default_fields, policy=policy)
+        return self
+
+    def seed_zero_field(
+        self,
+        name: str,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed one grid-shaped zero field and return this component."""
+
+        return self.seed_field(
+            name,
+            jax_zeros(
+                self.grid.shape,
+                self.settings if policy is None else policy,
+            ),
+        )
+
+    def seed_zero_fields(
+        self,
+        names: _FieldNames,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed multiple grid-shaped zero fields and return this component."""
+
+        for name in names:
+            self.seed_zero_field(name, policy)
+        return self
+
+    def seed_constant_field(
+        self,
+        name: str,
+        value: object,
+        policy: PrecisionPolicy = None,
+    ) -> "Component":
+        """Seed one grid-shaped constant field and return this component."""
+
+        return self.seed_field(
+            name,
+            jax_full(
+                self.grid.shape,
+                value,
+                self.settings if policy is None else policy,
+            ),
+        )
+
+    def runtime_fields(
+        self,
+        component_state: "RuntimeComponentState",
+    ) -> dict[str, RuntimeArray]:
+        """Return runtime data fields as a plain name-to-array mapping."""
+
+        return _runtime_field_adapters.runtime_fields(self, component_state)
+
+    def runtime_field(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+    ) -> RuntimeArray:
+        """Return one runtime data field with a component-oriented error."""
+
+        return _runtime_field_adapters.runtime_field(self, component_state, name)
+
+    def has_runtime_field(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+    ) -> bool:
+        """Return whether one runtime data field exists."""
+
+        return _runtime_field_adapters.has_runtime_field(self, component_state, name)
+
+    def runtime_field_or(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+        default: object,
+        policy: PrecisionPolicy = None,
+    ) -> RuntimeArray:
+        """Return one runtime field or a grid-shaped/default array fallback."""
+
+        return _runtime_field_adapters.runtime_field_or(
+            self,
+            component_state,
+            name,
+            default,
+            policy,
+        )
+
+    def runtime_field_or_zeros_like(
+        self,
+        component_state: "RuntimeComponentState",
+        name: str,
+        like: str | RuntimeArray,
+    ) -> RuntimeArray:
+        """Return one runtime field or zeros matching another field/array."""
+
+        return _runtime_field_adapters.runtime_field_or_zeros_like(
+            self,
+            component_state,
+            name,
+            like,
+        )
+
+    def with_runtime_fields(
+        self,
+        component_state: "RuntimeComponentState",
+        fields: Mapping[str, RuntimeArray],
+    ) -> "RuntimeComponentState":
+        """Return ``component_state`` with existing runtime data fields updated."""
+
+        return _runtime_field_adapters.with_runtime_fields(
+            self,
+            component_state,
+            fields,
+        )
+
+    def apply_step_result(
+        self,
+        component_state: "RuntimeComponentState",
+        result: _ComponentStepReturn,
+    ) -> "RuntimeComponentState":
+        """Apply a field mapping or ``ComponentStepResult`` to runtime state."""
+
+        from vercor.components._callable_wrappers import apply_callable_step_result
+
+        return apply_callable_step_result(self, component_state, result)
+
+    def require_runtime_fields(
+        self,
+        component_state: "RuntimeComponentState",
+        *names: str,
+    ) -> None:
+        """Validate that named runtime data fields use canonical grid layout."""
+
+        _runtime_field_adapters.require_runtime_fields(self, component_state, *names)
+
+    def prefill_runtime_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        field_spec: ComponentFieldSpec | None = None,
+        *,
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+        policy: PrecisionPolicy = None,
+    ) -> None:
+        """Prefill a mutable runtime data mapping with declared fields.
+
+        This helper is intended for ``prefill_runtime_state_fields()`` overrides.
+        Default fields are inserted first, then output fields are inserted as
+        grid-shaped zeros when they are still missing.
+        """
+
+        _runtime_field_adapters.prefill_runtime_fields(
+            self,
+            data,
+            field_spec,
+            outputs=outputs,
+            default_fields=default_fields,
+            policy=policy,
+        )
+
+    def initialize(self, context: ComponentInitContext) -> None:
+        """Optionally initialize component-owned runtime data before coupling.
+
+        Override this hook when setup depends on coupler context such as start
+        time, coupling timestep, run sequence, settings, or logger.
+        """
+
+        self.seed_declared_defaults(context.settings)
+
+    def create_runtime_payload(self) -> Any | None:
+        """Return optional immutable payload carried by runtime component state.
+
+        Override this hook for differentiable models that need non-field PyTree
+        state, for example model internals or forcing containers.
+        """
+
+        return None
+
+    def prefill_runtime_state_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        incoming: dict[str, RuntimeArray],
+        outgoing: dict[str, RuntimeArray],
+        contract: RuntimeComponentContract,
+    ) -> None:
+        """Optionally pre-seed fields required by runtime execution.
+
+        Override this hook when a component creates fields during stepping and
+        those fields must exist before the first JAX scan iteration.
+        """
+
+        _runtime_field_adapters.prefill_declared_runtime_fields(self, data)
+        _ = incoming, outgoing, contract
+
+    def validate_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        contract: RuntimeComponentContract,
+    ) -> None:
+        """Optionally validate component-specific runtime fields before execution.
+
+        Override this hook to report missing payloads, diagnostic fields, or
+        non-standard shapes before traced runtime execution begins.
+        """
+
+        _ = contract
+        _runtime_field_adapters.validate_declared_runtime_fields(
+            self,
+            component_state,
+        )
+
+    @abstractmethod
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Return this differentiable component advanced by one runtime step."""
 
     def __str__(self) -> str:
-        shared_fields_list = []
-        shared_fields_string = ""
-
-        if self.incoming_fields or self.outgoing_fields:
-            shared_fields_list = list(self.incoming_fields.fields().keys()) + list(
-                self.outgoing_fields.fields().keys()
-            )
-            shared_fields_string = ", ".join(shared_fields_list)
-
         return (
             f"{self.__class__.__name__}:\n"
             f" ├── Name: {self.name}\n"
-            f" ├── Shared fields: {shared_fields_string if len(shared_fields_list) > 0 else 'Not provided'}\n"
+            f" ├── Runtime fields: Configured by Coupler runtime contract\n"
             f" └── Grid name: {self.grid.name}\n"
             f"     └── Shape: {self.grid.shape}\n"
         )
 
     def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)},"
-            f" incoming_fields={repr(self.incoming_fields)}, outgoing_fields={repr(self.outgoing_fields)})"
-        )
+        return f"{self.__class__.__name__}(name={self.name!r}, grid={repr(self.grid)})"
 
 
-class ComponentForcingData:
-    def __init__(self) -> None:
-        self.DATA_FILES: dict[str, str] = {}
+class DataComponent(Component):
+    """Base class for data-only components that intentionally do not step.
 
-    def _read_forcing(self, variable: str, where: str, flip_y: bool = False) -> NDArray:
-        """Read a variable from the specified forcing file.
-
-        Arguments:
-            variable (str): variable name to read from a file
-            where (str): key to identify which file to read from DATA_FILES
-            flip_y (bool): whether to flip the variable along the latitude axis
-
-        Returns:
-            (`ndarray`): the requested variable data
-        """
-
-        try:
-            with h5netcdf.File(self.DATA_FILES[where], "r") as infile:
-                var_obj = np.array(infile.variables[variable]).T
-                if flip_y:
-                    return np.flip(var_obj, axis=1)
-                else:
-                    return var_obj
-        except KeyError as e:
-            raise KeyError(
-                f"Provided 'where' key '{where}' not found in DATA_FILES"
-            ) from e
-        except Exception as e:
-            raise RuntimeError(
-                f"Error reading variable '{variable}' from forcing file '{self.DATA_FILES[where]}'"
-            ) from e
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"└── Forcing files: {self.DATA_FILES if self.DATA_FILES else 'No files assigned'}"
-        )
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(DATA_FILES={self.DATA_FILES})"
-
-
-def write_shared_to_netcdf(
-    shared: Shared, grid: RectilinearGrid, filename: Path
-) -> None:
-    """Write the contents of a Shared object to a netCDF file.
-    Arguments:
-        shared: Shared object containing fields to write
-        grid: Grid object defining the grid
-        filename: path to the output netCDF file
+    Use this for forcing and boundary-condition adapters whose runtime behavior is
+    limited to importing/exporting seeded fields through the coupler contract.
+    Data components must not own active runtime stepping behavior; compute
+    plotting-only diagnostics outside runtime state. Active differentiable models
+    should inherit :class:`Component` and implement
+    :meth:`Component.step_runtime_state` instead.
     """
 
-    lat = xr.DataArray(grid.latitude, dims=("nlat",), name="latitude")
-    lon = xr.DataArray(grid.longitude, dims=("nlon",), name="longitude")
+    @classmethod
+    def from_fields(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        fields: _AuthorFieldValues = None,
+        settings: VercorSettings | None = None,
+    ) -> "DataComponent":
+        """Create a data-only component from user-provided grid fields.
 
-    data_vars = {}
-    for name, tna in shared._fields.items():
-        data_vars[name] = xr.DataArray(
-            data=tna.data,
-            dims=("nlat", "nlon"),
-            coords={"latitude": lat, "longitude": lon},
-            attrs={
-                "timestamp": tna.timestamp.isoformat(),
-                "component": tna.component_name,
-            },
+        Scalar field values expand to grid-shaped constants and seeded field
+        names are exposed as declared outputs.
+        """
+
+        if settings is None:
+            component = cls(name=name, grid=grid)
+        else:
+            component = cls(name=name, grid=grid, settings=settings)
+        if fields is not None:
+            component.seed_fields(fields)
+        return component
+
+    def seed_fields(
+        self,
+        fields: Mapping[str, object],
+        policy: PrecisionPolicy = None,
+    ) -> "DataComponent":
+        """Seed data fields and expose their names as declared outputs."""
+
+        super().seed_fields(fields, policy=policy)
+        _merge_component_outputs(self, fields.keys())
+        return self
+
+    @final
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Return the runtime state unchanged for data-only components."""
+
+        _ = context
+        return component_state
+
+
+class HostRuntimeComponent(Component):
+    """Base class for host-backed adapters that cannot run inside JAX scan."""
+
+    @classmethod
+    def from_model(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        step: _AuthorStepCallable,
+        *,
+        payload: Any | None = None,
+        settings: VercorSettings | None = None,
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
+        default_fields: _AuthorFieldValues = None,
+    ) -> "HostRuntimeComponent":
+        """Create a host-runtime component from a Python model callable."""
+
+        return cast(
+            "HostRuntimeComponent",
+            _callable_component_from_model(
+                runtime_kind="host",
+                name=name,
+                grid=grid,
+                step=step,
+                payload=payload,
+                settings=settings,
+                inputs=inputs,
+                outputs=outputs,
+                default_fields=default_fields,
+            ),
         )
 
-    xr.Dataset(
-        data_vars=data_vars,
-        coords={"latitude": lat, "longitude": lon},
-    ).to_netcdf(filename)
+    @final
+    def step_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Reject accidental execution on the differentiable scanned runtime."""
+
+        _ = component_state, context
+        component_name = getattr(self, "name", self.__class__.__name__)
+        raise ComponentError(
+            f"Component '{component_name}' is host-backed and cannot run through "
+            "the differentiable scanned runtime. Use Coupler.run() so VerCOR can "
+            "select the host runtime path, or implement a differentiable Component."
+        )
+
+    @abstractmethod
+    def step_host_runtime_state(
+        self,
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance this non-differentiable host adapter by one runtime step."""
 
 
-if __name__ == "__main__":
-    shared = Shared()
-    if not shared.is_empty:
-        print("Shared is not empty initially, something is wrong!")
+def data_component(
+    name: str,
+    grid: RectilinearGrid,
+    fields: _AuthorFieldValues = None,
+    settings: VercorSettings | None = None,
+) -> DataComponent:
+    """Create a data-only component using the author-friendly field facade."""
 
-    t_model = datetime(2025, 11, 14, 12, 0, 0)
-    shared.temperature = (np.array([[1.0, 2.0], [3.0, 4.0]]), t_model, "ocean")
-    shared.humidity = (np.array([[0.5, 0.6], [0.7, 0.8]]), t_model, "atmosphere")
-    shared.temperature.data += 10.0
+    return DataComponent.from_fields(
+        name=name,
+        grid=grid,
+        fields=fields,
+        settings=settings,
+    )
 
-    if shared.is_empty:
-        print("Shared is not empty!")
 
-    print(shared)
+def differentiable_component(
+    name: str,
+    grid: RectilinearGrid,
+    step: _AuthorStepCallable,
+    *,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+) -> Component:
+    """Create a differentiable component using the author-friendly facade."""
 
-    temp_array = shared.temperature
-    print(temp_array)
-    print("Temperature data:\n", temp_array.data)
-    print("Temperature timestamp:", temp_array.timestamp)
-    print("Temperature component name:", temp_array.component_name)
+    return Component.from_model(
+        name=name,
+        grid=grid,
+        step=step,
+        payload=payload,
+        settings=settings,
+        inputs=inputs,
+        outputs=outputs,
+        default_fields=default_fields,
+    )
+
+
+def host_component(
+    name: str,
+    grid: RectilinearGrid,
+    step: _AuthorStepCallable,
+    *,
+    payload: Any | None = None,
+    settings: VercorSettings | None = None,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    default_fields: _AuthorFieldValues = None,
+) -> HostRuntimeComponent:
+    """Create a host-runtime component using the author-friendly facade."""
+
+    return HostRuntimeComponent.from_model(
+        name=name,
+        grid=grid,
+        step=step,
+        payload=payload,
+        settings=settings,
+        inputs=inputs,
+        outputs=outputs,
+        default_fields=default_fields,
+    )

@@ -1,19 +1,42 @@
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
-import numpy as np
+import jax
+import jax.numpy as jnp
+from jax.typing import ArrayLike
 
-from vercor.clock import CustomDateTime
-from vercor.components import Component, ComponentForcingData
+from vercor.components.base import DataComponent
+from vercor.dtypes import as_jax_real_array
+from vercor.field_layout import canonicalize_time_last_surface_field
+from vercor.forcing_data import ComponentForcingData
 from vercor.grid import RectilinearGrid
-from vercor.tools import get_forcing_data
+from vercor.assets import get_forcing_data
 
-if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+_ERA5_OCEAN_FIELD_NAMES = ("sea_surface_temperature",)
 
 
-class ERA5Ocean(Component, ComponentForcingData):
+def _ocean_binary_mask_from_land_fraction(land_fraction: ArrayLike) -> jax.Array:
+    """Convert a fractional land mask into a binary ocean mask."""
+    land_fraction_array = as_jax_real_array(land_fraction)
+    return 1.0 - jnp.where(land_fraction_array > 0.0, 1.0, 0.0)
+
+
+def _mask_sea_surface_temperature(
+    sea_surface_temperature: ArrayLike,
+    binary_mask: ArrayLike,
+) -> jax.Array:
+    """Apply the binary ocean mask and return a `(nTime, nLat, nLon)` SST field."""
+    return (
+        canonicalize_time_last_surface_field(sea_surface_temperature)
+        * jnp.where(
+            as_jax_real_array(binary_mask) > 0.0,
+            1.0,
+            jnp.nan,
+        )[jnp.newaxis, ...]
+    )
+
+
+class ERA5Ocean(DataComponent, ComponentForcingData):
     def __init__(
         self,
         name: str = "OCN",
@@ -43,40 +66,26 @@ class ERA5Ocean(Component, ComponentForcingData):
 
         longitude = self._read_forcing("longitude", where="surface")
         latitude = self._read_forcing("latitude", where="surface")[::-1]
-        fraction_mask = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
-        fraction_mask = np.where(fraction_mask > 0.0, 1.0, 0.0)
-        binary_mask = 1 - fraction_mask
+        land_fraction = self._read_forcing("lsm", where="surface", flip_y=True).T[0, ::]
+        binary_mask = _ocean_binary_mask_from_land_fraction(land_fraction)
 
-        self.grid = RectilinearGrid(
+        grid = RectilinearGrid(
             name=f"{name.lower()}-grid",
             longitude=longitude,
             latitude=latitude,
             binary_mask=binary_mask,
         )
 
-        super().__init__(name, grid=self.grid)
+        super().__init__(name, grid=grid)
+        self.declare_fields(outputs=_ERA5_OCEAN_FIELD_NAMES)
 
-        self.settings.apply_time_interpolation = True
+        self.update_settings(apply_time_interpolation=True)
 
         # Units: [K]
-        self.data["sea_surface_temperature"] = self._read_forcing(
-            "sst", where="surface", flip_y=True
+        self.seed_field(
+            "sea_surface_temperature",
+            _mask_sea_surface_temperature(
+                self._read_forcing("sst", where="surface", flip_y=True),
+                binary_mask,
+            ),
         )
-        self.data["sea_surface_temperature"] *= np.where(
-            binary_mask > 0.0, 1.0, np.nan
-        ).T[..., np.newaxis]
-
-    def initialize(self, coupler: "Coupler") -> None:
-        pass
-
-    def step(
-        self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        """
-        Advance to the next time step in the dataset
-        using time interpolation from one month to another.
-        """
-        pass

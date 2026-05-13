@@ -1,27 +1,31 @@
 from copy import deepcopy
 
-from typing import TYPE_CHECKING, Any, Callable
-import numpy as np
-from numpy.typing import NDArray
-from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Any, Callable, cast
+import jax
+import jax.numpy as jnp
+from datetime import timedelta
 
-from vercor.clock import ModelDateTime
-from vercor.components.external.veros_runtime_settings import *  # noqa: F403,F401
-
-from veros.setups.global_4deg import GlobalFourDegreeSetup
-from veros.core.operators import numpy as npx, update, at
-from veros.routines import veros_kernel, veros_routine
-from veros.state import KernelOutput, VerosState
-from veros.tools import get_periodic_interval
-
-from vercor.components.base import Component
+from vercor.components.external.veros_runtime_settings import configure_veros_runtime
+from vercor.components.base import HostRuntimeComponent
+from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.grid import RectilinearGrid
-from vercor.fluxes.bulk_formula_cesm import new_flux_atmOcn
+from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
+from vercor.runtime import RuntimeFieldStore
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
+from vercor.host_arrays import runtime_array_to_host
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
+configure_veros_runtime()
+
+from veros.setups.global_4deg import GlobalFourDegreeSetup  # noqa: E402
+from veros.core.operators import numpy as npx, update, at  # noqa: E402
+from veros.routines import veros_kernel, veros_routine  # noqa: E402
+from veros.state import KernelOutput, VerosState  # noqa: E402
+from veros.tools import get_periodic_interval  # noqa: E402
 
 try:
     import veros  # noqa: F401
@@ -29,6 +33,20 @@ except ImportError:
     raise ImportError(
         "The VerosGCM component requires the Veros package. Please install it with `pip install veros`."
     )
+
+
+_VEROS_INPUT_FIELD_NAMES = (
+    "model_level_height",
+    "u_velocity",
+    "v_velocity",
+    "potential_temperature",
+    "specific_humidity",
+    "density",
+    "temperature",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+)
+_VEROS_FIELD_DEFAULTS = {"sea_surface_temperature": 283.15}
 
 
 class CustomGlobalFourDegree(GlobalFourDegreeSetup):
@@ -132,19 +150,72 @@ class CustomGlobalFourDegree(GlobalFourDegreeSetup):
         state.diagnostics["averages"].sampling_frequency = 86400
 
 
-def compute_fluxes(
-    component_state: "VerosGCM", settings: VercorSettings
-) -> tuple[NDArray, NDArray, NDArray, NDArray]:
+@jax.jit
+def _update_veros_interior(
+    array: object,
+    interior_value: object,
+) -> jax.Array:
+    array_jax = as_jax_real_array(array)
+    interior_value_jax = as_jax_real_array(interior_value)
+    return array_jax.at[2:-2, 2:-2, ...].set(interior_value_jax)
 
-    cs = component_state
-    vs = cs._veros_state.variables
+
+@jax.jit
+def _prepare_surface_forcing_fields(
+    taux: object,
+    tauy: object,
+    qnet: object,
+    qnec: object,
+    restore_to_climatology: object,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    restore_to_climatology_jax = jnp.asarray(restore_to_climatology, dtype=bool)
+
+    def _prepare(field: object) -> jax.Array:
+        field_jax = as_jax_real_array(field)
+        return jnp.nan_to_num(field_jax.T[..., jnp.newaxis])
+
+    taux_prepared = _prepare(taux)
+    tauy_prepared = _prepare(tauy)
+    qnet_prepared = _prepare(qnet)
+    qnec_prepared = _prepare(qnec)
+    qnec_prepared = jnp.where(
+        restore_to_climatology_jax, qnec_prepared, jnp.zeros_like(qnec_prepared)
+    )
+
+    return taux_prepared, tauy_prepared, qnet_prepared, qnec_prepared
+
+
+@jax.jit
+def _extract_surface_temperature(
+    temperature: object,
+    tau: object,
+) -> jax.Array:
+    temperature_array = as_jax_real_array(temperature)
+    tau_index = as_jax_index_array(tau)
+    return temperature_array[2:-2, 2:-2, -1, tau_index].T + 273.15
+
+
+def compute_fluxes(
+    veros_state: VerosState,
+    runtime_fields: RuntimeFieldStore,
+    settings: VercorSettings,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    """Compute atmosphere-ocean fluxes from explicit Veros and runtime fields."""
+
+    vs = veros_state.variables
 
     # u & v have Arakawa-C grid staggering in Veros
     # require additional interpolation
-    u_tgrid = 0.5 * (vs.u[1:, 2:-2, -1, vs.tau] + vs.u[:-1, 2:-2, -1, vs.tau])
-    v_tgrid = 0.5 * (vs.v[2:-2, 1:, -1, vs.tau] + vs.v[2:-2, :-1, -1, vs.tau])
+    u_tgrid = 0.5 * (
+        as_jax_real_array(vs.u[1:, 2:-2, -1, vs.tau], settings)
+        + as_jax_real_array(vs.u[:-1, 2:-2, -1, vs.tau], settings)
+    )
+    v_tgrid = 0.5 * (
+        as_jax_real_array(vs.v[2:-2, 1:, -1, vs.tau], settings)
+        + as_jax_real_array(vs.v[2:-2, :-1, -1, vs.tau], settings)
+    )
 
-    temp = vs.temp[2:-2, 2:-2, -1, vs.tau].T + 273.15
+    temp = as_jax_real_array(vs.temp[2:-2, 2:-2, -1, vs.tau], settings).T + 273.15
 
     (
         senf,
@@ -160,16 +231,16 @@ def compute_fluxes(
         tstar,
         qstar,
         dqfldt,
-    ) = new_flux_atmOcn(
+    ) = compute_ocean_surface_fluxes(
         settings,
-        np.array(vs.maskT[2:-2, 2:-2, -1].T),
-        cs.data["model_level_height"],
-        cs.data["u_velocity"],
-        cs.data["v_velocity"],
-        cs.data["potential_temperature"],
-        cs.data["specific_humidity"],
-        cs.data["density"],
-        cs.data["temperature"],
+        as_jax_real_array(vs.maskT[2:-2, 2:-2, -1], settings).T,
+        as_jax_real_array(runtime_fields.get("model_level_height"), settings),
+        as_jax_real_array(runtime_fields.get("u_velocity"), settings),
+        as_jax_real_array(runtime_fields.get("v_velocity"), settings),
+        as_jax_real_array(runtime_fields.get("potential_temperature"), settings),
+        as_jax_real_array(runtime_fields.get("specific_humidity"), settings),
+        as_jax_real_array(runtime_fields.get("density"), settings),
+        as_jax_real_array(runtime_fields.get("temperature"), settings),
         u_tgrid[1:-2, :].T,
         v_tgrid[:, 1:-2].T,
         temp,
@@ -180,15 +251,22 @@ def compute_fluxes(
     # Positive in:  SW_net ↓  LW_dw ↓  SENf ↓  LATf ↓
 
     qnet = (
-        cs.data["net_shortwave_radiation_flux"]
-        + cs.data["downward_longwave_radiation_flux"]
+        as_jax_real_array(runtime_fields.get("net_shortwave_radiation_flux"), settings)
+        + as_jax_real_array(
+            runtime_fields.get("downward_longwave_radiation_flux"), settings
+        )
         + lwup
         + senf
         + latf
     )
-    qnec = -np.where(dqfldt <= -1e10, 0.0, dqfldt)
+    qnec = -jnp.where(dqfldt <= -1e10, 0.0, dqfldt)
 
-    return (taux, tauy, qnet, qnec)
+    return (
+        as_jax_real_array(taux, settings),
+        as_jax_real_array(tauy, settings),
+        as_jax_real_array(qnet, settings),
+        as_jax_real_array(qnec, settings),
+    )
 
 
 def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
@@ -209,9 +287,6 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
         state_copy._variables = deepcopy(tree._variables)
         state_copy.timers = deepcopy(tree.timers)
         state_copy.profile_timers = deepcopy(tree.profile_timers)
-
-        # Replace the above with the following line when Etienne put his fixes in Veros
-        # return tree_map(lambda x : x.copy(), tree)
     else:
         state_copy = tree
 
@@ -220,7 +295,7 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
 
 def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
     """
-    Convert the state function into a "pure step" copying the input state
+    Convert an in-place Veros step into a copy-before-mutate boundary helper.
     """
     n_state = copy_state(state, jitted=jitted)
     # This is a function that modifies state object inplace
@@ -229,22 +304,75 @@ def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
     return n_state
 
 
-def set_variable(
-    state: VerosState, variable_name: str, variable_value: NDArray, jitted: bool = True
-) -> VerosState:
+def _extract_veros_runtime_sst(state: VerosState) -> jax.Array:
+    """Return the Veros surface temperature field in VerCOR runtime layout."""
 
+    return cast(
+        jax.Array,
+        _extract_surface_temperature(
+            state.variables.temp,
+            state.variables.tau,
+        ),
+    )
+
+
+def set_variable(
+    state: VerosState,
+    variable_name: str,
+    variable_value: RuntimeArray,
+    jitted: bool = True,
+) -> VerosState:
     n_state = copy_state(state, jitted=jitted)
     vs = n_state.variables
 
     with n_state.variables.unlock():
         var = getattr(vs, variable_name)
-        var = update(var, at[2:-2, 2:-2, ...], variable_value)
-        setattr(vs, variable_name, var)
+        updated_var = _update_veros_interior(var, variable_value)
+        setattr(vs, variable_name, runtime_array_to_host(updated_var))
 
     return n_state
 
 
-class VerosGCM(Component):
+def _apply_veros_forcing_fields(
+    state: VerosState,
+    forcing_fields: tuple[jax.Array, jax.Array, jax.Array, jax.Array],
+    *,
+    jitted: bool,
+) -> VerosState:
+    """Write prepared VerCOR forcing fields into Veros state variables."""
+
+    updated_state = state
+    for variable_name, variable_value in zip(
+        ("taux", "tauy", "qnet", "qnec"),
+        forcing_fields,
+    ):
+        updated_state = set_variable(
+            updated_state,
+            variable_name,
+            variable_value,
+            jitted=jitted,
+        )
+    return updated_state
+
+
+def _advance_veros_substeps(
+    state: VerosState,
+    *,
+    step_function: Callable[[VerosState], VerosState],
+    model_substeps: int,
+    logger: Any | None,
+) -> VerosState:
+    """Advance Veros through the configured number of host substeps."""
+
+    updated_state = state
+    for i in range(model_substeps):
+        if logger is not None:
+            logger.info(f" Veros sub-step {i+1} / {model_substeps}")
+        updated_state = step_function(updated_state)
+    return updated_state
+
+
+class VerosGCM(HostRuntimeComponent):
     def __init__(
         self,
         name: str = "OCN",
@@ -285,7 +413,11 @@ class VerosGCM(Component):
         self.dt_tracer = getattr(self._veros_state.settings, "dt_tracer")
         self.spinup_steps = int(self.spinup_time.total_seconds() // self.dt_tracer)
 
-        mask = np.where(self._veros_state.variables.maskT[:, :, -1] > 0.0, 1.0, 0.0)
+        mask = jnp.where(
+            jnp.asarray(self._veros_state.variables.maskT[:, :, -1]) > 0.0,
+            1.0,
+            0.0,
+        )
 
         grid = RectilinearGrid(
             name=name,
@@ -295,9 +427,17 @@ class VerosGCM(Component):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(
+            inputs=_VEROS_INPUT_FIELD_NAMES,
+            outputs=("sea_surface_temperature",),
+            default_fields=self.grid_field_defaults(
+                ("sea_surface_temperature",),
+                overrides=_VEROS_FIELD_DEFAULTS,
+            ),
+        )
 
-    def initialize(self, coupler: "Coupler") -> None:
-        dt_seconds = coupler.clock.dt_seconds
+    def initialize(self, context: ComponentInitContext) -> None:
+        dt_seconds = context.dt_seconds
         self.model_substeps = int(dt_seconds // self.dt_tracer)
 
         if dt_seconds % self.dt_tracer != 0:
@@ -306,53 +446,56 @@ class VerosGCM(Component):
             )
 
         # Initial spinup is performed with ERA-Interim (default) atmospheric forcing
-        if self.do_spinup and "ATM" in coupler.run_sequence.order:
+        if self.do_spinup and "ATM" in context.run_sequence.order:
             # Do it similar to CESM spinup when coupling with atmosphere is on
-            coupler.logger.info(
+            context.logger.info(
                 f" Performing Veros spinup for {self.spinup_time} day(s)..."
             )
             for i in range(self.spinup_steps):
-                coupler.logger.info(f" Step {i+1} / {self.spinup_steps}")
+                context.logger.info(f" Step {i+1} / {self.spinup_steps}")
                 self._veros_state = self._step_function(self._veros_state)
 
-        # Units: [K]
-        self.data["sea_surface_temperature"] = (
-            self._veros_state.variables.temp[
-                2:-2, 2:-2, -1, self._veros_state.variables.tau
-            ].T
-            + 273.15
+        self.seed_field(
+            "sea_surface_temperature",
+            _extract_veros_runtime_sst(self._veros_state),
         )
 
-    def step(
+    def step_host_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | ModelDateTime,
-        coupler: "Coupler",
-    ) -> None:
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance the private host-backed Veros boundary."""
 
-        taux, tauy, qnet, qnec = compute_fluxes(self, coupler.settings)
+        time = context.time
+        logger = context.logger
+        if time is None:
+            return component_state
 
-        if not self.restore_to_climatology:
-            qnec = np.zeros_like(qnet)
+        runtime_fields = component_state.data
 
-        for variable_name, variable_value in {
-            "taux": np.nan_to_num(taux.T[..., np.newaxis]),
-            "tauy": np.nan_to_num(tauy.T[..., np.newaxis]),
-            "qnet": np.nan_to_num(qnet.T[..., np.newaxis]),
-            "qnec": np.nan_to_num(qnec.T[..., np.newaxis]),
-        }.items():
-            self._veros_state = set_variable(
-                self._veros_state, variable_name, variable_value, jitted=self.jitted
-            )
+        taux, tauy, qnet, qnec = compute_fluxes(
+            self._veros_state,
+            runtime_fields,
+            context.settings,
+        )
+        forcing_fields = _prepare_surface_forcing_fields(
+            taux, tauy, qnet, qnec, self.restore_to_climatology
+        )
 
-        for i in range(self.model_substeps):
-            coupler.logger.info(f" Veros sub-step {i+1} / {self.model_substeps}")
-            self._veros_state = self._step_function(self._veros_state)
+        self._veros_state = _apply_veros_forcing_fields(
+            self._veros_state,
+            forcing_fields,
+            jitted=self.jitted,
+        )
+        self._veros_state = _advance_veros_substeps(
+            self._veros_state,
+            step_function=self._step_function,
+            model_substeps=self.model_substeps,
+            logger=logger,
+        )
 
-        # Units: [K]
-        self.data["sea_surface_temperature"] = (
-            self._veros_state.variables.temp[
-                2:-2, 2:-2, -1, self._veros_state.variables.tau
-            ].T
-            + 273.15
+        return self.with_runtime_fields(
+            component_state,
+            {"sea_surface_temperature": _extract_veros_runtime_sst(self._veros_state)},
         )

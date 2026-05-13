@@ -47,6 +47,10 @@ build-backend = "flit_core.buildapi"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+  "ignore:jax.experimental.shard_map is deprecated in v0.8.0. Used jax.shard_map instead\\.:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true

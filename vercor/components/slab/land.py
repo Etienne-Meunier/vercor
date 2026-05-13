@@ -1,14 +1,34 @@
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
+import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentFieldSpec
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
+from vercor.runtime.contexts import RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
+
+
+_LAND_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("latent_heat_flux",),
+    outputs=("soil_moisture", "land_surface_temperature"),
+    default_fields={"soil_moisture": 0.3, "land_surface_temperature": 288.15},
+)
+
+
+@jax.jit
+def _update_soil_moisture(
+    soil_moisture: object,
+    latent_heat_flux: object,
+    dt_seconds: float,
+) -> jax.Array:
+    soil_moisture_array = as_jax_real_array(soil_moisture)
+    latent_heat_flux_array = as_jax_real_array(latent_heat_flux)
+    evap = 1e-9 * latent_heat_flux_array
+    return jnp.clip(soil_moisture_array - evap * dt_seconds, 0.0, 1.0)
 
 
 class Land(Component):
@@ -19,22 +39,28 @@ class Land(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "LND") -> None:
         super().__init__(name, grid)
+        self.declare_fields(_LAND_FIELD_SPEC)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        self.data["soil_moisture"] = 0.3 * np.ones(self.grid.shape)
-        self.data["land_surface_temperature"] = np.zeros(self.grid.shape) + 288.15
-
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        latent_heat_flux = self.data["latent_heat_flux"]
-        soil_moisture = self.data["soil_moisture"]
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance the slab land component on immutable runtime state."""
 
-        evap = 1e-9 * (
-            latent_heat_flux if latent_heat_flux is not None else 0.0
-        )  # tiny dt scaling
-        soil_moisture = np.clip(soil_moisture - evap * dt.total_seconds(), 0.0, 1.0)
-        self.data["soil_moisture"] = soil_moisture
+        dt_seconds = context.dt_seconds
+        soil_moisture = self.runtime_field(component_state, "soil_moisture")
+        latent_heat_flux = self.runtime_field_or_zeros_like(
+            component_state,
+            "latent_heat_flux",
+            soil_moisture,
+        )
+        updated_soil_moisture = _update_soil_moisture(
+            soil_moisture,
+            latent_heat_flux,
+            dt_seconds,
+        )
+        return self.with_runtime_fields(
+            component_state,
+            {"soil_moisture": updated_soil_moisture},
+        )

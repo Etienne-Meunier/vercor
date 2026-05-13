@@ -1,14 +1,30 @@
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
+import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentFieldSpec
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
+from vercor.runtime.contexts import RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
+
+
+_SEAICE_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("sea_surface_temperature",),
+    outputs=("ice_fraction",),
+    default_fields={"ice_fraction": 0.0},
+)
+
+
+@jax.jit
+def _diagnose_ice_fraction(sea_surface_temperature: object) -> jax.Array:
+    sea_surface_temperature_array = as_jax_real_array(sea_surface_temperature)
+    freezing_temperature = 273.15 - 1.8
+    x = (freezing_temperature - sea_surface_temperature_array) / 2.0
+    return 1.0 / (1.0 + jnp.exp(-x))
 
 
 class SeaIce(Component):
@@ -19,23 +35,24 @@ class SeaIce(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "ICE") -> None:
         super().__init__(name, grid)
+        self.declare_fields(_SEAICE_FIELD_SPEC)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        self.data["ice_fraction"] = np.zeros(self.grid.shape)
-
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        sst = self.data.get("sea_surface_temperature", None)
-        if sst is None:
-            return
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Diagnose slab sea-ice fraction on immutable runtime state."""
 
-        Tfreeze = 273.15 - 1.8
-        # Smooth step: more ice when colder than freezing
-        x = (Tfreeze - sst) / 2.0
-        ice = 1.0 / (1.0 + np.exp(-x))
-
-        self.data["ice_fraction"] = ice
+        _ = context
+        if not self.has_runtime_field(component_state, "sea_surface_temperature"):
+            return component_state
+        sea_surface_temperature = self.runtime_field(
+            component_state,
+            "sea_surface_temperature",
+        )
+        ice_fraction = _diagnose_ice_fraction(sea_surface_temperature)
+        return self.with_runtime_fields(
+            component_state,
+            {"ice_fraction": ice_fraction},
+        )

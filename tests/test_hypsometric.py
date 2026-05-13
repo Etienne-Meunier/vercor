@@ -1,5 +1,8 @@
 import jax
 import jax.numpy as jnp
+import pytest
+
+from tests.assertions import assert_allclose_compact
 from vercor.components.external.jax_gcm import get_altitudes_sigma_levels
 
 
@@ -41,11 +44,8 @@ def test_invalid_ndim_raises() -> None:
     p = jnp.zeros((5, 3, 4), dtype=jnp.float32)
     q = jnp.zeros((5, 3, 4), dtype=jnp.float32)
 
-    try:
+    with pytest.raises(ValueError):
         get_altitudes_sigma_levels(T, p, q)
-        raise AssertionError("Expected ValueError for non-3D input")
-    except ValueError:
-        pass
 
 
 def test_mismatched_shapes_raises() -> None:
@@ -53,11 +53,8 @@ def test_mismatched_shapes_raises() -> None:
     p = jnp.zeros((5, 3, 4), dtype=jnp.float32)
     q = jnp.zeros((5, 3, 5), dtype=jnp.float32)  # mismatch
 
-    try:
+    with pytest.raises(ValueError):
         get_altitudes_sigma_levels(T, p, q)
-        raise AssertionError("Expected ValueError for mismatched shapes")
-    except ValueError:
-        pass
 
 
 def test_monotonic_pressure_gives_increasing_height() -> None:
@@ -108,7 +105,7 @@ def test_isothermal_dry_column_matches_analytic() -> None:
     z_analytic = z_analytic_1d[:, None, None] * jnp.ones((1, nlat, nlon), dtype=dtype)
 
     # float32: ~1e-3 m absolute is already extremely strict; use a bit looser
-    assert jnp.allclose(z, z_analytic, rtol=0.0, atol=2e-3)
+    assert_allclose_compact(z, z_analytic, rtol=0.0, atol=2e-3)
 
 
 def test_humidity_increases_thickness() -> None:
@@ -133,6 +130,28 @@ def test_humidity_increases_thickness() -> None:
     assert jnp.all(thick_moist > thick_dry)
 
 
+def test_specific_humidity_uses_exact_virtual_temperature_without_mixing_ratio_denominator() -> (
+    None
+):
+    """Specific humidity q should not be treated as water-vapor mixing ratio."""
+
+    g = 9.80665
+    Rd = 287.05
+    Rv = 461.5
+    eps = Rv / Rd
+
+    T = jnp.full((2, 1, 1), 300.0, dtype=jnp.float32)
+    p = jnp.asarray([100000.0, 90000.0], dtype=jnp.float32)[:, None, None]
+    q = jnp.full((2, 1, 1), 0.02, dtype=jnp.float32)
+
+    z = _to_jax_numpy(get_altitudes_sigma_levels(T, p, q, g=g, Rd=Rd, Rv=Rv))
+
+    expected_thickness = (
+        (Rd / g) * 300.0 * (1.0 + (eps - 1.0) * 0.02) * jnp.log(p[0, 0, 0] / p[1, 0, 0])
+    )
+    assert_allclose_compact(z[1, 0, 0] - z[0, 0, 0], expected_thickness, atol=1e-4)
+
+
 def test_z0_accepts_scalar_and_2d_and_3d() -> None:
     nlev, nlat, nlon = 3, 2, 2
     T = jnp.full((nlev, nlat, nlon), 280.0, dtype=jnp.float32)
@@ -141,16 +160,16 @@ def test_z0_accepts_scalar_and_2d_and_3d() -> None:
     q = jnp.zeros((nlev, nlat, nlon), dtype=jnp.float32)
 
     z_scalar = _to_jax_numpy(get_altitudes_sigma_levels(T, p, q, z0=jnp.float32(10.0)))
-    assert jnp.allclose(z_scalar[0], 10.0, atol=1e-6)
+    assert_allclose_compact(z_scalar[0], 10.0, atol=1e-6)
 
     z0_2d = jnp.array([[0.0, 5.0], [10.0, 20.0]], dtype=jnp.float32)
     z_2d = _to_jax_numpy(get_altitudes_sigma_levels(T, p, q, z0=z0_2d))
-    assert jnp.allclose(z_2d[0], z0_2d, atol=1e-6)
+    assert_allclose_compact(z_2d[0], z0_2d, atol=1e-6)
 
     z0_3d = jnp.zeros((nlev, nlat, nlon), dtype=jnp.float32)
     z0_3d = z0_3d.at[0].set(z0_2d)
     z_3d = _to_jax_numpy(get_altitudes_sigma_levels(T, p, q, z0=z0_3d))
-    assert jnp.allclose(z_3d[0], z0_2d, atol=1e-6)
+    assert_allclose_compact(z_3d[0], z0_2d, atol=1e-6)
 
 
 def test_bad_z0_shape_raises() -> None:
@@ -162,11 +181,8 @@ def test_bad_z0_shape_raises() -> None:
     q = jnp.zeros((nlev, nlat, nlon), dtype=jnp.float32)
 
     bad = jnp.zeros((nlat, nlon, 2), dtype=jnp.float32)
-    try:
+    with pytest.raises(ValueError):
         get_altitudes_sigma_levels(T, p, q, z0=bad)
-        raise AssertionError("Expected ValueError for bad z0 shape")
-    except ValueError:
-        pass
 
 
 def test_reconstruction_from_z_matches_pressure_ratio() -> None:
@@ -207,7 +223,7 @@ def test_reconstruction_from_z_matches_pressure_ratio() -> None:
     q64 = q.astype(jnp.float64)
     p64 = p.astype(jnp.float64)
 
-    Tv = T64 * (1.0 + (eps - 1.0) * q64) / (1.0 - q64)
+    Tv = T64 * (1.0 + (eps - 1.0) * q64)
     Tv_bar = 0.5 * (Tv[:-1] + Tv[1:])
     dz = jnp.diff(z, axis=0)
 
@@ -215,4 +231,4 @@ def test_reconstruction_from_z_matches_pressure_ratio() -> None:
     log_pr_true = jnp.log(p64[:-1] / p64[1:])
 
     # float32-derived z will not satisfy 1e-12; use realistic tolerance
-    assert jnp.allclose(log_pr_rec, log_pr_true, rtol=0.0, atol=5e-4)
+    assert_allclose_compact(log_pr_rec, log_pr_true, rtol=0.0, atol=5e-4)

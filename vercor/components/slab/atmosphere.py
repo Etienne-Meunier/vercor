@@ -1,14 +1,70 @@
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
+import jax.numpy as jnp
 
-from vercor.clock import CustomDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentFieldSpec
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
+from vercor.runtime.contexts import RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
+
+
+_REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
+_ATMOSPHERE_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("sea_surface_temperature",),
+    outputs=(
+        "temperature_2m",
+        "sensible_heat_flux",
+        "latent_heat_flux",
+        "u_velocity_10m",
+        "v_velocity_10m",
+    ),
+    default_fields={
+        "temperature_2m": _REFERENCE_SURFACE_TEMPERATURE,
+        "sensible_heat_flux": 0.0,
+        "latent_heat_flux": 0.0,
+        "u_velocity_10m": 0.0,
+        "v_velocity_10m": 0.0,
+    },
+)
+
+
+@jax.jit
+def _default_sea_surface_temperature(temperature_2m: object) -> jax.Array:
+    return jnp.full_like(
+        as_jax_real_array(temperature_2m),
+        _REFERENCE_SURFACE_TEMPERATURE,
+    )
+
+
+@jax.jit
+def _bulk_flux_step(
+    temperature_2m: object,
+    sea_surface_temperature: object,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    temperature_2m_array = as_jax_real_array(temperature_2m)
+    sea_surface_temperature_array = as_jax_real_array(sea_surface_temperature)
+    delta_temperature = temperature_2m_array - sea_surface_temperature_array
+    sensible_heat_flux = -10.0 * delta_temperature
+    latent_heat_flux = -0.5 * sensible_heat_flux
+    updated_temperature_2m = temperature_2m_array - 0.01 * delta_temperature
+    return sensible_heat_flux, latent_heat_flux, updated_temperature_2m
+
+
+@jax.jit
+def _surface_wind_10m(
+    latitude: object,
+    longitude: object,
+) -> tuple[jax.Array, jax.Array]:
+    latitude_array = as_jax_real_array(latitude)
+    longitude_array = as_jax_real_array(longitude) - 180.0
+    latitudes, longitudes = jnp.meshgrid(latitude_array, longitude_array, indexing="ij")
+    u_velocity_10m = jnp.cos(jnp.deg2rad(latitudes))
+    v_velocity_10m = 0.5 * jnp.sin(jnp.deg2rad(longitudes))
+    return u_velocity_10m, v_velocity_10m
 
 
 class Atmosphere(Component):
@@ -19,48 +75,38 @@ class Atmosphere(Component):
 
     def __init__(self, grid: RectilinearGrid, name: str = "ATM") -> None:
         super().__init__(name, grid)
+        self.declare_fields(_ATMOSPHERE_FIELD_SPEC)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        grid_shape = self.grid.shape
-        zeros = np.zeros(grid_shape)
-
-        self.data["temperature_2m"] = 273.15 + 15.0 * np.ones(grid_shape)
-        self.data["sensible_heat_flux"] = zeros
-        self.data["latent_heat_flux"] = zeros
-        self.data["u_velocity_10m"] = zeros
-        self.data["v_velocity_10m"] = zeros
-
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        # Bulk formula toy: flux proportional to (temperature_2m - sea_surface_temperature)
-        sst = self.data.get("sea_surface_temperature", None)
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance the slab atmosphere on immutable runtime state."""
 
-        if sst is None:
-            sst = 273.15 + 15.0 * np.ones(self.grid.shape)
+        _ = context
+        temperature_2m = self.runtime_field(component_state, "temperature_2m")
+        sea_surface_temperature = self.runtime_field_or(
+            component_state,
+            "sea_surface_temperature",
+            _REFERENCE_SURFACE_TEMPERATURE,
+        )
 
-        TA = self.data["temperature_2m"]
-        dT = TA - sst
-        C = 10.0  # W m-2 K-1, toy exchange coefficient
-        SHF = -C * dT  # ocean heat gain positive when sst < TA
-        LHF = -0.5 * SHF
-
-        # Update wind (toy)
-        lat = np.array(self.grid.latitude)
-        lon = np.array(self.grid.longitude) - 180.0
-        latitudes, longitudes = np.meshgrid(lat, lon, indexing="ij")
-        self.data["u_velocity_10m"] = np.cos(
-            np.deg2rad(latitudes)
-        )  # zonal flow varying with latitude
-        self.data["v_velocity_10m"] = 0.5 * np.sin(
-            np.deg2rad(longitudes)
-        )  # small meridional perturbation
-
-        self.data["sensible_heat_flux"] = SHF
-        self.data["latent_heat_flux"] = LHF
-
-        # Relax temperature_2m toward sst weakly (toy boundary layer)
-        self.data["temperature_2m"] = TA - 0.01 * dT
+        sensible_heat_flux, latent_heat_flux, updated_temperature_2m = _bulk_flux_step(
+            temperature_2m,
+            sea_surface_temperature,
+        )
+        u_velocity_10m, v_velocity_10m = _surface_wind_10m(
+            self.grid.latitude,
+            self.grid.longitude,
+        )
+        return self.with_runtime_fields(
+            component_state,
+            {
+                "u_velocity_10m": u_velocity_10m,
+                "v_velocity_10m": v_velocity_10m,
+                "sensible_heat_flux": sensible_heat_flux,
+                "latent_heat_flux": latent_heat_flux,
+                "temperature_2m": updated_temperature_2m,
+            },
+        )

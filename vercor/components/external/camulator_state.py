@@ -15,10 +15,11 @@ Key Classes:
 import os
 import yaml
 import torch
-import numpy as np
 import xarray as xr
+from datetime import datetime
 from typing import Any, Optional, Literal
-import logging
+
+from vercor.jax_logging import LoggerLike, get_default_logger
 
 # Import CREDIT components
 try:
@@ -32,7 +33,7 @@ try:
     CREDIT_AVAILABLE = True
 except ImportError:
     CREDIT_AVAILABLE = False
-    logging.warning(
+    get_default_logger().warning(
         "CREDIT modules not fully available - initialization may be limited"
     )
 
@@ -43,7 +44,9 @@ try:
     POSTBLOCK_AVAILABLE = True
 except ImportError:
     POSTBLOCK_AVAILABLE = False
-    logging.warning("credit.postblock not available - conservation fixers disabled")
+    get_default_logger().warning(
+        "credit.postblock not available - conservation fixers disabled"
+    )
 
 try:
     from vercor.components.external.windpp import post_process_wind_artifacts
@@ -51,9 +54,78 @@ try:
     WINDPP_AVAILABLE = True
 except ImportError:
     WINDPP_AVAILABLE = False
-    logging.warning("WindPP not available - wind artifact filtering disabled")
+    get_default_logger().warning(
+        "WindPP not available - wind artifact filtering disabled"
+    )
 
-logger = logging.getLogger(__name__)
+logger = get_default_logger()
+
+
+def load_camulator_forcing_context(config_path: str) -> dict[str, Any]:
+    """Load CAMulator config and raw forcing without constructing the model."""
+
+    if not CREDIT_AVAILABLE:
+        raise ImportError(
+            "CREDIT modules not available. Cannot initialize CAMulator forcing. "
+            "Please ensure credit package is installed and importable."
+        )
+
+    with open(config_path) as cf:
+        conf = yaml.load(cf, Loader=yaml.FullLoader)
+
+    conf = credit_main_parser(
+        conf, parse_training=False, parse_predict=True, print_summary=False
+    )
+    conf["predict"]["mode"] = None
+
+    forcing_file = conf["predict"]["forcing_file"]
+    if not os.path.exists(forcing_file):
+        raise FileNotFoundError(f"Forcing file not found: {forcing_file}")
+
+    chunk_size = conf["data"].get("forcing_chunk_size", 32)
+    forcing_ds = xr.open_dataset(forcing_file, chunks={"time": chunk_size})
+    return {
+        "conf": conf,
+        "forcing_dataset_raw": forcing_ds.chunk({"time": chunk_size}),
+    }
+
+
+def parse_datetime_from_config(conf: dict[str, Any]) -> datetime:
+    """Parse CAMulator start datetime values into Python ``datetime`` objects."""
+
+    raw_dt = conf["predict"]["start_datetime"]
+
+    if isinstance(raw_dt, str):
+        return datetime.strptime(raw_dt, "%Y-%m-%d %H:%M:%S")
+    if isinstance(raw_dt, datetime):
+        return raw_dt
+    return datetime(
+        raw_dt.year,
+        raw_dt.month,
+        raw_dt.day,
+        raw_dt.hour,
+        raw_dt.minute,
+        raw_dt.second,
+    )
+
+
+def _prepare_static_forcing_tensor(
+    forcing_ds: xr.Dataset,
+    static_variables: list[str],
+    device: Any,
+) -> torch.Tensor:
+    """Prepare static CAMulator forcing through an explicit xarray/Torch boundary."""
+
+    static_values = forcing_ds[static_variables].to_array(dim="static_variable").values
+    return (
+        torch.as_tensor(static_values)
+        .unsqueeze(0)
+        .unsqueeze(2)
+        .to(
+            device,
+            non_blocking=True,
+        )
+    )
 
 
 # ============================================================================
@@ -792,7 +864,10 @@ class CAMulatorStepper:
 
 
 def initialize_camulator(
-    config_path: str, model_name: Optional[str] = None, device: str = "cuda"
+    config_path: str,
+    model_name: Optional[str] = None,
+    device: str = "cuda",
+    logger: LoggerLike | None = None,
 ) -> dict:
     """
     One-time initialization of CAMulator model and all supporting components.
@@ -842,7 +917,8 @@ def initialize_camulator(
             "Please ensure credit package is installed and importable."
         )
 
-    print(f"Initializing CAMulator from config: {config_path}")
+    log = logger if logger is not None else get_default_logger()
+    log.info(f"Initializing CAMulator from config: {config_path}")
 
     # Load and parse configuration
     with open(config_path) as cf:
@@ -854,10 +930,10 @@ def initialize_camulator(
     conf["predict"]["mode"] = None  # Override to None for single-GPU inference
 
     current_device = torch.device(device)
-    print(f"Using device: {current_device}")
+    log.info(f"Using device: {current_device}")
 
     # Load transforms and normalization
-    print("Loading transforms...")
+    log.info("Loading transforms...")
     transform = load_transforms(conf)  # noqa: F841
 
     if conf["data"]["scaler_type"] == "std_new":
@@ -866,7 +942,9 @@ def initialize_camulator(
         raise ValueError(f"Unsupported scaler_type: {conf['data']['scaler_type']}")
 
     # Load model
-    print(f"Loading model: {model_name if model_name else 'checkpoint.pt (default)'}")
+    log.info(
+        f"Loading model: {model_name if model_name else 'checkpoint.pt (default)'}"
+    )
     if model_name:
         model = load_model_name(conf, model_name, load_weights=True).to(current_device)
     else:
@@ -875,16 +953,16 @@ def initialize_camulator(
     # Handle distributed mode if specified (typically not used for climate runs)
     distributed = conf["predict"]["mode"] in ["ddp", "fsdp"]
     if distributed:
-        logger.info(f"Setting up distributed mode: {conf['predict']['mode']}")
+        log.info(f"Setting up distributed mode: {conf['predict']['mode']}")
         model = distributed_model_wrapper(conf, model, current_device)
         if conf["predict"]["mode"] == "fsdp":
             model = load_model_state(conf, model, current_device)
 
     model.eval()
-    print("Model loaded and set to eval mode")
+    log.info("Model loaded and set to eval mode")
 
     # Load initial conditions
-    print("Loading initial conditions...")
+    log.info("Loading initial conditions...")
     ic_path = conf["predict"]["init_cond_fast_climate"]
     if not os.path.exists(ic_path):
         raise FileNotFoundError(
@@ -892,10 +970,10 @@ def initialize_camulator(
         )
 
     initial_state = torch.load(ic_path, map_location=current_device).to(current_device)
-    print(f"Initial state shape: {initial_state.shape}")
+    log.info(f"Initial state shape: {initial_state.shape}")
 
     # Load forcing data
-    print("Loading forcing data...")
+    log.info("Loading forcing data...")
     forcing_file = conf["predict"]["forcing_file"]
     if not os.path.exists(forcing_file):
         raise FileNotFoundError(f"Forcing file not found: {forcing_file}")
@@ -904,40 +982,35 @@ def initialize_camulator(
     forcing_ds = xr.open_dataset(forcing_file, chunks={"time": chunk_size})
 
     # Normalize forcing data
-    print("Normalizing forcing data...")
+    log.info("Normalizing forcing data...")
     forcing_ds_norm = state_transformer.transform_dataset(forcing_ds)
     forcing_ds_norm = forcing_ds_norm.chunk({"time": chunk_size})
 
     # Load static forcing (topography, land-sea mask, etc.)
-    print("Loading static forcing...")
+    log.info("Loading static forcing...")
     sf_vars = conf["data"]["static_variables"]
-    static_arr = np.stack([forcing_ds[s].values for s in sf_vars], axis=0)
-    static_forcing = (
-        (torch.from_numpy(static_arr).unsqueeze(0))
-        .unsqueeze(2)
-        .to(current_device, non_blocking=True)
-    )
-    print(f"Static forcing shape: {static_forcing.shape}")
+    static_forcing = _prepare_static_forcing_tensor(forcing_ds, sf_vars, current_device)
+    log.info(f"Static forcing shape: {static_forcing.shape}")
 
     # Load metadata and coordinates
-    print("Loading metadata and coordinates...")
+    log.info("Loading metadata and coordinates...")
     latlons = xr.open_dataset(conf["loss"]["latitude_weights"])
     metadata = load_metadata(conf)
 
     # Create CAMulatorStepper with full post-processing
-    print("Creating CAMulatorStepper with conservation fixers...")
+    log.info("Creating CAMulatorStepper with conservation fixers...")
     stepper = CAMulatorStepper(model, conf, current_device)
 
-    print("=" * 70)
-    print("Initialization complete!")
-    print(f"Model device: {current_device}")
-    print(f"State shape: {initial_state.shape}")
-    print(f"Static forcing: {len(sf_vars)} variables")
-    print(
+    log.info("=" * 70)
+    log.info("Initialization complete!")
+    log.info(f"Model device: {current_device}")
+    log.info(f"State shape: {initial_state.shape}")
+    log.info(f"Static forcing: {len(sf_vars)} variables")
+    log.info(
         f"Conservation fixers: Mass={stepper.flag_mass}, Water={stepper.flag_water}, Energy={stepper.flag_energy}"
     )
-    print(f"Wind filtering: {stepper.enable_wind_filtering}")
-    print("=" * 70)
+    log.info(f"Wind filtering: {stepper.enable_wind_filtering}")
+    log.info("=" * 70)
 
     return {
         "model": model,

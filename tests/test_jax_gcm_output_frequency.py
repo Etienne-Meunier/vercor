@@ -1,97 +1,140 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, cast
 
+import pytest
+
+from tests.conftest import SelectFastCases
 from vercor.clock import DateTime360
-from vercor.components import JAXGCM
+from vercor.components.external.jax_gcm import JAXGCM
 
 
-def _make_component(output_frequency: str | None) -> JAXGCM:
+@dataclass(frozen=True)
+class OutputFrequencyCase:
+    case_id: str
+    output_frequency: object | None
+    time: datetime | DateTime360
+    dt: timedelta
+    expected: bool
+
+
+def _make_component(output_frequency: object | None) -> JAXGCM:
     component = JAXGCM.__new__(JAXGCM)
-    component.output_frequency = output_frequency
+    component.output_frequency = cast(Any, output_frequency)
     return component
 
 
-def test_should_write_output_always_when_frequency_is_none() -> None:
-    component = _make_component(None)
+@pytest.mark.fast_always
+def test_should_write_output_frequency_cases(
+    select_fast_cases: SelectFastCases,
+) -> None:
+    cases = [
+        OutputFrequencyCase(
+            case_id="none-always",
+            output_frequency=None,
+            time=datetime(2026, 2, 20, 0, 0, 0),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="day-boundary",
+            output_frequency="day",
+            time=datetime(2026, 2, 20, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="day-not-boundary",
+            output_frequency="day",
+            time=datetime(2026, 2, 20, 22, 0, 0),
+            dt=timedelta(hours=1),
+            expected=False,
+        ),
+        OutputFrequencyCase(
+            case_id="day-boundary-case-insensitive",
+            output_frequency="DAY",
+            time=datetime(2026, 2, 20, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="month-boundary",
+            output_frequency="month",
+            time=datetime(2026, 2, 28, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="month-not-boundary",
+            output_frequency="month",
+            time=datetime(2026, 2, 27, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=False,
+        ),
+        OutputFrequencyCase(
+            case_id="year-boundary",
+            output_frequency="year",
+            time=datetime(2026, 12, 31, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="year-not-boundary",
+            output_frequency="year",
+            time=datetime(2026, 12, 30, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=False,
+        ),
+        OutputFrequencyCase(
+            case_id="invalid-frequency",
+            output_frequency="hour",
+            time=datetime(2026, 2, 20, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=False,
+        ),
+        OutputFrequencyCase(
+            case_id="non-string-frequency",
+            output_frequency=12,
+            time=datetime(2026, 2, 20, 23, 0, 0),
+            dt=timedelta(hours=1),
+            expected=False,
+        ),
+        OutputFrequencyCase(
+            case_id="360-day-boundary",
+            output_frequency="day",
+            time=DateTime360(2026, 2, 20, 23, 0, 0, 0, 50),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="360-month-boundary",
+            output_frequency="month",
+            time=DateTime360(2026, 2, 30, 23, 0, 0, 0, 60),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+        OutputFrequencyCase(
+            case_id="360-year-boundary",
+            output_frequency="year",
+            time=DateTime360(2026, 12, 30, 23, 0, 0, 0, 360),
+            dt=timedelta(hours=1),
+            expected=True,
+        ),
+    ]
 
-    assert component._should_write_output(
-        datetime(2026, 2, 20, 0, 0, 0), timedelta(hours=1)
-    )
+    for case in select_fast_cases(
+        cases,
+        case_id=lambda case: case.case_id,
+        min_cases=3,
+    ):
+        component = _make_component(case.output_frequency)
+        assert component._should_write_output(case.time, case.dt) is case.expected
 
 
-def test_should_write_output_for_day_boundary_datetime() -> None:
+def test_is_period_end_stays_false_within_same_day() -> None:
     component = _make_component("day")
+    time = datetime(2026, 2, 20, 12, 0, 0)
 
-    assert component._should_write_output(
-        datetime(2026, 2, 20, 23, 0, 0), timedelta(hours=1)
-    )
-    assert not component._should_write_output(
-        datetime(2026, 2, 20, 22, 0, 0), timedelta(hours=1)
-    )
-
-
-def test_should_write_output_for_month_and_year_boundary_datetime() -> None:
-    component = _make_component("month")
-
-    assert component._should_write_output(
-        datetime(2026, 2, 28, 23, 0, 0), timedelta(hours=1)
-    )
-    assert not component._should_write_output(
-        datetime(2026, 2, 27, 23, 0, 0), timedelta(hours=1)
-    )
-
-    component.output_frequency = "year"
-    assert component._should_write_output(
-        datetime(2026, 12, 31, 23, 0, 0), timedelta(hours=1)
-    )
-    assert not component._should_write_output(
-        datetime(2026, 12, 30, 23, 0, 0), timedelta(hours=1)
-    )
-
-
-def test_should_write_output_for_custom_datetime_boundaries() -> None:
-    component = _make_component("day")
-    model_time = DateTime360(
-        year=2026,
-        month=2,
-        day=20,
-        hour=23,
-        minute=0,
-        second=0,
-        microsecond=0,
-        day_of_year=50,
-    )
-    assert component._should_write_output(model_time, timedelta(hours=1))
-
-    component.output_frequency = "month"
-    month_end_time = DateTime360(
-        year=2026,
-        month=2,
-        day=30,
-        hour=23,
-        minute=0,
-        second=0,
-        microsecond=0,
-        day_of_year=60,
-    )
-    assert component._should_write_output(month_end_time, timedelta(hours=1))
-
-    component.output_frequency = "year"
-    year_end_time = DateTime360(
-        year=2026,
-        month=12,
-        day=30,
-        hour=23,
-        minute=0,
-        second=0,
-        microsecond=0,
-        day_of_year=360,
-    )
-    assert component._should_write_output(year_end_time, timedelta(hours=1))
-
-
-def test_should_not_write_output_for_invalid_frequency() -> None:
-    component = _make_component("hour")
-
-    assert not component._should_write_output(
-        datetime(2026, 2, 20, 23, 0, 0), timedelta(hours=1)
-    )
+    assert component._is_period_end(time, timedelta(minutes=30), "day") is False

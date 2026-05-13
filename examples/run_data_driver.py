@@ -1,16 +1,18 @@
-from typing import Any, Callable
 from datetime import datetime
+from typing import Any, Callable
 
-import numpy as np
-from numpy.typing import NDArray
+import jax
 
-from vercor import Clock, Coupler, Exchange
-from vercor.components import ERA5Atmosphere, ERA5Land, ERAInterimOcean
-from vercor.coupler import RunSequence
+from examples.jax_array_helpers import component_vector_speed
+from vercor import Clock, Coupler, Exchange, RunSequence
+from vercor.components.data.era5_atmosphere import ERA5Atmosphere
+from vercor.components.data.era5_land import ERA5Land
+from vercor.components.data.erainterim_ocean import ERAInterimOcean
 from vercor.regridders import bilinear, conservative
-from vercor.tools import (
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
+    total_surface_temperature,
 )
 
 import matplotlib.pyplot as plt
@@ -112,10 +114,10 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)
 
-    Metric = str | Callable[[Any], NDArray | float]
+    Metric = str | Callable[[Any], jax.Array | float]
 
     variables: list[tuple[Metric, str]] = [
         ("sea_surface_temperature", "sst"),
@@ -123,21 +125,36 @@ if __name__ == "__main__":
         ("potential_temperature", "tbot"),
         ("model_level_height", "zbot"),
         (
-            lambda c: np.sqrt(c.get("u_velocity") ** 2 + c.get("v_velocity") ** 2),
+            component_vector_speed,
             "speed",
         ),
     ]
 
     print_component_field_means_table(
-        components={"ATM": atm, "OCN": ocn},
+        components={
+            "ATM": cpl.runtime_component_view(final_state, "ATM"),
+            "OCN": cpl.runtime_component_view(final_state, "OCN"),
+        },
         fields=variables,
         component_order=["ATM", "OCN"],
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
-            ("ATM", atm, "total_surface_temperature", "u_velocity", "v_velocity"),
-            ("OCN", ocn, "sea_surface_temperature", "u_velocity", "v_velocity"),
+            (
+                "ATM",
+                cpl.runtime_component_view(final_state, "ATM"),
+                total_surface_temperature,
+                "u_velocity",
+                "v_velocity",
+            ),
+            (
+                "OCN",
+                cpl.runtime_component_view(final_state, "OCN"),
+                "sea_surface_temperature",
+                "u_velocity",
+                "v_velocity",
+            ),
         ],
         figsize=(15, 10),
         quiver_scale=150,

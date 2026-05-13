@@ -1,81 +1,91 @@
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
-from logging import Logger
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
-import numpy as np
-from numpy.typing import NDArray
-
-from vercor.clock import Clock, ModelDateTime
-from vercor.components import Shared
-from vercor.components import TimedNamedArray as TNA
+from vercor.clock import Clock
+from vercor.components.base import Component, validate_component_setup
+from vercor.dtypes import as_jax_real_array
 from vercor.exceptions import (
     CouplerError,
     ComponentError,
-    ExchangerError,
 )
 from vercor.exchange import Exchange
-from vercor.regridders import (
-    BilinearRectilinearRegridder,
-    ConservativeRectilinearRegridder,
+from vercor.jax_logging import (
+    JaxCallbackLogger,
+    LoggerLike,
+    configure_python_logger,
+    setup_logger,
 )
 from vercor.run_sequence import RunSequence
-from vercor.settings import VercorSettings
-from vercor.tools import (
-    check_total_lnd_ocn_mask_sum,
-    get_component,
-    grids_identical,
-    _append_unique,
-    _flatten_fields,
-    check_remap_conservation,
-    compute_ocn_lnd_masks_on_atm_grid,
+from vercor.output import write_runtime_component_view_to_netcdf
+from vercor.runtime import (
+    RuntimeComponentContract,
+    RuntimeCouplerState,
 )
-from vercor.types import AllComponentsType
+from vercor.runtime.contexts import ComponentInitContext
+from vercor.runtime.validation import (
+    check_not_empty_import_export_lists,
+    check_valid_exchange_field_names,
+)
+from vercor.runtime.coupler_state import (
+    output_masks_for_component,
+    prime_runtime_state,
+    refresh_runtime_contracts,
+    runtime_dispatch_context,
+    runtime_state_from_components,
+    validate_runtime_state as validate_coupler_runtime_state,
+)
+from vercor.runtime.driver import RuntimeDispatchContext
+from vercor.runtime.interrupts import RuntimeInterruptController
+from vercor.runtime.runner import run_coupler_runtime, run_scanned_runtime
+from vercor.runtime.time import initial_runtime_step_info
+from vercor.runtime.topology import (
+    RuntimeRegridder,
+    create_exchange_masks,
+    initialize_regridders_and_masks,
+    patch_exchange_masks,
+    validate_land_mask_consistency,
+)
+from vercor.runtime.views import RuntimeComponentView
+from vercor.settings import VercorSettings
+from vercor.types import RuntimeArray
 
 
-def setup_logger() -> Logger:
-    """
-    Setup and return a logger for the Coupler.
-    """
-    logger = logging.getLogger("VerCOR")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s]: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    logger.setLevel(logging.INFO)
-    return logger
+def _apply_run_precision_to_component(
+    component: Component,
+    settings: VercorSettings,
+) -> None:
+    """Synchronize component-owned setup arrays with the coupler precision."""
+
+    component.settings.set_value("enable_x64", settings.enable_x64)
+    component.grid = component.grid.with_precision(settings)
+    component.data = {
+        field_name: as_jax_real_array(field_value, settings)
+        for field_name, field_value in component.data.items()
+    }
+    field_spec = component.field_spec
+    if field_spec.default_fields:
+        component.declare_fields(
+            inputs=field_spec.inputs,
+            outputs=field_spec.outputs,
+            default_fields=field_spec.default_fields,
+        )
 
 
 @dataclass
 class Coupler:
-    clock: Clock
-    logger: Logger = field(default_factory=setup_logger)
-    run_sequence: RunSequence = field(init=False)
-    components: dict[
-        str,
-        AllComponentsType,
-    ] = field(default_factory=dict)
-    exchanges: list[Exchange] = field(default_factory=list)
-    settings: VercorSettings = field(default_factory=VercorSettings)
-    ocn_bmask_on_atm_grid: NDArray = field(init=False)
-    lnd_bmask_on_atm_grid: NDArray = field(init=False)
-    ocn_fmask_on_atm_grid: NDArray = field(init=False)
-    lnd_fmask_on_atm_grid: NDArray = field(init=False)
-    _regridders: dict[
-        tuple[str, str, str],
-        BilinearRectilinearRegridder | ConservativeRectilinearRegridder,
-    ] = field(default_factory=dict)
-    _binary_masks: dict[tuple[str, str, str], NDArray] = field(default_factory=dict)
-    _fractional_masks: dict[tuple[str, str, str], NDArray] = field(default_factory=dict)
+    """Public orchestration facade for configured component integrations.
 
-    """
-    Main coupler class to manage components and exchanges between them.
+    The coupler owns registration, exchange declarations, run sequence,
+    regridder/mask setup, runtime-state creation, execution, and final output.
+    The differentiable integration itself operates on immutable runtime state;
+    component objects remain setup/configuration adapters rather than the
+    traced integration state.
 
     Attributes:
         clock: Clock instance for managing simulation time
+        log_level: logging threshold for coupler logs (e.g., "INFO", "DEBUG", etc.)
         logger: Logger instance for coupler logging
         run_sequence: sequence of component names defining the call (step) order
         components: mapping of component name to component instance
@@ -88,20 +98,72 @@ class Coupler:
         _regridders: mapping of (source component name, destination component name)
                 to Regridder instance (a pool of all available regridders)
         _binary_masks: mapping of (source component name, destination component name)
-                to a binary mask NDArray. This mask is used during regridding of fields
+                to a binary mask array. This mask is used during regridding of fields
                 to ensure that only valid (e.g., ocean or land) points are considered
                 during the regridding process.
         _fractional_masks: mapping of (source component name, destination component name)
-                to a fractional mask NDArray. This mask is applied during field exchanges
+                to a fractional mask array. This mask is applied during field exchanges
                 after regridding to ensure that only the appropriate portion from source
                 grid cells of the forcing or boundary conditions is transferred to
                 destination grid cells, reflecting the partial coverage of source grid cells
                 within destination grid cells.
+        _runtime_contracts: mapping of component name to RuntimeComponentContract instance
+        _compiled_runtime_cache: mapping of static runtime topology keys to cached compiled runtime functions
+        _runtime_interrupts: controller for signaling and handling runtime
+            interrupts across host and JAX-traced runtime paths
     """
+
+    clock: Clock
+    log_level: int | str = "INFO"
+    logger: LoggerLike = field(default_factory=setup_logger)
+    run_sequence: RunSequence = field(init=False)
+    components: dict[str, Component] = field(default_factory=dict)
+    exchanges: list[Exchange] = field(default_factory=list)
+    settings: VercorSettings = field(default_factory=VercorSettings)
+    ocn_bmask_on_atm_grid: RuntimeArray = field(init=False)
+    lnd_bmask_on_atm_grid: RuntimeArray = field(init=False)
+    ocn_fmask_on_atm_grid: RuntimeArray = field(init=False)
+    lnd_fmask_on_atm_grid: RuntimeArray = field(init=False)
+    _regridders: dict[
+        tuple[str, str, str],
+        RuntimeRegridder,
+    ] = field(default_factory=dict)
+    _binary_masks: dict[tuple[str, str, str], RuntimeArray] = field(
+        default_factory=dict
+    )
+    _fractional_masks: dict[tuple[str, str, str], RuntimeArray] = field(
+        default_factory=dict
+    )
+    _runtime_contracts: dict[str, RuntimeComponentContract] = field(
+        default_factory=dict
+    )
+    _compiled_runtime_cache: dict[
+        tuple[Any, ...],
+        Callable[[RuntimeCouplerState], RuntimeCouplerState],
+    ] = field(default_factory=dict, init=False, repr=False)
+    _runtime_interrupts: RuntimeInterruptController = field(
+        default_factory=RuntimeInterruptController,
+        init=False,
+        repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        """Apply the configured logging threshold at construction time."""
+
+        if isinstance(self.logger, logging.Logger):
+            self.logger = JaxCallbackLogger(
+                configure_python_logger(self.logger, self.log_level)
+            )
+        elif isinstance(self.logger, JaxCallbackLogger):
+            configure_python_logger(self.logger.logger, self.log_level)
+
+        set_level = getattr(self.logger, "setLevel", None)
+        if callable(set_level):
+            set_level(self.log_level)
 
     def register(
         self,
-        component: AllComponentsType,
+        component: Component,
     ) -> None:
         """
         Register a component with the coupler.
@@ -110,6 +172,7 @@ class Coupler:
             component: component instance to register
         """
 
+        validate_component_setup(component)
         if component.name in self.components:
             raise CouplerError(f"Component {component.name} already registered")
 
@@ -156,20 +219,32 @@ class Coupler:
 
         self.logger.info(" Initializing coupler and components")
 
+        if enable_x64_computations is not None:
+            self.settings.set_value("enable_x64", enable_x64_computations)
+
         self.logger.info(
             f" Setting default precision for JAX computations: {self.settings.enable_x64}"
         )
-        if enable_x64_computations is not None:
-            self.settings.enable_x64 = enable_x64_computations
 
         if self.settings.enable_x64:
             import jax
 
             jax.config.update("jax_enable_x64", True)
 
+        for component in self.components.values():
+            _apply_run_precision_to_component(component, self.settings)
+
+        init_context = ComponentInitContext(
+            start=self.clock.start,
+            dt_seconds=self.clock.dt_seconds,
+            run_sequence=getattr(self, "run_sequence", RunSequence(order=[])),
+            settings=self.settings,
+            logger=self.logger,
+        )
+
         # Initialize each component
         for name, component in self.components.items():
-            component.initialize(self)
+            component.initialize(init_context)
 
             if name not in ("ATM", "OCN", "LND", "ICE"):
                 raise ComponentError(
@@ -178,69 +253,43 @@ class Coupler:
 
             self.logger.info(f" Initialized {name}")
 
-        # Setup components' import/export field lists based on exchanges
-        for exchange in self.exchanges:
-            if exchange.source not in self.components:
-                raise CouplerError(
-                    f"Source component '{exchange.source}' not registered in coupler"
-                )
-            if exchange.destination not in self.components:
-                raise CouplerError(
-                    f"Destination component '{exchange.destination}' not registered in coupler"
-                )
-
-            source_component = self.components[exchange.source]
-            destination_component = self.components[exchange.destination]
-
-            flattened_fields = _flatten_fields(exchange.field_names)
-            _append_unique(source_component._fields2export, flattened_fields)
-            _append_unique(destination_component._fields2import, flattened_fields)
+        self._runtime_contracts = refresh_runtime_contracts(
+            self.components,
+            self.exchanges,
+            validate_endpoints=True,
+        )
 
         for name, component in self.components.items():
-            component.check_not_empty_import_export_lists()
-            component.check_valid_exchange_field_names()
-            # Deposit initial data to be sent from component to coupler
-            component.send_fields(self.clock.start, self)
+            validate_component_setup(component)
+            contract = self._runtime_contracts[name]
+            check_not_empty_import_export_lists(component, contract)
+            check_valid_exchange_field_names(component, contract)
 
         self._create_exchange_masks()
         self._validate_land_mask_consistency()
         self.logger.info(" LND <--> ATM & OCN <--> ATM masks initialization complete")
 
-        # Build regridders per (source component, destination component) pair
-        # initialize binary and fractional masks for each regridding pair
-        for exchange in self.exchanges:
-            key = (exchange.source, exchange.destination, exchange.interpolation_type)
-
-            if key not in self._regridders:
-                self._regridders[key] = exchange.create(
-                    self.components[exchange.source].grid,
-                    self.components[exchange.destination].grid,
-                )
-                self._binary_masks[key] = np.ones(
-                    self.components[exchange.destination].grid.shape
-                )
-                self._fractional_masks[key] = np.ones(
-                    self.components[exchange.destination].grid.shape
-                )
-            else:
-                self.logger.warning(
-                    f" Regridder for exchange {exchange.name} already exists, skipping creation"
-                )
+        initialize_regridders_and_masks(
+            components=self.components,
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            binary_masks=self._binary_masks,
+            fractional_masks=self._fractional_masks,
+            settings=self.settings,
+            logger=self.logger,
+        )
 
         self._patch_exchange_masks()
         self.logger.info(" Exchange masks patching complete")
 
     def _patch_exchange_masks(self) -> None:
-        keys = self._binary_masks.keys()
-
-        for key in keys:
-            source, destination, interp_type = key
-            if "bilinear" in interp_type:
-                if source == "OCN" and destination == "ATM":
-                    self._fractional_masks[key] = self.ocn_fmask_on_atm_grid
-                elif source == "LND" and destination == "ATM":
-                    self._binary_masks[key] = self.lnd_bmask_on_atm_grid
-                    self._fractional_masks[key] = self.lnd_fmask_on_atm_grid
+        patch_exchange_masks(
+            binary_masks=self._binary_masks,
+            fractional_masks=self._fractional_masks,
+            ocn_fmask_on_atm_grid=self.ocn_fmask_on_atm_grid,
+            lnd_bmask_on_atm_grid=self.lnd_bmask_on_atm_grid,
+            lnd_fmask_on_atm_grid=self.lnd_fmask_on_atm_grid,
+        )
 
     def _create_exchange_masks(self) -> None:
         """
@@ -248,184 +297,136 @@ class Coupler:
         land, ocean, and atmosphere components.
         """
 
-        land_component = get_component(self.components, "LND")
-        atmosphere_component = get_component(self.components, "ATM")
-        ocean_component = get_component(self.components, "OCN")
-
-        if not grids_identical(land_component.grid, atmosphere_component.grid):
-            raise CouplerError(
-                "Land and atmospheric components must use identical horizontal grids"
-            )
-
-        # Remapping the binary mask from the mask origin component
-        # to the destination component grid
-        regridder = ConservativeRectilinearRegridder(
-            ocean_component.grid,
-            atmosphere_component.grid,
-        )
-
-        ocean_binary_mask = ocean_component.grid.binary_mask
-        if ocean_binary_mask is None:
-            raise ComponentError(
-                f"Ocean component {ocean_component.name} has no binary mask defined"
-            )
-
         (
             self.ocn_fmask_on_atm_grid,
             self.lnd_fmask_on_atm_grid,
             self.lnd_bmask_on_atm_grid,
-        ) = compute_ocn_lnd_masks_on_atm_grid(ocean_binary_mask, regridder)
-
-        check_remap_conservation(
-            regridder,
-            np.asarray(ocean_binary_mask),
-            self.ocn_fmask_on_atm_grid,
-        )
-
-        check_total_lnd_ocn_mask_sum(
-            self.lnd_fmask_on_atm_grid, self.ocn_fmask_on_atm_grid
-        )
+        ) = create_exchange_masks(self.components, logger=self.logger)
 
     def _validate_land_mask_consistency(self) -> None:
-        land_component = get_component(self.components, "LND")
-        lnd_mask_from_component = land_component.grid.binary_mask
-        if lnd_mask_from_component is not None:
-            component_mask = np.asarray(lnd_mask_from_component)
-            if component_mask.shape != self.lnd_bmask_on_atm_grid.shape:
-                raise CouplerError(
-                    "Land binary mask read from component does not match atmospheric grid shape"
-                )
-            if not np.array_equal(component_mask, self.lnd_bmask_on_atm_grid):
-                mismatch = np.count_nonzero(
-                    component_mask != self.lnd_bmask_on_atm_grid
-                )
-                raise CouplerError(
-                    "Land binary mask created from remapped ocean mask does not match component-provided mask "
-                    f"(mismatched points: {mismatch})"
-                )
+        validate_land_mask_consistency(
+            self.components,
+            self.lnd_bmask_on_atm_grid,
+        )
 
-    def append_masks_to_output(
+    def _runtime_state_from_components(
+        self, *, prefill_missing: bool = False
+    ) -> RuntimeCouplerState:
+        self._runtime_contracts = refresh_runtime_contracts(
+            self.components,
+            self.exchanges,
+            validate_endpoints=False,
+        )
+        return runtime_state_from_components(
+            self.components,
+            self.exchanges,
+            self._fractional_masks,
+            self._binary_masks,
+            contracts=self._runtime_contracts,
+            prefill_missing=prefill_missing,
+        )
+
+    def _validate_runtime_state(self, runtime_state: RuntimeCouplerState) -> None:
+        if set(self._runtime_contracts) != set(self.components):
+            self._runtime_contracts = refresh_runtime_contracts(
+                self.components,
+                self.exchanges,
+                validate_endpoints=False,
+            )
+
+        validate_coupler_runtime_state(
+            runtime_state,
+            components=self.components,
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            contracts=self._runtime_contracts,
+            run_sequence=(
+                tuple(self.run_sequence) if hasattr(self, "run_sequence") else None
+            ),
+        )
+
+    def create_runtime_state(
+        self, *, prefill_missing: bool = True
+    ) -> RuntimeCouplerState:
+        """Create and validate the immutable state used by the unified runtime."""
+
+        runtime_state = self._runtime_state_from_components(
+            prefill_missing=prefill_missing
+        )
+        if prefill_missing and hasattr(self, "run_sequence"):
+            runtime_state = prime_runtime_state(
+                runtime_state,
+                tuple(self.run_sequence),
+                dispatch_context=self._runtime_dispatch_context(),
+                step_info=initial_runtime_step_info(self.clock, self.settings),
+            )
+        self._validate_runtime_state(runtime_state)
+        return runtime_state
+
+    def _output_masks_for_component(
         self,
         name: str,
-        shared_fields: Shared,
-    ) -> None:
-        """
-        Append binary and fractional masks to the output shared fields of component 'name'.
+    ) -> dict[str, RuntimeArray]:
+        """Return runtime output mask fields for one destination component."""
 
-        Arguments:
-            name: component name
-            shared_fields: Shared instance containing fields to be written to output
-        """
+        return output_masks_for_component(
+            name,
+            self.exchanges,
+            self._binary_masks,
+            self._fractional_masks,
+        )
 
-        for exchange in self.exchanges:
-            if name != exchange.destination:
-                continue
+    def _runtime_dispatch_context(self) -> RuntimeDispatchContext:
+        """Return static runtime dispatch plumbing for the current coupler state."""
 
-            key = (exchange.source, name, exchange.interpolation_type)
-            source_destination_name = "_".join(key)
+        return runtime_dispatch_context(
+            self.components,
+            self.exchanges,
+            self._regridders,
+            self._runtime_contracts,
+            dt_seconds=self.clock.dt_seconds,
+            settings=self.settings,
+        )
 
-            shared_fields["bmask_" + source_destination_name] = (
-                self._binary_masks[key],
-                datetime.now(),
-                name,
-            )
-
-            shared_fields["fmask_" + source_destination_name] = (
-                self._fractional_masks[key],
-                datetime.now(),
-                name,
-            )
-
-    def interpolate_and_dispatch_fields(
+    def runtime_component_view(
         self,
-        component: AllComponentsType,
-        timestamp: datetime | ModelDateTime,
+        runtime_state: RuntimeCouplerState,
+        name: str,
+    ) -> RuntimeComponentView:
+        """Return a single object containing component metadata and runtime fields."""
+
+        return RuntimeComponentView.from_component_state(
+            name,
+            self.components[name].grid,
+            runtime_state.get_component_state(name),
+        )
+
+    def finalize(
+        self,
+        final_state: RuntimeCouplerState,
+        output_file_mask: Optional[Path] = None,
     ) -> None:
         """
-        Interpolate and dispatch fields to the given component at the specified timestamp.
+        Write final runtime component state to component output files.
 
         Arguments:
-            timestamp: current simulation (coupler's) time
-            component: destination component instance to process exchanges for
-        """
-
-        for exchange in self.exchanges:
-            # Ensure exchange for currently stepping component only
-            if exchange.destination != component.name:
-                continue
-
-            source_component = self.components[exchange.source]
-            destination_component = self.components[exchange.destination]
-
-            self.logger.info(f" Exchange fields: {exchange.name}")
-
-            key = (exchange.source, exchange.destination, exchange.interpolation_type)
-
-            regrid = self._regridders[key]
-            fractional_mask = self._fractional_masks[key]
-
-            source_fields = source_component.export_fields()
-            destination_fields = Shared()
-
-            # Regridder (regrid) checks if components have identical grids internally and
-            # returns fields as-is (from source to destination) if so, avoiding unnecessary computation
-            for field_name in exchange.field_names:
-                # Figure out if scalar or vector field to be regridded & passed to destination
-                if isinstance(field_name, tuple):
-                    field_name_set = set(field_name)
-                    if not field_name_set.issubset(set(source_fields.fields().keys())):
-                        raise ExchangerError(
-                            f"Not all fields in vector {field_name} are present in source fields"
-                        )
-                    (
-                        u_vector,
-                        v_vector,
-                    ) = regrid(
-                        getattr(source_fields, field_name[0]).data,
-                        getattr(source_fields, field_name[1]).data,
-                    )
-                    setattr(
-                        destination_fields,
-                        field_name[0],
-                        TNA(u_vector, timestamp, exchange.source),
-                    )
-                    setattr(
-                        destination_fields,
-                        field_name[1],
-                        TNA(v_vector, timestamp, exchange.source),
-                    )
-                else:
-                    if field_name not in source_fields.fields().keys():
-                        raise ExchangerError(
-                            f"Field {field_name} not present in source fields"
-                        )
-                    source_field_data = getattr(source_fields, field_name).data
-                    scalar = np.asarray(regrid(source_field_data)) * fractional_mask
-
-                    setattr(
-                        destination_fields,
-                        field_name,
-                        TNA(scalar, timestamp, exchange.source),
-                    )
-
-            if not destination_fields.is_empty:
-                destination_component.import_fields(destination_fields)
-                self.logger.debug(
-                    f" Exchanged {destination_fields.field_names}"
-                    f" from {exchange.source} to {exchange.destination}"
-                )
-
-    def finalize(self, output_file_mask: Optional[Path] = None) -> None:
-        """
-        Finalize the coupler and all registered components.
-
-        Arguments:
+            final_state: runtime state returned by run/create_runtime_state
             output_file_mask: optional path mask for output files
         """
 
         self.logger.info(" ------------ Finalizing coupler and components ------------")
         for name, component in self.components.items():
-            component.finalize(self, output_file_mask)
+            validate_component_setup(component)
+            if output_file_mask is None:
+                filepath = Path(f"{name.lower()}_component_runtime_fields.nc")
+            else:
+                filepath = Path(f"{name.lower()}_{output_file_mask}.nc")
+            view = self.runtime_component_view(final_state, name)
+            write_runtime_component_view_to_netcdf(
+                view,
+                filepath,
+                masks=self._output_masks_for_component(name),
+            )
             self.logger.info(f" Finalized {name}")
 
     def __str__(self) -> str:
@@ -445,32 +446,66 @@ class Coupler:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={' -> '.join(self.run_sequence)})"
 
-    def run(self) -> None:
+    def run(
+        self,
+        initial_state: RuntimeCouplerState | None = None,
+        *,
+        donate_state: bool = False,
+    ) -> RuntimeCouplerState:
         """
-        Run the coupler and all registered components according to the run sequence.
+        Run all registered components through the unified runtime entrypoint.
+
+        Pure differentiable components run through the cached JIT-scanned runtime.
+        Host-backed components run through the Python host bridge. When
+        ``donate_state`` is true for pure runs, callers must treat the input
+        runtime state as consumed after this method returns.
         """
 
-        # TODO: add setup checks like time step consistency,
-        # component's readiness (outgoing fields), etc.
-        # Wrap in a class method or function
-        for cname in self.run_sequence:
-            if self.components[cname].outgoing_fields.is_empty:
-                raise ComponentError(
-                    f"Component {cname} outgoing fields were not initialized properly."
-                )
+        runtime_state = (
+            self.create_runtime_state(prefill_missing=True)
+            if initial_state is None
+            else initial_state
+        )
+        self._validate_runtime_state(runtime_state)
 
-        for n, time, dt in self.clock.iter():
-            self.logger.info(
-                f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
-            )
+        return run_coupler_runtime(
+            runtime_state,
+            components=self.components,
+            run_sequence=tuple(self.run_sequence),
+            exchanges=self.exchanges,
+            regridders=self._regridders,
+            contracts=self._runtime_contracts,
+            clock=self.clock,
+            settings=self.settings,
+            logger=self.logger,
+            log_level=self.log_level,
+            dispatch_context=self._runtime_dispatch_context(),
+            compiled_runtime_cache=self._compiled_runtime_cache,
+            interrupts=self._runtime_interrupts,
+            donate_state=donate_state,
+        )
 
-            # Step components in declared order
-            for cname in self.run_sequence:
-                self.interpolate_and_dispatch_fields(self.components[cname], time)
+    def _run_scanned_runtime(
+        self,
+        initial_state: RuntimeCouplerState | None = None,
+        *,
+        validate_state: bool = True,
+    ) -> RuntimeCouplerState:
+        """Run the unified scanned runtime path and return state."""
 
-                self.logger.info(f" Run component: {cname}")
-                self.components[cname].receive_fields(time)
-
-                self.components[cname].step(dt, time, self)
-
-                self.components[cname].send_fields(time, self)
+        runtime_state = (
+            self.create_runtime_state(prefill_missing=True)
+            if initial_state is None
+            else initial_state
+        )
+        if validate_state:
+            self._validate_runtime_state(runtime_state)
+        return run_scanned_runtime(
+            runtime_state,
+            run_sequence=tuple(self.run_sequence),
+            clock=self.clock,
+            settings=self.settings,
+            logger=self.logger,
+            dispatch_context=self._runtime_dispatch_context(),
+            interrupts=self._runtime_interrupts,
+        )

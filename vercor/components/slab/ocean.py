@@ -1,14 +1,44 @@
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
 
-from vercor.clock import CustomDateTime
-from vercor.components import Component
+from vercor.components.base import Component, ComponentFieldSpec
+from vercor.dtypes import as_jax_real_array
 from vercor.grid import RectilinearGrid
+from vercor.runtime.contexts import RuntimeStepContext
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
+
+
+_REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
+_OCEAN_FIELD_SPEC = ComponentFieldSpec(
+    inputs=("sensible_heat_flux", "latent_heat_flux"),
+    outputs=("sea_surface_temperature",),
+    default_fields={"sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE},
+)
+
+
+@jax.jit
+def _advance_sea_surface_temperature(
+    sea_surface_temperature: object,
+    sensible_heat_flux: object,
+    latent_heat_flux: object,
+    dt_seconds: float,
+    rho: float,
+    cp: float,
+    mixed_layer_depth: float,
+    lambda_relax: float,
+    reference_temperature: float,
+) -> jax.Array:
+    sea_surface_temperature_array = as_jax_real_array(sea_surface_temperature)
+    sensible_heat_flux_array = as_jax_real_array(sensible_heat_flux)
+    latent_heat_flux_array = as_jax_real_array(latent_heat_flux)
+    qnet = sensible_heat_flux_array + latent_heat_flux_array
+    tendency = qnet / (rho * cp * mixed_layer_depth) + lambda_relax * (
+        sea_surface_temperature_array - reference_temperature
+    )
+    return sea_surface_temperature_array + tendency * dt_seconds
 
 
 class Ocean(Component):
@@ -21,6 +51,7 @@ class Ocean(Component):
         self, grid: RectilinearGrid, name: str = "OCN", H: float = 30.0
     ) -> None:
         super().__init__(name, grid)
+        self.declare_fields(_OCEAN_FIELD_SPEC)
 
         self.H = H  # mixed-layer depth [m]
         self.rho = 1025.0
@@ -29,26 +60,43 @@ class Ocean(Component):
             30.0 * 86400.0
         )  # weak restoring to 15C over ~30 days
 
-    def initialize(self, coupler: "Coupler") -> None:
-        self.data["sea_surface_temperature"] = 273.15 + 15.0 * np.ones(self.grid.shape)
-
-    def step(
+    def step_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
-        sst = self.data.get("sea_surface_temperature", None)
-        if sst is None:
-            return
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance the slab ocean on immutable runtime state."""
 
-        SHF = self.data.get("sensible_heat_flux", None)
-        LHF = self.data.get("latent_heat_flux", None)
-        Qnet = np.zeros_like(sst)
-        if SHF is not None:
-            Qnet += SHF
-        if LHF is not None:
-            Qnet += LHF
-        T0 = 273.15 + 15.0
-        dTdt = Qnet / (self.rho * self.cp * self.H) + self.lambda_relax * (sst - T0)
-        self.data["sea_surface_temperature"] = sst + dTdt * dt.total_seconds()
+        dt_seconds = context.dt_seconds
+        if not self.has_runtime_field(component_state, "sea_surface_temperature"):
+            return component_state
+        sea_surface_temperature = self.runtime_field(
+            component_state,
+            "sea_surface_temperature",
+        )
+        sensible_heat_flux = self.runtime_field_or_zeros_like(
+            component_state,
+            "sensible_heat_flux",
+            sea_surface_temperature,
+        )
+        latent_heat_flux = self.runtime_field_or_zeros_like(
+            component_state,
+            "latent_heat_flux",
+            sea_surface_temperature,
+        )
+
+        updated_sst = _advance_sea_surface_temperature(
+            sea_surface_temperature,
+            sensible_heat_flux,
+            latent_heat_flux,
+            dt_seconds,
+            self.rho,
+            self.cp,
+            self.H,
+            self.lambda_relax,
+            _REFERENCE_SEA_SURFACE_TEMPERATURE,
+        )
+        return self.with_runtime_fields(
+            component_state,
+            {"sea_surface_temperature": updated_sst},
+        )

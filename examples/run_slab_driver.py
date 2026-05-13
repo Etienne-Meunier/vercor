@@ -1,18 +1,21 @@
 from datetime import datetime
 from typing import Any, cast
 
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
-import numpy as np
 
-from vercor import Clock, Coupler, Exchange
-from vercor.components import Atmosphere, Land, Ocean, SeaIce
-from vercor.coupler import RunSequence
+from vercor import Clock, Coupler, Exchange, RunSequence
+from vercor.components.slab.atmosphere import Atmosphere
+from vercor.components.slab.land import Land
+from vercor.components.slab.ocean import Ocean
+from vercor.components.slab.seaice import SeaIce
+from vercor.dtypes import jax_ones
 from vercor.regridders import (
     make_rectilinear_grid,
     bilinear,
     conservative,
 )
-from vercor.tools import (
+from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
@@ -22,8 +25,7 @@ if __name__ == "__main__":
     atm_grid = make_rectilinear_grid("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
 
     ocn_grid_shape = (64, 32)
-    binary_mask = np.ones(ocn_grid_shape).T
-    binary_mask[:2, :] = 0.0  # land points
+    binary_mask = jax_ones(ocn_grid_shape).T.at[:2, :].set(0.0)  # land points
     ocn_grid = make_rectilinear_grid(
         "ocn-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0, mask=binary_mask
     )
@@ -122,12 +124,16 @@ if __name__ == "__main__":
     )
 
     cpl.initialize()
-    cpl.run()
-    cpl.finalize()
+    final_state = cpl.run()
+    cpl.finalize(final_state)
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(
-        components={"ATM": atm, "OCN": ocn, "LND": lnd},
+        components={
+            "ATM": cpl.runtime_component_view(final_state, "ATM"),
+            "OCN": cpl.runtime_component_view(final_state, "OCN"),
+            "LND": cpl.runtime_component_view(final_state, "LND"),
+        },
         fields=[
             ("sea_surface_temperature", "sst"),
             ("temperature_2m", "temperature_2m"),
@@ -138,20 +144,29 @@ if __name__ == "__main__":
         ],
         component_order=["ATM", "OCN", "LND"],
     )
-    print("ICE ice_fraction mean:", np.nanmean(ice.get("ice_fraction")))
+    print(
+        "ICE ice_fraction mean:",
+        float(
+            jnp.nanmean(
+                jnp.asarray(
+                    final_state.get_component_state("ICE").data.get("ice_fraction")
+                )
+            )
+        ),
+    )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
         rows=[
             (
                 "ATM",
-                atm,
+                cpl.runtime_component_view(final_state, "ATM"),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",
             ),
             (
                 "OCN",
-                ocn,
+                cpl.runtime_component_view(final_state, "OCN"),
                 "sea_surface_temperature",
                 "u_velocity_10m",
                 "v_velocity_10m",

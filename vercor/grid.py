@@ -1,19 +1,32 @@
+from __future__ import annotations
+
 import abc
 from dataclasses import dataclass
-from typing import Optional
 
-import numpy as np
-from numpy.typing import NDArray
+import jax
+import jax.numpy as jnp
+
+from vercor.dtypes import PrecisionPolicy, as_jax_real_array
+from vercor.exceptions import GridError
+from vercor.pytree import PyTreeNodeMixin
+from vercor.types import RuntimeArray
 
 
-@dataclass
+def _is_strictly_increasing(values: jax.Array) -> bool:
+    return bool(jnp.all(jnp.diff(values) > 0.0))
+
+
+@dataclass(frozen=True)
 class Grid(abc.ABC):
     name: str
-    binary_mask: Optional[NDArray] = None  # values of 1 for active, 0 for inactive
+    binary_mask: RuntimeArray | None = None  # values of 1 for active, 0 for inactive
 
     def __post_init__(self) -> None:
-        if self.binary_mask is not None and self.binary_mask.ndim != 2:
-            raise ValueError("Mask must be a 2D array.")
+        if self.binary_mask is not None:
+            mask = jnp.asarray(self.binary_mask)
+            if mask.ndim != 2:
+                raise GridError("Mask must be a 2D array.")
+            object.__setattr__(self, "binary_mask", mask)
 
     @property
     @abc.abstractmethod
@@ -32,32 +45,81 @@ class Grid(abc.ABC):
         return f"{self.__class__.__name__}(name={self.name}, shape={self.shape})"
 
 
-class RectilinearGrid(Grid):
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True, init=False, repr=False, kw_only=True)
+class RectilinearGrid(PyTreeNodeMixin, Grid):
+    pytree_children = (
+        "longitude",
+        "latitude",
+        "longitude_edges",
+        "latitude_edges",
+        "binary_mask",
+    )
+    pytree_aux_data = ("name",)
+
+    longitude: RuntimeArray
+    latitude: RuntimeArray
+    longitude_edges: RuntimeArray | None
+    latitude_edges: RuntimeArray | None
+
     def __init__(
         self,
         name: str,
-        longitude: NDArray,
-        latitude: NDArray,
-        longitude_edges: Optional[NDArray] = None,
-        latitude_edges: Optional[NDArray] = None,
-        binary_mask: Optional[NDArray] = None,
+        longitude: RuntimeArray,
+        latitude: RuntimeArray,
+        longitude_edges: RuntimeArray | None = None,
+        latitude_edges: RuntimeArray | None = None,
+        binary_mask: RuntimeArray | None = None,
+        policy: PrecisionPolicy = None,
     ) -> None:
-        super().__init__(name=name, binary_mask=binary_mask)
-        self.longitude = longitude
-        self.latitude = latitude
-        self.longitude_edges = longitude_edges
-        self.latitude_edges = latitude_edges
+        longitude_array = as_jax_real_array(longitude, policy)
+        latitude_array = as_jax_real_array(latitude, policy)
+        longitude_edges_array = (
+            None
+            if longitude_edges is None
+            else as_jax_real_array(longitude_edges, policy)
+        )
+        latitude_edges_array = (
+            None
+            if latitude_edges is None
+            else as_jax_real_array(latitude_edges, policy)
+        )
+        binary_mask_array = (
+            None if binary_mask is None else as_jax_real_array(binary_mask, policy)
+        )
 
-        if self.longitude.ndim != 1 or self.latitude.ndim != 1:
-            raise ValueError(
+        if longitude_array.ndim != 1 or latitude_array.ndim != 1:
+            raise GridError(
                 "RectilinearGrid expects both longitude and latitude coordinates to be 1D arrays."
             )
+
         if not (
-            np.all(np.diff(self.longitude) > 0) and np.all(np.diff(self.latitude) > 0)
+            _is_strictly_increasing(longitude_array)
+            and _is_strictly_increasing(latitude_array)
         ):
-            # Monotonic increasing required for built-in regridders.
-            raise ValueError("longitude and latitude must be strictly monotonic.")
+            raise GridError("longitude and latitude must be strictly monotonic.")
+
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "binary_mask", binary_mask_array)
+        Grid.__post_init__(self)
+        object.__setattr__(self, "longitude", longitude_array)
+        object.__setattr__(self, "latitude", latitude_array)
+        object.__setattr__(self, "longitude_edges", longitude_edges_array)
+        object.__setattr__(self, "latitude_edges", latitude_edges_array)
 
     @property
     def shape(self) -> tuple[int, int]:
-        return (self.latitude.size, self.longitude.size)  # (nlat, nlon), row-major
+        return (int(self.latitude.size), int(self.longitude.size))
+
+    def with_precision(self, policy: PrecisionPolicy) -> "RectilinearGrid":
+        """Return this grid with real arrays converted to ``policy`` precision."""
+
+        return RectilinearGrid(
+            name=self.name,
+            longitude=self.longitude,
+            latitude=self.latitude,
+            longitude_edges=self.longitude_edges,
+            latitude_edges=self.latitude_edges,
+            binary_mask=self.binary_mask,
+            policy=policy,
+        )

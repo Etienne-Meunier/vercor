@@ -1,29 +1,44 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
+from jax.typing import ArrayLike
 
-from vercor.components.external.camulator import parse_datetime_from_config
-from vercor.components.external.camulator_state import initialize_camulator
+from vercor.dtypes import as_jax_real_array
+from vercor.components.external.camulator_state import (
+    load_camulator_forcing_context,
+    parse_datetime_from_config,
+)
 
 from vercor.grid import RectilinearGrid
-from vercor.components import Component
-from vercor.tools import create_lnd_mask_from_ocn
-from vercor.clock import CustomDateTime
-
+from vercor.components.base import ComponentFieldSpec, HostRuntimeComponent
+from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
+from vercor.grid_masks import create_lnd_mask_from_ocn
 
 if TYPE_CHECKING:
-    from vercor.coupler import Coupler
+    from vercor.runtime import RuntimeComponentState
 
 
-class CAMulatorLand(Component):
+_CAMULATOR_LAND_FIELD_SPEC = ComponentFieldSpec(
+    outputs=("land_surface_temperature",),
+    default_fields={"land_surface_temperature": 283.0},
+)
+
+
+def _prepare_camulator_land_surface_temperature(
+    land_surface_temperature: ArrayLike,
+) -> jax.Array:
+    """Normalize CAMulator land temperature fields for JAX-backed runtime storage."""
+    return as_jax_real_array(land_surface_temperature)
+
+
+class CAMulatorLand(HostRuntimeComponent):
     def __init__(
         self,
         config_path: str,
         camulator_grid: RectilinearGrid,
         ocn_grid: RectilinearGrid,
         name: str = "LND",
-        model_weights_path: str = "checkpoint.pt00091.pt",
     ) -> None:
         """
         Read all necessary fields from the provided forcing files.
@@ -50,11 +65,7 @@ class CAMulatorLand(Component):
             ocn_grid=ocn_grid,
         )
 
-        context = initialize_camulator(
-            config_path=self.config_path,
-            model_name=model_weights_path,
-            device="cpu",
-        )
+        context = load_camulator_forcing_context(config_path=self.config_path)
 
         self.conf = context["conf"]
         self.forcing_ds = context["forcing_dataset_raw"]
@@ -68,11 +79,12 @@ class CAMulatorLand(Component):
         )
 
         super().__init__(name, grid=grid)
+        self.declare_fields(_CAMULATOR_LAND_FIELD_SPEC)
 
-    def initialize(self, coupler: "Coupler") -> None:
-        logger = coupler.logger
-        self.coupler_start_datetime = coupler.clock.start
-        self.coupling_timestep = timedelta(seconds=coupler.clock.dt_seconds)
+    def initialize(self, context: ComponentInitContext) -> None:
+        logger = context.logger
+        self.coupler_start_datetime = context.start
+        self.coupling_timestep = timedelta(seconds=context.dt_seconds)
 
         self.model_timestep = timedelta(hours=self.lead_time_periods)
         self.model_substeps = int(
@@ -113,20 +125,29 @@ class CAMulatorLand(Component):
         self.timestep_counter = 0
 
         # Units: [K]
-        self.data["land_surface_temperature"] = np.full(
-            self.grid.shape, 283.0, dtype=np.float32
-        )
+        super().initialize(context)
 
-    def step(
+    def step_host_runtime_state(
         self,
-        dt: timedelta,
-        time: datetime | CustomDateTime,
-        coupler: "Coupler",
-    ) -> None:
+        component_state: "RuntimeComponentState",
+        context: RuntimeStepContext,
+    ) -> "RuntimeComponentState":
+        """Advance the private host-backed CAMulator land forcing boundary."""
+
+        time = context.time
+        if time is None:
+            return component_state
 
         idx = self.start_ix + self.timestep_counter * self.model_substeps
         ts = self.dynamic_ds.isel(time=idx).load()
 
-        self.data["land_surface_temperature"] = ts["TS"].values
-
         self.timestep_counter += 1
+
+        return self.with_runtime_fields(
+            component_state,
+            {
+                "land_surface_temperature": (
+                    _prepare_camulator_land_surface_temperature(ts["TS"].values)
+                )
+            },
+        )
