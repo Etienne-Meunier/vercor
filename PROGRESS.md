@@ -1,3 +1,56 @@
+# 2026-05-13
+
+## Canonical VerCOR Logging Format
+
+- Centralized VerCOR logging format policy in `vercor.jax_logging` with a
+  canonical owned handler that emits
+  `VerCOR: YYYY-MM-DD HH:MM:SS [LEVEL]: message`.
+- Replaced the previous `logging.basicConfig(...)` root-logger dependency with
+  idempotent VerCOR logger configuration and `propagate=False` on the default
+  `VerCOR` logger, preventing root logging setup from reformatting VerCOR
+  records.
+- Routed `VerCOR.*` child loggers through the canonical parent handler and made
+  injected Python loggers passed to `Coupler` enter the same configuration
+  boundary before JAX callback wrapping.
+- Replaced direct root warnings in the CAMulator state import boundary with the
+  default VerCOR logger.
+- Updated logging tests to capture at the VerCOR logger boundary instead of
+  relying on root `caplog` propagation.
+- Failed approaches / corrections:
+  - The red tests failed as expected because the default logger still
+    propagated to root and had no canonical owned handler.
+  - The first fast-suite rerun exposed remaining `caplog` assertions that no
+    longer observe VerCOR records once `propagate=False` is intentional; those
+    tests now use the shared logging capture helper.
+  - The first shared capture helper used a normal temporary handler, which
+    `get_default_logger()` correctly removed as noncanonical; marking the test
+    handler as VerCOR-canonical keeps capture local without weakening the
+    production handler cleanup.
+
+## Validation (Canonical VerCOR Logging Format, 2026-05-13)
+
+- `conda run -n scipy pytest tests/test_coupler_coverage.py::test_setup_logger_installs_canonical_owned_handler_format tests/test_coupler_coverage.py::test_setup_logger_routes_child_loggers_through_parent_canonical_handler tests/test_coupler_coverage.py::test_coupler_configures_injected_python_logger_with_canonical_boundary -q --tb=short`
+  - failed as expected before implementation on root propagation and missing
+    canonical owned handler
+- `conda run -n scipy pytest tests/test_coupler_coverage.py::test_setup_logger_installs_canonical_owned_handler_format tests/test_coupler_coverage.py::test_setup_logger_routes_child_loggers_through_parent_canonical_handler tests/test_coupler_coverage.py::test_coupler_configures_injected_python_logger_with_canonical_boundary tests/test_coupler_coverage.py::test_coupler_wraps_injected_python_logger_for_scanned_runtime tests/test_coupler_coverage.py::test_setup_logger_formats_traced_values_under_scan tests/test_coupler_coverage.py::test_scanned_runtime_passes_callback_logger_to_components tests/test_coupler_coverage.py::test_scanned_runtime_logs_host_equivalent_progress_messages tests/test_coupler_coverage.py::test_scanned_runtime_suppresses_info_below_log_level -q --tb=short`
+  - passed after implementation and test-capture updates
+- `conda run -n scipy pytest tests/test_camulator_component_kernels.py::test_camulator_constructor_logs_save_forecast_path tests/test_tools_assets_and_regridding.py::test_check_remap_conservation_handles_skip_and_mismatch -q --tb=short`
+  - passed after replacing root `caplog` expectations
+- `conda run -n scipy pytest tests/test_external_components_coverage.py::test_jax_gcm_write_output_persists_mean_dataset -q --tb=short`
+  - passed after replacing the final root `caplog` expectation
+- `conda run -n scipy black vercor examples tests`
+  - passed
+  - note: Black emitted the existing Python 3.13 vs target-3.14 safety-check
+    warning and left all 121 files unchanged on the final run
+- `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`
+  - passed (`0`)
+- `conda run -n scipy mypy vercor examples tests`
+  - passed (`121 source files`)
+- `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  - passed
+- `conda run -n scipy pytest tests/ -q --tb=short`
+  - passed
+
 # 2026-05-12
 
 ## Precision Policy Consistency Audit

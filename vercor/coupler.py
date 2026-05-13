@@ -14,6 +14,7 @@ from vercor.exchange import Exchange
 from vercor.jax_logging import (
     JaxCallbackLogger,
     LoggerLike,
+    configure_python_logger,
     setup_logger,
 )
 from vercor.run_sequence import RunSequence
@@ -150,7 +151,11 @@ class Coupler:
         """Apply the configured logging threshold at construction time."""
 
         if isinstance(self.logger, logging.Logger):
-            self.logger = JaxCallbackLogger(self.logger)
+            self.logger = JaxCallbackLogger(
+                configure_python_logger(self.logger, self.log_level)
+            )
+        elif isinstance(self.logger, JaxCallbackLogger):
+            configure_python_logger(self.logger.logger, self.log_level)
 
         set_level = getattr(self.logger, "setLevel", None)
         if callable(set_level):

@@ -12,7 +12,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tests._coverage_support import DummyComponent, RecordingRegridder, make_test_grid
+from tests._coverage_support import (
+    DummyComponent,
+    RecordingRegridder,
+    capture_logger_output,
+    make_test_grid,
+)
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 from vercor.components.base import Component, HostRuntimeComponent
@@ -20,7 +25,13 @@ from vercor.runtime.contexts import RuntimeStepContext
 from vercor.coupler import Coupler, setup_logger
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
-from vercor.jax_logging import DEFAULT_LOGGER_NAME, get_default_logger
+from vercor.jax_logging import (
+    CANONICAL_LOG_DATE_FORMAT,
+    CANONICAL_LOG_FORMAT,
+    DEFAULT_LOGGER_NAME,
+    JaxCallbackLogger,
+    get_default_logger,
+)
 from vercor.regridders.bilinear import bilinear
 from vercor.regridders.conservative import conservative
 from vercor.run_sequence import RunSequence
@@ -124,11 +135,112 @@ def _dispatch_runtime_fields(
     )
 
 
+def _canonical_handler(logger: logging.Logger) -> logging.StreamHandler[Any]:
+    for handler in logger.handlers:
+        formatter = handler.formatter
+        if (
+            isinstance(handler, logging.StreamHandler)
+            and formatter is not None
+            and formatter._fmt == CANONICAL_LOG_FORMAT
+        ):
+            return handler
+    raise AssertionError("canonical VerCOR stream handler is not configured")
+
+
+def _format_canonical_record(
+    handler: logging.StreamHandler[Any],
+    name: str,
+    level: int,
+    message: str,
+) -> str:
+    assert handler.formatter is not None
+    record = logging.LogRecord(
+        name=name,
+        level=level,
+        pathname=__file__,
+        lineno=1,
+        msg=message,
+        args=(),
+        exc_info=None,
+    )
+    record.created = datetime(2026, 5, 12, 17, 32, 50).timestamp()
+    return handler.format(record)
+
+
 def test_default_logger_uses_vercor_logger_name() -> None:
     logger = get_default_logger()
 
     assert DEFAULT_LOGGER_NAME == "VerCOR"
     assert logger.name == DEFAULT_LOGGER_NAME
+
+
+def test_setup_logger_installs_canonical_owned_handler_format() -> None:
+    callback_logger = setup_logger(level="INFO")
+    logger = callback_logger.logger
+
+    assert logger is get_default_logger()
+    assert logger.propagate is False
+    handler = _canonical_handler(logger)
+    assert handler.formatter is not None
+    assert handler.formatter.datefmt == CANONICAL_LOG_DATE_FORMAT
+
+    formatted = _format_canonical_record(
+        handler,
+        logger.name,
+        logging.INFO,
+        "format probe",
+    )
+
+    assert formatted == "VerCOR: 2026-05-12 17:32:50 [INFO]: format probe"
+    assert "INFO [VerCOR]" not in formatted
+    assert "," not in formatted.split(" [INFO]:", maxsplit=1)[0]
+
+
+def test_setup_logger_routes_child_loggers_through_parent_canonical_handler() -> None:
+    child_logger = setup_logger(level="WARNING", name="VerCOR.test.callback").logger
+    parent_logger = get_default_logger()
+
+    assert child_logger.name == "VerCOR.test.callback"
+    assert child_logger.handlers == []
+    assert child_logger.propagate is True
+    assert parent_logger.propagate is False
+
+    formatted = _format_canonical_record(
+        _canonical_handler(parent_logger),
+        child_logger.name,
+        logging.WARNING,
+        "child warning",
+    )
+
+    assert formatted == "VerCOR: 2026-05-12 17:32:50 [WARNING]: child warning"
+    assert "VerCOR.test.callback" not in formatted
+
+
+def test_coupler_configures_injected_python_logger_with_canonical_boundary() -> None:
+    logger_name = "VerCOR.test.injected-format"
+    injected_logger = logging.getLogger(logger_name)
+    injected_logger.handlers.clear()
+    injected_logger.propagate = True
+
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        logger=injected_logger,
+        log_level="INFO",
+    )
+
+    assert isinstance(coupler.logger, JaxCallbackLogger)
+    assert coupler.logger.logger is injected_logger
+    assert injected_logger.handlers == []
+    assert injected_logger.propagate is True
+
+    formatted = _format_canonical_record(
+        _canonical_handler(get_default_logger()),
+        injected_logger.name,
+        logging.INFO,
+        "injected probe",
+    )
+
+    assert formatted == "VerCOR: 2026-05-12 17:32:50 [INFO]: injected probe"
 
 
 def test_coupler_accepts_log_level_at_instantiation() -> None:
@@ -141,11 +253,8 @@ def test_coupler_accepts_log_level_at_instantiation() -> None:
     assert coupler.logger.isEnabledFor(logging.WARNING)
 
 
-def test_coupler_wraps_injected_python_logger_for_scanned_runtime(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_coupler_wraps_injected_python_logger_for_scanned_runtime() -> None:
     logger_name = "VerCOR.test.injected"
-    caplog.set_level(logging.INFO, logger=logger_name)
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         logger=logging.getLogger(logger_name),
@@ -154,19 +263,17 @@ def test_coupler_wraps_injected_python_logger_for_scanned_runtime(
     coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
-    jax.effects_barrier()
+    with capture_logger_output(logger_name, set_logger_level=False) as stream:
+        final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+        jax.effects_barrier()
 
     assert final_state.component_names == ("ATM",)
-    assert "scanned ATM 4.0" in caplog.text
+    assert "scanned ATM 4.0" in stream.getvalue()
 
 
-def test_setup_logger_formats_traced_values_under_scan(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_setup_logger_formats_traced_values_under_scan() -> None:
     logger_name = "VerCOR.test.callback"
     logger = setup_logger(level="INFO", name=logger_name)
-    caplog.set_level(logging.INFO, logger=logger_name)
 
     def scanned_total(seed: jax.Array) -> jax.Array:
         def body(total: jax.Array, value: jax.Array) -> tuple[jax.Array, None]:
@@ -177,85 +284,83 @@ def test_setup_logger_formats_traced_values_under_scan(
         result, _ = jax.lax.scan(body, seed, jnp.asarray([1.0, 2.0]))
         return result
 
-    assert jax.jit(scanned_total)(jnp.asarray(0.0)) == 3.0
-    jax.effects_barrier()
+    with capture_logger_output(logger_name, set_logger_level=False) as stream:
+        assert jax.jit(scanned_total)(jnp.asarray(0.0)) == 3.0
+        jax.effects_barrier()
 
-    assert "callback value 1.0" in caplog.text
-    assert "callback value 3.0" in caplog.text
+    log_text = stream.getvalue()
+    assert "callback value 1.0" in log_text
+    assert "callback value 3.0" in log_text
 
 
-def test_scanned_runtime_passes_callback_logger_to_components(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_scanned_runtime_passes_callback_logger_to_components() -> None:
     logger_name = "VerCOR.test.scanned-runtime"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         log_level="INFO",
     )
     coupler.logger = setup_logger(level="INFO", name=logger_name)
-    caplog.set_level(logging.INFO, logger=logger_name)
     coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
-    jax.effects_barrier()
+    with capture_logger_output(logger_name) as stream:
+        final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+        jax.effects_barrier()
 
     assert final_state.component_names == ("ATM",)
-    assert "scanned ATM 4.0" in caplog.text
+    assert "scanned ATM 4.0" in stream.getvalue()
 
 
-def test_scanned_runtime_logs_host_equivalent_progress_messages(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
     logger_name = "VerCOR.test.scanned-runtime-progress"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2),
         log_level="INFO",
     )
     coupler.logger = setup_logger(level="INFO", name=logger_name)
-    caplog.set_level(logging.INFO, logger=logger_name)
     coupler.components = {
         "ATM": cast(Any, _LoggingRunComponent("ATM")),
         "OCN": cast(Any, _LoggingRunComponent("OCN")),
     }
     coupler.run_sequence = RunSequence(order=["ATM", "OCN"])
 
-    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
-    jax.effects_barrier()
+    with capture_logger_output(logger_name) as stream:
+        final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+        jax.effects_barrier()
 
     assert final_state.component_names == ("ATM", "OCN")
+    log_text = stream.getvalue()
     assert (
         " ====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
-        in caplog.text
+        in log_text
     )
     assert (
         " ====== Step: 00001 ====== Date: 2000-01-01 00:01:00 ====== Δt: 0:01:00 "
-        in caplog.text
+        in log_text
     )
-    assert caplog.text.count(" Run component: ATM") == 2
-    assert caplog.text.count(" Run component: OCN") == 2
+    assert log_text.count(" Run component: ATM") == 2
+    assert log_text.count(" Run component: OCN") == 2
 
 
-def test_scanned_runtime_suppresses_info_below_log_level(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_scanned_runtime_suppresses_info_below_log_level() -> None:
     logger_name = "VerCOR.test.scanned-runtime-warning"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         log_level="WARNING",
     )
     coupler.logger = setup_logger(level="WARNING", name=logger_name)
-    caplog.set_level(logging.INFO)
     coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
     coupler.run_sequence = RunSequence(order=["ATM"])
 
-    final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
-    jax.effects_barrier()
+    with capture_logger_output(logger_name, set_logger_level=False) as stream:
+        final_state = jax.jit(lambda: coupler._run_scanned_runtime())()
+        jax.effects_barrier()
 
     assert final_state.component_names == ("ATM",)
-    assert "scanned ATM" not in caplog.text
-    assert " ====== Step:" not in caplog.text
-    assert " Run component:" not in caplog.text
+    log_text = stream.getvalue()
+    assert "scanned ATM" not in log_text
+    assert " ====== Step:" not in log_text
+    assert " Run component:" not in log_text
 
 
 @pytest.mark.fast_always

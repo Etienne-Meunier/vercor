@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import logging
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -14,6 +13,7 @@ import xarray as xr
 import vercor.components.data.camulator_land as camulator_land_module
 import vercor.components.external.camulator as camulator_module
 import vercor.components.external.camulator_state as camulator_state_module
+from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.components.external.camulator import (
@@ -326,9 +326,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
 
 
-def test_camulator_constructor_logs_save_forecast_path(
-    monkeypatch: Any, caplog: Any
-) -> None:
+def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None:
     latlons = SimpleNamespace(
         longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
         latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
@@ -357,15 +355,14 @@ def test_camulator_constructor_logs_save_forecast_path(
             "state_transformer": object(),
         },
     )
-    caplog.set_level(logging.INFO, logger=DEFAULT_LOGGER_NAME)
+    with capture_logger_output(DEFAULT_LOGGER_NAME) as stream:
+        CAMulatorGCM(
+            config_path="dummy.yaml",
+            device="cpu",
+            output_subfolder_name="member-001",
+        )
 
-    CAMulatorGCM(
-        config_path="dummy.yaml",
-        device="cpu",
-        output_subfolder_name="member-001",
-    )
-
-    assert "Saving outputs to: /tmp/camulator-output/member-001" in caplog.text
+    assert "Saving outputs to: /tmp/camulator-output/member-001" in stream.getvalue()
 
 
 def test_add_init_noise_logs_through_injected_logger(

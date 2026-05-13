@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+import io
 import logging
 
 import numpy as np
@@ -14,6 +17,31 @@ from vercor.run_sequence import RunSequence
 from vercor.runtime.contexts import ComponentInitContext, RuntimeStepContext
 from vercor.settings import VercorSettings
 from vercor.types import RuntimeArray
+
+
+@contextmanager
+def capture_logger_output(
+    logger_name: str,
+    level: int = logging.INFO,
+    set_logger_level: bool = True,
+) -> Iterator[io.StringIO]:
+    logger = logging.getLogger(logger_name)
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    setattr(handler, "_vercor_canonical_handler", True)
+    previous_level = logger.level
+    logger.addHandler(handler)
+    if set_logger_level:
+        logger.setLevel(level)
+    try:
+        yield stream
+    finally:
+        logger.removeHandler(handler)
+        if set_logger_level:
+            logger.setLevel(previous_level)
+        handler.close()
 
 
 def make_test_grid(

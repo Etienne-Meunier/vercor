@@ -18,7 +18,6 @@ import torch
 import xarray as xr
 from datetime import datetime
 from typing import Any, Optional, Literal
-import logging
 
 from vercor.jax_logging import LoggerLike, get_default_logger
 
@@ -34,7 +33,7 @@ try:
     CREDIT_AVAILABLE = True
 except ImportError:
     CREDIT_AVAILABLE = False
-    logging.warning(
+    get_default_logger().warning(
         "CREDIT modules not fully available - initialization may be limited"
     )
 
@@ -45,7 +44,9 @@ try:
     POSTBLOCK_AVAILABLE = True
 except ImportError:
     POSTBLOCK_AVAILABLE = False
-    logging.warning("credit.postblock not available - conservation fixers disabled")
+    get_default_logger().warning(
+        "credit.postblock not available - conservation fixers disabled"
+    )
 
 try:
     from vercor.components.external.windpp import post_process_wind_artifacts
@@ -53,9 +54,11 @@ try:
     WINDPP_AVAILABLE = True
 except ImportError:
     WINDPP_AVAILABLE = False
-    logging.warning("WindPP not available - wind artifact filtering disabled")
+    get_default_logger().warning(
+        "WindPP not available - wind artifact filtering disabled"
+    )
 
-logger = logging.getLogger(__name__)
+logger = get_default_logger()
 
 
 def load_camulator_forcing_context(config_path: str) -> dict[str, Any]:

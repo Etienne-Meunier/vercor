@@ -13,6 +13,7 @@ import pytest
 import vercor.assets as assets_module
 import vercor.grid_masks as grid_masks_module
 
+from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact, assert_array_equal_compact
 from vercor.assets import _asset_base_url, _download_asset, _ensure_forcing_asset
 from vercor.exceptions import AssetError, RegridderError
@@ -183,7 +184,7 @@ def test_check_total_lnd_ocn_mask_sum_success_and_failure() -> None:
 
 @pytest.mark.fast_always
 def test_check_remap_conservation_handles_skip_and_mismatch(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class DummyRemapper:
         def __init__(
@@ -211,20 +212,19 @@ def test_check_remap_conservation_handles_skip_and_mismatch(
     monkeypatch.setattr(
         grid_masks_module, "ConservativeRectilinearRemapper", DummyRemapper
     )
-    caplog.set_level(logging.WARNING, logger=DEFAULT_LOGGER_NAME)
-
     skip_interp = DummyRemapper(
         src_lat_b=np.array([-90.0, 0.0, 90.0]),
         dst_lat_b=np.array([-80.0, 0.0, 80.0]),
         src_mass=10.0,
         dst_mass=1.0,
     )
-    check_remap_conservation(
-        cast(Any, DummyRegridder(skip_interp)),
-        np.ones((2, 2)),
-        np.ones((2, 2)),
-    )
-    assert "Skipping mass conservation check" in caplog.text
+    with capture_logger_output(DEFAULT_LOGGER_NAME, level=logging.WARNING) as stream:
+        check_remap_conservation(
+            cast(Any, DummyRegridder(skip_interp)),
+            np.ones((2, 2)),
+            np.ones((2, 2)),
+        )
+    assert "Skipping mass conservation check" in stream.getvalue()
 
     mismatch_interp = DummyRemapper(
         src_lat_b=np.array([-90.0, 0.0, 90.0]),
