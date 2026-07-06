@@ -82,7 +82,7 @@ def test_settings_container_uses_direct_default_mapping_copy() -> None:
     assert not hasattr(settings_module, "_copy_settings")
 
 
-def test_attribute_access_and_assignment_are_compatible() -> None:
+def test_attribute_access_and_assignment_update_setting_values() -> None:
     settings = VercorSettings()
 
     settings.enable_x64 = True

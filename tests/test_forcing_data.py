@@ -13,7 +13,7 @@ from vercor.forcing_data import read_forcing
 pytestmark = pytest.mark.fast_always
 
 
-def test_read_forcing_reads_legacy_transposed_jax_array(tmp_path: Path) -> None:
+def test_read_forcing_transposes_file_layout_to_runtime_layout(tmp_path: Path) -> None:
     path = tmp_path / "forcing.nc"
     source = np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     xr.Dataset({"foo": (("x", "y"), source)}).to_netcdf(path)
@@ -24,7 +24,7 @@ def test_read_forcing_reads_legacy_transposed_jax_array(tmp_path: Path) -> None:
     assert_allclose_compact(out, source.T)
 
 
-def test_read_forcing_flips_legacy_latitude_axis(tmp_path: Path) -> None:
+def test_read_forcing_flips_requested_latitude_axis(tmp_path: Path) -> None:
     path = tmp_path / "forcing.nc"
     source = np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     xr.Dataset({"foo": (("x", "y"), source)}).to_netcdf(path)

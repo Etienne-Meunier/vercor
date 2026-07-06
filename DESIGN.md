@@ -469,7 +469,8 @@ asset-specific registries and product vocabulary kept outside the generic cache
 layer. Concrete forcing product registries and `get_forcing_data(...)` defaults
 live with setup data adapters in `vercor.setups.data.assets`. `vercor.forcing_data`
 owns the NetCDF forcing-variable read boundary, including mapping-key
-resolution, variable lookup, legacy transpose, and optional latitude-axis flip.
+resolution, variable lookup, file-to-runtime axis transpose, and optional
+latitude-axis flip.
 Diagnostics are split into `vercor.diagnostics.fields`, `vercor.diagnostics.tables`, and
 `vercor.diagnostics.plotting`, with field lookup delegated to
 `vercor.runtime.views` and `vercor.diagnostics` preserving the public reexport
@@ -509,9 +510,10 @@ settings use `"-"` for units. Each `Coupler` and each `Component` receives an
 independent `VercorSettings()` instance populated from those defaults at
 construction time, so setup-time changes on one owner do not leak into another.
 
-For backward-compatible call sites, `settings.enable_x64` and similar attribute
-reads resolve setting values dynamically through `__getattr__`, and assigning an
-existing attribute updates only that value through `__setattr__`. Known default
+Settings support direct attribute reads and assignments: `settings.enable_x64`
+and similar attribute reads resolve setting values dynamically through
+`__getattr__`, and assigning an existing attribute updates only that value
+through `__setattr__`. Known default
 settings are declared as class-level annotations so static type checkers retain
 useful types without per-setting runtime property descriptors. New custom
 settings must be introduced explicitly with `add_setting()` or passed as keyword
@@ -556,7 +558,7 @@ instantiation with `Coupler(..., log_level=...)`; disabled levels are filtered
 before callbacks enter the traced graph. Runtime hooks should pass traced values
 as logger arguments, for example `logger.info("Mean SST: {}", jnp.mean(sst))`,
 instead of converting tracers with `float(...)` or `int(...)`.
-`vercor.jax_logging` is the public compatibility facade for logging contracts,
+`vercor.jax_logging` is the public logging facade for logging contracts,
 constants, setup helpers, host emission, and the callback-backed logger. The
 implementation is split across private `vercor._logging` owner modules:
 `config` owns canonical Python logger configuration, `protocols` owns

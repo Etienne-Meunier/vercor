@@ -351,6 +351,12 @@ historical commands, failure messages, or detailed validation notes.
   pytest passed as of 2026-07-06 using the direct `scipy` environment
   executable. Black emitted the recurring Python 3.13/target-3.14 warning, and
   full pytest emitted the recurring JAX dtype-promotion `FutureWarning`.
+- Latest local evidence-only deprecation wording cleanup validation: baseline
+  fast pytest, focused cleanup pytest, Black, flake8, mypy, full fast pytest,
+  full pytest, and git diff whitespace check passed as of 2026-07-06 using the
+  direct `scipy` environment executable. Black emitted the recurring Python
+  3.13/target-3.14 warning, and full pytest emitted the recurring JAX
+  dtype-promotion `FutureWarning`.
 - No active `IN PROGRESS` task is recorded in the archived log.
 - No current blocker is recorded in the archived log.
 - Recurring known warning: Black may emit the existing Python 3.13 versus
@@ -382,6 +388,23 @@ historical commands, failure messages, or detailed validation notes.
   still public or boundary-tested surfaces.
 
 ## Recent Work
+
+### 2026-07-06: Evidence-Only Deprecation Wording Cleanup
+
+- Audited active source and tests after the 0.2.0 cleanup and found no live
+  VerCOR deprecation warning machinery, deprecated wrappers, or shim modules to
+  remove.
+- Renamed active tests and design text to avoid legacy-looking wording around
+  supported behavior: forcing file-to-runtime layout normalization,
+  `VercorSettings` attribute updates, and removed-API regression guards.
+- Kept the external JAX/Dinosaur deprecation-warning filter in `pyproject.toml`
+  because the warning originates from optional `dinosaur` imports of
+  `jax.experimental.shard_map`, not from VerCOR source code.
+- Validation run for this change: baseline fast pytest, focused cleanup pytest,
+  Black, flake8, mypy, full fast pytest, full pytest, and git diff whitespace
+  check passed using `/Users/romannuterman/miniforge3/envs/scipy/bin/python`.
+  Black emitted the recurring Python 3.13/target-3.14 warning, and full pytest
+  emitted the recurring JAX dtype-promotion `FutureWarning`.
 
 ### 2026-07-06: Vercor 0.2.0 Expired Deprecation Cleanup
 

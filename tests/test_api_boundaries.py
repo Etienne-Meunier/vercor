@@ -77,8 +77,8 @@ def test_v2_public_api_facade_exports_supported_names_only() -> None:
         "HostRuntimeComponent",
     )
     for module in (vercor, components_module):
-        for legacy_name in removed_aliases:
-            assert not hasattr(module, legacy_name)
+        for removed_name in removed_aliases:
+            assert not hasattr(module, removed_name)
 
     assert not hasattr(spec, "default_fields")
     with pytest.raises(TypeError, match="default_fields"):
@@ -260,7 +260,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "RuntimeStepContext",
         "RuntimeStepInfo",
     }
-    removed_compatibility_names = {
+    removed_public_names = {
         "CustomDateTime",
         "RunSequence",
         "data_component",
@@ -273,7 +273,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 
     assert expected_public_names.issubset(set(vercor.__all__))
     assert runtime_internal_names.isdisjoint(set(vercor.__all__))
-    assert removed_compatibility_names.isdisjoint(set(vercor.__all__))
+    assert removed_public_names.isdisjoint(set(vercor.__all__))
 
     assert vercor.Component is Component
     assert (
@@ -298,12 +298,12 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     assert data_component_type is not None
     assert getattr(vercor, "DataComponent", None) is data_component_type
     assert vercor.HostComponent is host_module.HostComponent
-    for name in (*runtime_internal_names, *removed_compatibility_names):
+    for name in (*runtime_internal_names, *removed_public_names):
         assert not hasattr(vercor, name)
 
 
 @pytest.mark.fast_always
-def test_removed_compatibility_modules_are_not_importable() -> None:
+def test_removed_facade_modules_are_not_importable() -> None:
     removed_modules = (
         "vercor._deprecation",
         "vercor.components.factories",
@@ -385,8 +385,8 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         (component_contexts_module, "ComponentStepContext"),
         (host_module, "HostRuntimeComponent"),
     )
-    for module, legacy_name in removed_aliases:
-        assert not hasattr(module, legacy_name)
+    for module, removed_name in removed_aliases:
+        assert not hasattr(module, removed_name)
     assert setup_validation_module.validate_component_setup is not None
     assert "FieldDefaults" not in contracts_module.__all__
     assert "FieldDefaults" not in private_contracts_module.__all__
@@ -455,7 +455,7 @@ def test_setup_and_examples_do_not_import_removed_component_factories() -> None:
 
 
 @pytest.mark.fast_always
-def test_obsolete_compatibility_api_surfaces_are_removed() -> None:
+def test_removed_api_surfaces_stay_absent() -> None:
     import vercor.forcing_data as forcing_data_module
     import vercor.runtime as runtime_module
     import vercor.settings as settings_module
@@ -523,7 +523,7 @@ def test_active_progress_does_not_advertise_removed_compatibility_surfaces() -> 
 
 
 @pytest.mark.fast_always
-def test_coupler_private_compatibility_aliases_are_removed() -> None:
+def test_coupler_removed_private_aliases_stay_absent() -> None:
     removed_names = (
         "_regridders",
         "_binary_masks",
@@ -543,7 +543,7 @@ def test_coupler_private_compatibility_aliases_are_removed() -> None:
 
 
 @pytest.mark.fast_always
-def test_callable_author_api_does_not_expose_legacy_field_seed_keyword() -> None:
+def test_callable_author_api_does_not_expose_removed_field_seed_keyword() -> None:
     public_callables = (
         components_module.Component.from_step,
         components_module.HostComponent.from_step,
@@ -902,7 +902,7 @@ def test_setup_forcing_reader_facade_is_removed() -> None:
 
 
 @pytest.mark.fast_always
-def test_setup_coupler_helper_compatibility_surfaces_are_removed() -> None:
+def test_setup_coupler_helper_surfaces_are_removed() -> None:
     import vercor.setups as setup_module
 
     removed_names = (

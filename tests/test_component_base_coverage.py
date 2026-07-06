@@ -297,7 +297,7 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
 
 
 @pytest.mark.fast_always
-def test_legacy_wrapper_entrypoints_are_removed() -> None:
+def test_removed_wrapper_entrypoints_stay_absent() -> None:
     assert not hasattr(base_module.Component, "wrap")
     assert not hasattr(data_module.DataComponent, "wrap")
     assert not hasattr(host_module.HostComponent, "wrap")
@@ -495,8 +495,8 @@ def test_callable_facade_rejects_unsupported_step_signature() -> None:
 
 
 @pytest.mark.fast_always
-def test_callable_facade_rejects_removed_legacy_field_seed_keyword() -> None:
-    grid = make_test_grid(name="removed-legacy-field-seed")
+def test_callable_facade_rejects_removed_field_seed_keyword() -> None:
+    grid = make_test_grid(name="removed-field-seed")
 
     def step(fields: Mapping[str, RuntimeArray]) -> Mapping[str, RuntimeArray]:
         return {"temperature": fields["temperature"]}
@@ -1527,14 +1527,14 @@ def test_component_data_layout_validation_rejects_non_grid_data_fields() -> None
     )
     component = DummyComponent(name="ATM", grid=grid)
     component.data = {
-        "legacy_monthly_temperature": jnp.zeros((3, 2, 12), dtype=jnp.float64),
+        "noncanonical_monthly_temperature": jnp.zeros((3, 2, 12), dtype=jnp.float64),
         "hyai": jnp.zeros((4,), dtype=jnp.float64),
     }
 
     with pytest.raises(
         ComponentError,
         match=(
-            "Component 'ATM' data field 'legacy_monthly_temperature'.*"
+            "Component 'ATM' data field 'noncanonical_monthly_temperature'.*"
             r"shape \(3, 2, 12\).*canonical.*"
             r"\(nTime, nLat, nLon\)"
         ),
