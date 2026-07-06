@@ -22,15 +22,15 @@ if __name__ == "__main__":
         start=datetime(2000, 1, 1, 0, 0, 0),
         dt_seconds=86400.0,
         steps=365,
-        year_type="noleap",
+        calendar="noleap",
     )
-    run_sequence = ["OCN", "LND", "ATM"]
+    run_order = ["OCN", "LND", "ATM"]
 
     components = [ocn, lnd, atm]
     cpl = Coupler.from_components(
         clock=clock,
         components=components,
-        run_order=run_sequence,
+        run_order=run_order,
     )
 
     # Exchanges
@@ -65,4 +65,4 @@ if __name__ == "__main__":
 
     cpl.initialize()
     final_state = cpl.run()
-    cpl.finalize(final_state)
+    cpl.write_outputs(final_state)

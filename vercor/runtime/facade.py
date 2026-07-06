@@ -33,7 +33,7 @@ from vercor.runtime.runner import (
 )
 from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.views import RuntimeComponentView
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -48,7 +48,7 @@ class RuntimeFacadeInputs:
     runtime_resources: CouplerRuntimeResources
     run_sequence: Sequence[str]
     clock: Clock
-    settings: VercorSettings
+    settings: Settings
 
 
 def initialize_coupler_runtime(
@@ -163,7 +163,10 @@ def finalize(
     *,
     final_state: RuntimeCouplerState,
     inputs: RuntimeFacadeInputs,
-    output_file_mask: Path | None,
+    output_file_mask: Path | None = None,
+    output_dir: Path = Path("."),
+    filename_template: str = "{component}.runtime_fields.nc",
+    write_snapshots: bool = True,
     logger: LoggerLike,
 ) -> None:
     """Write final runtime output files."""
@@ -176,14 +179,18 @@ def finalize(
         binary_masks=topology_maps.binary_masks,
         fractional_masks=topology_maps.fractional_masks,
         output_file_mask=output_file_mask,
+        output_dir=output_dir,
+        filename_template=filename_template,
         logger=logger,
     )
-    _output.write_coupler_component_snapshots(
-        final_state=final_state,
-        components=inputs.components,
-        output_time=_final_snapshot_time(inputs.clock),
-        logger=logger,
-    )
+    if write_snapshots:
+        _output.write_coupler_component_snapshots(
+            final_state=final_state,
+            components=inputs.components,
+            output_time=_final_snapshot_time(inputs.clock),
+            output_dir=output_dir,
+            logger=logger,
+        )
 
 
 def _final_snapshot_time(clock: Clock) -> datetime | ModelDateTime:

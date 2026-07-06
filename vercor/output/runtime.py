@@ -121,15 +121,22 @@ def write_coupler_runtime_outputs(
     binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
     fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
     output_file_mask: Path | None = None,
+    output_dir: Path = Path("."),
+    filename_template: str = "{component}.runtime_fields.nc",
     logger: "LoggerLike | None" = None,
 ) -> None:
     """Write final runtime component views for all configured components."""
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     for name, component in components.items():
         if output_file_mask is None:
-            filepath = Path(f"{name.lower()}.runtime_fields.nc")
+            filepath = output_dir / filename_template.format(
+                component=name.lower(),
+                component_name=name,
+                name=name,
+            )
         else:
-            filepath = Path(f"{name.lower()}_{output_file_mask}.nc")
+            filepath = output_dir / Path(f"{name.lower()}_{output_file_mask}.nc")
         view = RuntimeComponentView.from_component_state(
             name,
             component.grid,
@@ -154,17 +161,19 @@ def write_coupler_component_snapshots(
     final_state: RuntimeCouplerState,
     components: Mapping[str, "Component"],
     output_time: datetime | ModelDateTime,
+    output_dir: Path = Path("."),
     logger: "LoggerLike | None" = None,
 ) -> None:
     """Write registered native component snapshots for configured components."""
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     for name, component in components.items():
         writer = component_snapshot_writer(component)
         if writer is None:
             continue
         writer(
             final_state.get_component_state(name),
-            Path(f"{name.lower()}.snapshot.nc"),
+            output_dir / f"{name.lower()}.snapshot.nc",
             output_time,
             logger,
         )

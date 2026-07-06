@@ -1,7 +1,7 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/physical_constants.py` - physical and bulk-formula default settings with AD-owned semantics
 3. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
-4. `vercor/settings.py` - unified metadata-backed `VercorSettings` container and static runtime controls built on (2)
+4. `vercor/settings.py` - unified metadata-backed public `Settings` container, deprecated `VercorSettings` alias, `SettingSpec` metadata records, and static runtime controls built on (2)
 5. `vercor/field_names.py` - canonical exchange-field vocabulary
 6. `vercor/calendar.py` and `vercor/forcing_index.py` - calendar constants, model-calendar datetime values, leap-year logic, month/day conversion, and daily forcing-index policy
 7. `vercor/fluxes/vertical_coordinates.py` - hybrid/sigma-coordinate pressure and altitude helpers built on (1, 4)
@@ -54,7 +54,7 @@
 54. `vercor/setups/data/era5_land.py` - ERA5 land forcing adapter with canonical layout and runtime temperature storage built on (12, 14, 22, 49, 51)
 55. `vercor/setups/data/erainterim_ocean.py` - ERA-Interim ocean forcing adapter built on (12, 14, 22, 49, 50, 51)
 56. `vercor/setups/data/jcm_land.py` - JCM land forcing adapter with coordinate conversion and runtime storage built on (1, 12, 20, 50)
-57. `vercor/setups/jcm_setup_helpers.py` - paired JCM atmosphere/land setup construction with lazy optional JCM adapter imports built on (10, 32, 56)
+57. `vercor/setups/jcm_setup_helpers.py` - paired JCM atmosphere/land setup construction through `make_jcm_land_atmosphere(...)`, with a deprecated `build_jcm_land_atmosphere_components(...)` alias and lazy optional JCM adapter imports built on (10, 32, 56)
 58. `vercor/setups/slab/atmosphere.py`, `ocean.py`, `land.py`, and `seaice.py` - slab model adapters built on (1, 9, 12)
 59. `vercor/components/contexts.py` - immutable component setup and step context payloads built on calendar, tuple run-order sequences, settings helpers, and (25)
 60. `vercor/runtime/views.py` - explicit runtime component metadata and shared read-only field resolution for diagnostics/output views and compatible runtime states built on (12, 64)
@@ -75,5 +75,5 @@
 75. `vercor/runtime/runner.py` - host/scanned runtime loops, run-mode selection, one-shot compiled scanned dispatch, and interrupt translation built on (65, 67, 72)
 76. `vercor/output/runtime.py` and `vercor/output/__init__.py` - runtime-view output mask selection/naming, provider-registered external component snapshot output, coupler-final-output direct h5netcdf boundary through (31), and direct top-level runtime-output reexports built on (10, 12, 31, 60, 64)
 77. `vercor/runtime/facade.py` - high-level runtime orchestration boundary and internal repeated-input bundle for the public coupler facade and runtime resource holder built on (24, 25, 59, 60, 63, 64, 67, 69, 71, 72, 73, 74, 75, 76)
-78. `vercor/coupler.py` - public setup/finalization facade for `run()`, `state()`, `view()`, and `views()` built on (25, 28, 59, 62, 64, 73, 77)
+78. `vercor/coupler.py` - public setup/output facade for `run()`, `state()`, `view()`, `views()`, and `write_outputs()`, with deprecated compatibility wrappers for old mutable setup/finalization names, built on (25, 28, 59, 62, 64, 73, 77)
 79. `examples/` - runnable setup scripts that assemble packaged adapters from `vercor.setups`

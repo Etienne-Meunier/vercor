@@ -7,6 +7,7 @@ from vercor.components.contracts import (
     AuthorFieldValues,
     ComponentHooks,
     ComponentCreatePayloadHook,
+    FieldNames,
     ComponentInitializeHook,
     ComponentPrefillHook,
     ComponentValidateHook,
@@ -44,6 +45,7 @@ class DataComponent(Component):
         fields: AuthorFieldValues = None,
         settings: VercorSettings | None = None,
         *,
+        outputs: FieldNames = (),
         hooks: ComponentHooks | None = None,
         initialize: ComponentInitializeHook | None = None,
         create_runtime_payload: ComponentCreatePayloadHook | None = None,
@@ -63,6 +65,11 @@ class DataComponent(Component):
             component = cls(name=name, grid=grid, settings=settings)
         if fields is not None:
             component.seed_fields(fields)
+        if tuple(outputs):
+            component._field_spec = merge_component_outputs(
+                component.field_spec,
+                outputs,
+            )
         component._lifecycle_hooks = normalize_lifecycle_hooks(
             hooks=hooks,
             initialize=initialize,

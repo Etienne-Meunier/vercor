@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Optional
+import warnings
 
 from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
@@ -19,8 +20,7 @@ from vercor.jax_logging import (
 from vercor._run_order import normalize_run_sequence
 import vercor.runtime.facade as _runtime_facade
 from vercor.runtime.resources import CouplerRuntimeResources
-from vercor.settings import VercorSettings
-from vercor.types import RuntimeArray
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     import vercor.runtime.views as _runtime_views_module
 
 
-@dataclass
 class Coupler:
     """Public orchestration facade for configured component integrations.
 
@@ -42,10 +41,10 @@ class Coupler:
         clock: Clock instance for managing simulation time
         log_level: logging threshold for coupler logs (e.g., "INFO", "DEBUG", etc.)
         logger: Logger instance for coupler logging
-        run_sequence: sequence of component names defining the call (step) order
+        run_order: sequence of component names defining the call (step) order
         components: mapping of component name to component instance
         exchanges: list of all Exchange instances
-        settings: VercorSettings instance for coupler settings
+        settings: Settings instance for coupler settings
         lnd_bmask_on_atm_grid: binary land mask regridded onto atmosphere grid
         ocn_fmask_on_atm_grid: fractional ocean mask regridded onto atmosphere grid
         lnd_fmask_on_atm_grid: fractional land mask regridded onto atmosphere grid
@@ -53,26 +52,36 @@ class Coupler:
             contracts, and interrupt controller.
     """
 
-    clock: Clock
-    log_level: int | str = "INFO"
-    logger: LoggerLike = field(default_factory=_setup_logger)
-    run_sequence: Sequence[str] = field(default_factory=tuple)
-    components: dict[str, Component] = field(default_factory=dict)
-    exchanges: list[Exchange] = field(default_factory=list)
-    settings: VercorSettings = field(default_factory=VercorSettings)
-    lnd_bmask_on_atm_grid: RuntimeArray = field(init=False)
-    ocn_fmask_on_atm_grid: RuntimeArray = field(init=False)
-    lnd_fmask_on_atm_grid: RuntimeArray = field(init=False)
-    _runtime_resources: CouplerRuntimeResources = field(
-        default_factory=CouplerRuntimeResources,
-        init=False,
-        repr=False,
-    )
+    def __init__(
+        self,
+        clock: Clock,
+        *,
+        components: Iterable["Component"] = (),
+        exchanges: Iterable[Exchange] = (),
+        run_order: Sequence[str] = (),
+        run_sequence: Sequence[str] | None = None,
+        settings: Settings | None = None,
+        logger: LoggerLike | None = None,
+        log_level: int | str = "INFO",
+    ) -> None:
+        """Create a coupler from public configuration objects."""
 
-    def __post_init__(self) -> None:
-        """Apply the configured logging threshold at construction time."""
+        self.clock = clock
+        self.log_level = log_level
+        self.logger = logger if logger is not None else _setup_logger()
+        self.settings = settings or Settings()
+        self._components: dict[str, Component] = {}
+        self._components_view: MappingProxyType[str, Component] = MappingProxyType(
+            self._components
+        )
+        self._exchanges: tuple[Exchange, ...] = ()
+        self._run_sequence: tuple[str, ...] = ()
+        self._runtime_resources = CouplerRuntimeResources()
 
-        self.run_sequence = normalize_run_sequence(self.run_sequence)
+        configured_run_order = self._resolve_initial_run_order(
+            run_order=run_order,
+            run_sequence=run_sequence,
+        )
 
         if isinstance(self.logger, logging.Logger):
             self.logger = JaxCallbackLogger(
@@ -85,6 +94,88 @@ class Coupler:
         if callable(set_level):
             set_level(self.log_level)
 
+        for component in components:
+            self.add_component(component)
+        for exchange in exchanges:
+            self.add_exchange(exchange)
+        if configured_run_order:
+            self.set_run_order(configured_run_order)
+
+    def _resolve_initial_run_order(
+        self,
+        *,
+        run_order: Sequence[str],
+        run_sequence: Sequence[str] | None,
+    ) -> tuple[str, ...]:
+        """Normalize canonical or deprecated run-order constructor input."""
+
+        if run_sequence is not None:
+            if run_order:
+                raise TypeError(
+                    "Use either run_order=... or run_sequence=..., not both"
+                )
+            warnings.warn(
+                "Coupler(run_sequence=...) is deprecated; use run_order=... instead.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            return normalize_run_sequence(run_sequence)
+        return normalize_run_sequence(run_order)
+
+    def _replace_components(self, components: dict[str, "Component"]) -> None:
+        """Replace component registration and invalidate runtime resources."""
+
+        self._components = dict(components)
+        self._components_view = MappingProxyType(self._components)
+        self._invalidate_runtime_resources()
+
+    def _replace_exchanges(self, exchanges: Iterable[Exchange]) -> None:
+        """Replace exchange declarations and invalidate runtime resources."""
+
+        self._exchanges = tuple(exchanges)
+        self._invalidate_runtime_resources()
+
+    def _invalidate_runtime_resources(self) -> None:
+        """Clear cached runtime topology and contracts after setup changes."""
+
+        self._runtime_resources = CouplerRuntimeResources()
+
+    @property
+    def components(self) -> MappingProxyType[str, "Component"]:
+        """Return a read-only view of registered components by name."""
+
+        return self._components_view
+
+    @components.setter
+    def components(self, components: dict[str, "Component"]) -> None:
+        """Replace registered components through the deprecated mutable facade."""
+
+        warnings.warn(
+            "Assigning Coupler.components is deprecated; pass components to the "
+            "constructor/from_components() or use add_component().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._replace_components(components)
+
+    @property
+    def exchanges(self) -> tuple[Exchange, ...]:
+        """Return immutable exchange declarations."""
+
+        return self._exchanges
+
+    @exchanges.setter
+    def exchanges(self, exchanges: Iterable[Exchange]) -> None:
+        """Replace exchange declarations through the deprecated mutable facade."""
+
+        warnings.warn(
+            "Assigning Coupler.exchanges is deprecated; use add_exchange() or "
+            "add_exchanges().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._replace_exchanges(exchanges)
+
     @classmethod
     def from_components(
         cls,
@@ -93,44 +184,56 @@ class Coupler:
         components: Iterable["Component"],
         exchanges: Iterable[Exchange] = (),
         run_order: Sequence[str] = (),
-        settings: VercorSettings | None = None,
+        settings: Settings | None = None,
         log_level: int | str = "INFO",
         logger: LoggerLike | None = None,
     ) -> "Coupler":
         """Create a coupler with components, exchanges, and run order configured."""
 
-        if logger is None:
-            coupler = cls(
-                clock=clock,
-                log_level=log_level,
-                settings=settings or VercorSettings(),
-            )
-        else:
-            coupler = cls(
-                clock=clock,
-                log_level=log_level,
-                settings=settings or VercorSettings(),
-                logger=logger,
-            )
-        for component in components:
-            coupler.add_component(component)
-        for exchange in exchanges:
-            coupler.add_exchange(exchange)
-        if run_order:
-            coupler.set_run_order(run_order)
-        return coupler
+        return cls(
+            clock=clock,
+            components=components,
+            exchanges=exchanges,
+            run_order=run_order,
+            settings=settings,
+            logger=logger,
+            log_level=log_level,
+        )
 
     @property
     def run_order(self) -> tuple[str, ...]:
         """Return component names in runtime execution order."""
 
-        return tuple(self.run_sequence)
+        return self._run_sequence
 
     @run_order.setter
     def run_order(self, run_order: Sequence[str]) -> None:
         """Set component names in runtime execution order."""
 
-        self.run_sequence = normalize_run_sequence(run_order)
+        self._run_sequence = normalize_run_sequence(run_order)
+        self._invalidate_runtime_resources()
+
+    @property
+    def run_sequence(self) -> tuple[str, ...]:
+        """Deprecated alias for :attr:`run_order`."""
+
+        warnings.warn(
+            "Coupler.run_sequence is deprecated; use Coupler.run_order instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.run_order
+
+    @run_sequence.setter
+    def run_sequence(self, run_sequence: Sequence[str]) -> None:
+        """Deprecated alias for assigning :attr:`run_order`."""
+
+        warnings.warn(
+            "Coupler.run_sequence is deprecated; use Coupler.run_order instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.run_order = run_sequence
 
     def add_component(
         self,
@@ -142,7 +245,8 @@ class Coupler:
         if component.name in self.components:
             raise CouplerError(f"Component {component.name} already registered")
 
-        self.components[component.name] = component
+        self._components[component.name] = component
+        self._invalidate_runtime_resources()
         self.logger.info(f" Registered component {component.name}")
 
     def add_exchange(self, exchange: Exchange) -> None:
@@ -153,7 +257,8 @@ class Coupler:
             exchange: Exchange instance defining the exchange between components to add
         """
 
-        self.exchanges.append(exchange)
+        self._exchanges = (*self._exchanges, exchange)
+        self._invalidate_runtime_resources()
         formatted_field_names = ", ".join(
             ", ".join(item) if isinstance(item, tuple) else item
             for item in exchange.fields
@@ -178,20 +283,19 @@ class Coupler:
         for cname in normalized_run_sequence:
             if cname not in self.components.keys():
                 raise CouplerError(f"Component {cname} not registered in coupler")
-        self.run_sequence = normalized_run_sequence
+        self.run_order = normalized_run_sequence
         self.logger.info(
-            f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
+            f" Set coupler components run sequence: {', '.join(self.run_order)}"
         )
 
     def _runtime_inputs(self) -> _runtime_facade.RuntimeFacadeInputs:
         """Return the repeated runtime facade input bundle for this coupler."""
 
-        self.run_sequence = normalize_run_sequence(self.run_sequence)
         return _runtime_facade.RuntimeFacadeInputs(
             self.components,
             self.exchanges,
             self._runtime_resources,
-            self.run_sequence,
+            self.run_order,
             self.clock,
             self.settings,
         )
@@ -252,19 +356,38 @@ class Coupler:
         final_state: _runtime_state_module.RuntimeCouplerState,
         output: Optional[Path] = None,
     ) -> None:
-        """
-        Write final runtime component state to component output files.
+        """Deprecated wrapper for writing final runtime component state."""
 
-        Arguments:
-            final_state: runtime state returned by ``run()`` or ``state()``
-            output: optional path mask for output files
-        """
-
-        self.logger.info(" ------------ Finalizing coupler and components ------------")
+        warnings.warn(
+            "Coupler.finalize(...) is deprecated; use Coupler.write_outputs(...) "
+            "instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         _runtime_facade.finalize(
             final_state=final_state,
             inputs=self._runtime_inputs(),
             output_file_mask=output,
+            logger=self.logger,
+        )
+
+    def write_outputs(
+        self,
+        state: _runtime_state_module.RuntimeCouplerState,
+        *,
+        output_dir: Path = Path("."),
+        filename_template: str = "{component}.runtime_fields.nc",
+        snapshots: bool = True,
+    ) -> None:
+        """Write final runtime fields and optional native component snapshots."""
+
+        self.logger.info(" ------------ Writing coupler outputs ------------")
+        _runtime_facade.finalize(
+            final_state=state,
+            inputs=self._runtime_inputs(),
+            output_dir=output_dir,
+            filename_template=filename_template,
+            write_snapshots=snapshots,
             logger=self.logger,
         )
 
@@ -279,11 +402,11 @@ class Coupler:
             )
             + "\n"
             f"├── Exchanges: {', '.join(exchange.label for exchange in self.exchanges)}\n"
-            f"└── Run sequence: {', '.join(self.run_sequence)}"
+            f"└── Run sequence: {', '.join(self.run_order)}"
         )
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={' -> '.join(self.run_sequence)})"
+        return f"{self.__class__.__name__}(runstart={self.clock.start}, run_order={' -> '.join(self.run_order)})"
 
     def run(
         self,

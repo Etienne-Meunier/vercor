@@ -8,13 +8,13 @@ from vercor.exchanges import (
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
-from vercor.setups.jcm_setup_helpers import build_jcm_land_atmosphere_components
+from vercor.setups import make_jcm_land_atmosphere
 from vercor.regridding import bilinear
 
 if __name__ == "__main__":
     ocn = make_era5_ocean()
 
-    jcm_setup = build_jcm_land_atmosphere_components(
+    jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
         do_spinup=True,
         jitted=True,
@@ -33,15 +33,15 @@ if __name__ == "__main__":
         start=datetime(2000, 1, 3, 0, 0, 0),
         dt_seconds=86400.0,
         steps=365 * 100 - 2,
-        year_type="noleap",
+        calendar="noleap",
     )
-    run_sequence = ["OCN", "LND", "ATM"]
+    run_order = ["OCN", "LND", "ATM"]
 
     components = [ocn, lnd, atm]
     cpl = Coupler.from_components(
         clock=clock,
         components=components,
-        run_order=run_sequence,
+        run_order=run_order,
     )
 
     # Exchanges
@@ -76,4 +76,4 @@ if __name__ == "__main__":
 
     cpl.initialize()
     final_state = cpl.run()
-    cpl.finalize(final_state)
+    cpl.write_outputs(final_state)

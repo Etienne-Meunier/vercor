@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+import warnings
 
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
@@ -46,7 +47,7 @@ def make_jax_gcm(*args: Any, **kwargs: Any) -> Component:
     return _make_jax_gcm(*args, **kwargs)
 
 
-def build_jcm_land_atmosphere_components(
+def make_jcm_land_atmosphere(
     ocn_grid: RectilinearGrid,
     *,
     custom_parameters: Mapping[str, float] | None = None,
@@ -81,3 +82,18 @@ def build_jcm_land_atmosphere_components(
         terrain=terrain,
         forcing=forcing,
     )
+
+
+def build_jcm_land_atmosphere_components(
+    *args: Any,
+    **kwargs: Any,
+) -> JCMLandAtmosphereSetup:
+    """Deprecated alias for :func:`make_jcm_land_atmosphere`."""
+
+    warnings.warn(
+        "build_jcm_land_atmosphere_components(...) is deprecated; use "
+        "make_jcm_land_atmosphere(...) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return make_jcm_land_atmosphere(*args, **kwargs)

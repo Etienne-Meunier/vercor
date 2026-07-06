@@ -29,7 +29,7 @@ from vercor.exchange import Exchange
 from vercor.grid import RectilinearGrid
 from vercor.runtime.state import CouplerState
 from vercor.runtime.views import ComponentView
-from vercor.settings import VercorSettings as Settings
+from vercor.settings import SettingSpec, Settings
 
 __all__ = [
     "Coupler",
@@ -45,6 +45,7 @@ __all__ = [
     "FieldSpec",
     "HostComponent",
     "KEEP_PAYLOAD",
+    "SettingSpec",
     "Settings",
     "SetupContext",
     "StepContext",

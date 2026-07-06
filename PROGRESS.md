@@ -357,6 +357,12 @@ historical commands, failure messages, or detailed validation notes.
   direct `scipy` environment executable. Black emitted the recurring Python
   3.13/target-3.14 warning, and full pytest emitted the recurring JAX
   dtype-promotion `FutureWarning`.
+- Latest local staged public API redesign validation: focused API/settings/
+  clock/setup/coupler pytest, Black, flake8, mypy, full fast pytest, full
+  pytest, coverage pytest at 90% total, and the documented
+  `conda run -n scipy` fast pytest passed as of 2026-07-06. Black emitted the
+  recurring Python 3.13/target-3.14 warning, and full pytest/coverage emitted
+  the recurring JAX dtype-promotion `FutureWarning`.
 - No active `IN PROGRESS` task is recorded in the archived log.
 - No current blocker is recorded in the archived log.
 - Recurring known warning: Black may emit the existing Python 3.13 versus
@@ -388,6 +394,28 @@ historical commands, failure messages, or detailed validation notes.
   still public or boundary-tested surfaces.
 
 ## Recent Work
+
+### 2026-07-06: Staged Public API Redesign Compatibility
+
+- Added the v0.3-compatible public names from the API redesign plan:
+  `Settings`, `SettingSpec`, `Clock(calendar=...)`,
+  `grids.rectilinear_grid(...)`, `Coupler(run_order=...)`,
+  `Coupler.write_outputs(...)`, `DataComponent.from_fields(outputs=...)`, and
+  `make_jcm_land_atmosphere(...)`.
+- Kept staged wrappers for existing workflows: `VercorSettings`,
+  `Clock(year_type=...)`, `grids.rectilinear(...)`, `Coupler.run_sequence`,
+  mutable `Coupler.components`/`exchanges` assignment, `Coupler.finalize(...)`,
+  and `build_jcm_land_atmosphere_components(...)`.
+- Refactored `Coupler` from a mutable dataclass facade into a normal class with
+  read-only component/exchange views, controlled mutation methods, and runtime
+  resource invalidation after setup changes.
+- Updated examples, public API-boundary tests, setup helper tests, design notes,
+  and the dependency map to use the new public names.
+- Validation run for this change: focused API/settings/clock/setup/coupler
+  pytest, Black, flake8, mypy, full fast pytest, full pytest, coverage pytest
+  at 90% total, and `conda run -n scipy pytest tests/ -q --fast --tb=short`
+  passed. Black emitted the recurring Python 3.13/target-3.14 warning, and full
+  pytest/coverage emitted the recurring JAX dtype-promotion `FutureWarning`.
 
 ### 2026-07-06: Evidence-Only Deprecation Wording Cleanup
 

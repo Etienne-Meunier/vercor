@@ -31,14 +31,14 @@ if __name__ == "__main__":
 
     # Clock and sequence
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=3600, steps=10)
-    run_sequence = ["OCN", "ATM", "LND"]
+    run_order = ["OCN", "ATM", "LND"]
 
     # Coupler
     components: list[Component] = [atm, ocn, lnd]
     cpl = Coupler.from_components(
         clock=clock,
         components=components,
-        run_order=run_sequence,
+        run_order=run_order,
     )
 
     # Exchanges
@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     cpl.initialize()
     final_state = cpl.run()
-    cpl.finalize(final_state)
+    cpl.write_outputs(final_state)
     views = cpl.views(final_state, names=("ATM", "OCN"))
 
     variables: list[tuple[ComponentMetric, str]] = [

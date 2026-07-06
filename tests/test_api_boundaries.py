@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import pytest
 
 import vercor
+import vercor.runtime.facade as _runtime_facade
 import vercor.components as components_module
 import vercor.components.base as base_module
 import vercor.components.contexts as component_contexts_module
@@ -24,6 +25,7 @@ from tests._coverage_support import make_test_grid
 from vercor.components.base import Component
 from vercor.components.data import DataComponent
 from vercor.components.host import HostComponent
+from vercor.calendar import DateTime360
 from vercor.clock import Clock
 from vercor.coupler import Coupler
 from vercor.exchange import Exchange
@@ -32,6 +34,107 @@ from vercor.runtime.stores import RuntimeFieldStore
 from vercor.regridders import bilinear
 from vercor.regridders.bilinear import BilinearRectilinearRegridder
 from vercor.regridders.conservative import ConservativeRectilinearRegridder
+
+
+@pytest.mark.fast_always
+def test_v3_public_api_adds_staged_renames_and_deprecations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vercor.grids as grids_module
+    import vercor.settings as settings_module
+
+    assert vercor.Settings is settings_module.Settings
+    assert vercor.SettingSpec is settings_module.SettingSpec
+    assert settings_module.VercorSettings is settings_module.Settings
+    assert settings_module.SettingSpec(1.0, "value", "m").value == 1.0
+
+    settings = vercor.Settings(enable_x64=True)
+    settings.add("custom", 2.0, description="Custom value", units="1")
+    settings.set("custom", 3.0)
+    assert settings.get("custom") == 3.0
+    assert settings.as_dict()["custom"] == 3.0
+
+    clock = Clock(
+        start=datetime(2000, 1, 1),
+        dt_seconds=86400.0,
+        steps=1,
+        calendar="360_day",
+    )
+    _, model_time, _ = next(clock.iter())
+    assert isinstance(model_time, DateTime360)
+    assert model_time.day_of_year == 1
+
+    with pytest.warns(DeprecationWarning, match="year_type"):
+        legacy_clock = Clock(
+            start=datetime(2000, 1, 1),
+            dt_seconds=86400.0,
+            steps=1,
+            year_type="noleap",
+        )
+    assert legacy_clock.calendar == "noleap"
+
+    with pytest.warns(DeprecationWarning, match="rectilinear"):
+        grid = grids_module.rectilinear(
+            "legacy-grid",
+            nlon=2,
+            nlat=2,
+            longitude_start=0.0,
+            longitude_end=90.0,
+            latitude_start=-45.0,
+            latitude_end=45.0,
+        )
+    renamed_grid = grids_module.rectilinear_grid(
+        "new-grid",
+        nlon=2,
+        nlat=2,
+        lon=(0.0, 90.0),
+        lat=(-45.0, 45.0),
+    )
+    assert grid.shape == renamed_grid.shape
+
+    component = DataComponent.from_fields(
+        "ATM",
+        renamed_grid,
+        fields={"temperature": 280.0},
+        outputs=("temperature", "humidity"),
+    )
+    assert component.field_spec.outputs == ("temperature", "humidity")
+
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+    assert coupler.run_order == ("ATM",)
+    with pytest.warns(DeprecationWarning, match="run_sequence"):
+        assert coupler.run_sequence == ("ATM",)
+    with pytest.raises(TypeError):
+        coupler.components["NEW"] = component  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        coupler.exchanges.append(Exchange("ATM", "ATM", ("temperature",)))  # type: ignore[attr-defined]
+
+    calls: list[dict[str, object]] = []
+
+    def fake_finalize(**kwargs: object) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(_runtime_facade, "finalize", fake_finalize)
+    state = coupler.state()
+    coupler.write_outputs(
+        state,
+        output_dir=tmp_path,
+        filename_template="{component}.nc",
+        snapshots=False,
+    )
+
+    assert calls
+    assert calls[0]["output_dir"] == tmp_path
+    assert calls[0]["filename_template"] == "{component}.nc"
+    assert calls[0]["write_snapshots"] is False
+
+    with pytest.warns(DeprecationWarning, match="finalize"):
+        coupler.finalize(state)
 
 
 @pytest.mark.fast_always

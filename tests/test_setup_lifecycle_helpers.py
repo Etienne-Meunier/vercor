@@ -188,7 +188,7 @@ def test_camulator_runtime_cursor_initializes_indexes_and_advances() -> None:
     assert cursor.current_index() == 7
 
 
-def test_build_jcm_land_atmosphere_components_patches_mask_and_options(
+def test_make_jcm_land_atmosphere_patches_mask_and_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import vercor.setups.jcm_setup_helpers as helper
@@ -233,7 +233,7 @@ def test_build_jcm_land_atmosphere_components_patches_mask_and_options(
     monkeypatch.setattr(helper, "transposed_host_array", fake_transposed_host_array)
     monkeypatch.setattr(helper, "make_jax_gcm", fake_make_jax_gcm)
 
-    result = helper.build_jcm_land_atmosphere_components(
+    result = helper.make_jcm_land_atmosphere(
         ocean_grid,
         custom_parameters={"surface_flux.vgust": 5.01},
         do_spinup=False,
@@ -260,3 +260,26 @@ def test_build_jcm_land_atmosphere_components_patches_mask_and_options(
             "output_frequency": "year",
         },
     )
+
+
+def test_build_jcm_land_atmosphere_components_is_deprecated_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vercor.setups.jcm_setup_helpers as helper
+
+    sentinel = object()
+
+    def fake_make(*args: object, **kwargs: object) -> object:
+        assert args == ("grid",)
+        assert kwargs == {"do_spinup": False}
+        return sentinel
+
+    monkeypatch.setattr(helper, "make_jcm_land_atmosphere", fake_make)
+
+    with pytest.warns(DeprecationWarning, match="make_jcm_land_atmosphere"):
+        result = helper.build_jcm_land_atmosphere_components(
+            "grid",
+            do_spinup=False,
+        )
+
+    assert result is sentinel

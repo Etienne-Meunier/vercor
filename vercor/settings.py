@@ -6,7 +6,7 @@ from vercor.dtypes import DTypePolicy
 from vercor.physical_constants import PHYSICAL_CONSTANT_SETTINGS
 
 
-class Settings(NamedTuple):
+class SettingSpec(NamedTuple):
     """Metadata record for one VerCOR setting."""
 
     value: Any
@@ -14,42 +14,50 @@ class Settings(NamedTuple):
     units: str
 
 
-CONTROL_SETTINGS: dict[str, Settings] = {
+CONTROL_SETTINGS: dict[str, SettingSpec] = {
     # Runtime settings
-    "enable_x64": Settings(False, "Enable 64-bit precision for JAX computations", "-"),
-    "identifier": Settings("UNNAMED", "Identifier of the current simulation", "-"),
-    "missval": Settings(0.0, "Missing value for fields", "-"),
-    "apply_time_interpolation": Settings(
+    "enable_x64": SettingSpec(
+        False,
+        "Enable 64-bit precision for JAX computations",
+        "-",
+    ),
+    "identifier": SettingSpec("UNNAMED", "Identifier of the current simulation", "-"),
+    "missval": SettingSpec(0.0, "Missing value for fields", "-"),
+    "apply_time_interpolation": SettingSpec(
         False,
         "Apply monthly time interpolation to exported forcing data",
         "-",
     ),
-    "apply_daily_time_selection": Settings(
+    "apply_daily_time_selection": SettingSpec(
         False,
         "Apply daily time selection to exported forcing data",
         "-",
     ),
-    "year_in_seconds": Settings(365 * 86400.0, "Nominal model year length", "s"),
+    "year_in_seconds": SettingSpec(
+        365 * 86400.0,
+        "Nominal model year length",
+        "s",
+    ),
 }
 
 
-DEFAULT_SETTINGS: dict[str, Settings] = {
+DEFAULT_SETTINGS: dict[str, SettingSpec] = {
     **CONTROL_SETTINGS,
     **{
-        name: Settings(value, description, units)
+        name: SettingSpec(value, description, units)
         for name, (value, description, units) in PHYSICAL_CONSTANT_SETTINGS.items()
     },
 }
 
 
-class VercorSettings:
+class Settings:
     """Mutable metadata-backed settings container for couplers and components.
 
     Known default settings are class-level annotations for static type checkers;
     runtime values live in ``_settings`` and are resolved dynamically.
     """
 
-    _settings: dict[str, Settings]
+    _settings: dict[str, SettingSpec]
     enable_x64: bool
     identifier: str
     missval: float
@@ -87,8 +95,8 @@ class VercorSettings:
 
         object.__setattr__(self, "_settings", dict(DEFAULT_SETTINGS))
         for name, value in kwargs.items():
-            if isinstance(value, Settings):
-                self._settings[name] = Settings(
+            if isinstance(value, SettingSpec):
+                self._settings[name] = SettingSpec(
                     value.value,
                     value.description,
                     value.units,
@@ -152,10 +160,14 @@ class VercorSettings:
 
         if name in self._settings:
             raise KeyError(f"Setting {name!r} already exists")
-        if isinstance(value, Settings):
-            self._settings[name] = Settings(value.value, value.description, value.units)
+        if isinstance(value, SettingSpec):
+            self._settings[name] = SettingSpec(
+                value.value,
+                value.description,
+                value.units,
+            )
             return
-        self._settings[name] = Settings(value, description, units)
+        self._settings[name] = SettingSpec(value, description, units)
 
     def set_value(self, name: str, value: Any) -> None:
         """Update the value of an existing setting while preserving metadata."""
@@ -163,10 +175,18 @@ class VercorSettings:
         if name not in self._settings:
             raise KeyError(f"Setting {name!r} does not exist")
         metadata = self._settings[name]
-        if isinstance(value, Settings):
-            self._settings[name] = Settings(value.value, value.description, value.units)
+        if isinstance(value, SettingSpec):
+            self._settings[name] = SettingSpec(
+                value.value,
+                value.description,
+                value.units,
+            )
             return
-        self._settings[name] = Settings(value, metadata.description, metadata.units)
+        self._settings[name] = SettingSpec(
+            value,
+            metadata.description,
+            metadata.units,
+        )
 
     def get_value(self, name: str) -> Any:
         """Return a setting value by name."""
@@ -175,21 +195,59 @@ class VercorSettings:
             raise KeyError(f"Setting {name!r} does not exist")
         return self._settings[name].value
 
-    def get_metadata(self, name: str) -> Settings:
+    def get_metadata(self, name: str) -> SettingSpec:
         """Return the full metadata record for one setting."""
 
         if name not in self._settings:
             raise KeyError(f"Setting {name!r} does not exist")
         record = self._settings[name]
-        return Settings(record.value, record.description, record.units)
+        return SettingSpec(record.value, record.description, record.units)
 
     def as_values(self) -> dict[str, Any]:
         """Return a plain mapping of setting names to values."""
 
         return {name: record.value for name, record in self._settings.items()}
 
+    def add(
+        self,
+        name: str,
+        value: Any,
+        *,
+        description: str = "-",
+        units: str = "-",
+    ) -> None:
+        """Add a custom setting using the v0.3 public API."""
+
+        self.add_setting(name, value, description=description, units=units)
+
+    def set(self, name: str, value: Any) -> None:
+        """Update a setting value using the v0.3 public API."""
+
+        self.set_value(name, value)
+
+    def get(self, name: str) -> Any:
+        """Return a setting value using the v0.3 public API."""
+
+        return self.get_value(name)
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return setting values using the v0.3 public API."""
+
+        return self.as_values()
+
     @property
     def dtype_policy(self) -> DTypePolicy:
         """Return the canonical array dtype policy for these settings."""
 
         return DTypePolicy.from_settings(self)
+
+
+VercorSettings = Settings
+
+__all__ = [
+    "CONTROL_SETTINGS",
+    "DEFAULT_SETTINGS",
+    "SettingSpec",
+    "Settings",
+    "VercorSettings",
+]

@@ -15,6 +15,7 @@ from vercor.setups.slab import (
     make_slab_ocean,
     make_slab_seaice,
 )
+from vercor.setups.jcm_setup_helpers import make_jcm_land_atmosphere
 
 _LAZY_EXPORTS = {
     "make_camulator_gcm": LazyExport("external.camulator", "make_camulator_gcm"),
@@ -39,6 +40,7 @@ __all__ = [
     "make_slab_land",
     "make_slab_ocean",
     "make_slab_seaice",
+    "make_jcm_land_atmosphere",
     *lazy_export_names(_LAZY_EXPORTS),
 ]
 

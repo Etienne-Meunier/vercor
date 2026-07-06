@@ -11,13 +11,15 @@ from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy, SupportsEnableX64
 from vercor.settings import (
     DEFAULT_SETTINGS,
+    SettingSpec,
     Settings,
     VercorSettings,
 )
 
 
 def test_default_settings_are_metadata_records() -> None:
-    assert isinstance(DEFAULT_SETTINGS["enable_x64"], Settings)
+    assert Settings is VercorSettings
+    assert isinstance(DEFAULT_SETTINGS["enable_x64"], SettingSpec)
     assert DEFAULT_SETTINGS["enable_x64"].value is False
     assert DEFAULT_SETTINGS["enable_x64"].description
     assert DEFAULT_SETTINGS["enable_x64"].units == "-"
@@ -40,11 +42,11 @@ def test_constructor_adds_unknown_kwargs_as_custom_settings() -> None:
     settings = VercorSettings(custom_parameter=3.0)
 
     assert settings.custom_parameter == 3.0
-    assert settings.get_metadata("custom_parameter") == Settings(3.0, "-", "-")
+    assert settings.get_metadata("custom_parameter") == SettingSpec(3.0, "-", "-")
 
 
 def test_constructor_preserves_explicit_settings_metadata() -> None:
-    metadata = Settings(600.0, "Tracer timestep", "s")
+    metadata = SettingSpec(600.0, "Tracer timestep", "s")
     settings = VercorSettings(dt_tracer=metadata)
 
     assert settings.dt_tracer == 600.0
@@ -76,6 +78,17 @@ def test_default_settings_are_copied_per_instance() -> None:
     assert "local_only" not in right.as_values()
 
 
+def test_settings_v3_short_methods_delegate_to_legacy_methods() -> None:
+    settings = Settings()
+
+    settings.add("local", 1.0, description="Local value", units="1")
+    settings.set("local", 2.0)
+
+    assert settings.get("local") == 2.0
+    assert settings.as_dict()["local"] == 2.0
+    assert settings.get_metadata("local") == SettingSpec(2.0, "Local value", "1")
+
+
 def test_settings_container_uses_direct_default_mapping_copy() -> None:
     import vercor.settings as settings_module
 
@@ -91,7 +104,7 @@ def test_attribute_access_and_assignment_update_setting_values() -> None:
 
     assert settings.get_value("enable_x64") is True
     assert settings.get_metadata("year_in_seconds").value == 12.0
-    assert settings.get_metadata("cappa") == Settings(
+    assert settings.get_metadata("cappa") == SettingSpec(
         0.287,
         DEFAULT_SETTINGS["cappa"].description,
         DEFAULT_SETTINGS["cappa"].units,

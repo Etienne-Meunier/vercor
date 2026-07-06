@@ -339,9 +339,10 @@ immutable runtime containers used during traced integration.
   view writing live in `vercor.output.runtime`, with direct top-level
   `vercor.output` reexports for the small public runtime-output facade and
   `vercor.runtime.facade` validating and delegating output writes for
-  `Coupler.finalize()`. `Coupler` delegates to the runtime facade and
-  remains the public setup/finalization facade rather than the owner of runtime
-  adapter mechanics.
+  `Coupler.write_outputs()`. Deprecated `Coupler.finalize()` remains only as a
+  compatibility wrapper. `Coupler` delegates to the runtime facade and remains
+  the public setup/output facade rather than the owner of runtime adapter
+  mechanics.
   The `vercor.runtime` package initializer does not reexport runtime containers
   or helper functions; internal code should import from the focused owner
   modules listed above.

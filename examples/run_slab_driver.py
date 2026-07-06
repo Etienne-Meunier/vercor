@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from vercor import Clock, Coupler, Exchange
 from vercor.dtypes import jax_ones
-from vercor.grids import rectilinear
+from vercor.grids import rectilinear_grid
 from vercor.regridding import bilinear, conservative
 from vercor.setups import (
     make_slab_atmosphere,
@@ -29,16 +29,39 @@ from vercor.diagnostics import (
 
 if __name__ == "__main__":
     # Build grids
-    atm_grid = rectilinear("atm-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
+    atm_grid = rectilinear_grid(
+        "atm-grid",
+        nlon=128,
+        nlat=64,
+        lon=(0.0, 360.0),
+        lat=(-90.0, 90.0),
+    )
 
     ocn_grid_shape = (64, 32)
     binary_mask = jax_ones(ocn_grid_shape).T.at[:2, :].set(0.0)  # land points
-    ocn_grid = rectilinear(
-        "ocn-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0, mask=binary_mask
+    ocn_grid = rectilinear_grid(
+        "ocn-grid",
+        nlon=ocn_grid_shape[0],
+        nlat=ocn_grid_shape[1],
+        lon=(0.0, 360.0),
+        lat=(-90.0, 90.0),
+        mask=binary_mask,
     )
 
-    ice_grid = rectilinear("ice-grid", *ocn_grid_shape, 0.0, 360.0, -90.0, 90.0)
-    lnd_grid = rectilinear("lnd-grid", 128, 64, 0.0, 360.0, -90.0, 90.0)
+    ice_grid = rectilinear_grid(
+        "ice-grid",
+        nlon=ocn_grid_shape[0],
+        nlat=ocn_grid_shape[1],
+        lon=(0.0, 360.0),
+        lat=(-90.0, 90.0),
+    )
+    lnd_grid = rectilinear_grid(
+        "lnd-grid",
+        nlon=128,
+        nlat=64,
+        lon=(0.0, 360.0),
+        lat=(-90.0, 90.0),
+    )
 
     # Build components
     atm = make_slab_atmosphere(atm_grid)
@@ -48,14 +71,14 @@ if __name__ == "__main__":
 
     # Clock and sequence
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
-    run_sequence = ["OCN", "ATM", "ICE", "LND"]
+    run_order = ["OCN", "ATM", "ICE", "LND"]
 
     # Coupler
     components: list[Any] = [atm, ocn, ice, lnd]
     cpl = Coupler.from_components(
         clock=clock,
         components=components,
-        run_order=run_sequence,
+        run_order=run_order,
     )
 
     # Exchanges
@@ -110,7 +133,7 @@ if __name__ == "__main__":
 
     cpl.initialize()
     final_state = cpl.run()
-    cpl.finalize(final_state)
+    cpl.write_outputs(final_state)
     views = cpl.views(final_state, names=("ATM", "OCN", "LND", "ICE"))
 
     # Inspect a few fields in a component-wise table.

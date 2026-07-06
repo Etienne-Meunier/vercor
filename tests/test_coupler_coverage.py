@@ -898,15 +898,17 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
             ),
         )
 
-    coupler.components["LND"] = cast(
+    coupler.components = cast(
         Any,
-        DummyComponent(
-            name="LND",
-            grid=make_test_grid(
-                name="lnd",
-                binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
+        {
+            "LND": DummyComponent(
+                name="LND",
+                grid=make_test_grid(
+                    name="lnd",
+                    binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
+                ),
             ),
-        ),
+        },
     )
     coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
 
@@ -1361,7 +1363,7 @@ def test_coupler_string_representations_include_registered_state() -> None:
     assert "<DummyComponent>(ATM)" in rendered
     assert "ATM --(bilinear)--> OCN" in rendered
     assert "ATM, OCN" in rendered
-    assert "run_sequence=ATM -> OCN" in representation
+    assert "run_order=ATM -> OCN" in representation
 
 
 def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
