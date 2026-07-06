@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_allclose_compact, assert_array_equal_compact
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
-from vercor.regridders.conservative import (
+from vercor._regridders.conservative import (
     ConservativeRectilinearRegridder,
     conservative,
 )
@@ -161,7 +161,7 @@ def test_regridder_has_identical_grids_true_for_equal_coords() -> None:
 def test_regridder_identical_grid_skips_remapper_construction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    conservative_module = importlib.import_module("vercor.regridders.conservative")
+    conservative_module = importlib.import_module("vercor._regridders.conservative")
 
     def fail_if_called(*args: Any, **kwargs: Any) -> object:
         _ = args, kwargs
@@ -183,8 +183,8 @@ def test_regridder_identical_grid_skips_remapper_construction(
 
 
 def test_regridder_identical_grid_passthrough_does_not_use_identity_helper() -> None:
-    base_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
-    conservative_source = Path("vercor/regridders/conservative.py").read_text(
+    base_source = Path("vercor/_regridders/base.py").read_text(encoding="utf-8")
+    conservative_source = Path("vercor/_regridders/conservative.py").read_text(
         encoding="utf-8"
     )
     assert "_IdentityInterpolator" not in base_source
@@ -194,7 +194,7 @@ def test_regridder_identical_grid_passthrough_does_not_use_identity_helper() -> 
 def test_regridder_non_identical_grid_constructs_remapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    conservative_module = importlib.import_module("vercor.regridders.conservative")
+    conservative_module = importlib.import_module("vercor._regridders.conservative")
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     def record_call(*args: Any, **kwargs: Any) -> object:

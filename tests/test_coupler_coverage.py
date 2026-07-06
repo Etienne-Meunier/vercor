@@ -35,7 +35,7 @@ from vercor.components.host import HostComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.fields import vector
 from vercor.jax_logging import (
     CANONICAL_LOG_DATE_FORMAT,
@@ -45,8 +45,8 @@ from vercor.jax_logging import (
     get_default_logger,
     setup_logger,
 )
-from vercor.regridders.bilinear import bilinear
-from vercor.regridders.conservative import conservative
+from vercor._regridders.bilinear import bilinear
+from vercor._regridders.conservative import conservative
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output.runtime import output_masks_for_component

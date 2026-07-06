@@ -20,7 +20,7 @@ import vercor.runtime.component_topology as component_topology_module
 from vercor.components.base import Component
 from vercor.exceptions import CouplerError
 from vercor.fields import vector
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.runtime.contracts import (
     append_unique_runtime_fields,
     flatten_exchange_fields,

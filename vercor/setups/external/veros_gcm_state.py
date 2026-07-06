@@ -13,7 +13,7 @@ from vercor.components import (
     HostComponent,
     SetupContext,
 )
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.output.adapters import ComponentOutputAdapter
 from vercor.settings import Settings
 from vercor.setups._time_helpers import (

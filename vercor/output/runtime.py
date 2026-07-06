@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from vercor.calendar import ModelDateTime
-from vercor.exchange import Exchange, _exchange_regrid_key
+from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.output.adapters import component_snapshot_writer
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable

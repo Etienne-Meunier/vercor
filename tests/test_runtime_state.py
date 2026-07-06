@@ -16,7 +16,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.components.data import DataComponent
 from vercor.clock import Clock
 from vercor.coupler import Coupler
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.components.contexts import SetupContext
 from vercor.settings import Settings
 from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
@@ -142,7 +142,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     runtime_preparation_source = runtime_preparation_path.read_text(encoding="utf-8")
     runtime_facade_source = runtime_facade_path.read_text(encoding="utf-8")
-    regridder_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
+    regridder_source = Path("vercor/_regridders/base.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
     component_runtime_execution_path = Path("vercor/components/runtime_execution.py")

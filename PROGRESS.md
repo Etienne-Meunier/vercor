@@ -364,12 +364,12 @@ historical commands, failure messages, or detailed validation notes.
   recurring Python 3.13/target-3.14 warning, and full pytest/coverage emitted
   the recurring JAX dtype-promotion `FutureWarning`.
 - Latest local V3 API redesign implementation validation: focused V3
-  API-boundary red/green pytest, full fast pytest, Black check, flake8, mypy,
-  full pytest, coverage pytest at 90% total, and `conda run -n scipy` fast
-  pytest passed as of 2026-07-06 using the direct `scipy` environment
-  executable for full-suite validation. Black emitted the recurring Python
-  3.13/target-3.14 warning, and full pytest/coverage emitted the recurring JAX
-  dtype-promotion `FutureWarning`.
+  API-boundary red/green pytest, focused removed-import-path pytest, full fast
+  pytest, Black check, flake8, mypy, full pytest, coverage pytest at 90%
+  total, and `conda run -n scipy` fast pytest passed as of 2026-07-06 using
+  the direct `scipy` environment executable for full-suite validation. Black
+  emitted the recurring Python 3.13/target-3.14 warning, and full
+  pytest/coverage emitted the recurring JAX dtype-promotion `FutureWarning`.
 - No active `IN PROGRESS` task is recorded in the archived log.
 - No current blocker is recorded in the archived log.
 - Recurring known warning: Black may emit the existing Python 3.13 versus
@@ -420,12 +420,17 @@ historical commands, failure messages, or detailed validation notes.
 - Exported public exception classes from `vercor` and updated facade imports so
   public workflows can use top-level `rectilinear_grid`, `bilinear`,
   `conservative`, `VectorField`, and `vector`.
+- Moved implementation modules behind private paths:
+  `vercor.grid` -> `vercor._grid`, `vercor.exchange` -> `vercor._exchange`,
+  and `vercor.regridders` -> `vercor._regridders`; normal user imports go
+  through the public facades.
 - Bumped the package version to `0.4.0` for the breaking public API change.
-- Validation run for this change: focused V3 API-boundary pytest, full fast
-  pytest, Black check, flake8, mypy, full pytest, coverage pytest at 90%
-  total, and `conda run -n scipy pytest tests/ -q --fast` passed. Black
-  emitted the recurring Python 3.13/target-3.14 warning, and full
-  pytest/coverage emitted the recurring JAX dtype-promotion `FutureWarning`.
+- Validation run for this change: focused V3 API-boundary pytest, focused
+  removed-import-path pytest, full fast pytest, Black check, flake8, mypy, full
+  pytest, coverage pytest at 90% total, and
+  `conda run -n scipy pytest tests/ -q --fast` passed. Black emitted the
+  recurring Python 3.13/target-3.14 warning, and full pytest/coverage emitted
+  the recurring JAX dtype-promotion `FutureWarning`.
 
 ### 2026-07-06: Breaking Public API Cleanup
 

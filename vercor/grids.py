@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.grid_geometry import make_rectilinear_grid
 
 

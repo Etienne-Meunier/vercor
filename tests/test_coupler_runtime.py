@@ -34,9 +34,9 @@ from vercor.setups.slab.ocean import make_slab_ocean
 from vercor.setups.slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.forcing_index import daily_forcing_index
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.regridding import bilinear, conservative
 from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
 from vercor.runtime.stores import RuntimeFieldStore

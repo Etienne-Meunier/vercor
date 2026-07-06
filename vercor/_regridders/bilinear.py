@@ -1,10 +1,10 @@
 from typing import Any
 
 from vercor.exceptions import RegridderError
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.grid_geometry import grids_identical
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
-from vercor.regridders.base import Regridder
+from vercor._regridders.base import Regridder
 
 
 class BilinearRectilinearRegridder(Regridder):

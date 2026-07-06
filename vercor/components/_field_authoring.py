@@ -15,7 +15,7 @@ from vercor.components._contracts import (
 from vercor.components._field_names import unique_field_names as _unique_field_names
 from vercor.dtypes import PrecisionPolicy
 from vercor.exceptions import ComponentError
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 

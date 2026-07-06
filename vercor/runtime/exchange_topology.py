@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from vercor.dtypes import jax_ones
-from vercor.exchange import Exchange, _exchange_regrid_key
+from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.jax_logging import LoggerLike
 from vercor.runtime.topology_state import RuntimeTopologyMaps
 from vercor.settings import Settings

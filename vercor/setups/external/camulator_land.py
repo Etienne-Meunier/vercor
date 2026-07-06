@@ -9,7 +9,7 @@ from vercor.components import (
     StepContext,
 )
 from vercor.dtypes import as_jax_real_array
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
 from vercor.setups._time_helpers import assign_model_timestep_alignment
 from vercor.setups.external.camulator_forcing import (

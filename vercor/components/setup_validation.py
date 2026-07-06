@@ -4,7 +4,7 @@ from typing import Any
 
 from vercor.exceptions import ComponentError
 from vercor.field_layout import validate_component_data_layout
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.settings import Settings
 
 

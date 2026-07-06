@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import vercor.output.runtime as _runtime_output
 from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor._run_order import normalize_run_order
 from vercor.runtime.dispatch_context import (

@@ -14,7 +14,7 @@ from vercor.components import (
     SetupContext,
 )
 from vercor.dtypes import jax_ones
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.jax_logging import LoggerLike, get_default_logger
 from vercor.output.adapters import ComponentOutputAdapter
 from vercor.setups._time_helpers import (

@@ -4,8 +4,8 @@ from functools import partial
 from typing import Callable, TypeAlias
 
 from vercor.fields import ExchangeField, normalize_field_items
-from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
-from vercor.regridders.conservative import ConservativeRectilinearRegridder
+from vercor._regridders.bilinear import BilinearRectilinearRegridder, bilinear
+from vercor._regridders.conservative import ConservativeRectilinearRegridder
 
 RegridderFactory: TypeAlias = Callable[
     ..., BilinearRectilinearRegridder | ConservativeRectilinearRegridder

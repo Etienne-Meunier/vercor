@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import jax.numpy as jnp
 
 from vercor.exceptions import CouplerError
-from vercor.exchange import Exchange, _exchange_regrid_key
+from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.runtime.contracts import RuntimeComponentContract, exchange_key_name
 from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.validation import validate_component_runtime_contract_fields

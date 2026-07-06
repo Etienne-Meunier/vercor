@@ -20,7 +20,7 @@ from vercor.components._constructor_options import (
 from vercor.components.base import Component
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.exceptions import ComponentError
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.settings import Settings
 
 if TYPE_CHECKING:

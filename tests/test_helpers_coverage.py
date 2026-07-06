@@ -11,13 +11,13 @@ import pytest
 
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import GridError
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.fields import vector
-from vercor.grid import Grid, RectilinearGrid
+from vercor._grid import Grid, RectilinearGrid
 from vercor.grid_geometry import centers_to_edges
 from vercor.grid_masks import compute_land_mask
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
-from vercor.regridders.bilinear import bilinear
+from vercor._regridders.bilinear import bilinear
 
 
 @dataclass(frozen=True)

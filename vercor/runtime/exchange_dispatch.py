@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from vercor.exceptions import ExchangerError
-from vercor.exchange import Exchange, _exchange_regrid_key
+from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.fields import VectorField
 from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.stores import RuntimeFieldStore

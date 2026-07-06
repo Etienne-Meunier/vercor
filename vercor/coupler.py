@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Self
 from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
 from vercor.exceptions import CouplerError
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.fields import VectorField
 from vercor.jax_logging import (
     JaxCallbackLogger,

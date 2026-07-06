@@ -8,7 +8,7 @@ import pytest
 
 import vercor.host_arrays as host_arrays_module
 from vercor.diagnostics import component_vector_speed
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.host_arrays import transposed_host_array
 from tests.assertions import assert_allclose_compact
 from vercor.host_arrays import runtime_array_to_host

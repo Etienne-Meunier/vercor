@@ -9,7 +9,7 @@ from vercor.components import (
     StepContext,
 )
 from vercor.dtypes import as_jax_real_array
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 
 _LAND_INPUTS = ("latent_heat_flux",)
 _LAND_OUTPUTS = ("soil_moisture", "land_surface_temperature")

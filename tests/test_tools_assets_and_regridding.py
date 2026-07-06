@@ -18,7 +18,7 @@ from vercor.grid_masks import (
     compute_ocn_lnd_masks_on_atm_grid,
     create_lnd_mask_from_ocn,
 )
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 

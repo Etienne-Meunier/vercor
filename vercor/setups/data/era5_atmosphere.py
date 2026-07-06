@@ -19,7 +19,7 @@ from vercor.fluxes.vertical_coordinates import (
     compute_hybrid_pressure_levels,
     get_altitudes_hybrid_sigma_levels,
 )
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.components import SetupContext
 from vercor.forcing_data import read_forcing as _read_forcing
 from vercor.settings import Settings

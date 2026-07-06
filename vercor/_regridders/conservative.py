@@ -1,12 +1,12 @@
 from typing import Any, Optional
 
 from vercor.exceptions import RegridderError
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges, grids_identical
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
-from vercor.regridders.base import Regridder
+from vercor._regridders.base import Regridder
 from vercor.types import RuntimeArray
 
 

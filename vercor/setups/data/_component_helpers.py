@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from vercor.components import ComponentHooks, DataComponent
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 
 
 def time_interpolated_data_component(

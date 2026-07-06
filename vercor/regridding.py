@@ -1,9 +1,9 @@
 """Public regridding facade for VerCOR grid-to-grid transfers."""
 
-from vercor.regridders.bilinear import (
+from vercor._regridders.bilinear import (
     bilinear,
 )
-from vercor.regridders.conservative import (
+from vercor._regridders.conservative import (
     conservative,
 )
 

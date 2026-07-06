@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.types import RuntimeArray

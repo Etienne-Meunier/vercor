@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from vercor.components import Component
 from vercor.dtypes import as_jax_real_array
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 _ATMOSPHERE_INPUTS = ("sea_surface_temperature",)

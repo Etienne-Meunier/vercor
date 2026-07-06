@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.contracts import (
     RuntimeComponentContract,

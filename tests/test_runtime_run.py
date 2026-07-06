@@ -18,7 +18,7 @@ from vercor.setups.slab.land import make_slab_land
 from vercor.setups.slab.ocean import make_slab_ocean
 from vercor.setups.slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
 from vercor.runtime.stores import RuntimeFieldStore
 

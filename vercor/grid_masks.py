@@ -6,12 +6,12 @@ import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_real_array
 from vercor.exceptions import RegridderError
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.jax_logging import LoggerLike, get_default_logger
-from vercor.regridders.conservative import ConservativeRectilinearRegridder
+from vercor._regridders.conservative import ConservativeRectilinearRegridder
 from vercor.types import RuntimeArray
 
 

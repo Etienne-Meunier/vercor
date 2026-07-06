@@ -31,7 +31,7 @@ from vercor.output.adapters import ComponentOutputAdapter, component_snapshot_wr
 from vercor.output.variables import OutputVariable
 from vercor.setups.external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.state import RuntimeComponentState

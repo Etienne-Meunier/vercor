@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import vercor.runtime.exchange_topology as _exchange_topology
 import vercor.runtime.surface_masks as _surface_masks
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor.runtime.topology_state import (
     ExchangeTopologyState,

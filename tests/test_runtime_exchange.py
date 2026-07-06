@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tests.assertions import assert_allclose_compact
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.fields import vector
 from vercor.runtime.dispatch_context import RuntimeDispatchContext
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges

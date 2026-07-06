@@ -8,7 +8,7 @@ from jax.typing import ArrayLike
 from vercor.components import DataComponent
 from vercor.dtypes import as_jax_real_array, jax_arange
 from vercor.forcing_data import read_forcing as _read_forcing
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.setups.data.assets import get_forcing_data
 from vercor.setups.data._component_helpers import time_interpolated_data_component
 from vercor.setups.data._field_helpers import (

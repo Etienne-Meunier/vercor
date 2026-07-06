@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from vercor.exceptions import CouplerError
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.fields import ExchangeField, flatten_field_items
 
 

@@ -29,7 +29,7 @@ from vercor.components.host import HostComponent
 from vercor.calendar import DateTime360
 from vercor.clock import Clock
 from vercor.coupler import Coupler
-from vercor.exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.fields import VectorField, flatten_field_items, vector
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
@@ -465,9 +465,9 @@ def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     assert OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS == ("sea_surface_temperature",)
 
     import vercor.exchanges as exchanges_module
-    import vercor.regridders as regridders_module
-    import vercor.regridders.bilinear as bilinear_module
-    import vercor.regridders.conservative as conservative_module
+    import vercor._regridders as regridders_module
+    import vercor._regridders.bilinear as bilinear_module
+    import vercor._regridders.conservative as conservative_module
     import vercor.regridding as regridding_module
 
     assert not hasattr(exchanges_module, "OCEAN_TO_ATMOSPHERE_SURFACE")
@@ -563,14 +563,19 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 @pytest.mark.fast_always
 def test_removed_facade_modules_are_not_importable() -> None:
     removed_modules = (
-        "vercor._deprecation",
-        "vercor.components.factories",
-        "vercor.run_order",
-        "vercor.setups.coupler_helpers",
+        ("vercor._deprecation", "vercor._deprecation"),
+        ("vercor.components.factories", "vercor.components.factories"),
+        ("vercor.exchange", "vercor.exchange"),
+        ("vercor.grid", "vercor.grid"),
+        ("vercor.regridders", "vercor.regridders"),
+        ("vercor.regridders.bilinear", "vercor.regridders"),
+        ("vercor.regridders.conservative", "vercor.regridders"),
+        ("vercor.run_order", "vercor.run_order"),
+        ("vercor.setups.coupler_helpers", "vercor.setups.coupler_helpers"),
     )
 
-    for module_name in removed_modules:
-        with pytest.raises(ModuleNotFoundError, match=module_name):
+    for module_name, missing_name in removed_modules:
+        with pytest.raises(ModuleNotFoundError, match=missing_name):
             importlib.import_module(module_name)
 
 
@@ -1399,7 +1404,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     import vercor.grid_geometry as grid_geometry_module
     import vercor.grid_masks as grid_masks_module
     import vercor.physical_constants as physical_constants_module
-    import vercor.exchange as exchange_module
+    import vercor._exchange as exchange_module
     import vercor.settings as settings_module
     import vercor.time_selection as time_selection_module
 
@@ -1468,7 +1473,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     runtime_validation_source = Path("vercor/runtime/validation.py").read_text(
         encoding="utf-8"
     )
-    exchange_source = Path("vercor/exchange.py").read_text(encoding="utf-8")
+    exchange_source = Path("vercor/_exchange.py").read_text(encoding="utf-8")
     coupler_helpers_path = Path("vercor/setups/coupler_helpers.py")
     exchange_recipes_source = Path("vercor/setups/exchange_recipes.py").read_text(
         encoding="utf-8"
@@ -1479,12 +1484,12 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     )
     runtime_cache_path = Path("vercor/runtime/cache.py")
     runtime_compilation_path = Path("vercor/runtime/compilation.py")
-    regridder_base_source = Path("vercor/regridders/base.py").read_text(
+    regridder_base_source = Path("vercor/_regridders/base.py").read_text(
         encoding="utf-8"
     )
     settings_source = Path("vercor/settings.py").read_text(encoding="utf-8")
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
-    regridder_init = Path("vercor/regridders/__init__.py").read_text(encoding="utf-8")
+    regridder_init = Path("vercor/_regridders/__init__.py").read_text(encoding="utf-8")
     grid_masks_source = Path("vercor/grid_masks.py").read_text(encoding="utf-8")
     topology_source = Path("vercor/runtime/topology.py").read_text(encoding="utf-8")
     component_topology_source = Path("vercor/runtime/component_topology.py").read_text(
@@ -1516,7 +1521,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "class DateTime365" not in clock_source
     assert "class DateTime360" not in clock_source
     assert "def runtime_daily_index(" not in runtime_time_source
-    assert "from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES" not in (
+    assert "from vercor._exchange import VALID_EXCHANGE_FIELD_NAMES" not in (
         runtime_validation_source
     )
     assert "from vercor.field_names import VALID_EXCHANGE_FIELD_NAMES" in (
@@ -1532,7 +1537,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "RegridderFactory: TypeAlias" in exchange_source
     assert not coupler_helpers_path.exists()
     assert "ExchangeField: TypeAlias" not in exchange_recipes_source
-    assert "from vercor.exchange import Exchange, RegridderFactory" in exchanges_source
+    assert "from vercor._exchange import Exchange, RegridderFactory" in exchanges_source
     assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
     assert not runtime_cache_path.exists()
@@ -1569,11 +1574,11 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
 
 @pytest.mark.fast_always
 def test_concrete_regridders_own_call_dispatch() -> None:
-    regridder_base_source = Path("vercor/regridders/base.py").read_text(
+    regridder_base_source = Path("vercor/_regridders/base.py").read_text(
         encoding="utf-8"
     )
-    bilinear_source = Path("vercor/regridders/bilinear.py").read_text(encoding="utf-8")
-    conservative_source = Path("vercor/regridders/conservative.py").read_text(
+    bilinear_source = Path("vercor/_regridders/bilinear.py").read_text(encoding="utf-8")
+    conservative_source = Path("vercor/_regridders/conservative.py").read_text(
         encoding="utf-8"
     )
 

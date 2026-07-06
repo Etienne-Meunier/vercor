@@ -7,7 +7,7 @@ import warnings
 
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 
 
 @dataclass(frozen=True)

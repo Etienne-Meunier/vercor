@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_array_equal_compact
-from vercor.grid import RectilinearGrid
-from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
+from vercor._grid import RectilinearGrid
+from vercor._regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
 
@@ -127,7 +127,7 @@ def test_regridder_has_identical_grids_true_for_equal_coords() -> None:
 def test_regridder_identical_grid_skips_interpolator_construction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bilinear_module = importlib.import_module("vercor.regridders.bilinear")
+    bilinear_module = importlib.import_module("vercor._regridders.bilinear")
 
     def fail_if_called(*args: Any, **kwargs: Any) -> object:
         _ = args, kwargs
@@ -149,8 +149,8 @@ def test_regridder_identical_grid_skips_interpolator_construction(
 
 
 def test_regridder_identical_grid_passthrough_does_not_use_identity_helper() -> None:
-    base_source = Path("vercor/regridders/base.py").read_text(encoding="utf-8")
-    bilinear_source = Path("vercor/regridders/bilinear.py").read_text(encoding="utf-8")
+    base_source = Path("vercor/_regridders/base.py").read_text(encoding="utf-8")
+    bilinear_source = Path("vercor/_regridders/bilinear.py").read_text(encoding="utf-8")
     assert "_IdentityInterpolator" not in base_source
     assert "_IdentityInterpolator" not in bilinear_source
 
@@ -158,7 +158,7 @@ def test_regridder_identical_grid_passthrough_does_not_use_identity_helper() -> 
 def test_regridder_non_identical_grid_constructs_interpolator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bilinear_module = importlib.import_module("vercor.regridders.bilinear")
+    bilinear_module = importlib.import_module("vercor._regridders.bilinear")
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     def record_call(*args: Any, **kwargs: Any) -> object:

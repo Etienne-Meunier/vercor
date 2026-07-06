@@ -26,7 +26,7 @@ from vercor.components._lifecycle_api import ComponentLifecycleMixin
 import vercor.components._runtime_fields as _runtime_field_adapters
 import vercor.components._runtime_validation as _runtime_field_validation
 from vercor.dtypes import PrecisionPolicy
-from vercor.grid import RectilinearGrid
+from vercor._grid import RectilinearGrid
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 

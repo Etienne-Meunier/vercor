@@ -8,7 +8,7 @@ from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
 from vercor.components.contexts import SetupContext
 from vercor.dtypes import as_jax_real_array
-from vercor.exchange import Exchange
+from vercor._exchange import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor.runtime.component_topology import validate_component_topology_names
 from vercor.runtime.contracts import RuntimeComponentContract, build_runtime_contracts
