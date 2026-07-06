@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from vercor.exchange import ExchangeField
+from vercor.fields import ExchangeField, vector
 
 ATMOSPHERE_TO_VEROS_FORCING_FIELDS: tuple[ExchangeField, ...] = (
-    ("u_velocity", "v_velocity"),
+    vector("u_velocity", "v_velocity"),
     "specific_humidity",
     "model_level_height",
     "density",
@@ -16,7 +16,7 @@ ATMOSPHERE_TO_VEROS_FORCING_FIELDS: tuple[ExchangeField, ...] = (
 
 
 ATMOSPHERE_TO_DATA_OCEAN_FIELDS: tuple[ExchangeField, ...] = (
-    ("u_velocity", "v_velocity"),
+    vector("u_velocity", "v_velocity"),
     "specific_humidity",
     "temperature",
     "model_level_height",
@@ -27,7 +27,7 @@ ATMOSPHERE_TO_DATA_OCEAN_FIELDS: tuple[ExchangeField, ...] = (
 
 
 ATMOSPHERE_TO_OCEAN_STATE_FIELDS: tuple[ExchangeField, ...] = (
-    ("u_velocity", "v_velocity"),
+    vector("u_velocity", "v_velocity"),
     "specific_humidity",
     "model_level_height",
     "density",
@@ -104,7 +104,7 @@ SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS: tuple[ExchangeField, ...] = ("latent_heat_f
 
 
 SLAB_ATMOSPHERE_TO_OCEAN_FIELDS: tuple[ExchangeField, ...] = (
-    ("u_velocity_10m", "v_velocity_10m"),
+    vector("u_velocity_10m", "v_velocity_10m"),
     "sensible_heat_flux",
     "latent_heat_flux",
 )

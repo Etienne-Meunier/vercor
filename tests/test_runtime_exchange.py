@@ -9,6 +9,7 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 from vercor.exchange import Exchange
+from vercor.fields import vector
 from vercor.runtime.dispatch_context import RuntimeDispatchContext
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
@@ -92,7 +93,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=[("u_velocity", "v_velocity")],
+        fields=[vector("u_velocity", "v_velocity")],
         regrid=cast(Any, _factory),
     )
     regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder()}

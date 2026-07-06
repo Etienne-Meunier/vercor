@@ -36,6 +36,7 @@ from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
 from vercor.exchange import Exchange
+from vercor.fields import vector
 from vercor.jax_logging import (
     CANONICAL_LOG_DATE_FORMAT,
     CANONICAL_LOG_FORMAT,
@@ -663,7 +664,8 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         ),
     )
 
-    coupler.initialize(enable_x64_computations=True)
+    coupler.settings.enable_x64 = True
+    coupler.initialize()
 
     assert coupler.settings.enable_x64 is True
     assert jax_calls == [("jax_enable_x64", True)]
@@ -1040,7 +1042,7 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=[("u_velocity", "v_velocity")],
+        fields=[vector("u_velocity", "v_velocity")],
         regrid=conservative,
     )
     coupler = make_coupler(
@@ -1173,7 +1175,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=[("u_velocity", "v_velocity")],
+        fields=[vector("u_velocity", "v_velocity")],
         regrid=conservative,
     )
     coupler = make_coupler(

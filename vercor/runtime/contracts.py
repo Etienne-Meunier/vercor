@@ -5,6 +5,7 @@ from typing import Sequence
 
 from vercor.exceptions import CouplerError
 from vercor.exchange import Exchange
+from vercor.fields import ExchangeField, flatten_field_items
 
 
 @dataclass(frozen=True)
@@ -21,18 +22,10 @@ class RuntimeComponentContract:
         return (*self.imports, *self.exports)
 
 
-def flatten_exchange_fields(
-    field_names: Sequence[str | tuple[str, str]],
-) -> list[str]:
+def flatten_exchange_fields(field_names: Sequence[ExchangeField]) -> list[str]:
     """Return scalar field names from scalar and vector exchange declarations."""
 
-    flattened: list[str] = []
-    for item in field_names:
-        if isinstance(item, tuple):
-            flattened.extend(item)
-        else:
-            flattened.append(item)
-    return flattened
+    return flatten_field_items(field_names)
 
 
 def append_unique_runtime_fields(target: list[str], exchange_items: list[str]) -> None:

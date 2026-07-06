@@ -4,6 +4,7 @@ from typing import Any, Mapping, Sequence
 
 from vercor.exceptions import ExchangerError
 from vercor.exchange import Exchange, _exchange_regrid_key
+from vercor.fields import VectorField
 from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.stores import RuntimeFieldStore
 
@@ -11,21 +12,21 @@ from vercor.runtime.stores import RuntimeFieldStore
 def _dispatch_vector_exchange_field(
     source_fields: RuntimeFieldStore,
     incoming_updates: dict[str, Any],
-    field_name: tuple[str, str],
+    field_name: VectorField,
     regrid: Any,
 ) -> None:
     """Dispatch one vector exchange field into the incoming update mapping."""
 
-    if not all(name in source_fields for name in field_name):
+    if not all(name in source_fields for name in (field_name.u, field_name.v)):
         raise ExchangerError(
             f"Not all fields in vector {field_name} are present in source fields"
         )
     u_vector, v_vector = regrid(
-        source_fields.get(field_name[0]),
-        source_fields.get(field_name[1]),
+        source_fields.get(field_name.u),
+        source_fields.get(field_name.v),
     )
-    incoming_updates[field_name[0]] = u_vector
-    incoming_updates[field_name[1]] = v_vector
+    incoming_updates[field_name.u] = u_vector
+    incoming_updates[field_name.v] = v_vector
 
 
 def _dispatch_scalar_exchange_field(
@@ -64,7 +65,7 @@ def dispatch_component_exchanges(
         fractional_mask = state.get_fractional_mask(*key)
 
         for field_name in exchange.fields:
-            if isinstance(field_name, tuple):
+            if isinstance(field_name, VectorField):
                 _dispatch_vector_exchange_field(
                     source_fields,
                     incoming_updates,

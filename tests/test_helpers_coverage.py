@@ -12,6 +12,7 @@ import pytest
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import GridError
 from vercor.exchange import Exchange
+from vercor.fields import vector
 from vercor.grid import Grid, RectilinearGrid
 from vercor.grid_geometry import centers_to_edges
 from vercor.grid_masks import compute_land_mask
@@ -155,7 +156,7 @@ def test_exchange_stores_factory_and_formatting_without_create_wrapper() -> None
     exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=["temperature", ("u_velocity", "v_velocity")],
+        fields=["temperature", vector("u_velocity", "v_velocity")],
         regrid=cast(Any, dummy_factory),
     )
 
@@ -166,7 +167,10 @@ def test_exchange_stores_factory_and_formatting_without_create_wrapper() -> None
     assert exchange.label == "OCN --(dummy_factory)--> ATM"
     assert not hasattr(exchange, "interpolation_type")
     assert "Source component: OCN" in str(exchange)
-    assert "fields=('temperature', ('u_velocity', 'v_velocity'))" in repr(exchange)
+    assert (
+        "fields=('temperature', VectorField(u='u_velocity', v='v_velocity'))"
+        in repr(exchange)
+    )
     assert created == {"source": "src", "destination": "dst"}
     assert calls == [(source_grid, destination_grid)]
 

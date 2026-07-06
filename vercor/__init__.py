@@ -25,22 +25,43 @@ from vercor.components.host import (
     HostComponent,
 )
 from vercor.coupler import Coupler
-from vercor.exchange import Exchange
-from vercor.grid import RectilinearGrid
+from vercor.exceptions import (
+    AssetError,
+    ComponentError,
+    CouplerError,
+    ExchangerError,
+    GridError,
+    RegridderError,
+)
+from vercor.exchanges import Exchange
+from vercor.fields import VectorField, vector
+from vercor.grids import RectilinearGrid, rectilinear_grid
+from vercor.regridding import bilinear, conservative
+from vercor.runtime.state import CouplerState
+from vercor.runtime.views import ComponentView
 from vercor.settings import SettingSpec, Settings
 
 __all__ = [
+    "AssetError",
+    "bilinear",
     "Coupler",
+    "CouplerError",
+    "CouplerState",
     "Component",
+    "ComponentError",
     "ComponentCreatePayloadHook",
+    "ComponentView",
     "ComponentHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",
     "ComponentValidateHook",
     "DataComponent",
+    "ExchangerError",
     "FieldSpec",
+    "GridError",
     "HostComponent",
     "KEEP_PAYLOAD",
+    "RegridderError",
     "SettingSpec",
     "Settings",
     "SetupContext",
@@ -50,7 +71,11 @@ __all__ = [
     "DateTime360",
     "DateTime365",
     "RectilinearGrid",
+    "rectilinear_grid",
+    "conservative",
     "Exchange",
     "fluxes",
     "ModelDateTime",
+    "VectorField",
+    "vector",
 ]

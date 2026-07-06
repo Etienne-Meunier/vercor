@@ -33,8 +33,8 @@ if __name__ == "__main__":
         "atm-grid",
         nlon=128,
         nlat=64,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
 
     ocn_grid_shape = (64, 32)
@@ -43,24 +43,24 @@ if __name__ == "__main__":
         "ocn-grid",
         nlon=ocn_grid_shape[0],
         nlat=ocn_grid_shape[1],
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
-        mask=binary_mask,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
+        binary_mask=binary_mask,
     )
 
     ice_grid = rectilinear_grid(
         "ice-grid",
         nlon=ocn_grid_shape[0],
         nlat=ocn_grid_shape[1],
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
     lnd_grid = rectilinear_grid(
         "lnd-grid",
         nlon=128,
         nlat=64,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
 
     # Build components

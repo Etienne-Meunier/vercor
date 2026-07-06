@@ -30,9 +30,147 @@ from vercor.calendar import DateTime360
 from vercor.clock import Clock
 from vercor.coupler import Coupler
 from vercor.exchange import Exchange
+from vercor.fields import VectorField, flatten_field_items, vector
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
+from vercor.runtime.views import RuntimeComponentView
 from vercor.regridding import bilinear
+
+
+@pytest.mark.fast_always
+def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
+    from vercor import (
+        ComponentView,
+        CouplerState,
+        VectorField as PublicVectorField,
+        bilinear as public_bilinear,
+        conservative as public_conservative,
+        rectilinear_grid as public_rectilinear_grid,
+        vector as public_vector,
+    )
+
+    assert PublicVectorField is VectorField
+    assert public_vector is vector
+    assert public_bilinear is bilinear
+    assert callable(public_conservative)
+    assert public_rectilinear_grid is vercor.grids.rectilinear_grid
+    assert CouplerState.__name__ == "CouplerState"
+    assert ComponentView.__name__ == "ComponentView"
+    assert {"CouplerState", "ComponentView", "VectorField", "vector"}.issubset(
+        vercor.__all__
+    )
+
+
+@pytest.mark.fast_always
+def test_v3_fields_facade_owns_vector_field_contract() -> None:
+    field = vector("u_velocity", "v_velocity")
+
+    assert field == VectorField("u_velocity", "v_velocity")
+    assert flatten_field_items(("temperature", field)) == [
+        "temperature",
+        "u_velocity",
+        "v_velocity",
+    ]
+
+    with pytest.raises(TypeError, match="VectorField"):
+        Exchange("ATM", "OCN", (("u_velocity", "v_velocity"),))  # type: ignore[arg-type]
+
+
+@pytest.mark.fast_always
+def test_v3_coupler_public_methods_return_stable_state_and_views(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component = DataComponent.from_fields(
+        name="ATM",
+        grid=make_test_grid(name="coupler-v3"),
+        fields={"temperature": 280.0},
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+
+    assert coupler.add_exchanges(()) is coupler
+    assert Coupler.initialize.__annotations__.get("return") == "None"
+    assert "enable_x64_computations" not in signature(Coupler.initialize).parameters
+    assert Coupler.state.__annotations__.get("return") == "CouplerState"
+    assert Coupler.run.__annotations__.get("return") == "CouplerState"
+    assert Coupler.view.__annotations__.get("return") == "ComponentView"
+
+    state = coupler.state()
+    assert isinstance(state, vercor.CouplerState)
+    view = coupler.view(state, "ATM")
+    assert isinstance(view, RuntimeComponentView)
+    assert isinstance(view, vercor.ComponentView)
+
+    calls: list[dict[str, object]] = []
+
+    def fake_finalize(**kwargs: object) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr(_runtime_facade, "finalize", fake_finalize)
+    coupler.write_outputs(
+        state,
+        output_dir=tmp_path,
+        filename_template="{component}.nc",
+        write_snapshots=False,
+    )
+    assert calls[0]["write_snapshots"] is False
+    with pytest.raises(TypeError, match="snapshots"):
+        coupler.write_outputs(state, snapshots=False)  # type: ignore[call-arg]
+
+
+@pytest.mark.fast_always
+def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
+    from vercor.grids import rectilinear_grid
+
+    grid = rectilinear_grid(
+        "v3-grid",
+        nlon=2,
+        nlat=2,
+        longitude=(0.0, 90.0),
+        latitude=(-45.0, 45.0),
+        binary_mask=jnp.ones((2, 2)),
+    )
+
+    component = DataComponent.from_fields(
+        "ATM",
+        grid,
+        fields={"temperature": 280.0},
+    )
+
+    assert grid.binary_mask is not None
+    assert component.field_spec.outputs == ("temperature",)
+    with pytest.raises(TypeError, match="lon"):
+        rectilinear_grid(
+            "old-grid",
+            nlon=2,
+            nlat=2,
+            lon=(0.0, 90.0),  # type: ignore[call-arg]
+            lat=(-45.0, 45.0),  # type: ignore[call-arg]
+        )
+    with pytest.raises(TypeError):
+        DataComponent.from_fields("ATM", grid, {"temperature": 280.0})  # type: ignore[misc]
+
+
+@pytest.mark.fast_always
+def test_v3_top_level_exports_public_exceptions() -> None:
+    from vercor import (
+        AssetError,
+        ComponentError,
+        CouplerError,
+        ExchangerError,
+        GridError,
+        RegridderError,
+    )
+
+    assert issubclass(ComponentError, CouplerError)
+    assert issubclass(GridError, CouplerError)
+    assert issubclass(RegridderError, CouplerError)
+    assert issubclass(ExchangerError, CouplerError)
+    assert issubclass(AssetError, Exception)
 
 
 @pytest.mark.fast_always
@@ -42,16 +180,12 @@ def test_breaking_api_cleanup_removes_transitional_public_surfaces() -> None:
     import vercor.settings as settings_module
 
     assert not hasattr(settings_module, "VercorSettings")
-    assert not hasattr(vercor, "CouplerState")
-    assert not hasattr(vercor, "ComponentView")
     assert not hasattr(grids_module, "rectilinear")
     assert not hasattr(Coupler, "from_components")
     assert not hasattr(Coupler, "run_sequence")
     assert not hasattr(Coupler, "finalize")
 
     assert "VercorSettings" not in settings_module.__all__
-    assert "CouplerState" not in vercor.__all__
-    assert "ComponentView" not in vercor.__all__
     assert "rectilinear" not in grids_module.__all__
 
     for helper_name in (
@@ -117,8 +251,8 @@ def test_public_api_uses_canonical_breaking_names(
         "new-grid",
         nlon=2,
         nlat=2,
-        lon=(0.0, 90.0),
-        lat=(-45.0, 45.0),
+        longitude=(0.0, 90.0),
+        latitude=(-45.0, 45.0),
     )
 
     component = DataComponent.from_fields(
@@ -151,7 +285,7 @@ def test_public_api_uses_canonical_breaking_names(
         state,
         output_dir=tmp_path,
         filename_template="{component}.nc",
-        snapshots=False,
+        write_snapshots=False,
     )
 
     assert calls
@@ -176,10 +310,9 @@ def test_v2_public_api_facade_exports_supported_names_only() -> None:
         "ComponentSetupContext",
         "ComponentStepContext",
         "ComponentStepResult",
-        "ComponentView",
-        "CouplerState",
         "HostRuntimeComponent",
     }.isdisjoint(vercor.__all__)
+    assert {"ComponentView", "CouplerState"}.issubset(vercor.__all__)
 
     spec = FieldSpec(
         inputs=("temperature", "temperature"),
@@ -242,13 +375,13 @@ def test_v2_exchange_accepts_supported_names_only() -> None:
     exchange = Exchange(
         "ATM",
         "OCN",
-        ("temperature", ("u_velocity", "v_velocity")),
+        ("temperature", vector("u_velocity", "v_velocity")),
         regrid=bilinear,
     )
 
     assert exchange.source == "ATM"
     assert exchange.target == "OCN"
-    assert exchange.fields == ("temperature", ("u_velocity", "v_velocity"))
+    assert exchange.fields == ("temperature", vector("u_velocity", "v_velocity"))
     assert exchange.regrid is bilinear
     assert exchange.label == "ATM --(bilinear)--> OCN"
 
@@ -322,8 +455,8 @@ def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
         "public-grid",
         nlon=4,
         nlat=3,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
 
     assert isinstance(grid, PublicRectilinearGrid)
@@ -1323,7 +1456,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert not hasattr(exchange_module, "VALID_EXCHANGE_FIELD_NAMES")
     assert "sea_surface_temperature" in field_names_module.VALID_EXCHANGE_FIELD_NAMES
 
-    assert exchange_module.ExchangeField == str | tuple[str, str]
+    assert exchange_module.ExchangeField == str | VectorField
     assert hasattr(exchange_module, "RegridderFactory")
 
     clock_source = Path("vercor/clock.py").read_text(encoding="utf-8")
@@ -1395,14 +1528,12 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
         not in exchange_source
     )
     assert "VALID_EXCHANGE_FIELD_NAMES: list[str]" not in exchange_source
-    assert "ExchangeField: TypeAlias" in exchange_source
+    assert "ExchangeField: TypeAlias" not in exchange_source
     assert "RegridderFactory: TypeAlias" in exchange_source
     assert not coupler_helpers_path.exists()
     assert "ExchangeField: TypeAlias" not in exchange_recipes_source
-    assert (
-        "from vercor.exchange import Exchange, ExchangeField, RegridderFactory"
-        in exchanges_source
-    )
+    assert "from vercor.exchange import Exchange, RegridderFactory" in exchanges_source
+    assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
     assert not runtime_cache_path.exists()
     assert "from vercor.runtime.compilation import" not in runtime_resources_source

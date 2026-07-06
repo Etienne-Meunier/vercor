@@ -38,9 +38,9 @@ class DataComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
+        *,
         fields: AuthorFieldValues = None,
         settings: Settings | None = None,
-        *,
         outputs: FieldNames = (),
         hooks: ComponentHooks | None = None,
     ) -> "DataComponent":

@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Callable, TypeAlias
 
+from vercor.fields import ExchangeField, normalize_field_items
 from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor.regridders.conservative import ConservativeRectilinearRegridder
 
-ExchangeField: TypeAlias = str | tuple[str, str]
 RegridderFactory: TypeAlias = Callable[
     ..., BilinearRectilinearRegridder | ConservativeRectilinearRegridder
 ]
@@ -55,7 +55,7 @@ class Exchange:
 
         object.__setattr__(self, "source", source)
         object.__setattr__(self, "target", target)
-        object.__setattr__(self, "fields", tuple(fields))
+        object.__setattr__(self, "fields", normalize_field_items(fields))
         object.__setattr__(self, "regrid", regrid)
         object.__setattr__(self, "_label", label)
         object.__setattr__(self, "_regrid_key", _regridder_factory_name(regrid))

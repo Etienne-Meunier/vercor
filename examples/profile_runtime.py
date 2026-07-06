@@ -85,31 +85,31 @@ def build_slab_coupler(
         "profile-atm-grid",
         nlon=grid_nx,
         nlat=grid_ny,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
     ocn_mask = jax_ones((grid_ny, grid_nx)).at[:2, :].set(0.0)
     ocn_grid = rectilinear_grid(
         "profile-ocn-grid",
         nlon=grid_nx,
         nlat=grid_ny,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
-        mask=ocn_mask,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
+        binary_mask=ocn_mask,
     )
     lnd_grid = rectilinear_grid(
         "profile-lnd-grid",
         nlon=grid_nx,
         nlat=grid_ny,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
     ice_grid = rectilinear_grid(
         "profile-ice-grid",
         nlon=grid_nx,
         nlat=grid_ny,
-        lon=(0.0, 360.0),
-        lat=(-90.0, 90.0),
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
 
     coupler = Coupler(

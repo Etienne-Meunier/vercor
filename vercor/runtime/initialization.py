@@ -64,15 +64,11 @@ def initialize_coupler_runtime(
     run_order: Sequence[str],
     settings: Settings,
     logger: LoggerLike,
-    enable_x64_computations: bool | None = None,
     topology_maps: RuntimeTopologyMaps | None = None,
 ) -> RuntimeInitializationState:
     """Initialize components, contracts, and exchange topology for a coupler."""
 
     logger.info(" Initializing coupler and components")
-
-    if enable_x64_computations is not None:
-        settings.set("enable_x64", enable_x64_computations)
 
     logger.info(
         f" Setting default precision for JAX computations: {settings.enable_x64}"

@@ -4,12 +4,13 @@ import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Self
 
 from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
 from vercor.exceptions import CouplerError
 from vercor.exchange import Exchange
+from vercor.fields import VectorField
 from vercor.jax_logging import (
     JaxCallbackLogger,
     LoggerLike,
@@ -19,6 +20,8 @@ from vercor.jax_logging import (
 from vercor._run_order import normalize_run_order
 import vercor.runtime.facade as _runtime_facade
 from vercor.runtime.resources import CouplerRuntimeResources
+from vercor.runtime.state import CouplerState
+from vercor.runtime.views import ComponentView
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -119,7 +122,7 @@ class Coupler:
     def add_component(
         self,
         component: "Component",
-    ) -> None:
+    ) -> Self:
         """Register a component with the coupler."""
 
         validate_component_setup(component)
@@ -129,8 +132,9 @@ class Coupler:
         self._components[component.name] = component
         self._invalidate_runtime_resources()
         self.logger.info(f" Registered component {component.name}")
+        return self
 
-    def add_exchange(self, exchange: Exchange) -> None:
+    def add_exchange(self, exchange: Exchange) -> Self:
         """
         Add an exchange definition to the coupler.
 
@@ -141,23 +145,25 @@ class Coupler:
         self._exchanges = (*self._exchanges, exchange)
         self._invalidate_runtime_resources()
         formatted_field_names = ", ".join(
-            ", ".join(item) if isinstance(item, tuple) else item
+            ", ".join((item.u, item.v)) if isinstance(item, VectorField) else item
             for item in exchange.fields
         )
         self.logger.info(
             f" Added exchange {exchange.label}: Fields ({formatted_field_names})"
         )
+        return self
 
-    def add_exchanges(self, exchanges: Iterable[Exchange]) -> None:
+    def add_exchanges(self, exchanges: Iterable[Exchange]) -> Self:
         """Add multiple exchange definitions to the coupler."""
 
         for exchange in exchanges:
             self.add_exchange(exchange)
+        return self
 
     def set_run_order(
         self,
         run_order: Sequence[str],
-    ) -> None:
+    ) -> Self:
         """Set the run order for coupler components."""
 
         normalized_run_order = normalize_run_order(run_order)
@@ -169,6 +175,7 @@ class Coupler:
         self.logger.info(
             f" Set coupler components run order: {', '.join(self.run_order)}"
         )
+        return self
 
     def _runtime_inputs(self) -> _runtime_facade.RuntimeFacadeInputs:
         """Return the repeated runtime facade input bundle for this coupler."""
@@ -182,7 +189,7 @@ class Coupler:
             self.settings,
         )
 
-    def initialize(self, enable_x64_computations: Optional[bool] = None) -> None:
+    def initialize(self) -> None:
         """
         Initialize the coupler and all registered components.
         """
@@ -190,7 +197,6 @@ class Coupler:
         initialized = _runtime_facade.initialize_coupler_runtime(
             inputs=self._runtime_inputs(),
             logger=self.logger,
-            enable_x64_computations=enable_x64_computations,
         )
 
         topology = initialized.topology
@@ -199,7 +205,7 @@ class Coupler:
         self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
         self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
 
-    def state(self, *, prefill: bool = True) -> Any:
+    def state(self, *, prefill: bool = True) -> CouplerState:
         """Create and validate the coupled runtime state."""
 
         return _runtime_facade.create_runtime_state(
@@ -209,9 +215,9 @@ class Coupler:
 
     def view(
         self,
-        state: Any,
+        state: CouplerState,
         name: str,
-    ) -> Any:
+    ) -> ComponentView:
         """Return a component view for diagnostics and output."""
 
         return _runtime_facade.runtime_component_view(
@@ -222,9 +228,9 @@ class Coupler:
 
     def views(
         self,
-        state: Any,
+        state: CouplerState,
         names: Sequence[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, ComponentView]:
         """Return component views for diagnostics and output."""
 
         return _runtime_facade.runtime_component_views(
@@ -235,11 +241,11 @@ class Coupler:
 
     def write_outputs(
         self,
-        state: Any,
+        state: CouplerState,
         *,
         output_dir: Path = Path("."),
         filename_template: str = "{component}.runtime_fields.nc",
-        snapshots: bool = True,
+        write_snapshots: bool = True,
     ) -> None:
         """Write final runtime fields and optional native component snapshots."""
 
@@ -249,7 +255,7 @@ class Coupler:
             inputs=self._runtime_inputs(),
             output_dir=output_dir,
             filename_template=filename_template,
-            write_snapshots=snapshots,
+            write_snapshots=write_snapshots,
             logger=self.logger,
         )
 
@@ -272,8 +278,8 @@ class Coupler:
 
     def run(
         self,
-        state: Any = None,
-    ) -> Any:
+        state: CouplerState | None = None,
+    ) -> CouplerState:
         """
         Run all registered components through the unified runtime entrypoint.
 

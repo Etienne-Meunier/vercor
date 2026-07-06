@@ -55,7 +55,6 @@ def initialize_coupler_runtime(
     *,
     inputs: RuntimeFacadeInputs,
     logger: LoggerLike,
-    enable_x64_computations: bool | None = None,
 ) -> RuntimeInitializationState:
     """Initialize components, runtime contracts, and exchange topology."""
 
@@ -67,7 +66,6 @@ def initialize_coupler_runtime(
         run_order=normalize_run_order(inputs.run_order),
         settings=inputs.settings,
         logger=logger,
-        enable_x64_computations=enable_x64_computations,
     )
     inputs.runtime_resources.runtime_contracts = initialized.runtime_contracts
     inputs.runtime_resources.topology_maps = initialized.topology.topology_maps

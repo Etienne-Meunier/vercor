@@ -11,9 +11,9 @@ def rectilinear_grid(
     *,
     nlon: int,
     nlat: int,
-    lon: tuple[float, float],
-    lat: tuple[float, float],
-    mask: Any | None = None,
+    longitude: tuple[float, float],
+    latitude: tuple[float, float],
+    binary_mask: Any | None = None,
 ) -> RectilinearGrid:
     """Build a rectilinear grid with equally spaced coordinate centers."""
 
@@ -21,11 +21,11 @@ def rectilinear_grid(
         name,
         nlon,
         nlat,
-        lon[0],
-        lon[1],
-        lat[0],
-        lat[1],
-        mask=mask,
+        longitude[0],
+        longitude[1],
+        latitude[0],
+        latitude[1],
+        mask=binary_mask,
     )
 
 

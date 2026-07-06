@@ -363,6 +363,13 @@ historical commands, failure messages, or detailed validation notes.
   `conda run -n scipy` fast pytest passed as of 2026-07-06. Black emitted the
   recurring Python 3.13/target-3.14 warning, and full pytest/coverage emitted
   the recurring JAX dtype-promotion `FutureWarning`.
+- Latest local V3 API redesign implementation validation: focused V3
+  API-boundary red/green pytest, full fast pytest, Black check, flake8, mypy,
+  full pytest, coverage pytest at 90% total, and `conda run -n scipy` fast
+  pytest passed as of 2026-07-06 using the direct `scipy` environment
+  executable for full-suite validation. Black emitted the recurring Python
+  3.13/target-3.14 warning, and full pytest/coverage emitted the recurring JAX
+  dtype-promotion `FutureWarning`.
 - No active `IN PROGRESS` task is recorded in the archived log.
 - No current blocker is recorded in the archived log.
 - Recurring known warning: Black may emit the existing Python 3.13 versus
@@ -394,6 +401,31 @@ historical commands, failure messages, or detailed validation notes.
   still public or boundary-tested surfaces.
 
 ## Recent Work
+
+### 2026-07-06: V3 API Redesign Implementation
+
+- Added the V3 public field vocabulary in `vercor.fields`, including
+  `VectorField`, `vector(...)`, field-item normalization, field flattening, and
+  shared valid-field vocabulary ownership.
+- Exposed stable public `CouplerState` and `ComponentView` names, typed
+  `Coupler.state()`, `run()`, `view()`, and `views()`, made setup mutators
+  chainable, removed the public `initialize(enable_x64_computations=...)`
+  override, and renamed `write_outputs(..., snapshots=...)` to
+  `write_snapshots`.
+- Migrated public grid construction to
+  `rectilinear_grid(..., longitude=..., latitude=..., binary_mask=...)`,
+  made `DataComponent.from_fields(...)` optional arguments keyword-only, and
+  updated examples/tests to use V3 exchange vector fields instead of tuple
+  vectors.
+- Exported public exception classes from `vercor` and updated facade imports so
+  public workflows can use top-level `rectilinear_grid`, `bilinear`,
+  `conservative`, `VectorField`, and `vector`.
+- Bumped the package version to `0.4.0` for the breaking public API change.
+- Validation run for this change: focused V3 API-boundary pytest, full fast
+  pytest, Black check, flake8, mypy, full pytest, coverage pytest at 90%
+  total, and `conda run -n scipy pytest tests/ -q --fast` passed. Black
+  emitted the recurring Python 3.13/target-3.14 warning, and full
+  pytest/coverage emitted the recurring JAX dtype-promotion `FutureWarning`.
 
 ### 2026-07-06: Breaking Public API Cleanup
 
