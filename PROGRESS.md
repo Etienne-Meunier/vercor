@@ -346,6 +346,11 @@ historical commands, failure messages, or detailed validation notes.
   environment executable. Black emitted the recurring Python 3.13/target-3.14
   warning, and full pytest/coverage emitted the recurring JAX dtype-promotion
   `FutureWarning`.
+- Latest local VerCOR 0.2.0 expired API cleanup validation: focused red/green
+  API/runtime-state pytest, Black, flake8, mypy, full fast pytest, and full
+  pytest passed as of 2026-07-06 using the direct `scipy` environment
+  executable. Black emitted the recurring Python 3.13/target-3.14 warning, and
+  full pytest emitted the recurring JAX dtype-promotion `FutureWarning`.
 - No active `IN PROGRESS` task is recorded in the archived log.
 - No current blocker is recorded in the archived log.
 - Recurring known warning: Black may emit the existing Python 3.13 versus
@@ -373,10 +378,31 @@ historical commands, failure messages, or detailed validation notes.
 ## Follow-Up Candidates
 
 - Keep remaining public simplification candidates review-only unless a
-  compatibility decision is made: `Grid`, component authoring mixins, and setup
-  helper APIs are still public or boundary-tested surfaces.
+  compatibility decision is made: `Grid` and component authoring mixins are
+  still public or boundary-tested surfaces.
 
 ## Recent Work
+
+### 2026-07-06: Vercor 0.2.0 Expired Deprecation Cleanup
+
+- Removed expired 0.2.0 public shim surfaces: component-prefixed aliases,
+  `HostRuntimeComponent`, `from_model()`, `default_fields`, exchange legacy
+  names, short exchange recipe aliases, regridder short aliases, long coupler
+  method wrappers, setup orchestration helpers, and the shared deprecation
+  helper module.
+- Kept supported behavior on canonical APIs: `FieldSpec(defaults=...)`,
+  `Component.from_step(...)`, `HostComponent.from_step(...)`,
+  `Exchange(source, target, fields, regrid=...)`, `Coupler.state/view/views`,
+  `Coupler.run(state=...)`, `Coupler.finalize(output=...)`, and
+  `vercor.exchanges` `*_FIELDS` recipe names.
+- Updated API-boundary tests to assert the removed names and modules stay
+  absent, refreshed runtime-state boundary coverage, and updated
+  `DESIGN.md`/`DEPENDENCIES.md` to describe the 0.2.0-only API.
+- Validation run for this change: focused red/green API/runtime-state pytest,
+  Black, flake8, mypy, full fast pytest, and full pytest passed using
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
+  recurring Python 3.13/target-3.14 warning, and full pytest emitted the
+  recurring JAX dtype-promotion `FutureWarning`.
 
 ### 2026-07-03: API Redesign Implementation
 

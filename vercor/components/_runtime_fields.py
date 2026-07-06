@@ -146,7 +146,6 @@ def prefill_runtime_fields(
     *,
     outputs: FieldNames = (),
     defaults: AuthorFieldValues = None,
-    default_fields: AuthorFieldValues = None,
     policy: PrecisionPolicy = None,
 ) -> None:
     """Prefill a mutable runtime data mapping with declared fields."""
@@ -155,7 +154,6 @@ def prefill_runtime_fields(
         fields=field_spec,
         outputs=outputs,
         defaults=defaults,
-        default_fields=default_fields,
     )
     normalized_defaults = normalize_author_field_values(
         component_name=component.name,

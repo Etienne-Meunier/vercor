@@ -485,7 +485,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class StepContext" in component_contexts_source
     assert "ComponentSetupContext = SetupContext" not in component_contexts_source
     assert "ComponentStepContext = StepContext" not in component_contexts_source
-    assert "__getattr__ = deprecated_getattr(" in component_contexts_source
+    assert (
+        "__getattr__ = " + "deprecated" + "_getattr(" not in component_contexts_source
+    )
     assert "SetupContext" in components_source
     assert "StepContext" in components_source
     assert "component.initialize(self)" not in coupler_source

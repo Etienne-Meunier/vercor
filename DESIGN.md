@@ -153,8 +153,7 @@ immutable runtime containers used during traced integration.
   `StepContext` are public setup and step context payloads passed to author
   callbacks, with canonical ownership in `vercor.components.contexts`.
   `from_model()`, `default_fields`, `HostRuntimeComponent`, and
-  component-prefixed context names remain deprecated compatibility aliases for
-  one deprecation window.
+  component-prefixed context names have been removed from the public API.
   Lifecycle hook type aliases (`ComponentInitializeHook`,
   `ComponentCreatePayloadHook`, `ComponentPrefillHook`, and
   `ComponentValidateHook`) are public component-author contracts and are
@@ -175,10 +174,10 @@ immutable runtime containers used during traced integration.
   class-level `from_fields()` / `from_step()` constructors, or subclasses with
   `declare_fields(...)`. `vercor.components` and `vercor` reexport the
   component-author facade.
-  `vercor.components.contracts` owns public author-facing contract types and
-  deprecated context aliases, `vercor.components.base` owns only the abstract
-  differentiable `Component` contract, `vercor.components.data` owns
-  `DataComponent`, and `vercor.components.host` owns `HostComponent`.
+  `vercor.components.contracts` owns public author-facing contract types,
+  `vercor.components.base` owns only the abstract differentiable `Component`
+  contract, `vercor.components.data` owns `DataComponent`, and
+  `vercor.components.host` owns `HostComponent`.
   Field-name de-duplication lives in private
   `vercor.components._field_names`, and component authoring methods for field
   declarations, setup seeding, and settings updates live in private
@@ -190,9 +189,8 @@ immutable runtime containers used during traced integration.
   stored in one private container rather than as ad-hoc component attributes.
   Author-value normalization lives in private
   `vercor.components._contracts`; public constructor option normalization lives
-  in private `vercor.components._constructor_options`, and deprecated public
-  spelling plumbing lives in private `vercor._deprecation`; callable signature adaptation, shared
-  callable construction metadata, and shared callable runtime mechanics live in
+  in private `vercor.components._constructor_options`; callable signature
+  adaptation, shared callable construction metadata, and shared callable runtime mechanics live in
   private `vercor.components._callable_wrappers`, which carries lifecycle hooks
   as that container and delegates hook precedence/default payload fallback to
   the lifecycle mixin. The concrete callable-backed
@@ -336,8 +334,7 @@ immutable runtime containers used during traced integration.
   `runtime_field(...)` own data/incoming/outgoing lookup for explicit views and
   compatible runtime states. `Coupler` exposes `state()`, `view()`, and
   `views()` as the public facade for runtime-state and component-view
-  creation; the longer runtime-component method names remain deprecated
-  compatibility wrappers.
+  creation; the longer runtime-component method names have been removed.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in `vercor.output.runtime`, with direct top-level
   `vercor.output` reexports for the small public runtime-output facade and
@@ -363,13 +360,12 @@ boundary instead of importing runtime context/store internals directly.
 Examples and setup factories assemble runs through `Coupler.from_components(...)`,
 `Coupler.add_exchange(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
-field recipes live in `vercor.exchanges` with `*_FIELDS` names; short recipe
-aliases and setup orchestration helpers such as `ExchangeSpec`,
-`build_coupler()`, `build_exchanges()`, and `add_exchange_specs()` are
-deprecated compatibility wrappers. Public exchange configuration types,
-including `ExchangeField` and `RegridderFactory`, are
-owned by `vercor.exchange` and imported by setup helper modules rather than
-duplicated beside recipes.
+  field recipes live in `vercor.exchanges` with `*_FIELDS` names. Short recipe
+  aliases and setup orchestration helpers such as `ExchangeSpec`,
+  `build_coupler()`, `build_exchanges()`, and `add_exchange_specs()` have been
+  removed. Public exchange configuration types, including `ExchangeField` and
+  `RegridderFactory`, are owned by `vercor.exchange` and reexported beside
+  recipes.
 
 Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live

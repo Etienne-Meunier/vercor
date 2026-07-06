@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from vercor._deprecation import warn_deprecated_name
 from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
 from vercor.exceptions import CouplerError
@@ -139,32 +138,6 @@ class Coupler:
     ) -> None:
         """Register a component with the coupler."""
 
-        self._register_component(component)
-
-    def register(
-        self,
-        component: "Component",
-    ) -> None:
-        """
-        Register a component with the coupler.
-
-        Arguments:
-            component: component instance to register
-        """
-
-        warn_deprecated_name(
-            "Coupler.register()",
-            "Coupler.add_component()",
-            remove_in="0.2.0",
-        )
-        self._register_component(component)
-
-    def _register_component(
-        self,
-        component: "Component",
-    ) -> None:
-        """Register a component with the coupler without compatibility warnings."""
-
         validate_component_setup(component)
         if component.name in self.components:
             raise CouplerError(f"Component {component.name} already registered")
@@ -210,24 +183,6 @@ class Coupler:
             f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
         )
 
-    def set_components_run_sequence(
-        self,
-        run_sequence: Sequence[str],
-    ) -> None:
-        """
-        Set the run sequence for the coupler components.
-
-        Arguments:
-            run_sequence: component names defining the order of components execution
-        """
-
-        warn_deprecated_name(
-            "Coupler.set_components_run_sequence()",
-            "Coupler.set_run_order()",
-            remove_in="0.2.0",
-        )
-        self.set_run_order(run_sequence)
-
     def _runtime_inputs(self) -> _runtime_facade.RuntimeFacadeInputs:
         """Return the repeated runtime facade input bundle for this coupler."""
 
@@ -258,58 +213,12 @@ class Coupler:
         self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
         self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
 
-    def create_runtime_state(
-        self, *, prefill_missing: bool = True
-    ) -> _runtime_state_module.RuntimeCouplerState:
-        """Create and validate the immutable state used by the unified runtime."""
-
-        warn_deprecated_name(
-            "Coupler.create_runtime_state()",
-            "Coupler.state()",
-            remove_in="0.2.0",
-        )
-        return self._create_runtime_state(prefill_missing=prefill_missing)
-
-    def _create_runtime_state(
-        self, *, prefill_missing: bool = True
-    ) -> _runtime_state_module.RuntimeCouplerState:
-        """Create and validate the immutable state used by the unified runtime."""
-
-        return _runtime_facade.create_runtime_state(
-            inputs=self._runtime_inputs(),
-            prefill_missing=prefill_missing,
-        )
-
     def state(self, *, prefill: bool = True) -> _runtime_state_module.CouplerState:
         """Create and validate the coupled runtime state."""
 
-        return self._create_runtime_state(prefill_missing=prefill)
-
-    def runtime_component_view(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        name: str,
-    ) -> _runtime_views_module.RuntimeComponentView:
-        """Return a single object containing component metadata and runtime fields."""
-
-        warn_deprecated_name(
-            "Coupler.runtime_component_view()",
-            "Coupler.view()",
-            remove_in="0.2.0",
-        )
-        return self._runtime_component_view(runtime_state, name)
-
-    def _runtime_component_view(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        name: str,
-    ) -> _runtime_views_module.RuntimeComponentView:
-        """Return a single object containing component metadata and runtime fields."""
-
-        return _runtime_facade.runtime_component_view(
-            components=self.components,
-            runtime_state=runtime_state,
-            name=name,
+        return _runtime_facade.create_runtime_state(
+            inputs=self._runtime_inputs(),
+            prefill_missing=prefill,
         )
 
     def view(
@@ -319,33 +228,10 @@ class Coupler:
     ) -> _runtime_views_module.ComponentView:
         """Return a component view for diagnostics and output."""
 
-        return self._runtime_component_view(state, name)
-
-    def runtime_component_views(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        names: Sequence[str] | None = None,
-    ) -> dict[str, _runtime_views_module.RuntimeComponentView]:
-        """Return named runtime component views in component or requested order."""
-
-        warn_deprecated_name(
-            "Coupler.runtime_component_views()",
-            "Coupler.views()",
-            remove_in="0.2.0",
-        )
-        return self._runtime_component_views(runtime_state, names=names)
-
-    def _runtime_component_views(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        names: Sequence[str] | None = None,
-    ) -> dict[str, _runtime_views_module.RuntimeComponentView]:
-        """Return named runtime component views in component or requested order."""
-
-        return _runtime_facade.runtime_component_views(
+        return _runtime_facade.runtime_component_view(
             components=self.components,
-            runtime_state=runtime_state,
-            names=names,
+            runtime_state=state,
+            name=name,
         )
 
     def views(
@@ -355,13 +241,15 @@ class Coupler:
     ) -> dict[str, _runtime_views_module.ComponentView]:
         """Return component views for diagnostics and output."""
 
-        return self._runtime_component_views(state, names=names)
+        return _runtime_facade.runtime_component_views(
+            components=self.components,
+            runtime_state=state,
+            names=names,
+        )
 
     def finalize(
         self,
         final_state: _runtime_state_module.RuntimeCouplerState,
-        output_file_mask: Optional[Path] = None,
-        *,
         output: Optional[Path] = None,
     ) -> None:
         """
@@ -372,21 +260,11 @@ class Coupler:
             output: optional path mask for output files
         """
 
-        if output is not None:
-            if output_file_mask is not None:
-                raise TypeError("Use either output or output_file_mask, not both")
-            output_file_mask = output
-        elif output_file_mask is not None:
-            warn_deprecated_name(
-                "Coupler.finalize(output_file_mask=...)",
-                "Coupler.finalize(output=...)",
-                remove_in="0.2.0",
-            )
         self.logger.info(" ------------ Finalizing coupler and components ------------")
         _runtime_facade.finalize(
             final_state=final_state,
             inputs=self._runtime_inputs(),
-            output_file_mask=output_file_mask,
+            output_file_mask=output,
             logger=self.logger,
         )
 
@@ -410,8 +288,6 @@ class Coupler:
     def run(
         self,
         state: _runtime_state_module.RuntimeCouplerState | None = None,
-        *,
-        initial_state: _runtime_state_module.RuntimeCouplerState | None = None,
     ) -> _runtime_state_module.RuntimeCouplerState:
         """
         Run all registered components through the unified runtime entrypoint.
@@ -420,17 +296,9 @@ class Coupler:
         Host-backed components run through the Python host bridge.
         """
 
-        if state is not None and initial_state is not None:
-            raise TypeError("Use either state or initial_state, not both")
-        if initial_state is not None:
-            warn_deprecated_name(
-                "Coupler.run(initial_state=...)",
-                "Coupler.run(state=...)",
-                remove_in="0.2.0",
-            )
         inputs = self._runtime_inputs()
         runtime_state = _runtime_facade.prepare_runtime_state(
-            state if state is not None else initial_state,
+            state,
             inputs=inputs,
         )
         return _runtime_facade.run(

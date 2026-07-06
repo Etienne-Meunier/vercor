@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Callable, TypeAlias
 
-from vercor._deprecation import warn_deprecated_name
 from vercor.regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor.regridders.conservative import ConservativeRectilinearRegridder
 
@@ -47,86 +46,23 @@ class Exchange:
     def __init__(
         self,
         source: str,
-        target: str | None = None,
-        fields: Sequence[ExchangeField] | None = None,
+        target: str,
+        fields: Sequence[ExchangeField],
         regrid: RegridderFactory = bilinear,
         name: str | None = None,
-        *,
-        destination: str | None = None,
-        field_names: Sequence[ExchangeField] | None = None,
-        regridder_factory: RegridderFactory | None = None,
     ) -> None:
-        """Create an exchange declaration.
-
-        ``destination``, ``field_names``, and ``regridder_factory`` are legacy
-        names kept as migration aliases for ``target``, ``fields``, and
-        ``regrid``.
-        """
-
-        if target is not None and destination is not None:
-            raise TypeError("Use either target or destination, not both")
-        if fields is not None and field_names is not None:
-            raise TypeError("Use either fields or field_names, not both")
-        if regridder_factory is not None and regrid is not bilinear:
-            raise TypeError("Use either regrid or regridder_factory, not both")
-        if destination is not None:
-            warn_deprecated_name("destination", "target", remove_in="0.2.0")
-        if field_names is not None:
-            warn_deprecated_name("field_names", "fields", remove_in="0.2.0")
-        if regridder_factory is not None:
-            warn_deprecated_name("regridder_factory", "regrid", remove_in="0.2.0")
-
-        resolved_target = target if target is not None else destination
-        resolved_fields = fields if fields is not None else field_names
-        resolved_regrid = regridder_factory or regrid
-        if resolved_target is None:
-            raise TypeError("Exchange target is required")
-        if resolved_fields is None:
-            raise TypeError("Exchange fields are required")
+        """Create an exchange declaration."""
 
         object.__setattr__(self, "source", source)
-        object.__setattr__(self, "target", resolved_target)
-        object.__setattr__(self, "fields", tuple(resolved_fields))
-        object.__setattr__(self, "regrid", resolved_regrid)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "fields", tuple(fields))
+        object.__setattr__(self, "regrid", regrid)
         object.__setattr__(self, "name", name)
         object.__setattr__(
             self,
             "interpolation_type",
-            _regridder_factory_name(resolved_regrid),
+            _regridder_factory_name(regrid),
         )
-
-    @property
-    def destination(self) -> str:
-        """Return legacy destination component name."""
-
-        warn_deprecated_name(
-            "Exchange.destination",
-            "Exchange.target",
-            remove_in="0.2.0",
-        )
-        return self.target
-
-    @property
-    def field_names(self) -> Sequence[ExchangeField]:
-        """Return legacy exchange field declaration."""
-
-        warn_deprecated_name(
-            "Exchange.field_names",
-            "Exchange.fields",
-            remove_in="0.2.0",
-        )
-        return self.fields
-
-    @property
-    def regridder_factory(self) -> RegridderFactory:
-        """Return legacy regridder factory."""
-
-        warn_deprecated_name(
-            "Exchange.regridder_factory",
-            "Exchange.regrid",
-            remove_in="0.2.0",
-        )
-        return self.regrid
 
     @property
     def label(self) -> str:

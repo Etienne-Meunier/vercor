@@ -36,7 +36,6 @@ class ComponentFieldAuthoringMixin:
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         defaults: _AuthorFieldValues = None,
-        default_fields: _AuthorFieldValues = None,
     ) -> _FieldSpec:
         """Declare runtime data fields for subclasses using author-facing names."""
 
@@ -45,7 +44,6 @@ class ComponentFieldAuthoringMixin:
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
-            default_fields=default_fields,
         )
         self._field_spec = _FieldSpec(
             inputs=declared.inputs,

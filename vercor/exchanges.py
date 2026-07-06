@@ -1,6 +1,5 @@
 """Public exchange declarations and bundled exchange field groups."""
 
-from vercor._deprecation import deprecated_getattr
 from vercor.exchange import Exchange, ExchangeField, RegridderFactory
 from vercor.setups.exchange_recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
@@ -44,79 +43,3 @@ __all__ = [
     "SLAB_ATMOSPHERE_TO_OCEAN_FIELDS",
     "SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
 ]
-
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ATMOSPHERE_TO_DATA_OCEAN": (
-            "vercor.exchanges.ATMOSPHERE_TO_DATA_OCEAN_FIELDS",
-            ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-        ),
-        "ATMOSPHERE_TO_JCM_LAND_FLUX": (
-            "vercor.exchanges.ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS",
-            ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-        ),
-        "ATMOSPHERE_TO_LAND_BASIC": (
-            "vercor.exchanges.ATMOSPHERE_TO_LAND_BASIC_FIELDS",
-            ATMOSPHERE_TO_LAND_BASIC_FIELDS,
-        ),
-        "ATMOSPHERE_TO_LAND_RADIATION": (
-            "vercor.exchanges.ATMOSPHERE_TO_LAND_RADIATION_FIELDS",
-            ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
-        ),
-        "ATMOSPHERE_TO_LAND_STATE": (
-            "vercor.exchanges.ATMOSPHERE_TO_LAND_STATE_FIELDS",
-            ATMOSPHERE_TO_LAND_STATE_FIELDS,
-        ),
-        "ATMOSPHERE_TO_OCEAN_RADIATION": (
-            "vercor.exchanges.ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS",
-            ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
-        ),
-        "ATMOSPHERE_TO_OCEAN_STATE": (
-            "vercor.exchanges.ATMOSPHERE_TO_OCEAN_STATE_FIELDS",
-            ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
-        ),
-        "ATMOSPHERE_TO_VEROS_FORCING": (
-            "vercor.exchanges.ATMOSPHERE_TO_VEROS_FORCING_FIELDS",
-            ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
-        ),
-        "JCM_LAND_TO_ATMOSPHERE": (
-            "vercor.exchanges.JCM_LAND_TO_ATMOSPHERE_FIELDS",
-            JCM_LAND_TO_ATMOSPHERE_FIELDS,
-        ),
-        "LAND_TO_ATMOSPHERE_SOIL": (
-            "vercor.exchanges.LAND_TO_ATMOSPHERE_SOIL_FIELDS",
-            LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-        ),
-        "LAND_TO_ATMOSPHERE_SURFACE": (
-            "vercor.exchanges.LAND_TO_ATMOSPHERE_SURFACE_FIELDS",
-            LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-        ),
-        "OCEAN_TO_ATMOSPHERE_SURFACE": (
-            "vercor.exchanges.OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS",
-            OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-        ),
-        "OCEAN_TO_SEAICE_SURFACE": (
-            "vercor.exchanges.OCEAN_TO_SEAICE_SURFACE_FIELDS",
-            OCEAN_TO_SEAICE_SURFACE_FIELDS,
-        ),
-        "SEAICE_TO_OCEAN": (
-            "vercor.exchanges.SEAICE_TO_OCEAN_FIELDS",
-            SEAICE_TO_OCEAN_FIELDS,
-        ),
-        "SLAB_ATMOSPHERE_TO_LAND_FLUX": (
-            "vercor.exchanges.SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
-            SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-        ),
-        "SLAB_ATMOSPHERE_TO_OCEAN": (
-            "vercor.exchanges.SLAB_ATMOSPHERE_TO_OCEAN_FIELDS",
-            SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-        ),
-        "SLAB_ATMOSPHERE_TO_OCEAN_FLUX": (
-            "vercor.exchanges.SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
-            SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
-        ),
-    },
-    remove_in="0.2.0",
-)

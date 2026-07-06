@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from vercor._deprecation import warn_deprecated_name
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.components.contracts import (
     AuthorFieldValues,
@@ -13,8 +12,6 @@ from vercor.components.contracts import (
     FieldSpec,
 )
 
-_REMOVE_IN = "0.2.0"
-
 
 def normalize_field_spec(
     *,
@@ -22,31 +19,18 @@ def normalize_field_spec(
     inputs: FieldNames = (),
     outputs: FieldNames = (),
     defaults: AuthorFieldValues = None,
-    default_fields: AuthorFieldValues = None,
 ) -> FieldSpec:
     """Normalize public field declaration options to one ``FieldSpec``."""
 
-    if defaults is not None and default_fields is not None:
-        raise TypeError("Use either defaults or default_fields, not both")
-    if fields is not None and (
-        tuple(inputs)
-        or tuple(outputs)
-        or defaults is not None
-        or default_fields is not None
-    ):
+    if fields is not None and (tuple(inputs) or tuple(outputs) or defaults is not None):
         raise TypeError(
             "Use either fields=FieldSpec(...) or inputs/outputs/defaults, not both"
         )
 
-    normalized_defaults = defaults
-    if default_fields is not None:
-        warn_deprecated_name("default_fields", "defaults", remove_in=_REMOVE_IN)
-        normalized_defaults = default_fields
-
     return fields or FieldSpec(
         inputs=inputs,
         outputs=outputs,
-        defaults=normalized_defaults or {},
+        defaults=defaults or {},
     )
 
 

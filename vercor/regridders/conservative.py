@@ -1,6 +1,5 @@
 from typing import Any, Optional
 
-from vercor._deprecation import deprecated_getattr
 from vercor.exceptions import RegridderError
 from vercor.grid import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges, grids_identical
@@ -97,15 +96,3 @@ def conservative(
         normalize=normalize,
         radius=radius,
     )
-
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ConservativeRegridder": (
-            "vercor.regridders.conservative.ConservativeRectilinearRegridder",
-            ConservativeRectilinearRegridder,
-        ),
-    },
-    remove_in="0.2.0",
-)

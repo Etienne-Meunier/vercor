@@ -1,4 +1,3 @@
-from vercor._deprecation import deprecated_getattr
 from vercor import fluxes
 from vercor.calendar import DateTime360, DateTime365, ModelDateTime
 from vercor.clock import Clock
@@ -58,16 +57,3 @@ __all__ = [
     "fluxes",
     "ModelDateTime",
 ]
-
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ComponentFieldSpec": ("vercor.FieldSpec", FieldSpec),
-        "ComponentSetupContext": ("vercor.SetupContext", SetupContext),
-        "ComponentStepContext": ("vercor.StepContext", StepContext),
-        "ComponentStepResult": ("vercor.StepResult", StepResult),
-        "HostRuntimeComponent": ("vercor.HostComponent", HostComponent),
-    },
-    remove_in="0.2.0",
-)

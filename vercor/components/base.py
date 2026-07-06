@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from vercor._deprecation import warn_deprecated_name
 from vercor.components.contracts import (
     AuthorFieldValues as _AuthorFieldValues,
     AuthorStepCallable as _AuthorStepCallable,
@@ -109,7 +108,6 @@ class Component(
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         defaults: _AuthorFieldValues = None,
-        default_fields: _AuthorFieldValues = None,
         initialize: ComponentInitializeHook | None = None,
         create_runtime_payload: ComponentCreatePayloadHook | None = None,
         prefill_runtime_state_fields: ComponentPrefillHook | None = None,
@@ -127,7 +125,6 @@ class Component(
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
-            default_fields=default_fields,
         )
         lifecycle_hooks = normalize_lifecycle_hooks(
             hooks=hooks,
@@ -144,50 +141,6 @@ class Component(
             settings=settings,
             field_spec=field_spec,
             lifecycle_hooks=lifecycle_hooks,
-        )
-
-    @classmethod
-    def from_model(
-        cls,
-        name: str,
-        grid: RectilinearGrid,
-        step: _AuthorStepCallable,
-        *,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        inputs: _FieldNames = (),
-        outputs: _FieldNames = (),
-        defaults: _AuthorFieldValues = None,
-        default_fields: _AuthorFieldValues = None,
-        initialize: ComponentInitializeHook | None = None,
-        create_runtime_payload: ComponentCreatePayloadHook | None = None,
-        prefill_runtime_state_fields: ComponentPrefillHook | None = None,
-        validate_runtime_state: ComponentValidateHook | None = None,
-    ) -> "Component":
-        """Create a differentiable component from a user model callable.
-
-        Deprecated compatibility wrapper for :meth:`from_step`.
-        """
-
-        warn_deprecated_name(
-            f"{cls.__name__}.from_model()",
-            f"{cls.__name__}.from_step()",
-            remove_in="0.2.0",
-        )
-        return cls.from_step(
-            name=name,
-            grid=grid,
-            step=step,
-            payload=payload,
-            settings=settings,
-            inputs=inputs,
-            outputs=outputs,
-            defaults=defaults,
-            default_fields=default_fields,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill_runtime_state_fields,
-            validate_runtime_state=validate_runtime_state,
         )
 
     @abstractmethod
@@ -302,7 +255,6 @@ class Component(
         *,
         outputs: _FieldNames = (),
         defaults: _AuthorFieldValues = None,
-        default_fields: _AuthorFieldValues = None,
         policy: PrecisionPolicy = None,
     ) -> None:
         """Prefill a mutable runtime data mapping with declared fields."""
@@ -313,7 +265,6 @@ class Component(
             field_spec,
             outputs=outputs,
             defaults=defaults,
-            default_fields=default_fields,
             policy=policy,
         )
 

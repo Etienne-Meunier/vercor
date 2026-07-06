@@ -1,4 +1,3 @@
-from vercor._deprecation import deprecated_getattr
 from vercor.components.base import (
     Component,
 )
@@ -38,16 +37,3 @@ __all__ = [
     "StepContext",
     "StepResult",
 ]
-
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ComponentFieldSpec": ("vercor.components.FieldSpec", FieldSpec),
-        "ComponentSetupContext": ("vercor.components.SetupContext", SetupContext),
-        "ComponentStepContext": ("vercor.components.StepContext", StepContext),
-        "ComponentStepResult": ("vercor.components.StepResult", StepResult),
-        "HostRuntimeComponent": ("vercor.components.HostComponent", HostComponent),
-    },
-    remove_in="0.2.0",
-)
