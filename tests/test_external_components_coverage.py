@@ -304,12 +304,14 @@ def test_jax_gcm_tree_as_real_dtype_converts_tree_leaves() -> None:
     tree = {
         "a": jnp.asarray([1, 2], dtype=jnp.int32),
         "b": jnp.asarray([[3, 4]], dtype=jnp.int32),
+        "c": True,
     }
 
     converted = jax_gcm_pytree_module.tree_as_real_dtype(tree)
 
     assert jnp.issubdtype(converted["a"].dtype, jnp.floating)
     assert jnp.issubdtype(converted["b"].dtype, jnp.floating)
+    assert jnp.issubdtype(converted["c"].dtype, jnp.floating)
     assert_allclose_compact(converted["a"], np.asarray([1.0, 2.0]))
 
 

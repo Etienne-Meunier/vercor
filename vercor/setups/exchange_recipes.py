@@ -23,7 +23,7 @@ ATMOSPHERE_TO_DATA_OCEAN_FIELDS: tuple[ExchangeField, ...] = (
     "net_shortwave_radiation_flux",
     "downward_longwave_radiation_flux",
 )
-"""Atmosphere fields imported by data-backed or slab ocean setup scripts."""
+"""Atmosphere fields imported by data-backed ocean setup scripts."""
 
 
 ATMOSPHERE_TO_OCEAN_STATE_FIELDS: tuple[ExchangeField, ...] = (
@@ -97,6 +97,13 @@ SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS: tuple[ExchangeField, ...] = (
     "sensible_heat_flux",
 )
 """Atmosphere flux fields imported by slab ocean components."""
+
+
+JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS: tuple[ExchangeField, ...] = (
+    *ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+    *SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
+)
+"""JCM atmosphere fields imported by slab ocean setup scripts."""
 
 
 SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS: tuple[ExchangeField, ...] = ("latent_heat_flux",)

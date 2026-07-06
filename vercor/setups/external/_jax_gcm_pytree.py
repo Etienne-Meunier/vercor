@@ -12,7 +12,7 @@ def tree_as_real_dtype(tree: Any, policy: Any = None) -> Any:
     """Cast every JAXGCM PyTree leaf to the configured VerCOR real dtype."""
 
     return jax.tree_util.tree_map(
-        lambda arr: arr.astype(jax_real_dtype(policy)),
+        lambda arr: jnp.asarray(arr).astype(jax_real_dtype(policy)),
         tree,
     )
 

@@ -370,6 +370,15 @@ historical commands, failure messages, or detailed validation notes.
   the direct `scipy` environment executable for full-suite validation. Black
   emitted the recurring Python 3.13/target-3.14 warning, and full
   pytest/coverage emitted the recurring JAX dtype-promotion `FutureWarning`.
+- Latest local JCM slab example runtime-field validation: focused red/green
+  recipe/runtime/JAXGCM-payload pytest, Black, flake8, mypy, full fast pytest,
+  full pytest, and `examples/run_jcm_with_slab.py` with `MPLBACKEND=Agg`
+  passed as of 2026-07-06 using `env CONDA_NO_PLUGINS=true conda run -n
+  scipy`. The fix keeps data-ocean recipes unchanged, adds a JCM-to-slab-ocean
+  recipe with flux imports, and stabilizes real JCM physics payload PyTrees.
+  Black emitted the recurring Python 3.13/target-3.14 warning; full pytest
+  emitted the recurring JAX dtype-promotion `FutureWarning`, and the example
+  emitted the expected xarray and non-interactive Agg warnings.
 - No active `IN PROGRESS` task is recorded in the archived log.
 - No current blocker is recorded in the archived log.
 - Recurring known warning: Black may emit the existing Python 3.13 versus

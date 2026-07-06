@@ -2060,11 +2060,17 @@ def test_veros_runtime_settings_imports_runtime_settings_lazily() -> None:
 @pytest.mark.fast_always
 def test_common_exchange_recipes_are_centralized_for_examples() -> None:
     import vercor.exchanges as exchanges_module
+    from vercor.exchanges import (
+        ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+        JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+        SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
+    )
 
     required_recipes = (
         "ATMOSPHERE_TO_DATA_OCEAN_FIELDS",
         "ATMOSPHERE_TO_LAND_RADIATION_FIELDS",
         "ATMOSPHERE_TO_LAND_STATE_FIELDS",
+        "JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS",
         "LAND_TO_ATMOSPHERE_SURFACE_FIELDS",
         "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS",
         "SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
@@ -2101,6 +2107,15 @@ def test_common_exchange_recipes_are_centralized_for_examples() -> None:
         if path.name.startswith("run_"):
             assert "Exchange(" in source, path
             assert "ExchangeSpec(" not in source, path
+
+    assert flatten_field_items(
+        JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS
+    ) == flatten_field_items(
+        (*ATMOSPHERE_TO_DATA_OCEAN_FIELDS, *SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS)
+    )
+    jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
+    assert "JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS" in jcm_slab_source
+    assert "ATMOSPHERE_TO_DATA_OCEAN_FIELDS" not in jcm_slab_source
 
 
 @pytest.mark.fast_always

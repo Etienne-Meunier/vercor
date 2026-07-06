@@ -180,11 +180,23 @@ class JAXGCMSetupState:
         )
 
         _modal_state = self.model._prepare_initial_modal_state()
+        speedy_coords = getattr(
+            getattr(self.model, "physics", None),
+            "cached_coords",
+            None,
+        )
+        physics_data_kwargs = (
+            {"speedy_coords": speedy_coords} if speedy_coords is not None else {}
+        )
         self._state = JCMState(
             metadata=_modal_state,
-            phydata=PhysicsData.zeros(
-                self.model.coords.horizontal.nodal_shape,
-                self.model.coords.vertical.layers,
+            phydata=tree_as_real_dtype(
+                PhysicsData.zeros(
+                    self.model.coords.horizontal.nodal_shape,
+                    self.model.coords.vertical.layers,
+                    **physics_data_kwargs,
+                ),
+                self.settings,
             ),
             prog=dynamics_state_to_physics_state(_modal_state, self.model.primitive),
         )

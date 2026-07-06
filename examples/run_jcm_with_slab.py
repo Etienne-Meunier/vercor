@@ -11,8 +11,8 @@ from vercor.dtypes import as_jax_real_array
 from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
 from vercor.exchanges import (
-    ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+    JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
@@ -83,7 +83,7 @@ if __name__ == "__main__":
             Exchange(
                 source="ATM",
                 target="OCN",
-                fields=ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+                fields=JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
                 regrid=bilinear,
             ),
             Exchange(

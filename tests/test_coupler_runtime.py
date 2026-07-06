@@ -16,6 +16,7 @@ from vercor.components import (
     ComponentHooks,
     DataComponent,
     HostComponent,
+    SetupContext,
 )
 from vercor.setups.data.era5_atmosphere import make_era5_atmosphere
 from vercor.setups.data.era5_land import make_era5_land
@@ -35,6 +36,7 @@ from vercor.setups.slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor._exchange import Exchange
+from vercor.fields import flatten_field_items
 from vercor.forcing_index import daily_forcing_index
 from vercor._grid import RectilinearGrid
 from vercor.regridding import bilinear, conservative
@@ -780,6 +782,111 @@ def test_initialized_slab_coupler_run_prefills_missing_imports() -> None:
     assert final_state.component_names == ("ATM", "OCN", "LND", "ICE")
     assert ocean_state.incoming.get("sensible_heat_flux").shape == ocean.grid.shape
     assert ocean_state.incoming.get("latent_heat_flux").shape == ocean.grid.shape
+
+
+def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None:
+    from vercor.exchanges import (
+        ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+        JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+        JCM_LAND_TO_ATMOSPHERE_FIELDS,
+        OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+    )
+
+    longitude = np.asarray([0.0, 1.0], dtype=float)
+    latitude = np.asarray([-1.0, 1.0], dtype=float)
+    ocean_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float)
+    land_mask = 1.0 - ocean_mask
+    atmosphere_grid = make_test_grid(
+        name="ATM",
+        longitude=longitude,
+        latitude=latitude,
+    )
+    ocean_grid = make_test_grid(
+        name="OCN",
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=ocean_mask,
+    )
+    land_grid = make_test_grid(
+        name="LND",
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=land_mask,
+    )
+    zeros = jnp.zeros(atmosphere_grid.shape)
+    atmosphere_exports = tuple(
+        flatten_field_items(
+            (
+                *JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+                *ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+            )
+        )
+    )
+    atmosphere = _make_data_component(
+        DataComponent,
+        name="ATM",
+        grid=atmosphere_grid,
+        data={field_name: zeros for field_name in atmosphere_exports},
+        imports=tuple(
+            flatten_field_items(
+                (
+                    *OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+                    *JCM_LAND_TO_ATMOSPHERE_FIELDS,
+                )
+            )
+        ),
+        exports=atmosphere_exports,
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(
+            atmosphere,
+            make_slab_ocean(ocean_grid),
+            make_slab_land(land_grid),
+        ),
+        run_order=("OCN", "LND", "ATM"),
+    )
+    coupler.add_exchanges(
+        (
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+                regrid=bilinear,
+            ),
+        )
+    )
+    coupler.initialize()
+
+    final_state = coupler.run()
+    ocean_state = final_state.get_component_state("OCN")
+
+    for field_name in (
+        "sensible_heat_flux",
+        "latent_heat_flux",
+        "u_velocity",
+        "v_velocity",
+    ):
+        assert ocean_state.incoming.get(field_name).shape == ocean_grid.shape
+        assert ocean_state.data.get(field_name).shape == ocean_grid.shape
 
 
 def test_scanned_runtime_state_uses_runtime_field_stores() -> None:
@@ -1588,6 +1695,38 @@ def test_jax_gcm_runtime_keeps_time_dependent_forcing_payload_shape_stable() -> 
         payload.forcing.sea_surface_temperature.shape
         == forcing_template.sea_surface_temperature.shape
     )
+
+
+def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
+    fast_mode: bool,
+) -> None:
+    if fast_mode:
+        pytest.skip("Real JCM payload structure regression runs outside --fast")
+
+    from vercor.setups import make_jax_gcm
+    from vercor.setups.external.jax_gcm_tools import (
+        generate_jcm_coords_forcing_topography_files,
+    )
+
+    coords, terrain, forcing = generate_jcm_coords_forcing_topography_files()
+    component = make_jax_gcm(coords, terrain, forcing_data=forcing, jitted=True)
+    settings = Settings()
+    component.initialize(
+        SetupContext(
+            start=datetime(2000, 1, 1),
+            dt_seconds=86400.0,
+            run_order=("OCN", "LND", "ATM"),
+            settings=settings,
+            logger=cast(Any, None),
+        )
+    )
+    setup_state = component._lifecycle_hooks.create_runtime_payload.args[0]
+
+    payload = component.create_runtime_payload()
+    assert payload.jcm_state.phydata.speedy_coords is not None
+    assert str(
+        jax.tree_util.tree_structure(payload.jcm_state.phydata.speedy_coords)
+    ) == str(jax.tree_util.tree_structure(setup_state.model.physics.cached_coords))
 
 
 def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> None:
