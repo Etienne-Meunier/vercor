@@ -16,7 +16,7 @@ from vercor.components._field_names import unique_field_names as _unique_field_n
 from vercor.dtypes import PrecisionPolicy
 from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -26,12 +26,11 @@ class ComponentFieldAuthoringMixin:
     name: str
     grid: RectilinearGrid
     data: dict[str, RuntimeArray]
-    settings: VercorSettings
+    settings: Settings
     _field_spec: _FieldSpec
 
     def declare_fields(
         self,
-        field_spec: _FieldSpec | None = None,
         *,
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
@@ -40,7 +39,6 @@ class ComponentFieldAuthoringMixin:
         """Declare runtime data fields for subclasses using author-facing names."""
 
         declared = normalize_field_spec(
-            fields=field_spec,
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
@@ -74,7 +72,7 @@ class ComponentFieldAuthoringMixin:
         """Update component settings by name and return this component."""
 
         for setting_name, setting_value in values.items():
-            self.settings.set_value(setting_name, setting_value)
+            self.settings.set(setting_name, setting_value)
         return self
 
     def grid_field_defaults(

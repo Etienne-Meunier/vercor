@@ -9,7 +9,7 @@ import torch
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
 from vercor.fluxes.vertical_coordinates import compute_hybrid_sigma_full_level_altitudes
 from vercor.host_arrays import runtime_array_to_host
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.setups.external.camulator_contracts import CAMULATOR_RUNTIME_FIELD_NAMES
 from vercor.setups.external.camulator_tensors import StateVariableAccessor
 
@@ -174,7 +174,7 @@ def _camulator_output_array(
 
 
 def map_camulator_prediction_to_runtime_fields(
-    settings: VercorSettings,
+    settings: Settings,
     *,
     camulator_reference_pressure: float,
     hyai: torch.Tensor,

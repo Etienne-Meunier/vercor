@@ -6,12 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import vercor.output as _output
+import vercor.output.runtime as _runtime_output
 from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
 from vercor.exchange import Exchange
 from vercor.jax_logging import LoggerLike
-from vercor._run_order import normalize_run_sequence
+from vercor._run_order import normalize_run_order
 from vercor.runtime.dispatch_context import (
     RuntimeDispatchContext,
     build_runtime_dispatch_context,
@@ -46,7 +46,7 @@ class RuntimeFacadeInputs:
     components: Mapping[str, "Component"]
     exchanges: Sequence[Exchange]
     runtime_resources: CouplerRuntimeResources
-    run_sequence: Sequence[str]
+    run_order: Sequence[str]
     clock: Clock
     settings: Settings
 
@@ -64,7 +64,7 @@ def initialize_coupler_runtime(
         components=dict(inputs.components),
         exchanges=inputs.exchanges,
         topology_maps=inputs.runtime_resources.topology_maps,
-        run_sequence=normalize_run_sequence(inputs.run_sequence),
+        run_order=normalize_run_order(inputs.run_order),
         settings=inputs.settings,
         logger=logger,
         enable_x64_computations=enable_x64_computations,
@@ -98,7 +98,7 @@ def runtime_run_context(
     """Return static runtime inputs bundled for execution."""
 
     return RuntimeRunContext(
-        run_sequence=tuple(normalize_run_sequence(inputs.run_sequence)),
+        run_order=tuple(normalize_run_order(inputs.run_order)),
         clock=inputs.clock,
         logger=logger,
         dispatch_context=runtime_dispatch_context(
@@ -172,7 +172,7 @@ def finalize(
     """Write final runtime output files."""
 
     topology_maps = inputs.runtime_resources.topology_maps
-    _output.write_coupler_runtime_outputs(
+    _runtime_output.write_coupler_runtime_outputs(
         final_state=final_state,
         components=inputs.components,
         exchanges=inputs.exchanges,
@@ -184,7 +184,7 @@ def finalize(
         logger=logger,
     )
     if write_snapshots:
-        _output.write_coupler_component_snapshots(
+        _runtime_output.write_coupler_component_snapshots(
             final_state=final_state,
             components=inputs.components,
             output_time=_final_snapshot_time(inputs.clock),

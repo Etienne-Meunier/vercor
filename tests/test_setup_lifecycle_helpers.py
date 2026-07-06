@@ -18,7 +18,7 @@ import vercor.setups.external.camulator_forcing as camulator_forcing_module
 from vercor.setups.external.camulator_forcing import initialize_camulator_forcing_cursor
 from tests._coverage_support import make_test_grid
 from vercor.components import DataComponent
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 class _RecordingLogger:
@@ -110,7 +110,7 @@ def test_run_logged_spinup_logs_each_step_and_returns_callback_result() -> None:
 
 def test_seed_grid_field_defaults_seeds_component_defaults_with_overrides() -> None:
     component = DataComponent.from_fields("ATM", make_test_grid())
-    context = SimpleNamespace(settings=VercorSettings())
+    context = SimpleNamespace(settings=Settings())
 
     seed_grid_field_defaults(
         component,

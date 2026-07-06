@@ -62,46 +62,46 @@ def _component_state(
 def _make_coupler(steps: int) -> Coupler:
     grid = make_test_grid(name="runtime-run")
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=(
+            make_slab_atmosphere(grid),
+            make_slab_ocean(grid),
+            make_slab_land(grid),
+            make_slab_seaice(grid),
+        ),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=["sensible_heat_flux", "latent_heat_flux"],
+                regrid=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=["latent_heat_flux"],
+                regrid=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="OCN",
+                target="ICE",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "ATM",
+            "OCN",
+            "LND",
+            "ICE",
+        ),
     )
-    coupler.components = {
-        "ATM": make_slab_atmosphere(grid),
-        "OCN": make_slab_ocean(grid),
-        "LND": make_slab_land(grid),
-        "ICE": make_slab_seaice(grid),
-    }
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
-        "LND",
-        "ICE",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=["sensible_heat_flux", "latent_heat_flux"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="ATM",
-            target="LND",
-            fields=["latent_heat_flux"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="OCN",
-            target="ICE",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        ),
-    ]
     regridders = cast(
         Any,
         {

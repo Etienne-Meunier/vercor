@@ -15,7 +15,7 @@ from vercor.components import (
 )
 from vercor.grid import RectilinearGrid
 from vercor.output.adapters import ComponentOutputAdapter
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,
@@ -44,7 +44,7 @@ class VerosGCMSetupState:
 
     name: str
     data: dict[str, RuntimeArray]
-    settings: VercorSettings
+    settings: Settings
     coupling_timestep: timedelta
     model_timestep: timedelta
     model_substeps: int
@@ -128,7 +128,7 @@ class VerosGCMSetupState:
 
         self.output_adapter.reset()
 
-        if self.do_spinup and "ATM" in context.run_sequence:
+        if self.do_spinup and "ATM" in context.run_order:
 
             def spinup_step(step_number: int) -> None:
                 _ = step_number

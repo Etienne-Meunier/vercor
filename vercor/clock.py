@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import floor
 from typing import Iterator, Literal
-import warnings
 
 import vercor.calendar as _calendar
 
@@ -20,7 +19,6 @@ class Clock:
     Notes:
         - `start` is a standard datetime and may be any valid Gregorian date.
         - `calendar` can be "gregorian", "noleap", or "360_day".
-        - `year_type` is accepted as a deprecated compatibility spelling.
         - A single public `iter()` is exposed, and the internal stepping logic
           is selected during initialization.
     """
@@ -29,7 +27,6 @@ class Clock:
     dt_seconds: float
     steps: int
     calendar: CalendarType
-    year_type: YearType
 
     def __init__(
         self,
@@ -37,22 +34,10 @@ class Clock:
         dt_seconds: float,
         steps: int,
         calendar: CalendarType = "gregorian",
-        *,
-        year_type: YearType | None = None,
     ) -> None:
         """Create a calendar-aware model clock."""
 
-        if year_type is not None:
-            if year_type not in ("leap", "noleap", "360"):
-                raise ValueError("year_type must be one of: 'leap', 'noleap', '360'")
-            warnings.warn(
-                "Clock(year_type=...) is deprecated; use "
-                "calendar='gregorian', 'noleap', or '360_day' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            calendar = _calendar_from_year_type(year_type)
-        elif calendar not in ("gregorian", "noleap", "360_day"):
+        if calendar not in ("gregorian", "noleap", "360_day"):
             raise ValueError(
                 "calendar must be one of: 'gregorian', 'noleap', '360_day'"
             )
@@ -61,7 +46,6 @@ class Clock:
         self.dt_seconds = dt_seconds
         self.steps = steps
         self.calendar = calendar
-        self.year_type = _year_type_from_calendar(calendar)
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -71,11 +55,12 @@ class Clock:
         if self.dt_seconds <= 0:
             raise ValueError("dt_seconds must be positive")
 
-        if self.year_type in ("noleap", "360"):
+        forcing_year_type = forcing_year_type_for_calendar(self.calendar)
+        if forcing_year_type in ("noleap", "360"):
             self._datetime_class: (
                 type[_calendar.DateTime365] | type[_calendar.DateTime360]
             )
-            if self.year_type == "noleap":
+            if forcing_year_type == "noleap":
                 self._datetime_class = _calendar.DateTime365
             else:
                 self._datetime_class = _calendar.DateTime360
@@ -90,15 +75,16 @@ class Clock:
             )
 
     def _day_of_year_for_start(self, start: datetime) -> int:
-        if self.year_type == "360":
+        forcing_year_type = forcing_year_type_for_calendar(self.calendar)
+        if forcing_year_type == "360":
             if start.day > 30:
                 raise ValueError(
-                    "for year_type='360', start day must be between 1 and 30"
+                    "for calendar='360_day', start day must be between 1 and 30"
                 )
             return (start.month - 1) * 30 + start.day
 
         if start.month == 2 and start.day == 29:
-            raise ValueError("for year_type='noleap', start date cannot be February 29")
+            raise ValueError("for calendar='noleap', start date cannot be February 29")
 
         return _calendar.DateTime365._day_of_year_from_month_day(start.month, start.day)
 
@@ -154,21 +140,15 @@ class Clock:
         self,
     ) -> Iterator[tuple[int, datetime | _calendar.ModelDateTime, timedelta]]:
         """Iterator over simulation steps using the configured stepping strategy."""
-        if self.year_type == "leap":
+        if self.calendar == "gregorian":
             yield from self._iter_gregorian()
             return
         yield from self._iter_model_calendar()
 
 
-def _calendar_from_year_type(year_type: YearType) -> CalendarType:
-    if year_type == "leap":
-        return "gregorian"
-    if year_type == "360":
-        return "360_day"
-    return year_type
+def forcing_year_type_for_calendar(calendar: CalendarType) -> YearType:
+    """Return the forcing-index year policy for a public clock calendar."""
 
-
-def _year_type_from_calendar(calendar: CalendarType) -> YearType:
     if calendar == "gregorian":
         return "leap"
     if calendar == "360_day":

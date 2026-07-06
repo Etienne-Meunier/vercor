@@ -395,6 +395,26 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Recent Work
 
+### 2026-07-06: Breaking Public API Cleanup
+
+- Removed active transitional public surfaces from the staged API redesign:
+  `VercorSettings`, `Clock(year_type=...)`, `grids.rectilinear(...)`,
+  `Coupler.from_components(...)`, `Coupler.run_sequence`,
+  mutable `Coupler.components`/`exchanges` setup assignment,
+  `Coupler.finalize(...)`, output-helper reexports from `vercor.output`, and
+  top-level `CouplerState`/`ComponentView` exports.
+- Normalized component authoring to direct `inputs`/`outputs`/`defaults` field
+  declarations and `hooks=ComponentHooks(...)` lifecycle installation.
+- Moved public regridding imports to `vercor.regridding`; concrete regridder
+  classes remain implementation details under `vercor.regridders.*`.
+- Updated tests, examples, `DESIGN.md`, and `DEPENDENCIES.md` to the breaking
+  API. Validation run for this change: focused API-boundary fast pytest, full
+  fast pytest, Black, flake8, mypy, full pytest, coverage pytest at 90% total,
+  and `git diff --check` passed with
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
+  recurring Python 3.13/target-3.14 warning, and full pytest/coverage emitted
+  the recurring JAX dtype-promotion `FutureWarning`.
+
 ### 2026-07-06: Staged Public API Redesign Compatibility
 
 - Added the v0.3-compatible public names from the API redesign plan:

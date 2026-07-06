@@ -102,9 +102,9 @@ class Settings:
                     value.units,
                 )
             elif name in self._settings:
-                self.set_value(name, value)
+                self.set(name, value)
             else:
-                self.add_setting(name, value)
+                self.add(name, value)
 
     def __getattr__(self, name: str) -> Any:
         """Return the value of a setting by attribute name."""
@@ -127,9 +127,9 @@ class Settings:
         if name not in settings:
             raise AttributeError(
                 f"{self.__class__.__name__!s} has no setting named {name!r}; "
-                "use add_setting() to add custom settings"
+                "use add() to add custom settings"
             )
-        self.set_value(name, value)
+        self.set(name, value)
 
     def __contains__(self, name: object) -> bool:
         """Return whether ``name`` is a configured setting."""
@@ -149,10 +149,11 @@ class Settings:
         )
         return f"{self.__class__.__name__}({values})"
 
-    def add_setting(
+    def add(
         self,
         name: str,
         value: Any,
+        *,
         description: str = "-",
         units: str = "-",
     ) -> None:
@@ -169,7 +170,7 @@ class Settings:
             return
         self._settings[name] = SettingSpec(value, description, units)
 
-    def set_value(self, name: str, value: Any) -> None:
+    def set(self, name: str, value: Any) -> None:
         """Update the value of an existing setting while preserving metadata."""
 
         if name not in self._settings:
@@ -188,7 +189,7 @@ class Settings:
             metadata.units,
         )
 
-    def get_value(self, name: str) -> Any:
+    def get(self, name: str) -> Any:
         """Return a setting value by name."""
 
         if name not in self._settings:
@@ -203,37 +204,10 @@ class Settings:
         record = self._settings[name]
         return SettingSpec(record.value, record.description, record.units)
 
-    def as_values(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         """Return a plain mapping of setting names to values."""
 
         return {name: record.value for name, record in self._settings.items()}
-
-    def add(
-        self,
-        name: str,
-        value: Any,
-        *,
-        description: str = "-",
-        units: str = "-",
-    ) -> None:
-        """Add a custom setting using the v0.3 public API."""
-
-        self.add_setting(name, value, description=description, units=units)
-
-    def set(self, name: str, value: Any) -> None:
-        """Update a setting value using the v0.3 public API."""
-
-        self.set_value(name, value)
-
-    def get(self, name: str) -> Any:
-        """Return a setting value using the v0.3 public API."""
-
-        return self.get_value(name)
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return setting values using the v0.3 public API."""
-
-        return self.as_values()
 
     @property
     def dtype_policy(self) -> DTypePolicy:
@@ -242,12 +216,9 @@ class Settings:
         return DTypePolicy.from_settings(self)
 
 
-VercorSettings = Settings
-
 __all__ = [
     "CONTROL_SETTINGS",
     "DEFAULT_SETTINGS",
     "SettingSpec",
     "Settings",
-    "VercorSettings",
 ]

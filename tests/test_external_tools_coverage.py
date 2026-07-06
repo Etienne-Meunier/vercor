@@ -16,7 +16,7 @@ import vercor.setups.external.veros_fluxes as veros_fluxes_module
 import vercor.setups.external.veros_state as veros_state_module
 from tests.assertions import assert_allclose_compact
 from vercor.fluxes import vertical_coordinates as vertical_coordinates_module
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 class _FakeVariableStore:
@@ -279,7 +279,7 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
     taux, tauy, qnet, qnec = veros_fluxes_module.compute_fluxes(
         veros_state=veros_state,  # type: ignore[arg-type]
         runtime_fields=runtime_fields,
-        settings=VercorSettings(),
+        settings=Settings(),
     )
 
     assert_allclose_compact(taux, np.full((4, 4), 5.0))

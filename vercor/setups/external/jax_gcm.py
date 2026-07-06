@@ -9,7 +9,7 @@ from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.model import ForcingData
 from jcm.physics_interface import TerrainData
 
-from vercor.components import Component
+from vercor.components import Component, ComponentHooks
 from vercor.output.adapters import register_component_snapshot_writer
 import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
 import vercor.setups.external.jax_gcm_output as _jax_gcm_output
@@ -66,18 +66,20 @@ def make_jax_gcm(
             "pressure",
         ),
         defaults=_jax_gcm_runtime.jax_gcm_default_fields(),
-        initialize=state.initialize,
-        create_runtime_payload=partial(
-            _jax_gcm_runtime.create_jax_gcm_runtime_payload,
-            state,
-        ),
-        prefill_runtime_state_fields=partial(
-            _jax_gcm_runtime.prefill_jax_gcm_runtime_fields,
-            state,
-        ),
-        validate_runtime_state=partial(
-            _jax_gcm_runtime.validate_jax_gcm_runtime_state,
-            state,
+        hooks=ComponentHooks(
+            initialize=state.initialize,
+            create_payload=partial(
+                _jax_gcm_runtime.create_jax_gcm_runtime_payload,
+                state,
+            ),
+            prefill=partial(
+                _jax_gcm_runtime.prefill_jax_gcm_runtime_fields,
+                state,
+            ),
+            validate=partial(
+                _jax_gcm_runtime.validate_jax_gcm_runtime_state,
+                state,
+            ),
         ),
     )
     register_component_snapshot_writer(

@@ -30,7 +30,7 @@ from vercor.clock import Clock
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.output import write_runtime_component_view_to_netcdf
+from vercor.output.runtime import write_runtime_component_view_to_netcdf
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.field_transfer import (
@@ -46,7 +46,7 @@ from vercor.runtime.validation import (
 )
 from vercor.runtime.time import scalar_runtime_step_info
 from vercor.runtime.views import RuntimeComponentView
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -137,7 +137,7 @@ def test_component_runtime_execution_policy_steps_selected_runtime_path() -> Non
             )
 
     grid = make_test_grid()
-    context = StepContext(dt_seconds=1.0, settings=VercorSettings())
+    context = StepContext(dt_seconds=1.0, settings=Settings())
     state = RuntimeComponentState(
         data=RuntimeFieldStore.from_mapping({"marker": jnp.asarray(0.0)}),
         incoming=RuntimeFieldStore.empty(),
@@ -203,7 +203,7 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
 
     stepped = component.step_runtime_state(
         state,
-        StepContext(dt_seconds=60.0, settings=VercorSettings()),
+        StepContext(dt_seconds=60.0, settings=Settings()),
     )
 
     assert stepped is state
@@ -265,17 +265,19 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
     component = data_module.DataComponent.from_fields(
         name="OBS",
         grid=grid,
-        initialize=initialize,
-        create_runtime_payload=create_runtime_payload,
-        prefill_runtime_state_fields=prefill_runtime_state_fields,
-        validate_runtime_state=validate_runtime_state,
+        hooks=contracts_module.ComponentHooks(
+            initialize=initialize,
+            create_payload=create_runtime_payload,
+            prefill=prefill_runtime_state_fields,
+            validate=validate_runtime_state,
+        ),
     )
     context = SetupContext(
         start=datetime(2000, 1, 1),
         dt_seconds=60.0,
         logger=cast(Any, None),
-        settings=VercorSettings(),
-        run_sequence=("OBS",),
+        settings=Settings(),
+        run_order=("OBS",),
     )
     component.initialize(context)
     state = create_runtime_component_state(
@@ -352,7 +354,7 @@ def test_from_fields_and_from_step_facade_expand_scalar_defaults() -> None:
 
     stepped = component.step_runtime_state(
         state,
-        StepContext(dt_seconds=3.0, settings=VercorSettings()),
+        StepContext(dt_seconds=3.0, settings=Settings()),
     )
     assert_allclose_compact(
         stepped.data.get("temperature"),
@@ -462,7 +464,7 @@ def test_callable_facade_accepts_one_two_and_three_argument_steps() -> None:
         )
         stepped = component.step_runtime_state(
             state,
-            StepContext(dt_seconds=2.0, settings=VercorSettings()),
+            StepContext(dt_seconds=2.0, settings=Settings()),
         )
         assert_allclose_compact(
             stepped.data.get("temperature"),
@@ -543,8 +545,8 @@ def test_base_initialize_seeds_declared_defaults() -> None:
             start=datetime(2000, 1, 1),
             dt_seconds=60.0,
             logger=cast(Any, None),
-            settings=VercorSettings(),
-            run_sequence=("ATM",),
+            settings=Settings(),
+            run_order=("ATM",),
         )
     )
 
@@ -695,46 +697,56 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
         data_module.DataComponent.from_fields(
             name="DATA",
             grid=grid,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill,
-            validate_runtime_state=validate,
+            hooks=contracts_module.ComponentHooks(
+                initialize=initialize,
+                create_payload=create_runtime_payload,
+                prefill=prefill,
+                validate=validate,
+            ),
         ),
         base_module.Component.from_step(
             name="ATM",
             grid=grid,
             step=step,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill,
-            validate_runtime_state=validate,
+            hooks=contracts_module.ComponentHooks(
+                initialize=initialize,
+                create_payload=create_runtime_payload,
+                prefill=prefill,
+                validate=validate,
+            ),
         ),
         host_module.HostComponent.from_step(
             name="HOST",
             grid=grid,
             step=step,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill,
-            validate_runtime_state=validate,
+            hooks=contracts_module.ComponentHooks(
+                initialize=initialize,
+                create_payload=create_runtime_payload,
+                prefill=prefill,
+                validate=validate,
+            ),
         ),
         base_module.Component.from_step(
             name="DIRECT",
             grid=grid,
             step=step,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill,
-            validate_runtime_state=validate,
+            hooks=contracts_module.ComponentHooks(
+                initialize=initialize,
+                create_payload=create_runtime_payload,
+                prefill=prefill,
+                validate=validate,
+            ),
         ),
         host_module.HostComponent.from_step(
             name="DIRECT_HOST",
             grid=grid,
             step=step,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill,
-            validate_runtime_state=validate,
+            hooks=contracts_module.ComponentHooks(
+                initialize=initialize,
+                create_payload=create_runtime_payload,
+                prefill=prefill,
+                validate=validate,
+            ),
         ),
     )
 
@@ -747,8 +759,8 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
                 start=datetime(2000, 1, 1),
                 dt_seconds=60.0,
                 logger=cast(Any, None),
-                settings=VercorSettings(),
-                run_sequence=(component.name,),
+                settings=Settings(),
+                run_order=(component.name,),
             )
         )
         state = create_runtime_component_state(
@@ -825,7 +837,7 @@ def test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled()
         fields={
             "temperature": jnp.asarray([[280.0, 281.0], [282.0, 283.0]]),
         },
-        settings=VercorSettings(enable_x64=False),
+        settings=Settings(enable_x64=False),
     )
 
     assert component.data["temperature"].dtype == jnp.float32
@@ -926,7 +938,7 @@ def test_host_runtime_component_from_step_uses_author_friendly_names() -> None:
 
     stepped = component.step_host_runtime_state(
         state,
-        StepContext(dt_seconds=5.0, settings=VercorSettings()),
+        StepContext(dt_seconds=5.0, settings=Settings()),
     )
     assert_allclose_compact(
         stepped.data.get("temperature"),
@@ -942,11 +954,9 @@ def test_subclasses_can_declare_fields_with_author_spec() -> None:
         def __init__(self, name: str, grid: Any) -> None:
             super().__init__(name, grid)
             self.declare_fields(
-                contracts_module.FieldSpec(
-                    inputs=("forcing",),
-                    outputs=("temperature",),
-                    defaults={"temperature": 280.0},
-                )
+                inputs=("forcing",),
+                outputs=("temperature",),
+                defaults={"temperature": 280.0},
             )
 
         def step_runtime_state(
@@ -1053,7 +1063,7 @@ def test_callable_component_prefills_and_validates_declared_fields() -> None:
 
     stepped = component.step_runtime_state(
         state,
-        StepContext(dt_seconds=2.0, settings=VercorSettings()),
+        StepContext(dt_seconds=2.0, settings=Settings()),
     )
     assert_allclose_compact(
         stepped.data.get("temperature"),
@@ -1265,7 +1275,7 @@ def test_differentiable_component_applies_callable_field_updates() -> None:
 
     stepped = component.step_runtime_state(
         state,
-        StepContext(dt_seconds=3.0, settings=VercorSettings()),
+        StepContext(dt_seconds=3.0, settings=Settings()),
     )
 
     assert_allclose_compact(
@@ -1302,7 +1312,7 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
     )
     preserved = preserve_component.step_runtime_state(
         preserve_state,
-        StepContext(dt_seconds=1.0, settings=VercorSettings()),
+        StepContext(dt_seconds=1.0, settings=Settings()),
     )
 
     assert preserved.runtime_payload is preserve_state.runtime_payload
@@ -1338,7 +1348,7 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
     )
     replaced = replace_component.step_runtime_state(
         replace_state,
-        StepContext(dt_seconds=1.0, settings=VercorSettings()),
+        StepContext(dt_seconds=1.0, settings=Settings()),
     )
 
     assert replaced.runtime_payload is not replace_state.runtime_payload
@@ -1379,7 +1389,7 @@ def test_callable_payload_default_can_be_overridden_by_lifecycle_hook() -> None:
         step=step,
         outputs=("temperature",),
         defaults={"temperature": jnp.ones(grid.shape)},
-        create_runtime_payload=create_runtime_payload,
+        hooks=contracts_module.ComponentHooks(create_payload=create_runtime_payload),
     )
 
     assert hooked_component.create_runtime_payload() == {"owner": "HOOKED"}
@@ -1446,7 +1456,7 @@ def test_callable_component_rejects_unseeded_field_updates() -> None:
     ):
         component.step_runtime_state(
             state,
-            StepContext(dt_seconds=1.0, settings=VercorSettings()),
+            StepContext(dt_seconds=1.0, settings=Settings()),
         )
 
 
@@ -1483,8 +1493,9 @@ def test_coupler_register_validates_component_setup_before_name_lookup() -> None
 @pytest.mark.fast_always
 def test_coupler_initialize_validates_component_setup_before_precision_sync() -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
-    coupler.components = {"ATM": cast(Any, _MissingSetupComponent())}
-    coupler.run_sequence = ("ATM",)
+    coupler._components["ATM"] = cast(Any, _MissingSetupComponent())
+    coupler._components_view = coupler.components
+    coupler.set_run_order(("ATM",))
 
     with pytest.raises(
         ComponentError,
@@ -1548,10 +1559,10 @@ def test_host_component_rejects_scanned_runtime_with_clear_error() -> None:
     component = _HostStepOnlyComponent(name="ATM", grid=grid)
     component.data["temperature"] = jnp.ones(grid.shape)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
     state = coupler.state()
 
     with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
@@ -1632,7 +1643,7 @@ def test_runtime_state_creation_receive_and_send() -> None:
         state,
         StepContext(
             dt_seconds=3.0,
-            settings=VercorSettings(),
+            settings=Settings(),
         ),
     )
     assert_allclose_compact(stepped.data.get("temperature"), np.full(grid.shape, 8.0))

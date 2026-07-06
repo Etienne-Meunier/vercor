@@ -162,9 +162,9 @@ def test_exchange_stores_factory_and_formatting_without_create_wrapper() -> None
     created = exchange.regrid(source_grid, destination_grid)
 
     assert not hasattr(exchange, "create")
-    assert exchange.name is None
+    assert not hasattr(exchange, "name")
     assert exchange.label == "OCN --(dummy_factory)--> ATM"
-    assert exchange.interpolation_type == "dummy_factory"
+    assert not hasattr(exchange, "interpolation_type")
     assert "Source component: OCN" in str(exchange)
     assert "fields=('temperature', ('u_velocity', 'v_velocity'))" in repr(exchange)
     assert created == {"source": "src", "destination": "dst"}
@@ -198,9 +198,9 @@ def test_exchange_uses_wrapped_factory_name_and_keeps_partial_options() -> None:
     created = exchange.regrid(source_grid, destination_grid)
 
     assert not hasattr(exchange, "create")
-    assert exchange.name is None
+    assert not hasattr(exchange, "name")
     assert exchange.label == "OCN --(bilinear)--> ATM"
-    assert exchange.interpolation_type == "bilinear"
+    assert not hasattr(exchange, "interpolation_type")
     assert created.source_grid is source_grid
     assert created.destination_grid is destination_grid
     assert isinstance(created.interpolator, BilinearRectilinearInterpolator)

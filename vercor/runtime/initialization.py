@@ -21,7 +21,7 @@ from vercor.runtime.validation import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
 )
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -37,11 +37,11 @@ class RuntimeInitializationState:
 
 def apply_run_precision_to_component(
     component: Component,
-    settings: VercorSettings,
+    settings: Settings,
 ) -> None:
     """Synchronize component-owned setup arrays with the coupler precision."""
 
-    component.settings.set_value("enable_x64", settings.enable_x64)
+    component.settings.set("enable_x64", settings.enable_x64)
     component.grid = component.grid.with_precision(settings)
     component.data = {
         field_name: as_jax_real_array(field_value, settings)
@@ -61,8 +61,8 @@ def initialize_coupler_runtime(
     clock: Clock,
     components: dict[str, Component],
     exchanges: Sequence[Exchange],
-    run_sequence: Sequence[str],
-    settings: VercorSettings,
+    run_order: Sequence[str],
+    settings: Settings,
     logger: LoggerLike,
     enable_x64_computations: bool | None = None,
     topology_maps: RuntimeTopologyMaps | None = None,
@@ -72,7 +72,7 @@ def initialize_coupler_runtime(
     logger.info(" Initializing coupler and components")
 
     if enable_x64_computations is not None:
-        settings.set_value("enable_x64", enable_x64_computations)
+        settings.set("enable_x64", enable_x64_computations)
 
     logger.info(
         f" Setting default precision for JAX computations: {settings.enable_x64}"
@@ -92,7 +92,7 @@ def initialize_coupler_runtime(
     init_context = SetupContext(
         start=clock.start,
         dt_seconds=clock.dt_seconds,
-        run_sequence=run_sequence,
+        run_order=run_order,
         settings=settings,
         logger=logger,
     )

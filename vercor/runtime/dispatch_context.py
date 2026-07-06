@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from vercor.exchange import Exchange
 from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -21,7 +21,7 @@ class RuntimeDispatchContext:
     regridders: Mapping[tuple[str, str, str], Any]
     contracts: Mapping[str, RuntimeComponentContract]
     dt_seconds: float
-    settings: VercorSettings
+    settings: Settings
 
     def destination_exchanges(self, component_name: str) -> tuple[Exchange, ...]:
         """Return exchanges targeting ``component_name``."""
@@ -36,7 +36,7 @@ def build_runtime_dispatch_context(
     contracts: Mapping[str, RuntimeComponentContract],
     *,
     dt_seconds: float,
-    settings: VercorSettings,
+    settings: Settings,
 ) -> RuntimeDispatchContext:
     """Return static runtime dispatch plumbing for a configured coupler."""
 

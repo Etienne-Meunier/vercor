@@ -36,7 +36,7 @@ from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 
@@ -92,8 +92,8 @@ def _make_coupler(start: datetime) -> SetupContext:
     return SetupContext(
         start=start,
         dt_seconds=21600,
-        run_sequence=(),
-        settings=VercorSettings(),
+        run_order=(),
+        settings=Settings(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -882,7 +882,7 @@ def test_state_variable_accessor_uses_shared_index_map_builders() -> None:
 def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions() -> (
     None
 ):
-    settings = VercorSettings()
+    settings = Settings()
     hyai = jnp.asarray([0.00, 0.05, 0.10])
     hybi = jnp.asarray([0.00, 0.20, 1.00])
     hyam = jnp.asarray([0.015, 0.025])
@@ -1356,7 +1356,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([0.0, 1.0]),
     )
-    component.settings = VercorSettings()
+    component.settings = Settings()
     component.data = camulator_fields_module.initialize_camulator_runtime_fields(
         component.grid.shape,
         component.settings,
@@ -1410,7 +1410,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     component_state = _runtime_component_state("ATM", component.data)
     step_context = StepContext(
         dt_seconds=float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
-        settings=VercorSettings(),
+        settings=Settings(),
         time=start,
         logger=cast(Any, _RecordingLogger()),
     )

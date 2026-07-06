@@ -138,7 +138,7 @@ class _CallableRuntimeMixin:
         component = cast("Component", self)
         self._step = normalize_component_step_callable(step)
         self._payload = payload
-        component.declare_fields(field_spec)
+        component._field_spec = field_spec
         component._lifecycle_hooks = lifecycle_hooks
 
     def _default_runtime_payload(self) -> Any | None:

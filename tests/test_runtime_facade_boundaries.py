@@ -17,7 +17,7 @@ def test_runtime_facade_inputs_bundle_owns_repeated_coupler_runtime_inputs() -> 
         "components",
         "exchanges",
         "runtime_resources",
-        "run_sequence",
+        "run_order",
         "clock",
         "settings",
     ]

@@ -3,6 +3,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 from vercor.components import (
+    ComponentHooks,
     HostComponent,
     SetupContext,
     StepContext,
@@ -120,5 +121,5 @@ def make_camulator_land(
         step=step,
         outputs=_CAMULATOR_LAND_OUTPUTS,
         defaults=_CAMULATOR_LAND_DEFAULT_FIELDS,
-        initialize=initialize,
+        hooks=ComponentHooks(initialize=initialize),
     )

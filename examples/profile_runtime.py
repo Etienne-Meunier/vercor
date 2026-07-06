@@ -4,11 +4,11 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime
 import time
-from typing import Sequence
+from typing import Any, Sequence
 
 import jax
 
-from vercor import Clock, Coupler, CouplerState, Exchange
+from vercor import Clock, Coupler, Exchange
 from vercor.dtypes import jax_ones
 from vercor.grids import rectilinear_grid
 from vercor.regridding import bilinear, conservative
@@ -65,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _block_until_ready(value: CouplerState) -> CouplerState:
+def _block_until_ready(value: Any) -> Any:
     for leaf in jax.tree_util.tree_leaves(value):
         if hasattr(leaf, "block_until_ready"):
             leaf.block_until_ready()
@@ -112,7 +112,7 @@ def build_slab_coupler(
         lat=(-90.0, 90.0),
     )
 
-    coupler = Coupler.from_components(
+    coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
         components=(
             make_slab_atmosphere(atm_grid),

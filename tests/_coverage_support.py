@@ -14,7 +14,7 @@ from vercor.clock import Clock
 from vercor.components import DataComponent
 from vercor.grid import RectilinearGrid
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -73,17 +73,17 @@ class CoverageCouplerStub:
             steps=1,
         )
     )
-    settings: VercorSettings = field(default_factory=VercorSettings)
+    settings: Settings = field(default_factory=Settings)
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("coverage-tests")
     )
-    run_sequence: Sequence[str] = field(default_factory=tuple)
+    run_order: Sequence[str] = field(default_factory=tuple)
 
     def init_context(self) -> SetupContext:
         return SetupContext(
             start=self.clock.start,
             dt_seconds=self.clock.dt_seconds,
-            run_sequence=self.run_sequence,
+            run_order=self.run_order,
             settings=self.settings,
             logger=self.logger,
         )

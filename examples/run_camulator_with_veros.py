@@ -52,7 +52,7 @@ if __name__ == "__main__":
     run_order = ["OCN", "LND", "ATM"]
 
     components = [ocn, lnd, atm]
-    cpl = Coupler.from_components(
+    cpl = Coupler(
         clock=clock,
         components=components,
         run_order=run_order,

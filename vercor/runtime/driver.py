@@ -65,14 +65,14 @@ def step_runtime_component(
 
 def prime_runtime_outgoing(
     runtime_state: RuntimeCouplerState,
-    run_sequence: Sequence[str],
+    run_order: Sequence[str],
     *,
     dispatch_context: RuntimeDispatchContext,
     step_info: RuntimeStepInfo,
 ) -> RuntimeCouplerState:
     """Populate outgoing stores once before the first exchange dispatch."""
 
-    for component_name in run_sequence:
+    for component_name in run_order:
         component_state = runtime_state.get_component_state(component_name)
         component_state = send_runtime_fields(
             dispatch_context.components[component_name],

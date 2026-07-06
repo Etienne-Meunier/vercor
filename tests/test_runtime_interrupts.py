@@ -53,12 +53,11 @@ class _InterruptingHostComponent(HostComponent):
 
 
 def _make_pure_coupler(steps: int = 2) -> Coupler:
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=steps)
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=steps),
+        components=(cast(Any, _NoopRuntimeComponent("ATM")),),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": cast(Any, _NoopRuntimeComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
-    return coupler
 
 
 def _block_until_ready(value: Any) -> Any:
@@ -166,9 +165,11 @@ def test_unrelated_jax_runtime_errors_are_preserved() -> None:
 
 
 def test_host_runtime_signal_aborts_through_shared_controller() -> None:
-    coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
-    coupler.components = {"ATM": cast(Any, _InterruptingHostComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _InterruptingHostComponent("ATM")),),
+        run_order=("ATM",),
+    )
 
     with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
         coupler.run()

@@ -150,8 +150,11 @@ def prefill_runtime_fields(
 ) -> None:
     """Prefill a mutable runtime data mapping with declared fields."""
 
-    declared = normalize_field_spec(
-        fields=field_spec,
+    if field_spec is not None and (tuple(outputs) or defaults is not None):
+        raise TypeError(
+            "Use either field_spec=FieldSpec(...) or outputs/defaults, not both"
+        )
+    declared = field_spec or normalize_field_spec(
         outputs=outputs,
         defaults=defaults,
     )

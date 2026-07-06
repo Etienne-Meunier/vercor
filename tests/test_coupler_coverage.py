@@ -15,7 +15,6 @@ import pytest
 
 import vercor.runtime.surface_masks as surface_masks_module
 import vercor.coupler as coupler_module
-import vercor.output as output_module
 import vercor.output.runtime as output_runtime_module
 from tests._coverage_support import (
     DummyComponent,
@@ -49,7 +48,7 @@ from vercor.regridders.bilinear import bilinear
 from vercor.regridders.conservative import conservative
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
-from vercor.output import output_masks_for_component
+from vercor.output.runtime import output_masks_for_component
 from vercor.output.adapters import register_component_snapshot_writer
 from vercor.runtime.surface_masks import (
     apply_surface_exchange_masks,
@@ -62,7 +61,7 @@ from vercor.runtime.topology_state import (
     RuntimeTopologyMaps,
     SurfaceExchangeMasks,
 )
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 class _RecordingLogger:
@@ -145,18 +144,27 @@ class _HostRunComponent(HostComponent):
         return component_state.with_data(data.set("host_time_seen", np.asarray(1.0)))
 
 
-def make_coupler() -> Coupler:
-    return Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
+def make_coupler(
+    *,
+    components: Any = (),
+    exchanges: Any = (),
+    run_order: Any = (),
+) -> Coupler:
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=components,
+        exchanges=exchanges,
+        run_order=run_order,
+    )
 
 
-def _snapshot_output_time_for_finalize(
+def _snapshot_output_time_for_write_outputs(
     coupler: Coupler,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Any:
-    components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-    }
-    coupler.components = cast(Any, components)
+    coupler.add_component(
+        cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm")))
+    )
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_snapshots: dict[str, Any] = {}
 
@@ -167,13 +175,13 @@ def _snapshot_output_time_for_finalize(
         captured_snapshots.update(kwargs)
 
     monkeypatch.setattr(
-        output_module, "write_coupler_runtime_outputs", fake_write_outputs
+        output_runtime_module, "write_coupler_runtime_outputs", fake_write_outputs
     )
     monkeypatch.setattr(
-        output_module, "write_coupler_component_snapshots", fake_write_snapshots
+        output_runtime_module, "write_coupler_component_snapshots", fake_write_snapshots
     )
 
-    coupler.finalize(state)
+    coupler.write_outputs(state)
 
     return captured_snapshots["output_time"]
 
@@ -365,11 +373,11 @@ def test_coupler_wraps_injected_python_logger_for_scanned_runtime() -> None:
     logger_name = "VerCOR.test.injected"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _LoggingRunComponent("ATM")),),
+        run_order=("ATM",),
         logger=logging.getLogger(logger_name),
         log_level="INFO",
     )
-    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -405,11 +413,11 @@ def test_scanned_runtime_passes_callback_logger_to_components() -> None:
     logger_name = "VerCOR.test.scanned-runtime"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _LoggingRunComponent("ATM")),),
+        run_order=("ATM",),
         log_level="INFO",
     )
     coupler.logger = setup_logger(level="INFO", name=logger_name)
-    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
 
     with capture_logger_output(logger_name) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -423,17 +431,17 @@ def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
     logger_name = "VerCOR.test.scanned-runtime-progress"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2),
+        components=(
+            cast(Any, _LoggingRunComponent("ATM")),
+            cast(Any, _LoggingRunComponent("OCN")),
+        ),
+        run_order=(
+            "ATM",
+            "OCN",
+        ),
         log_level="INFO",
     )
     coupler.logger = setup_logger(level="INFO", name=logger_name)
-    coupler.components = {
-        "ATM": cast(Any, _LoggingRunComponent("ATM")),
-        "OCN": cast(Any, _LoggingRunComponent("OCN")),
-    }
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
-    )
 
     with capture_logger_output(logger_name) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -457,11 +465,11 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
     logger_name = "VerCOR.test.scanned-runtime-warning"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _LoggingRunComponent("ATM")),),
+        run_order=("ATM",),
         log_level="WARNING",
     )
     coupler.logger = setup_logger(level="WARNING", name=logger_name)
-    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -475,7 +483,7 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
 
 
 @pytest.mark.fast_always
-def test_coupler_register_and_run_sequence_validation() -> None:
+def test_coupler_register_and_run_order_validation() -> None:
     coupler = make_coupler()
     atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     coupler.add_component(cast(Any, atmosphere))
@@ -720,7 +728,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
     state = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
-        settings=VercorSettings(),
+        settings=Settings(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -769,7 +777,7 @@ def test_build_exchange_topology_preserves_duplicate_regridder_warning(
     state = build_exchange_topology(
         components=cast(Any, components),
         exchanges=exchanges,
-        settings=VercorSettings(),
+        settings=Settings(),
         logger=cast(Any, logger),
     )
 
@@ -809,7 +817,7 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
             binary_masks=existing_binary_masks,
             fractional_masks=existing_fractional_masks,
         ),
-        settings=VercorSettings(),
+        settings=Settings(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -876,49 +884,52 @@ def test_apply_surface_exchange_masks_updates_only_expected_bilinear_pairs() -> 
 
 
 def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> None:
-    coupler = make_coupler()
-    coupler.components = cast(
-        Any,
-        {
-            "LND": DummyComponent(
-                name="LND",
-                grid=make_test_grid(name="lnd", binary_mask=np.ones((3, 2))),
-            )
-        },
+    shape_coupler = make_coupler(
+        components=(
+            cast(
+                Any,
+                DummyComponent(
+                    name="LND",
+                    grid=make_test_grid(name="lnd", binary_mask=np.ones((3, 2))),
+                ),
+            ),
+        )
     )
-    coupler.lnd_bmask_on_atm_grid = np.ones((2, 2))
+    shape_coupler.lnd_bmask_on_atm_grid = np.ones((2, 2))
 
     with pytest.raises(CouplerError, match="does not match atmospheric grid shape"):
         validate_land_mask_consistency(
-            coupler.components,
+            shape_coupler.components,
             SurfaceExchangeMasks(
                 ocn_fmask_on_atm_grid=np.zeros((2, 2)),
                 lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=coupler.lnd_bmask_on_atm_grid,
+                lnd_bmask_on_atm_grid=shape_coupler.lnd_bmask_on_atm_grid,
             ),
         )
 
-    coupler.components = cast(
-        Any,
-        {
-            "LND": DummyComponent(
-                name="LND",
-                grid=make_test_grid(
-                    name="lnd",
-                    binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
+    value_coupler = make_coupler(
+        components=(
+            cast(
+                Any,
+                DummyComponent(
+                    name="LND",
+                    grid=make_test_grid(
+                        name="lnd",
+                        binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
+                    ),
                 ),
             ),
-        },
+        )
     )
-    coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
+    value_coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
 
     with pytest.raises(CouplerError, match="mismatched points: 2"):
         validate_land_mask_consistency(
-            coupler.components,
+            value_coupler.components,
             SurfaceExchangeMasks(
                 ocn_fmask_on_atm_grid=np.zeros((2, 2)),
                 lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=coupler.lnd_bmask_on_atm_grid,
+                lnd_bmask_on_atm_grid=value_coupler.lnd_bmask_on_atm_grid,
             ),
         )
 
@@ -926,25 +937,27 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
 def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere_grids() -> (
     None
 ):
-    coupler = make_coupler()
-    coupler.components = cast(
-        Any,
-        {
-            "ATM": DummyComponent(
-                name="ATM",
-                grid=make_test_grid(name="atm", latitude=np.asarray([0.0, 1.0])),
-            ),
-            "LND": DummyComponent(
-                name="LND",
-                grid=make_test_grid(name="lnd", latitude=np.asarray([0.0, 2.0])),
-            ),
-            "OCN": DummyComponent(
-                name="OCN",
-                grid=make_test_grid(
-                    name="ocn", binary_mask=np.asarray([[1.0, 0.0], [0.0, 1.0]])
+    coupler = make_coupler(
+        components=cast(
+            Any,
+            (
+                DummyComponent(
+                    name="ATM",
+                    grid=make_test_grid(name="atm", latitude=np.asarray([0.0, 1.0])),
+                ),
+                DummyComponent(
+                    name="LND",
+                    grid=make_test_grid(name="lnd", latitude=np.asarray([0.0, 2.0])),
+                ),
+                DummyComponent(
+                    name="OCN",
+                    grid=make_test_grid(
+                        name="ocn",
+                        binary_mask=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+                    ),
                 ),
             ),
-        },
+        )
     )
 
     with pytest.raises(CouplerError, match="must use identical horizontal grids"):
@@ -952,14 +965,12 @@ def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere
 
 
 def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> None:
-    coupler = make_coupler()
-    coupler.components = cast(
-        Any,
-        {
-            "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-            "LND": DummyComponent(name="LND", grid=make_test_grid(name="lnd")),
-            "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
-        },
+    coupler = make_coupler(
+        components=(
+            cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm"))),
+            cast(Any, DummyComponent(name="LND", grid=make_test_grid(name="lnd"))),
+            cast(Any, DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))),
+        )
     )
 
     with pytest.raises(ComponentError, match="has no binary mask defined"):
@@ -967,7 +978,6 @@ def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> No
 
 
 def test_output_masks_for_component_returns_destination_exchange_masks() -> None:
-    coupler = make_coupler()
     ocn_exchange = Exchange(
         source="OCN",
         target="ATM",
@@ -980,7 +990,7 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
         fields=["temperature"],
         regrid=bilinear,
     )
-    coupler.exchanges = [ocn_exchange, lnd_exchange]
+    coupler = make_coupler(exchanges=(ocn_exchange, lnd_exchange))
     binary_masks = {
         ("OCN", "ATM", "bilinear"): np.zeros((2, 2)),
         ("LND", "ATM", "bilinear"): np.ones((2, 2)),
@@ -1015,7 +1025,6 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
 
 
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
-    coupler = make_coupler()
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     source.data["temperature"] = jnp.full((2, 2), 5.0)
@@ -1034,8 +1043,10 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         fields=[("u_velocity", "v_velocity")],
         regrid=conservative,
     )
-    coupler.components = cast(Any, {"OCN": source, "ATM": destination})
-    coupler.exchanges = [scalar_exchange, vector_exchange]
+    coupler = make_coupler(
+        components=(cast(Any, source), cast(Any, destination)),
+        exchanges=(scalar_exchange, vector_exchange),
+    )
     regridders = cast(
         Any,
         {
@@ -1082,7 +1093,6 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
 
 
 def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
-    coupler = make_coupler()
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     source.data["temperature"] = np.full((2, 2), 5.0)
@@ -1093,8 +1103,10 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         fields=["temperature"],
         regrid=bilinear,
     )
-    coupler.components = cast(Any, {"OCN": source, "ATM": destination})
-    coupler.exchanges = [exchange]
+    coupler = make_coupler(
+        components=(cast(Any, source), cast(Any, destination)),
+        exchanges=(exchange,),
+    )
     regridders = cast(
         Any,
         {
@@ -1126,8 +1138,6 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
 
 
 def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> None:
-    coupler = make_coupler()
-
     scalar_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     scalar_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     scalar_exchange = Exchange(
@@ -1136,8 +1146,10 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         fields=["temperature"],
         regrid=bilinear,
     )
-    coupler.components = cast(Any, {"OCN": scalar_source, "ATM": scalar_destination})
-    coupler.exchanges = [scalar_exchange]
+    coupler = make_coupler(
+        components=(cast(Any, scalar_source), cast(Any, scalar_destination)),
+        exchanges=(scalar_exchange,),
+    )
     regridders = cast(
         Any,
         {("OCN", "ATM", "bilinear"): RecordingRegridder(scalar_result=np.ones((2, 2)))},
@@ -1164,8 +1176,10 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         fields=[("u_velocity", "v_velocity")],
         regrid=conservative,
     )
-    coupler.components = cast(Any, {"OCN": vector_source, "ATM": vector_destination})
-    coupler.exchanges = [vector_exchange]
+    coupler = make_coupler(
+        components=(cast(Any, vector_source), cast(Any, vector_destination)),
+        exchanges=(vector_exchange,),
+    )
     regridders = cast(
         Any,
         {
@@ -1188,15 +1202,14 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         )
 
 
-def test_coupler_finalize_writes_runtime_outputs_for_all_components(
+def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
-    components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
-    }
-    coupler.components = cast(Any, components)
+    components = (
+        DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
+        DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
+    )
+    coupler = make_coupler(components=cast(Any, components))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_runtime: dict[str, Any] = {}
     captured_snapshots: dict[str, Any] = {}
@@ -1208,13 +1221,13 @@ def test_coupler_finalize_writes_runtime_outputs_for_all_components(
         captured_snapshots.update(kwargs)
 
     monkeypatch.setattr(
-        output_module, "write_coupler_runtime_outputs", fake_write_outputs
+        output_runtime_module, "write_coupler_runtime_outputs", fake_write_outputs
     )
     monkeypatch.setattr(
-        output_module, "write_coupler_component_snapshots", fake_write_snapshots
+        output_runtime_module, "write_coupler_component_snapshots", fake_write_snapshots
     )
 
-    coupler.finalize(state, output=Path("snapshot"))
+    coupler.write_outputs(state, output_dir=Path("snapshot"))
 
     assert captured_runtime["final_state"] is state
     assert captured_runtime["components"] is coupler.components
@@ -1227,30 +1240,33 @@ def test_coupler_finalize_writes_runtime_outputs_for_all_components(
         captured_runtime["fractional_masks"]
         is coupler._runtime_resources.topology_maps.fractional_masks
     )
-    assert captured_runtime["output_file_mask"] == Path("snapshot")
+    assert captured_runtime["output_file_mask"] is None
+    assert captured_runtime["output_dir"] == Path("snapshot")
+    assert captured_runtime["filename_template"] == "{component}.runtime_fields.nc"
     assert captured_runtime["logger"] is coupler.logger
     assert captured_snapshots["final_state"] is state
     assert captured_snapshots["components"] is coupler.components
     assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 0)
+    assert captured_snapshots["output_dir"] == Path("snapshot")
     assert captured_snapshots["logger"] is coupler.logger
 
 
-def test_coupler_finalize_uses_last_executed_runtime_step_time(
+def test_coupler_write_outputs_uses_last_executed_runtime_step_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2))
 
-    output_time = _snapshot_output_time_for_finalize(coupler, monkeypatch)
+    output_time = _snapshot_output_time_for_write_outputs(coupler, monkeypatch)
 
     assert output_time == datetime(2000, 1, 1, 0, 1)
 
 
-def test_coupler_finalize_uses_clock_start_without_runtime_steps(
+def test_coupler_write_outputs_uses_clock_start_without_runtime_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=0))
 
-    output_time = _snapshot_output_time_for_finalize(coupler, monkeypatch)
+    output_time = _snapshot_output_time_for_write_outputs(coupler, monkeypatch)
 
     assert output_time == coupler.clock.start
 
@@ -1258,12 +1274,11 @@ def test_coupler_finalize_uses_clock_start_without_runtime_steps(
 def test_output_boundary_builds_runtime_views_filenames_and_masks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
     components = {
         "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
         "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
     }
-    coupler.components = cast(Any, components)
+    coupler = make_coupler(components=cast(Any, tuple(components.values())))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured: list[tuple[str, Any, Path, dict[str, Any]]] = []
 
@@ -1279,7 +1294,7 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
         output_runtime_module, "write_runtime_component_view_to_netcdf", fake_write
     )
 
-    output_module.write_coupler_runtime_outputs(
+    output_runtime_module.write_coupler_runtime_outputs(
         final_state=state,
         components=coupler.components,
         exchanges=coupler.exchanges,
@@ -1302,8 +1317,7 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     monkeypatch.chdir(tmp_path)
     component = DummyComponent(name="ATM", grid=make_test_grid(name="snapshot-atm"))
     skipped = DummyComponent(name="OCN", grid=make_test_grid(name="snapshot-ocn"))
-    coupler = make_coupler()
-    coupler.components = cast(Any, {"ATM": component, "OCN": skipped})
+    coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     calls: list[tuple[Any, Path, datetime | ModelDateTime, Any]] = []
 
@@ -1317,7 +1331,7 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
 
     register_component_snapshot_writer(component, write_snapshot)
 
-    output_module.write_coupler_component_snapshots(
+    output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
         components=coupler.components,
         output_time=datetime(2000, 1, 1, 0, 1),
@@ -1369,16 +1383,17 @@ def test_coupler_string_representations_include_registered_state() -> None:
 def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
-    coupler.logger = cast(Any, _RecordingLogger())
     events: list[str] = []
     atmosphere = _HostRunComponent("ATM", events)
     ocean = _HostRunComponent("OCN", events)
-    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
+    coupler = make_coupler(
+        components=(cast(Any, atmosphere), cast(Any, ocean)),
+        run_order=(
+            "ATM",
+            "OCN",
+        ),
     )
+    coupler.logger = cast(Any, _RecordingLogger())
 
     def fake_dispatch(state: Any, component_name: str, *args: Any) -> Any:
         _ = args
@@ -1423,10 +1438,11 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
 
 
 def test_host_runtime_components_use_explicit_host_contract() -> None:
-    coupler = make_coupler()
     host_component = _HostRunComponent("ATM")
-    coupler.components = cast(Any, {"ATM": host_component})
-    coupler.run_sequence = ("ATM",)
+    coupler = make_coupler(
+        components=(cast(Any, host_component),),
+        run_order=("ATM",),
+    )
 
     final_state = coupler.run()
     final_component = final_state.get_component_state("ATM")
@@ -1441,16 +1457,14 @@ def test_host_runtime_components_use_explicit_host_contract() -> None:
 
 def test_run_warns_when_host_backed_components_make_loop_nondifferentiable() -> None:
     logger = _RecordingLogger()
-    coupler = make_coupler()
-    coupler.logger = cast(Any, logger)
-    coupler.components = cast(
-        Any,
-        {
-            "ATM": _HostRunComponent("ATM"),
-            "OCN": _HostRunComponent("OCN"),
-        },
+    coupler = make_coupler(
+        components=(
+            cast(Any, _HostRunComponent("ATM")),
+            cast(Any, _HostRunComponent("OCN")),
+        ),
+        run_order=("ATM", "OCN"),
     )
-    coupler.run_sequence = ("ATM", "OCN")
+    coupler.logger = cast(Any, logger)
 
     coupler.run()
 
@@ -1495,21 +1509,27 @@ def test_host_and_scanned_run_use_runtime_component_helper(
         "vercor.runtime.runner.step_runtime_component", fake_runtime_step
     )
 
-    coupler.components = cast(Any, {"ATM": _HostRunComponent("ATM")})
-    coupler.run_sequence = ("ATM",)
-    coupler.run()
+    host_coupler = Coupler(
+        clock=coupler.clock,
+        components=(cast(Any, _HostRunComponent("ATM")),),
+        run_order=("ATM",),
+    )
+    host_coupler.run()
     run_events = list(events)
     events.clear()
 
     timestamp = coupler.clock.start
     atmosphere = _RunComponent("ATM", [], timestamp)
     ocean = _RunComponent("OCN", [], timestamp)
-    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
+    scan_coupler = Coupler(
+        clock=coupler.clock,
+        components=(cast(Any, atmosphere), cast(Any, ocean)),
+        run_order=(
+            "ATM",
+            "OCN",
+        ),
     )
-    run_scanned_coupler(coupler)
+    run_scanned_coupler(scan_coupler)
 
     assert run_events == ["run:ATM"]
     assert events == ["scan:ATM", "scan:OCN"]

@@ -40,7 +40,7 @@ from vercor.output.variables import OutputVariable
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 class _RecordingLogger:
@@ -249,14 +249,14 @@ def _make_coupler(
     *,
     dt_seconds: float,
     run_order: list[str],
-    settings: VercorSettings | None = None,
+    settings: Settings | None = None,
 ) -> SetupContext:
     return SetupContext(
         start=datetime(2000, 1, 1),
         dt_seconds=dt_seconds,
         logger=cast(Any, _RecordingLogger()),
-        settings=settings or VercorSettings(),
-        run_sequence=tuple(run_order),
+        settings=settings or Settings(),
+        run_order=tuple(run_order),
     )
 
 
@@ -608,7 +608,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     component.name = "ATM"
     component.grid = make_test_grid()
     component.data = {}
-    component.settings = VercorSettings()
+    component.settings = Settings()
     component.save_interval = timedelta(days=1)
     component.output_frequency = None
     component.forcing_data = "provided-forcing"
@@ -696,7 +696,7 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
     component.name = "ATM"
     component.grid = make_test_grid()
     component.data = {}
-    component.settings = VercorSettings()
+    component.settings = Settings()
     component.save_interval = timedelta(days=1)
     component.output_frequency = None
     component.forcing_data = None
@@ -759,7 +759,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     component.name = "ATM"
     component.grid = make_test_grid(name="atm")
-    component.settings = VercorSettings()
+    component.settings = Settings()
     component.data = {
         "sea_surface_temperature": np.asarray([[np.nan, 281.0], [282.0, 283.0]]),
         "land_surface_temperature": np.asarray([[270.0, np.nan], [0.0, 284.0]]),
@@ -886,9 +886,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         fake_record_jax_gcm_period_output,
     )
 
-    coupler = _make_coupler(
-        dt_seconds=3600.0, run_order=["ATM"], settings=VercorSettings()
-    )
+    coupler = _make_coupler(dt_seconds=3600.0, run_order=["ATM"], settings=Settings())
     runtime_data = dict(component.data)
     runtime_incoming: dict[str, Any] = {}
     runtime_outgoing: dict[str, Any] = {}
@@ -1253,7 +1251,7 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
     captured: dict[str, np.ndarray] = {}
 
     def fake_compute_ocean_surface_fluxes(
-        settings: VercorSettings,
+        settings: Settings,
         mask: np.ndarray,
         model_level_height: np.ndarray,
         u_velocity: np.ndarray,
@@ -1305,7 +1303,7 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
     taux, tauy, qnet, qnec = veros_fluxes_module.compute_fluxes(
         component._veros_state,
         component.data,
-        VercorSettings(),
+        Settings(),
     )
 
     assert isinstance(taux, jax.Array)
@@ -1761,7 +1759,7 @@ def test_veros_initialize_can_spin_up_and_extract_surface_temperature() -> None:
         latitude=np.arange(4.0),
     )
     component.data = {}
-    component.settings = VercorSettings()
+    component.settings = Settings()
     component.output_adapter = _make_veros_output_adapter()
 
     step_calls = {"count": 0}
@@ -1808,7 +1806,7 @@ def test_veros_initialize_spinup_accumulates_selected_outputs(
         latitude=np.arange(4.0),
     )
     component.data = {}
-    component.settings = VercorSettings()
+    component.settings = Settings()
     component.output_adapter = _make_veros_output_adapter()
 
     accumulated_states: list[Any] = []
@@ -1939,7 +1937,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         latitude=np.arange(4.0),
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
-    component.settings = VercorSettings()
+    component.settings = Settings()
 
     set_calls: list[tuple[str, np.ndarray]] = []
 
@@ -2062,7 +2060,7 @@ def test_veros_step_records_selected_outputs_and_writes_on_gate(
 
     context = StepContext(
         dt_seconds=86400.0,
-        settings=VercorSettings(),
+        settings=Settings(),
         time=datetime(2000, 1, 2),
         logger=None,
     )
@@ -2119,7 +2117,7 @@ def test_veros_step_skips_output_when_no_variables_selected(
 
     context = StepContext(
         dt_seconds=86400.0,
-        settings=VercorSettings(),
+        settings=Settings(),
         time=datetime(2000, 1, 2),
         logger=None,
     )
@@ -2146,7 +2144,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
         latitude=np.arange(4.0),
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
-    component.settings = VercorSettings()
+    component.settings = Settings()
 
     set_calls: list[tuple[str, np.ndarray]] = []
 

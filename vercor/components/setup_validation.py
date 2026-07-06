@@ -5,7 +5,7 @@ from typing import Any
 from vercor.exceptions import ComponentError
 from vercor.field_layout import validate_component_data_layout
 from vercor.grid import RectilinearGrid
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 def validate_component_setup(component: Any) -> None:
@@ -36,10 +36,10 @@ def validate_component_setup(component: Any) -> None:
             f"Component '{component.name}' has invalid setup attribute 'data'; "
             "expected dict[str, RuntimeArray]."
         )
-    if not isinstance(component.settings, VercorSettings):
+    if not isinstance(component.settings, Settings):
         raise ComponentError(
             f"Component '{component.name}' has invalid setup attribute 'settings'; "
-            "expected VercorSettings."
+            "expected Settings."
         )
     validate_component_data_layout(
         component_name=component.name,

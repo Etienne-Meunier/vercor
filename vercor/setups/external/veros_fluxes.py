@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_real_array
 from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.setups.external.veros_runtime_settings import configure_veros_runtime
 from vercor.types import RuntimeArray
 
@@ -19,7 +19,7 @@ from veros.state import VerosState  # noqa: E402
 def compute_fluxes(
     veros_state: VerosState,
     runtime_fields: Mapping[str, RuntimeArray],
-    settings: VercorSettings,
+    settings: Settings,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """Compute atmosphere-ocean fluxes from explicit Veros and runtime fields."""
 

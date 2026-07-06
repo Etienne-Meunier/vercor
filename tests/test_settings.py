@@ -13,12 +13,11 @@ from vercor.settings import (
     DEFAULT_SETTINGS,
     SettingSpec,
     Settings,
-    VercorSettings,
 )
 
 
 def test_default_settings_are_metadata_records() -> None:
-    assert Settings is VercorSettings
+    assert Settings is Settings
     assert isinstance(DEFAULT_SETTINGS["enable_x64"], SettingSpec)
     assert DEFAULT_SETTINGS["enable_x64"].value is False
     assert DEFAULT_SETTINGS["enable_x64"].description
@@ -29,7 +28,7 @@ def test_default_settings_are_metadata_records() -> None:
 
 
 def test_constructor_overrides_known_setting_without_losing_metadata() -> None:
-    settings = VercorSettings(enable_x64=True)
+    settings = Settings(enable_x64=True)
 
     assert settings.enable_x64 is True
     metadata = settings.get_metadata("enable_x64")
@@ -39,7 +38,7 @@ def test_constructor_overrides_known_setting_without_losing_metadata() -> None:
 
 
 def test_constructor_adds_unknown_kwargs_as_custom_settings() -> None:
-    settings = VercorSettings(custom_parameter=3.0)
+    settings = Settings(custom_parameter=3.0)
 
     assert settings.custom_parameter == 3.0
     assert settings.get_metadata("custom_parameter") == SettingSpec(3.0, "-", "-")
@@ -47,38 +46,38 @@ def test_constructor_adds_unknown_kwargs_as_custom_settings() -> None:
 
 def test_constructor_preserves_explicit_settings_metadata() -> None:
     metadata = SettingSpec(600.0, "Tracer timestep", "s")
-    settings = VercorSettings(dt_tracer=metadata)
+    settings = Settings(dt_tracer=metadata)
 
     assert settings.dt_tracer == 600.0
     assert settings.get_metadata("dt_tracer") == metadata
 
 
-def test_add_setting_rejects_duplicates() -> None:
-    settings = VercorSettings()
+def test_add_rejects_duplicates() -> None:
+    settings = Settings()
 
     with pytest.raises(KeyError, match="enable_x64"):
-        settings.add_setting("enable_x64", True)
+        settings.add("enable_x64", True)
 
 
-def test_set_value_rejects_unknown_settings() -> None:
-    settings = VercorSettings()
+def test_set_rejects_unknown_settings() -> None:
+    settings = Settings()
 
     with pytest.raises(KeyError, match="missing"):
-        settings.set_value("missing", 1)
+        settings.set("missing", 1)
 
 
 def test_default_settings_are_copied_per_instance() -> None:
-    left = VercorSettings()
-    right = VercorSettings()
+    left = Settings()
+    right = Settings()
 
-    left.set_value("enable_x64", True)
-    left.add_setting("local_only", 1)
+    left.set("enable_x64", True)
+    left.add("local_only", 1)
 
     assert right.enable_x64 is False
-    assert "local_only" not in right.as_values()
+    assert "local_only" not in right.as_dict()
 
 
-def test_settings_v3_short_methods_delegate_to_legacy_methods() -> None:
+def test_settings_canonical_methods_update_values_and_metadata() -> None:
     settings = Settings()
 
     settings.add("local", 1.0, description="Local value", units="1")
@@ -96,13 +95,13 @@ def test_settings_container_uses_direct_default_mapping_copy() -> None:
 
 
 def test_attribute_access_and_assignment_update_setting_values() -> None:
-    settings = VercorSettings()
+    settings = Settings()
 
     settings.enable_x64 = True
     settings.year_in_seconds = 12.0
     settings.cappa = 0.287
 
-    assert settings.get_value("enable_x64") is True
+    assert settings.get("enable_x64") is True
     assert settings.get_metadata("year_in_seconds").value == 12.0
     assert settings.get_metadata("cappa") == SettingSpec(
         0.287,
@@ -114,16 +113,16 @@ def test_attribute_access_and_assignment_update_setting_values() -> None:
 
 
 def test_known_setting_attributes_are_typed_annotations_not_descriptors() -> None:
-    annotations = VercorSettings.__annotations__
+    annotations = Settings.__annotations__
 
     for name in DEFAULT_SETTINGS:
         assert name in annotations
-        assert name not in vars(VercorSettings)
-    assert isinstance(VercorSettings.dtype_policy, property)
+        assert name not in vars(Settings)
+    assert isinstance(Settings.dtype_policy, property)
 
 
 def test_dir_lists_default_and_custom_settings() -> None:
-    settings = VercorSettings(custom_parameter=3.0)
+    settings = Settings(custom_parameter=3.0)
 
     names = dir(settings)
 
@@ -138,7 +137,7 @@ def _precision_protocol_value(settings: SupportsEnableX64) -> bool:
 
 
 def test_settings_satisfy_precision_protocol_after_dynamic_refactor() -> None:
-    settings = VercorSettings(enable_x64=True)
+    settings = Settings(enable_x64=True)
 
     assert _precision_protocol_value(settings) is True
 

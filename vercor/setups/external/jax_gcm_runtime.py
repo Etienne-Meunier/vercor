@@ -12,7 +12,7 @@ from vercor.components import Component, StepContext, StepResult
 from vercor.dtypes import as_jax_real_array, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.pytree import PyTreeNodeMixin
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.setups.external._jax_gcm_pytree import (
     tree_mean,
     tree_stack,
@@ -165,7 +165,7 @@ def step_jax_gcm_runtime(
     state: "JAXGCMSetupState",
     fields: Mapping[str, Any],
     payload: Any | None,
-    settings: VercorSettings,
+    settings: Settings,
 ) -> tuple[StepResult, Any, Any]:
     """Advance JAXGCM runtime state and return raw prediction details."""
 

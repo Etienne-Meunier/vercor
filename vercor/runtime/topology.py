@@ -11,7 +11,7 @@ from vercor.runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
 )
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -21,7 +21,7 @@ def build_exchange_topology(
     *,
     components: Mapping[str, "Component"],
     exchanges: Sequence[Exchange],
-    settings: VercorSettings,
+    settings: Settings,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
 ) -> ExchangeTopologyState:

@@ -24,7 +24,7 @@ from vercor.fluxes.vertical_coordinates import (
     compute_hybrid_pressure_levels,
     get_altitudes_hybrid_sigma_levels,
 )
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 def _ocean_state(shape: tuple[int, int] = (3, 4)) -> dict[str, np.ndarray]:
@@ -102,7 +102,7 @@ def test_compute_hybrid_pressure_levels_matches_hybrid_definition() -> None:
 
 
 def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     sp = np.full((2, 2), 101_325.0)
     hya = np.array([100.0, 1_000.0, 5_000.0, 10_000.0, 20_000.0])
     hyb = np.array([0.0, 0.1, 0.3, 0.5, 0.8])
@@ -120,7 +120,7 @@ def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -
 
 
 def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     ph = jnp.asarray([0.0, 1_000.0, 5_000.0, 100_000.0])[None, None, :]
     t = jnp.full((1, 1, 3), 260.0)
     q = jnp.zeros((1, 1, 3))
@@ -163,7 +163,7 @@ def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None
 
 
 def test_density_and_potential_temperature_match_closed_form() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     pf = np.array([[100_000.0, 90_000.0]])
     t = np.array([[300.0, 280.0]])
 
@@ -178,7 +178,7 @@ def test_density_and_potential_temperature_match_closed_form() -> None:
 
 
 def test_flux_utility_kernels_support_jit() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     tk = jnp.asarray([260.0, 280.0, 300.0])
     ps = jnp.full(3, 101_325.0)
     sp = jnp.asarray([[100_000.0, 95_000.0], [101_000.0, 99_000.0]])
@@ -240,7 +240,7 @@ def test_flux_utility_kernels_support_jit() -> None:
 def test_compute_ocean_surface_fluxes_produces_finite_and_physically_consistent_signs() -> (
     None
 ):
-    settings = VercorSettings()
+    settings = Settings()
     state = _ocean_state()
 
     sen, lat, lwup, evap, taux, tauy, *_ = compute_ocean_surface_fluxes(
@@ -272,7 +272,7 @@ def test_compute_ocean_surface_fluxes_produces_finite_and_physically_consistent_
 
 
 def test_compute_ocean_surface_fluxes_matches_reference_state() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     state = _ocean_state()
 
     out = compute_ocean_surface_fluxes(
@@ -316,7 +316,7 @@ def test_compute_ocean_surface_fluxes_matches_reference_state() -> None:
 def test_compute_ocean_surface_fluxes_respects_mask_for_surface_exchange_outputs() -> (
     None
 ):
-    settings = VercorSettings()
+    settings = Settings()
     state = _ocean_state(shape=(2, 3))
     state["mask"] = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
 
@@ -341,7 +341,7 @@ def test_compute_ocean_surface_fluxes_respects_mask_for_surface_exchange_outputs
 
 
 def test_flux_kernels_support_jit_and_gradients() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     state = _ocean_state(shape=(1, 1))
     mask = state["mask"]
     zbot = state["zbot"]
@@ -424,7 +424,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
 
 
 def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     shape = (2, 3)
     mask = np.ones(shape)
     zbot = np.full(shape, 10.0)
@@ -476,7 +476,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
 
 
 def test_shr_flux_atmIce_is_finite_and_masked_outputs_are_zeroed() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     mask = np.array([[1.0, 0.0], [1.0, 0.0]])
     shape = mask.shape
 

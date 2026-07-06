@@ -18,7 +18,7 @@ def runtime_facade_inputs(coupler: Coupler) -> runtime_facade.RuntimeFacadeInput
         coupler.components,
         coupler.exchanges,
         coupler._runtime_resources,
-        coupler.run_sequence,
+        coupler.run_order,
         coupler.clock,
         coupler.settings,
     )
@@ -55,7 +55,7 @@ def run_scanned_coupler(
     )
     return run_scanned_runtime(
         prepared,
-        run_sequence=tuple(coupler.run_sequence),
+        run_order=tuple(coupler.run_order),
         clock=coupler.clock,
         settings=coupler.settings,
         logger=coupler.logger,

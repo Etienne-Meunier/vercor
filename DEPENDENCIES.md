@@ -1,7 +1,7 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/physical_constants.py` - physical and bulk-formula default settings with AD-owned semantics
 3. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
-4. `vercor/settings.py` - unified metadata-backed public `Settings` container, deprecated `VercorSettings` alias, `SettingSpec` metadata records, and static runtime controls built on (2)
+4. `vercor/settings.py` - unified metadata-backed public `Settings` container, `SettingSpec` metadata records, and static runtime controls built on (2)
 5. `vercor/field_names.py` - canonical exchange-field vocabulary
 6. `vercor/calendar.py` and `vercor/forcing_index.py` - calendar constants, model-calendar datetime values, leap-year logic, month/day conversion, and daily forcing-index policy
 7. `vercor/fluxes/vertical_coordinates.py` - hybrid/sigma-coordinate pressure and altitude helpers built on (1, 4)

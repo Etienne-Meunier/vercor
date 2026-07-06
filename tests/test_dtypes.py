@@ -15,11 +15,11 @@ from vercor.dtypes import (
     jax_real_dtype,
     jax_zeros,
 )
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 def test_settings_disable_x64_maps_real_arrays_to_float32() -> None:
-    settings = VercorSettings(enable_x64=False)
+    settings = Settings(enable_x64=False)
 
     assert settings.dtype_policy == DTypePolicy(enable_x64=False)
     assert jax_real_dtype(settings) == jnp.float32
@@ -32,7 +32,7 @@ def test_settings_disable_x64_maps_real_arrays_to_float32() -> None:
 
 
 def test_settings_enable_x64_maps_real_arrays_to_float64() -> None:
-    settings = VercorSettings(enable_x64=True)
+    settings = Settings(enable_x64=True)
 
     assert settings.dtype_policy == DTypePolicy(enable_x64=True)
     assert jax_real_dtype(settings) == jnp.float64
@@ -54,16 +54,16 @@ def test_dtypes_module_does_not_export_numpy_dtype_helpers() -> None:
 
 
 def test_dtype_policy_reads_updated_settings_value() -> None:
-    settings = VercorSettings(enable_x64=False)
+    settings = Settings(enable_x64=False)
 
-    settings.set_value("enable_x64", True)
+    settings.set("enable_x64", True)
 
     assert settings.dtype_policy == DTypePolicy(enable_x64=True)
 
 
 def test_index_dtype_is_int32_for_both_real_precision_modes() -> None:
     for enable_x64 in (False, True):
-        settings = VercorSettings(enable_x64=enable_x64)
+        settings = Settings(enable_x64=enable_x64)
 
         assert jax_index_dtype(settings) == jnp.int32
         assert np.dtype(jax_index_dtype(settings)) == np.dtype(np.int32)

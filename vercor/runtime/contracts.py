@@ -96,7 +96,7 @@ def build_runtime_contracts(
     return contracts
 
 
-def exchange_key_name(source: str, destination: str, interpolation_type: str) -> str:
+def exchange_key_name(source: str, destination: str, regrid_key: str) -> str:
     """Return a stable field-store key for exchange metadata arrays."""
 
-    return f"{source}|{destination}|{interpolation_type}"
+    return f"{source}|{destination}|{regrid_key}"

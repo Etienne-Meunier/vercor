@@ -75,7 +75,7 @@ if __name__ == "__main__":
 
     # Coupler
     components: list[Any] = [atm, ocn, ice, lnd]
-    cpl = Coupler.from_components(
+    cpl = Coupler(
         clock=clock,
         components=components,
         run_order=run_order,

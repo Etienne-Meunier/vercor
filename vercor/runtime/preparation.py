@@ -8,7 +8,7 @@ from vercor.runtime.coupler_state import (
 )
 from vercor.runtime.dispatch_context import build_runtime_dispatch_context
 from vercor.runtime.driver import prime_runtime_outgoing
-from vercor._run_order import normalize_run_sequence
+from vercor._run_order import normalize_run_order
 from vercor.runtime.state_validation import (
     validate_runtime_state as _validate_runtime_state,
 )
@@ -62,7 +62,7 @@ def validate_runtime_state(
         exchanges=inputs.exchanges,
         regridders=inputs.runtime_resources.topology_maps.regridders,
         contracts=inputs.runtime_resources.runtime_contracts,
-        run_sequence=tuple(normalize_run_sequence(inputs.run_sequence)),
+        run_order=tuple(normalize_run_order(inputs.run_order)),
     )
     return inputs.runtime_resources.runtime_contracts
 
@@ -78,8 +78,8 @@ def create_runtime_state(
         inputs=inputs,
         prefill_missing=prefill_missing,
     )
-    run_sequence = normalize_run_sequence(inputs.run_sequence)
-    if prefill_missing and tuple(run_sequence):
+    run_order = normalize_run_order(inputs.run_order)
+    if prefill_missing and tuple(run_order):
         dispatch_context = build_runtime_dispatch_context(
             inputs.components,
             inputs.exchanges,
@@ -90,7 +90,7 @@ def create_runtime_state(
         )
         runtime_state = prime_runtime_outgoing(
             runtime_state,
-            tuple(run_sequence),
+            tuple(run_order),
             dispatch_context=dispatch_context,
             step_info=initial_runtime_step_info(inputs.clock, inputs.settings),
         )

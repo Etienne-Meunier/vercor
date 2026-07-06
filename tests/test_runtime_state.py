@@ -18,7 +18,7 @@ from vercor.clock import Clock
 from vercor.coupler import Coupler
 from vercor.exchange import Exchange
 from vercor.components.contexts import SetupContext
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.component_state import create_runtime_component_state
@@ -31,7 +31,7 @@ from vercor.types import RuntimeArray
 
 
 class _RuntimeSendComponent(DataComponent):
-    def __init__(self, settings: VercorSettings) -> None:
+    def __init__(self, settings: Settings) -> None:
         super().__init__("DATA", make_test_grid(name="runtime-send"))
         self.settings = settings
 
@@ -43,7 +43,7 @@ def test_runtime_contract_prefill_uses_component_float32_policy() -> None:
     component = DataComponent.from_fields(
         name="DATA",
         grid=make_test_grid(name="runtime-prefill-policy"),
-        settings=VercorSettings(enable_x64=False),
+        settings=Settings(enable_x64=False),
     )
     state = create_runtime_component_state(
         component,
@@ -1030,7 +1030,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(VercorSettings(apply_time_interpolation=True))
+    component = _RuntimeSendComponent(Settings(apply_time_interpolation=True))
     contract = RuntimeComponentContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
@@ -1072,7 +1072,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(VercorSettings(apply_daily_time_selection=True))
+    component = _RuntimeSendComponent(Settings(apply_daily_time_selection=True))
     contract = RuntimeComponentContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],

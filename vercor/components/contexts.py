@@ -6,7 +6,7 @@ from datetime import datetime
 
 from vercor.calendar import ModelDateTime
 from vercor.jax_logging import LoggerLike
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 @dataclass(frozen=True)
@@ -15,8 +15,8 @@ class SetupContext:
 
     start: datetime | ModelDateTime
     dt_seconds: float
-    run_sequence: Sequence[str]
-    settings: VercorSettings
+    run_order: Sequence[str]
+    settings: Settings
     logger: LoggerLike
 
 
@@ -25,7 +25,7 @@ class StepContext:
     """Minimal runtime step context passed to component step boundaries."""
 
     dt_seconds: float
-    settings: VercorSettings
+    settings: Settings
     time: datetime | ModelDateTime | None = None
     logger: LoggerLike | None = None
     step: int = 0

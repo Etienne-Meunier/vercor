@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_real_array
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -39,7 +39,7 @@ def compute_hybrid_pressure_levels(
 
 
 def get_altitudes_hybrid_sigma_levels(
-    settings: VercorSettings,
+    settings: Settings,
     t: RuntimeArray,
     q: RuntimeArray,
     ph: RuntimeArray,

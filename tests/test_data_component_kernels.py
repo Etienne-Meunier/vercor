@@ -27,11 +27,11 @@ from vercor.setups.data.erainterim_ocean import (
 )
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.runtime.views import RuntimeComponentView
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
-    settings = VercorSettings()
+    settings = Settings()
     lnsp = jnp.log(jnp.asarray([[100000.0, 100500.0], [101000.0, 101500.0]]))
     hyai = jnp.asarray([1000.0, 2000.0, 3000.0])
     hybi = jnp.asarray([0.10, 0.20, 0.30])

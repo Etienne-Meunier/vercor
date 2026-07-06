@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from vercor.exceptions import ExchangerError
-from vercor.exchange import Exchange
+from vercor.exchange import Exchange, _exchange_regrid_key
 from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.stores import RuntimeFieldStore
 
@@ -59,7 +59,7 @@ def dispatch_component_exchanges(
     for exchange in exchanges:
         source_component = state.get_component_state(exchange.source)
         source_fields = source_component.outgoing
-        key = (exchange.source, exchange.target, exchange.interpolation_type)
+        key = (exchange.source, exchange.target, _exchange_regrid_key(exchange))
         regrid = regridders[key]
         fractional_mask = state.get_fractional_mask(*key)
 

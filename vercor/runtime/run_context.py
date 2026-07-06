@@ -13,7 +13,7 @@ from vercor.runtime.interrupts import RuntimeInterruptController
 class RuntimeRunContext:
     """Static inputs required to execute one configured coupler runtime."""
 
-    run_sequence: Sequence[str]
+    run_order: Sequence[str]
     clock: Clock
     logger: LoggerLike
     dispatch_context: RuntimeDispatchContext

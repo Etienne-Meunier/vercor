@@ -5,11 +5,11 @@ from jax.typing import ArrayLike
 
 from vercor.dtypes import as_jax_real_array
 from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 def _compute_stability_terms(
-    settings: VercorSettings,
+    settings: Settings,
     zbot: jax.Array,
     thref: jax.Array,
     qbot: jax.Array,
@@ -34,7 +34,7 @@ def _compute_stability_terms(
 
 
 def _iterate_ocean_exchange(
-    settings: VercorSettings,
+    settings: Settings,
     zbot: jax.Array,
     thbot: jax.Array,
     qbot: jax.Array,
@@ -84,7 +84,7 @@ def _iterate_ocean_exchange(
 
 
 def compute_ocean_surface_fluxes(
-    settings: VercorSettings,
+    settings: Settings,
     mask: ArrayLike,
     zbot: ArrayLike,
     ubot: ArrayLike,
@@ -287,7 +287,7 @@ def compute_ocean_surface_fluxes(
 
 
 def shr_flux_atmIce(
-    settings: VercorSettings,
+    settings: Settings,
     mask: ArrayLike,
     zbot: ArrayLike,
     ubot: ArrayLike,

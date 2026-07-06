@@ -6,7 +6,7 @@ from datetime import timedelta
 from functools import partial
 from typing import Optional
 
-from vercor.components import HostComponent
+from vercor.components import ComponentHooks, HostComponent
 from vercor.jax_logging import LoggerLike
 from vercor.output.adapters import register_component_snapshot_writer
 import vercor.setups.external.camulator_contracts as _camulator_contracts
@@ -50,7 +50,7 @@ def make_camulator_gcm(
         inputs=("sea_surface_temperature", "land_surface_temperature"),
         outputs=_camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
         defaults=_camulator_contracts.camulator_runtime_field_defaults(),
-        initialize=state.initialize,
+        hooks=ComponentHooks(initialize=state.initialize),
     )
     register_component_snapshot_writer(
         component,

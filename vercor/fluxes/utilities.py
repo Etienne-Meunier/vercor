@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.dtypes import as_jax_real_array
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 
 def _virtual_temperature_from_specific_humidity(
@@ -87,7 +87,7 @@ def psixhu(xd: ArrayLike) -> jax.Array:
 
 
 def compute_air_density(
-    settings: VercorSettings,
+    settings: Settings,
     pf: ArrayLike,
     t: ArrayLike,
 ) -> jax.Array:
@@ -98,7 +98,7 @@ def compute_air_density(
 
 
 def compute_potential_temperature(
-    settings: VercorSettings,
+    settings: Settings,
     tbot: ArrayLike,
     pf: ArrayLike,
 ) -> jax.Array:

@@ -6,11 +6,7 @@ from typing import TYPE_CHECKING, final
 from vercor.components.contracts import (
     AuthorFieldValues,
     ComponentHooks,
-    ComponentCreatePayloadHook,
     FieldNames,
-    ComponentInitializeHook,
-    ComponentPrefillHook,
-    ComponentValidateHook,
 )
 from vercor.components._contracts import (
     merge_component_outputs,
@@ -19,7 +15,7 @@ from vercor.components._constructor_options import normalize_lifecycle_hooks
 from vercor.components.base import Component
 from vercor.dtypes import PrecisionPolicy
 from vercor.grid import RectilinearGrid
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.contexts import StepContext
@@ -43,14 +39,10 @@ class DataComponent(Component):
         name: str,
         grid: RectilinearGrid,
         fields: AuthorFieldValues = None,
-        settings: VercorSettings | None = None,
+        settings: Settings | None = None,
         *,
         outputs: FieldNames = (),
         hooks: ComponentHooks | None = None,
-        initialize: ComponentInitializeHook | None = None,
-        create_runtime_payload: ComponentCreatePayloadHook | None = None,
-        prefill_runtime_state_fields: ComponentPrefillHook | None = None,
-        validate_runtime_state: ComponentValidateHook | None = None,
     ) -> "DataComponent":
         """Create a data-only component from user-provided grid fields.
 
@@ -70,13 +62,7 @@ class DataComponent(Component):
                 component.field_spec,
                 outputs,
             )
-        component._lifecycle_hooks = normalize_lifecycle_hooks(
-            hooks=hooks,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill_runtime_state_fields,
-            validate_runtime_state=validate_runtime_state,
-        )
+        component._lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
         return component
 
     def seed_fields(

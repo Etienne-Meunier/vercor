@@ -87,7 +87,8 @@ def test_public_lifecycle_hook_types_are_owned_by_component_contracts() -> None:
         private_imports = _imported_names_from(path, "vercor.components._lifecycle")
         public_imports = _imported_names_from(path, "vercor.components.contracts")
         assert hook_names.isdisjoint(private_imports), path
-        assert hook_names.issubset(public_imports), path
+        assert "ComponentHooks" in public_imports, path
+        assert hook_names.isdisjoint(public_imports), path
 
 
 @pytest.mark.fast_always

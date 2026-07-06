@@ -8,11 +8,11 @@ from typing import cast
 import jax
 
 from vercor.calendar import ModelDateTime
-from vercor.clock import Clock
+from vercor.clock import Clock, forcing_year_type_for_calendar
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.forcing_index import daily_forcing_index
 from vercor.pytree import PyTreeNodeMixin
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
@@ -62,7 +62,7 @@ class RuntimeStepInfo(PyTreeNodeMixin):
 def runtime_step_info_from_times(
     times: Sequence[datetime | ModelDateTime],
     *,
-    year_type: str,
+    forcing_year_type: str,
     year_in_seconds: float,
 ) -> RuntimeStepInfo:
     """Build runtime time-selection metadata for one or more timestamps."""
@@ -85,7 +85,9 @@ def runtime_step_info_from_times(
         monthly_index_right.append(n2)
         monthly_weight_left.append(f1)
         monthly_weight_right.append(f2)
-        daily_index.append(daily_forcing_index(time, year_type=year_type, no_leap=True))
+        daily_index.append(
+            daily_forcing_index(time, year_type=forcing_year_type, no_leap=True)
+        )
 
     return RuntimeStepInfo.from_sequences(
         monthly_index_left,
@@ -96,20 +98,18 @@ def runtime_step_info_from_times(
     )
 
 
-def build_runtime_step_info(clock: Clock, settings: VercorSettings) -> RuntimeStepInfo:
+def build_runtime_step_info(clock: Clock, settings: Settings) -> RuntimeStepInfo:
     """Build scanned-runtime time metadata for every clock step."""
 
     times = [time for _, time, _ in clock.iter()]
     return runtime_step_info_from_times(
         times,
-        year_type=clock.year_type,
+        forcing_year_type=forcing_year_type_for_calendar(clock.calendar),
         year_in_seconds=settings.year_in_seconds,
     )
 
 
-def initial_runtime_step_info(
-    clock: Clock, settings: VercorSettings
-) -> RuntimeStepInfo:
+def initial_runtime_step_info(clock: Clock, settings: Settings) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for the first clock step."""
 
     clock_iter = clock.iter()
@@ -123,13 +123,13 @@ def initial_runtime_step_info(
 def scalar_runtime_step_info(
     time: datetime | ModelDateTime,
     clock: Clock,
-    settings: VercorSettings,
+    settings: Settings,
 ) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for one clock timestamp."""
 
     batched_step_info = runtime_step_info_from_times(
         [time],
-        year_type=clock.year_type,
+        forcing_year_type=forcing_year_type_for_calendar(clock.calendar),
         year_in_seconds=settings.year_in_seconds,
     )
     return cast(

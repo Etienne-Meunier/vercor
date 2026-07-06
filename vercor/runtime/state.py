@@ -120,12 +120,12 @@ class CouplerState(PyTreeNodeMixin):
         )
 
     def get_fractional_mask(
-        self, source: str, destination: str, interpolation_type: str
+        self, source: str, destination: str, regrid_key: str
     ) -> RuntimeArray:
         """Return the fractional mask for an exchange."""
 
         return self.fractional_masks.get(
-            exchange_key_name(source, destination, interpolation_type)
+            exchange_key_name(source, destination, regrid_key)
         )
 
 

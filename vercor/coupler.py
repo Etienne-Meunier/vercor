@@ -4,8 +4,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Optional
-import warnings
+from typing import TYPE_CHECKING, Any, Optional
 
 from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
@@ -17,15 +16,13 @@ from vercor.jax_logging import (
     configure_python_logger,
     setup_logger as _setup_logger,
 )
-from vercor._run_order import normalize_run_sequence
+from vercor._run_order import normalize_run_order
 import vercor.runtime.facade as _runtime_facade
 from vercor.runtime.resources import CouplerRuntimeResources
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
-    import vercor.runtime.state as _runtime_state_module
-    import vercor.runtime.views as _runtime_views_module
 
 
 class Coupler:
@@ -59,7 +56,6 @@ class Coupler:
         components: Iterable["Component"] = (),
         exchanges: Iterable[Exchange] = (),
         run_order: Sequence[str] = (),
-        run_sequence: Sequence[str] | None = None,
         settings: Settings | None = None,
         logger: LoggerLike | None = None,
         log_level: int | str = "INFO",
@@ -75,13 +71,9 @@ class Coupler:
             self._components
         )
         self._exchanges: tuple[Exchange, ...] = ()
-        self._run_sequence: tuple[str, ...] = ()
+        self._run_order: tuple[str, ...] = ()
         self._runtime_resources = CouplerRuntimeResources()
-
-        configured_run_order = self._resolve_initial_run_order(
-            run_order=run_order,
-            run_sequence=run_sequence,
-        )
+        configured_run_order = normalize_run_order(run_order)
 
         if isinstance(self.logger, logging.Logger):
             self.logger = JaxCallbackLogger(
@@ -101,40 +93,6 @@ class Coupler:
         if configured_run_order:
             self.set_run_order(configured_run_order)
 
-    def _resolve_initial_run_order(
-        self,
-        *,
-        run_order: Sequence[str],
-        run_sequence: Sequence[str] | None,
-    ) -> tuple[str, ...]:
-        """Normalize canonical or deprecated run-order constructor input."""
-
-        if run_sequence is not None:
-            if run_order:
-                raise TypeError(
-                    "Use either run_order=... or run_sequence=..., not both"
-                )
-            warnings.warn(
-                "Coupler(run_sequence=...) is deprecated; use run_order=... instead.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-            return normalize_run_sequence(run_sequence)
-        return normalize_run_sequence(run_order)
-
-    def _replace_components(self, components: dict[str, "Component"]) -> None:
-        """Replace component registration and invalidate runtime resources."""
-
-        self._components = dict(components)
-        self._components_view = MappingProxyType(self._components)
-        self._invalidate_runtime_resources()
-
-    def _replace_exchanges(self, exchanges: Iterable[Exchange]) -> None:
-        """Replace exchange declarations and invalidate runtime resources."""
-
-        self._exchanges = tuple(exchanges)
-        self._invalidate_runtime_resources()
-
     def _invalidate_runtime_resources(self) -> None:
         """Clear cached runtime topology and contracts after setup changes."""
 
@@ -146,94 +104,17 @@ class Coupler:
 
         return self._components_view
 
-    @components.setter
-    def components(self, components: dict[str, "Component"]) -> None:
-        """Replace registered components through the deprecated mutable facade."""
-
-        warnings.warn(
-            "Assigning Coupler.components is deprecated; pass components to the "
-            "constructor/from_components() or use add_component().",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._replace_components(components)
-
     @property
     def exchanges(self) -> tuple[Exchange, ...]:
         """Return immutable exchange declarations."""
 
         return self._exchanges
 
-    @exchanges.setter
-    def exchanges(self, exchanges: Iterable[Exchange]) -> None:
-        """Replace exchange declarations through the deprecated mutable facade."""
-
-        warnings.warn(
-            "Assigning Coupler.exchanges is deprecated; use add_exchange() or "
-            "add_exchanges().",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._replace_exchanges(exchanges)
-
-    @classmethod
-    def from_components(
-        cls,
-        *,
-        clock: Clock,
-        components: Iterable["Component"],
-        exchanges: Iterable[Exchange] = (),
-        run_order: Sequence[str] = (),
-        settings: Settings | None = None,
-        log_level: int | str = "INFO",
-        logger: LoggerLike | None = None,
-    ) -> "Coupler":
-        """Create a coupler with components, exchanges, and run order configured."""
-
-        return cls(
-            clock=clock,
-            components=components,
-            exchanges=exchanges,
-            run_order=run_order,
-            settings=settings,
-            logger=logger,
-            log_level=log_level,
-        )
-
     @property
     def run_order(self) -> tuple[str, ...]:
         """Return component names in runtime execution order."""
 
-        return self._run_sequence
-
-    @run_order.setter
-    def run_order(self, run_order: Sequence[str]) -> None:
-        """Set component names in runtime execution order."""
-
-        self._run_sequence = normalize_run_sequence(run_order)
-        self._invalidate_runtime_resources()
-
-    @property
-    def run_sequence(self) -> tuple[str, ...]:
-        """Deprecated alias for :attr:`run_order`."""
-
-        warnings.warn(
-            "Coupler.run_sequence is deprecated; use Coupler.run_order instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.run_order
-
-    @run_sequence.setter
-    def run_sequence(self, run_sequence: Sequence[str]) -> None:
-        """Deprecated alias for assigning :attr:`run_order`."""
-
-        warnings.warn(
-            "Coupler.run_sequence is deprecated; use Coupler.run_order instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.run_order = run_sequence
+        return self._run_order
 
     def add_component(
         self,
@@ -279,13 +160,14 @@ class Coupler:
     ) -> None:
         """Set the run order for coupler components."""
 
-        normalized_run_sequence = normalize_run_sequence(run_order)
-        for cname in normalized_run_sequence:
+        normalized_run_order = normalize_run_order(run_order)
+        for cname in normalized_run_order:
             if cname not in self.components.keys():
                 raise CouplerError(f"Component {cname} not registered in coupler")
-        self.run_order = normalized_run_sequence
+        self._run_order = normalized_run_order
+        self._invalidate_runtime_resources()
         self.logger.info(
-            f" Set coupler components run sequence: {', '.join(self.run_order)}"
+            f" Set coupler components run order: {', '.join(self.run_order)}"
         )
 
     def _runtime_inputs(self) -> _runtime_facade.RuntimeFacadeInputs:
@@ -317,7 +199,7 @@ class Coupler:
         self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
         self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
 
-    def state(self, *, prefill: bool = True) -> _runtime_state_module.CouplerState:
+    def state(self, *, prefill: bool = True) -> Any:
         """Create and validate the coupled runtime state."""
 
         return _runtime_facade.create_runtime_state(
@@ -327,9 +209,9 @@ class Coupler:
 
     def view(
         self,
-        state: _runtime_state_module.CouplerState,
+        state: Any,
         name: str,
-    ) -> _runtime_views_module.ComponentView:
+    ) -> Any:
         """Return a component view for diagnostics and output."""
 
         return _runtime_facade.runtime_component_view(
@@ -340,9 +222,9 @@ class Coupler:
 
     def views(
         self,
-        state: _runtime_state_module.CouplerState,
+        state: Any,
         names: Sequence[str] | None = None,
-    ) -> dict[str, _runtime_views_module.ComponentView]:
+    ) -> dict[str, Any]:
         """Return component views for diagnostics and output."""
 
         return _runtime_facade.runtime_component_views(
@@ -351,29 +233,9 @@ class Coupler:
             names=names,
         )
 
-    def finalize(
-        self,
-        final_state: _runtime_state_module.RuntimeCouplerState,
-        output: Optional[Path] = None,
-    ) -> None:
-        """Deprecated wrapper for writing final runtime component state."""
-
-        warnings.warn(
-            "Coupler.finalize(...) is deprecated; use Coupler.write_outputs(...) "
-            "instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        _runtime_facade.finalize(
-            final_state=final_state,
-            inputs=self._runtime_inputs(),
-            output_file_mask=output,
-            logger=self.logger,
-        )
-
     def write_outputs(
         self,
-        state: _runtime_state_module.RuntimeCouplerState,
+        state: Any,
         *,
         output_dir: Path = Path("."),
         filename_template: str = "{component}.runtime_fields.nc",
@@ -402,7 +264,7 @@ class Coupler:
             )
             + "\n"
             f"├── Exchanges: {', '.join(exchange.label for exchange in self.exchanges)}\n"
-            f"└── Run sequence: {', '.join(self.run_order)}"
+            f"└── Run order: {', '.join(self.run_order)}"
         )
 
     def __repr__(self) -> str:
@@ -410,8 +272,8 @@ class Coupler:
 
     def run(
         self,
-        state: _runtime_state_module.RuntimeCouplerState | None = None,
-    ) -> _runtime_state_module.RuntimeCouplerState:
+        state: Any = None,
+    ) -> Any:
         """
         Run all registered components through the unified runtime entrypoint.
 

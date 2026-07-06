@@ -1,17 +1,13 @@
 """Public regridding facade for VerCOR grid-to-grid transfers."""
 
-from vercor.regridders import (
-    BilinearRectilinearRegridder,
-    ConservativeRectilinearRegridder,
-    Regridder,
+from vercor.regridders.bilinear import (
     bilinear,
+)
+from vercor.regridders.conservative import (
     conservative,
 )
 
 __all__ = [
-    "BilinearRectilinearRegridder",
-    "ConservativeRectilinearRegridder",
-    "Regridder",
     "bilinear",
     "conservative",
 ]

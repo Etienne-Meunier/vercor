@@ -23,7 +23,7 @@ from vercor.runtime.progress import (
 from vercor.runtime.run_context import RuntimeRunContext
 from vercor.runtime.state import RuntimeCouplerState
 from vercor.runtime.time import build_runtime_step_info, scalar_runtime_step_info
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -47,7 +47,7 @@ def run_coupler_runtime(
         )
         return run_host_runtime(
             runtime_state,
-            run_sequence=context.run_sequence,
+            run_order=context.run_order,
             clock=context.clock,
             settings=context.dispatch_context.settings,
             logger=context.logger,
@@ -70,7 +70,7 @@ def _run_compiled_scanned_runtime(
         ) -> RuntimeCouplerState:
             return run_scanned_runtime(
                 state,
-                run_sequence=context.run_sequence,
+                run_order=context.run_order,
                 clock=context.clock,
                 settings=context.dispatch_context.settings,
                 logger=context.logger,
@@ -106,9 +106,9 @@ def _warn_non_differentiable_host_runtime(
 def run_host_runtime(
     runtime_state: RuntimeCouplerState,
     *,
-    run_sequence: Sequence[str],
+    run_order: Sequence[str],
     clock: Clock,
-    settings: VercorSettings,
+    settings: Settings,
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
     interrupts: RuntimeInterruptController,
@@ -120,7 +120,7 @@ def run_host_runtime(
         logger.info(runtime_step_progress_message(n, time, dt))
         step_info = scalar_runtime_step_info(time, clock, settings)
 
-        for cname in run_sequence:
+        for cname in run_order:
             interrupts.checkpoint(f"host runtime component {cname}")
             logger.info(runtime_component_progress_message(cname))
             runtime_state = step_runtime_component(
@@ -141,9 +141,9 @@ def run_host_runtime(
 def run_scanned_runtime(
     runtime_state: RuntimeCouplerState,
     *,
-    run_sequence: Sequence[str],
+    run_order: Sequence[str],
     clock: Clock,
-    settings: VercorSettings,
+    settings: Settings,
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
     interrupts: RuntimeInterruptController,
@@ -164,7 +164,7 @@ def run_scanned_runtime(
             step_index,
         )
         log_scanned_step_progress(logger, step_index, step_progress_messages)
-        for cname in run_sequence:
+        for cname in run_order:
             interrupts.scanned_checkpoint(
                 f"scanned runtime component {cname}",
                 step_index,

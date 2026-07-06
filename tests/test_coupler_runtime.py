@@ -10,9 +10,10 @@ import pytest
 
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.clock import Clock
+from vercor.clock import Clock, forcing_year_type_for_calendar
 from vercor.components import (
     Component,
+    ComponentHooks,
     DataComponent,
     HostComponent,
 )
@@ -36,10 +37,10 @@ from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchange import Exchange
 from vercor.forcing_index import daily_forcing_index
 from vercor.grid import RectilinearGrid
-from vercor.regridders import bilinear, conservative
+from vercor.regridding import bilinear, conservative
 from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
@@ -114,14 +115,14 @@ def _make_data_component(
     data: dict[str, jax.Array],
     imports: tuple[str, ...] = (),
     exports: tuple[str, ...] = (),
-    settings: VercorSettings | None = None,
+    settings: Settings | None = None,
 ) -> Any:
     _ = component_type
     component = DataComponent.from_fields(
         name=name,
         grid=grid,
         fields=data,
-        settings=settings or VercorSettings(),
+        settings=settings or Settings(),
     )
     component.declare_fields(inputs=imports, outputs=exports)
     return component
@@ -192,7 +193,7 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
     )
     state.name = "ATM"
     state.grid = grid
-    state.settings = VercorSettings()
+    state.settings = Settings()
     state.data = {
         "sea_surface_temperature": jnp.full(grid.shape, 281.0, dtype=jnp.float64),
         "land_surface_temperature": jnp.full(grid.shape, 3.0, dtype=jnp.float64),
@@ -255,32 +256,34 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
                 include_total_surface_temperature=True
             )
         },
-        create_runtime_payload=(
-            lambda component: jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
-                state
-            )
-        ),
-        prefill_runtime_state_fields=(
-            lambda component, data, incoming, outgoing, contract: (
-                jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
-                    state,
-                    component,
-                    data,
-                    incoming,
-                    outgoing,
-                    contract,
+        hooks=ComponentHooks(
+            create_payload=(
+                lambda component: jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
+                    state
                 )
-            )
-        ),
-        validate_runtime_state=(
-            lambda component, component_state, contract: (
-                jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
-                    state,
-                    component,
-                    component_state,
-                    contract,
+            ),
+            prefill=(
+                lambda component, data, incoming, outgoing, contract: (
+                    jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
+                        state,
+                        component,
+                        data,
+                        incoming,
+                        outgoing,
+                        contract,
+                    )
                 )
-            )
+            ),
+            validate=(
+                lambda component, component_state, contract: (
+                    jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
+                        state,
+                        component,
+                        component_state,
+                        contract,
+                    )
+                )
+            ),
         ),
     )
     component.seed_fields(state.data)
@@ -318,46 +321,46 @@ def _component_state(
 def _make_coupler(steps: int) -> Coupler:
     grid = make_test_grid(name="slab")
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=(
+            make_slab_atmosphere(grid),
+            make_slab_ocean(grid),
+            make_slab_land(grid),
+            make_slab_seaice(grid),
+        ),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=["sensible_heat_flux", "latent_heat_flux"],
+                regrid=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=["latent_heat_flux"],
+                regrid=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="OCN",
+                target="ICE",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "ATM",
+            "OCN",
+            "LND",
+            "ICE",
+        ),
     )
-    coupler.components = {
-        "ATM": make_slab_atmosphere(grid),
-        "OCN": make_slab_ocean(grid),
-        "LND": make_slab_land(grid),
-        "ICE": make_slab_seaice(grid),
-    }
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
-        "LND",
-        "ICE",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=["sensible_heat_flux", "latent_heat_flux"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="ATM",
-            target="LND",
-            fields=["latent_heat_flux"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="OCN",
-            target="ICE",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        ),
-    ]
     key = ("OCN", "ATM", "_identity_factory")
     regridders = cast(
         Any,
@@ -854,44 +857,33 @@ def test_data_forcing_components_run_inside_runtime() -> None:
     monthly_land = monthly_land.at[0].set(
         jnp.asarray([[285.0, 286.0], [287.0, 288.0]], dtype=jnp.float64)
     )
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    ocean = _make_data_component(
+        make_era5_ocean,
+        name="OCN",
+        grid=grid,
+        data={"sea_surface_temperature": monthly_ocean},
+        exports=("sea_surface_temperature",),
+        settings=Settings(apply_time_interpolation=True),
     )
-    coupler.settings.year_in_seconds = 12.0
-    coupler.components = {
-        "OCN": _make_data_component(
-            make_era5_ocean,
-            name="OCN",
-            grid=grid,
-            data={"sea_surface_temperature": monthly_ocean},
-            exports=("sea_surface_temperature",),
-            settings=VercorSettings(apply_time_interpolation=True),
-        ),
-        "LND": _make_data_component(
-            make_era5_land,
-            name="LND",
-            grid=grid,
-            data={"land_surface_temperature": monthly_land},
-            exports=("land_surface_temperature",),
-            settings=VercorSettings(apply_time_interpolation=True),
-        ),
-        "ATM": _make_data_component(
-            make_era5_atmosphere,
-            name="ATM",
-            grid=grid,
-            data={
-                "sea_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
-                "land_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
-            },
-            imports=("sea_surface_temperature", "land_surface_temperature"),
-        ),
-    }
-    coupler.run_sequence = (
-        "OCN",
-        "LND",
-        "ATM",
+    land = _make_data_component(
+        make_era5_land,
+        name="LND",
+        grid=grid,
+        data={"land_surface_temperature": monthly_land},
+        exports=("land_surface_temperature",),
+        settings=Settings(apply_time_interpolation=True),
     )
-    coupler.exchanges = [
+    atmosphere = _make_data_component(
+        make_era5_atmosphere,
+        name="ATM",
+        grid=grid,
+        data={
+            "sea_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
+            "land_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
+        },
+        imports=("sea_surface_temperature", "land_surface_temperature"),
+    )
+    exchanges = (
         Exchange(
             source="OCN",
             target="ATM",
@@ -904,7 +896,18 @@ def test_data_forcing_components_run_inside_runtime() -> None:
             fields=["land_surface_temperature"],
             regrid=cast(Any, _identity_factory),
         ),
-    ]
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, land, atmosphere),
+        exchanges=exchanges,
+        run_order=(
+            "OCN",
+            "LND",
+            "ATM",
+        ),
+    )
+    coupler.settings.year_in_seconds = 12.0
     regridders = cast(
         Any,
         {
@@ -969,26 +972,26 @@ def test_public_data_component_monthly_output_validates_and_sends_runtime_slice(
         name="OCN",
         grid=grid,
         fields={"sea_surface_temperature": monthly_ocean},
-        settings=VercorSettings(apply_time_interpolation=True),
+        settings=Settings(apply_time_interpolation=True),
     )
     atmosphere = make_slab_atmosphere(grid)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
     coupler.settings.year_in_seconds = 12.0
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
     key = ("OCN", "ATM", "_identity_factory")
     replace_runtime_topology_maps(
         coupler,
@@ -1029,24 +1032,24 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
         grid=grid,
         data={"sea_surface_temperature": forcing},
         exports=("sea_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        settings=Settings(apply_daily_time_selection=True),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 2), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 2), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=bilinear,
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
-    ]
     key = ("OCN", "ATM", "bilinear")
     replace_runtime_topology_maps(
         coupler,
@@ -1102,25 +1105,25 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         grid=ocean_grid,
         data={"sea_surface_temperature": monthly_ocean},
         exports=("sea_surface_temperature",),
-        settings=VercorSettings(apply_time_interpolation=True),
+        settings=Settings(apply_time_interpolation=True),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=bilinear,
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
     coupler.settings.year_in_seconds = 12.0
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
-    ]
     key = ("OCN", "ATM", "bilinear")
     regridder = bilinear(ocean_grid, atmosphere_grid)
     replace_runtime_topology_maps(
@@ -1183,7 +1186,7 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
         grid=grid,
         data={"land_surface_temperature": forcing},
         exports=("land_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        settings=Settings(apply_daily_time_selection=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1196,21 +1199,21 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
         imports=("land_surface_temperature",),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1),
+        components=(land, atmosphere),
+        exchanges=(
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=["land_surface_temperature"],
+                regrid=bilinear,
+            ),
+        ),
+        run_order=(
+            "LND",
+            "ATM",
+        ),
     )
-    coupler.components = {"LND": land, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "LND",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="LND",
-            target="ATM",
-            fields=["land_surface_temperature"],
-            regrid=bilinear,
-        )
-    ]
     key = ("LND", "ATM", "bilinear")
     replace_runtime_topology_maps(
         coupler,
@@ -1259,7 +1262,7 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
         grid=grid,
         data={"land_surface_temperature": forcing},
         exports=("land_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        settings=Settings(apply_daily_time_selection=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1276,22 +1279,22 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
             start=datetime(2024, 3, 1),
             dt_seconds=3600.0,
             steps=1,
-            year_type="noleap",
-        )
+            calendar="noleap",
+        ),
+        components=(land, atmosphere),
+        exchanges=(
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=["land_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "LND",
+            "ATM",
+        ),
     )
-    coupler.components = {"LND": land, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "LND",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="LND",
-            target="ATM",
-            fields=["land_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
     key = ("LND", "ATM", "_identity_factory")
     replace_runtime_topology_maps(
         coupler,
@@ -1339,7 +1342,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         grid=grid,
         data={"land_surface_temperature": forcing},
         exports=("land_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        settings=Settings(apply_daily_time_selection=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1356,22 +1359,22 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
             start=datetime(2001, 2, 28),
             dt_seconds=3600.0,
             steps=1,
-            year_type="360",
-        )
+            calendar="360_day",
+        ),
+        components=(land, atmosphere),
+        exchanges=(
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=["land_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "LND",
+            "ATM",
+        ),
     )
-    coupler.components = {"LND": land, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "LND",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="LND",
-            target="ATM",
-            fields=["land_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
     key = ("LND", "ATM", "_identity_factory")
     replace_runtime_topology_maps(
         coupler,
@@ -1381,7 +1384,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
     _, runtime_time, _ = next(coupler.clock.iter())
     expected_index = daily_forcing_index(
         runtime_time,
-        year_type=coupler.clock.year_type,
+        year_type=forcing_year_type_for_calendar(coupler.clock.calendar),
         no_leap=True,
     )
     expected_slice = forcing[expected_index]
@@ -1430,7 +1433,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         grid=grid,
         data={"sea_surface_temperature": monthly_ocean},
         exports=("sea_surface_temperature",),
-        settings=VercorSettings(apply_time_interpolation=True),
+        settings=Settings(apply_time_interpolation=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1443,21 +1446,21 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         imports=("sea_surface_temperature",),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2001, 12, 31, 12), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2001, 12, 31, 12), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
     key = ("OCN", "ATM", "_identity_factory")
     replace_runtime_topology_maps(
         coupler,
@@ -1513,10 +1516,10 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     original_state = fixture.state._state
     original_forcing = fixture.state.forcing
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
 
     initial_state = coupler.state()
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
@@ -1566,10 +1569,10 @@ def test_jax_gcm_runtime_keeps_time_dependent_forcing_payload_shape_stable() -> 
     )
     fixture.state.forcing = forcing_template
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
 
     initial_state = coupler.state()
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
@@ -1601,21 +1604,21 @@ def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> N
     )
     atmosphere = _make_jax_gcm_component(grid)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regrid=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
     key = ("OCN", "ATM", "_identity_factory")
     replace_runtime_topology_maps(
         coupler,
@@ -1668,25 +1671,29 @@ def test_jax_gcm_runtime_requires_initialized_payload() -> None:
     component = fixture.component
     del fixture.state._state
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
 
     with pytest.raises(ComponentError, match="component initialization"):
         run_scanned_coupler(coupler)
 
     component = _make_jax_gcm_component(grid)
-    coupler.components = {"ATM": component}
-    state = coupler.state()
+    payload_coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+    state = payload_coupler.state()
     atmosphere = state.get_component_state("ATM").with_runtime_payload(None)
     state = state.set_component_state("ATM", atmosphere)
 
     with pytest.raises(ComponentError, match="runtime payload"):
-        run_scanned_coupler(coupler, state)
+        run_scanned_coupler(payload_coupler, state)
 
 
-def test_run_validates_missing_run_sequence() -> None:
+def test_run_validates_missing_run_order() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
@@ -1698,10 +1705,10 @@ def test_run_validates_missing_run_sequence() -> None:
 def test_run_accepts_default_runtime_component() -> None:
     grid = make_test_grid(name="dummy")
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, DummyComponent("ATM", grid)),),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": cast(Any, DummyComponent("ATM", grid))}
-    coupler.run_sequence = ("ATM",)
 
     final_state = run_scanned_coupler(coupler)
 
@@ -1719,10 +1726,10 @@ def test_scanned_runtime_rejects_camulator_land_runtime_boundary() -> None:
     )
     camulator_land.seed_declared_defaults()
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, camulator_land),),
+        run_order=("LND",),
     )
-    coupler.components = {"LND": cast(Any, camulator_land)}
-    coupler.run_sequence = ("LND",)
 
     assert isinstance(camulator_land.data["land_surface_temperature"], jax.Array)
     state = coupler.state()
@@ -1742,10 +1749,10 @@ def test_scanned_runtime_rejects_camulator_gcm_runtime_boundary() -> None:
     )
     camulator.seed_declared_defaults()
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, camulator),),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": cast(Any, camulator)}
-    coupler.run_sequence = ("ATM",)
 
     assert isinstance(camulator.data["temperature"], jax.Array)
     state = coupler.state()
@@ -1765,10 +1772,10 @@ def test_scanned_runtime_rejects_veros_runtime_boundary() -> None:
     )
     veros.seed_declared_defaults()
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, veros),),
+        run_order=("OCN",),
     )
-    coupler.components = {"OCN": cast(Any, veros)}
-    coupler.run_sequence = ("OCN",)
 
     assert isinstance(veros.data["sea_surface_temperature"], jax.Array)
     state = coupler.state()
@@ -1851,10 +1858,10 @@ def test_run_validates_missing_jax_gcm_preseed_before_scan() -> None:
     grid = make_test_grid(name="jcm-missing-preseed")
     component = _make_jax_gcm_component(grid)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
     state = coupler.state()
     atmosphere = state.get_component_state("ATM")
     atmosphere = atmosphere.with_data(_without_store_field(atmosphere.data, "pressure"))

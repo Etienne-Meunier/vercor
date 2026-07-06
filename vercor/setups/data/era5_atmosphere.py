@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components import DataComponent
+from vercor.components import ComponentHooks, DataComponent
 from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import (
     canonicalize_time_last_level_field,
@@ -22,7 +22,7 @@ from vercor.fluxes.vertical_coordinates import (
 from vercor.grid import RectilinearGrid
 from vercor.components import SetupContext
 from vercor.forcing_data import read_forcing as _read_forcing
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.setups.data.assets import get_forcing_data
 from vercor.setups.data._component_helpers import time_interpolated_data_component
 
@@ -48,7 +48,7 @@ def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
 
 
 def _compute_monthly_diagnostics(
-    settings: VercorSettings,
+    settings: Settings,
     surface_pressure: ArrayLike,
     hyai: ArrayLike,
     hybi: ArrayLike,
@@ -199,7 +199,7 @@ def make_era5_atmosphere(
         fields=fields,
         outputs=_ERA5_ATMOSPHERE_FIELD_NAMES,
         data_files=data_files,
-        initialize=initialize,
+        hooks=ComponentHooks(initialize=initialize),
     )
     component.setup_metadata["hybrid_coefficients"] = {
         "hyai": hyai,

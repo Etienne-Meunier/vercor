@@ -154,10 +154,12 @@ immutable runtime containers used during traced integration.
   callbacks, with canonical ownership in `vercor.components.contexts`.
   `from_model()`, `default_fields`, `HostRuntimeComponent`, and
   component-prefixed context names have been removed from the public API.
-  Lifecycle hook type aliases (`ComponentInitializeHook`,
+  Component factory lifecycle customization uses a single
+  `hooks=ComponentHooks(...)` object; individual hook keywords are not public
+  constructor inputs. Lifecycle hook type aliases (`ComponentInitializeHook`,
   `ComponentCreatePayloadHook`, `ComponentPrefillHook`, and
-  `ComponentValidateHook`) are public component-author contracts and are
-  reexported from `vercor.components` and `vercor`.
+  `ComponentValidateHook`) remain public component-author type contracts and
+  are reexported from `vercor.components` and `vercor`.
   `FieldSpec`, `field_spec`, and `declare_fields()` provide the same
   vocabulary and read-only introspection for subclasses. `field_names` exposes
   setup-time seeded field names in insertion order. Subclass constructors can
@@ -214,7 +216,7 @@ immutable runtime containers used during traced integration.
   internals. These internals are not exported from `vercor.components`.
   Subclasses should call
   the base constructor so `name`,
-  `grid`, `data`, and a component-owned `VercorSettings` container are available
+  `grid`, `data`, and a component-owned `Settings` container are available
   during initialization, execution, and finalization. `Component.data` is a
   grid-field store, not a
   general metadata store: all entries must use one of the canonical layouts
@@ -336,11 +338,11 @@ immutable runtime containers used during traced integration.
   `views()` as the public facade for runtime-state and component-view
   creation; the longer runtime-component method names have been removed.
   Final runtime output iteration, output-mask naming/selection, and
-  view writing live in `vercor.output.runtime`, with direct top-level
-  `vercor.output` reexports for the small public runtime-output facade and
+  view writing live in private `vercor.output.runtime` helpers, with
   `vercor.runtime.facade` validating and delegating output writes for
-  `Coupler.write_outputs()`. Deprecated `Coupler.finalize()` remains only as a
-  compatibility wrapper. `Coupler` delegates to the runtime facade and remains
+  `Coupler.write_outputs()`. `Coupler.finalize()` has been removed; users write
+  outputs through `Coupler.write_outputs()`. `Coupler` delegates to the runtime
+  facade and remains
   the public setup/output facade rather than the owner of runtime adapter
   mechanics.
   The `vercor.runtime` package initializer does not reexport runtime containers
@@ -358,8 +360,8 @@ Reusable concrete adapters live under the canonical packaged namespace
 should not depend on a top-level `setups` package. Setup adapters use
 `SetupContext`, `StepContext`, and plain runtime-array mappings at their author
 boundary instead of importing runtime context/store internals directly.
-Examples and setup factories assemble runs through `Coupler.from_components(...)`,
-`Coupler.add_exchange(...)`, and direct
+Examples and setup factories assemble runs through `Coupler(...)`,
+`Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
   field recipes live in `vercor.exchanges` with `*_FIELDS` names. Short recipe
   aliases and setup orchestration helpers such as `ExchangeSpec`,
@@ -504,11 +506,11 @@ should not import that private module directly.
 
 ### Settings container
 
-VerCOR uses one metadata-backed `VercorSettings` class for both coupler-level
+VerCOR uses one metadata-backed `Settings` class for both coupler-level
 and component-level settings. `vercor.settings.DEFAULT_SETTINGS` stores the
 defaults as `Settings(value, description, units)` namedtuple records; unitless
 settings use `"-"` for units. Each `Coupler` and each `Component` receives an
-independent `VercorSettings()` instance populated from those defaults at
+independent `Settings()` instance populated from those defaults at
 construction time, so setup-time changes on one owner do not leak into another.
 
 Settings support direct attribute reads and assignments: `settings.enable_x64`
@@ -517,17 +519,18 @@ and similar attribute reads resolve setting values dynamically through
 through `__setattr__`. Known default
 settings are declared as class-level annotations so static type checkers retain
 useful types without per-setting runtime property descriptors. New custom
-settings must be introduced explicitly with `add_setting()` or passed as keyword
-arguments to `VercorSettings(...)`; existing settings should be updated with
-`set_value()` where production code is making an intentional configuration
-change. `dir(settings)` includes default and custom setting names for
-introspection. The obsolete `ComponentSettings` alias has been removed; use
-`VercorSettings` directly.
+settings must be introduced explicitly with `add()` or passed as keyword
+arguments to `Settings(...)`; existing settings should be updated with `set()`
+where production code is making an intentional configuration change. Use
+`get()`, `get_metadata()`, and `as_dict()` for explicit lookup and
+introspection. `dir(settings)` includes default and custom setting names for
+introspection. The obsolete `ComponentSettings` and `VercorSettings` aliases
+have been removed; use `Settings` directly.
 
 ### Precision and dtype policy
 
 VerCOR-owned array dtypes are centralized in `vercor.dtypes`. Real-valued JAX
-and NumPy arrays use the `VercorSettings.enable_x64` precision switch whenever a
+and NumPy arrays use the `Settings.enable_x64` precision switch whenever a
 settings object is available: `False` maps to 32-bit real arrays and `True` maps
 to 64-bit real arrays. `Coupler.initialize()` treats the coupler setting as the
 run-level precision policy, synchronizes component settings to that policy, and

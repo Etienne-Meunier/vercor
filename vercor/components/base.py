@@ -8,12 +8,8 @@ from typing import TYPE_CHECKING, Any
 from vercor.components.contracts import (
     AuthorFieldValues as _AuthorFieldValues,
     AuthorStepCallable as _AuthorStepCallable,
-    ComponentCreatePayloadHook,
     ComponentHooks as _ComponentHooks,
-    ComponentInitializeHook,
-    ComponentPrefillHook,
     ComponentStepReturn as _ComponentStepReturn,
-    ComponentValidateHook,
     FieldSpec as _FieldSpec,
     FieldNames as _FieldNames,
 )
@@ -31,7 +27,7 @@ import vercor.components._runtime_fields as _runtime_field_adapters
 import vercor.components._runtime_validation as _runtime_field_validation
 from vercor.dtypes import PrecisionPolicy
 from vercor.grid import RectilinearGrid
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -81,7 +77,7 @@ class Component(
     name: str
     grid: RectilinearGrid
     data: dict[str, RuntimeArray] = field(default_factory=dict)
-    settings: VercorSettings = field(default_factory=VercorSettings)
+    settings: Settings = field(default_factory=Settings)
     setup_metadata: dict[str, Any] = field(default_factory=dict)
     _field_spec: _FieldSpec = field(
         default_factory=_FieldSpec,
@@ -101,17 +97,12 @@ class Component(
         grid: RectilinearGrid,
         step: _AuthorStepCallable,
         *,
-        fields: _FieldSpec | None = None,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        hooks: _ComponentHooks | None = None,
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         defaults: _AuthorFieldValues = None,
-        initialize: ComponentInitializeHook | None = None,
-        create_runtime_payload: ComponentCreatePayloadHook | None = None,
-        prefill_runtime_state_fields: ComponentPrefillHook | None = None,
-        validate_runtime_state: ComponentValidateHook | None = None,
+        payload: Any | None = None,
+        settings: Settings | None = None,
+        hooks: _ComponentHooks | None = None,
     ) -> "Component":
         """Create a differentiable component from a user step callable.
 
@@ -121,18 +112,11 @@ class Component(
         """
 
         field_spec = normalize_field_spec(
-            fields=fields,
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
         )
-        lifecycle_hooks = normalize_lifecycle_hooks(
-            hooks=hooks,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill_runtime_state_fields,
-            validate_runtime_state=validate_runtime_state,
-        )
+        lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
         return _CallableComponent(
             name=name,
             grid=grid,
@@ -291,7 +275,7 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         *,
         step: _AuthorStepCallable,
         payload: Any | None,
-        settings: VercorSettings | None,
+        settings: Settings | None,
         field_spec: _FieldSpec,
         lifecycle_hooks: ComponentLifecycleHooks,
     ) -> None:

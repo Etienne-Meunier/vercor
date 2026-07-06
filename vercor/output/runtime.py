@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from vercor.calendar import ModelDateTime
-from vercor.exchange import Exchange
+from vercor.exchange import Exchange, _exchange_regrid_key
 from vercor.output.adapters import component_snapshot_writer
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
@@ -34,7 +34,7 @@ def output_masks_for_component(
         if name != exchange.target:
             continue
 
-        key = (exchange.source, name, exchange.interpolation_type)
+        key = (exchange.source, name, _exchange_regrid_key(exchange))
         source_destination_name = "_".join(key)
         masks["bmask_" + source_destination_name] = binary_masks[key]
         masks["fmask_" + source_destination_name] = fractional_masks[key]

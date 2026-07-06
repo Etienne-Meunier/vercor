@@ -7,7 +7,7 @@ from datetime import timedelta
 from functools import partial
 from typing import Any
 
-from vercor.components import HostComponent
+from vercor.components import ComponentHooks, HostComponent
 from vercor.output.adapters import register_component_snapshot_writer
 import vercor.setups.external.veros_gcm_state as _veros_gcm_state
 import vercor.setups.external.veros_output as _veros_output
@@ -51,7 +51,7 @@ def make_veros_gcm(
         inputs=_veros_gcm_state.VEROS_INPUT_FIELD_NAMES,
         outputs=("sea_surface_temperature",),
         defaults=_veros_gcm_state.veros_default_fields(),
-        initialize=state.initialize,
+        hooks=ComponentHooks(initialize=state.initialize),
     )
     register_component_snapshot_writer(
         component,

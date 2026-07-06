@@ -40,8 +40,8 @@ class Exchange:
     target: str
     fields: Sequence[ExchangeField]
     regrid: RegridderFactory
-    name: str | None
-    interpolation_type: str
+    _label: str | None
+    _regrid_key: str
 
     def __init__(
         self,
@@ -49,7 +49,7 @@ class Exchange:
         target: str,
         fields: Sequence[ExchangeField],
         regrid: RegridderFactory = bilinear,
-        name: str | None = None,
+        label: str | None = None,
     ) -> None:
         """Create an exchange declaration."""
 
@@ -57,20 +57,16 @@ class Exchange:
         object.__setattr__(self, "target", target)
         object.__setattr__(self, "fields", tuple(fields))
         object.__setattr__(self, "regrid", regrid)
-        object.__setattr__(self, "name", name)
-        object.__setattr__(
-            self,
-            "interpolation_type",
-            _regridder_factory_name(regrid),
-        )
+        object.__setattr__(self, "_label", label)
+        object.__setattr__(self, "_regrid_key", _regridder_factory_name(regrid))
 
     @property
     def label(self) -> str:
         """Return explicit name or a stable derived logging label."""
 
-        if self.name is not None:
-            return self.name
-        return f"{self.source} --({self.interpolation_type})--> {self.target}"
+        if self._label is not None:
+            return self._label
+        return f"{self.source} --({self._regrid_key})--> {self.target}"
 
     def __str__(self) -> str:
         return (
@@ -82,6 +78,12 @@ class Exchange:
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__.__name__}(name={self.name}, source={self.source},"
+            f"{self.__class__.__name__}(label={self._label}, source={self.source},"
             f" target={self.target}, fields={self.fields})"
         )
+
+
+def _exchange_regrid_key(exchange: Exchange) -> str:
+    """Return the private stable regrid key for runtime mask bookkeeping."""
+
+    return exchange._regrid_key

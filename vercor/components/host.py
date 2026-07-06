@@ -7,10 +7,6 @@ from vercor.components.contracts import (
     AuthorFieldValues,
     AuthorStepCallable,
     ComponentHooks,
-    ComponentCreatePayloadHook,
-    ComponentInitializeHook,
-    ComponentPrefillHook,
-    ComponentValidateHook,
     FieldSpec,
     FieldNames,
 )
@@ -25,7 +21,7 @@ from vercor.components.base import Component
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.exceptions import ComponentError
 from vercor.grid import RectilinearGrid
-from vercor.settings import VercorSettings
+from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.contexts import StepContext
@@ -42,33 +38,21 @@ class HostComponent(Component):
         grid: RectilinearGrid,
         step: AuthorStepCallable,
         *,
-        fields: FieldSpec | None = None,
-        payload: Any | None = None,
-        settings: VercorSettings | None = None,
-        hooks: ComponentHooks | None = None,
         inputs: FieldNames = (),
         outputs: FieldNames = (),
         defaults: AuthorFieldValues = None,
-        initialize: ComponentInitializeHook | None = None,
-        create_runtime_payload: ComponentCreatePayloadHook | None = None,
-        prefill_runtime_state_fields: ComponentPrefillHook | None = None,
-        validate_runtime_state: ComponentValidateHook | None = None,
+        payload: Any | None = None,
+        settings: Settings | None = None,
+        hooks: ComponentHooks | None = None,
     ) -> "HostComponent":
         """Create a host-runtime component from a Python step callable."""
 
         field_spec = normalize_field_spec(
-            fields=fields,
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
         )
-        lifecycle_hooks = normalize_lifecycle_hooks(
-            hooks=hooks,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill_runtime_state_fields,
-            validate_runtime_state=validate_runtime_state,
-        )
+        lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
         return _CallableHostRuntimeComponent(
             name=name,
             grid=grid,
@@ -114,7 +98,7 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         *,
         step: AuthorStepCallable,
         payload: Any | None,
-        settings: VercorSettings | None,
+        settings: Settings | None,
         field_spec: FieldSpec,
         lifecycle_hooks: ComponentLifecycleHooks,
     ) -> None:
