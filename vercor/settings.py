@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, NamedTuple
 
 from vercor.dtypes import DTypePolicy
@@ -90,7 +91,12 @@ class Settings:
     zref: float
     ztref: float
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        custom: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Create settings from VerCOR defaults plus optional overrides."""
 
         object.__setattr__(self, "_settings", dict(DEFAULT_SETTINGS))
@@ -104,7 +110,12 @@ class Settings:
             elif name in self._settings:
                 self.set(name, value)
             else:
-                self.add(name, value)
+                raise TypeError(
+                    f"Unknown setting {name!r}; pass custom settings with "
+                    "Settings(custom={...}) or add them with Settings.add()."
+                )
+        for name, value in (custom or {}).items():
+            self.add(name, value)
 
     def __getattr__(self, name: str) -> Any:
         """Return the value of a setting by attribute name."""

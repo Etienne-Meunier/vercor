@@ -32,6 +32,16 @@ class Regridder(Protocol):
     ) -> RuntimeArray | tuple[RuntimeArray, RuntimeArray]:
         """Transfer one scalar field or one vector pair to the target grid."""
 
+    def regrid(self, field: RuntimeArray) -> RuntimeArray:
+        """Transfer one scalar field to the target grid."""
+
+    def regrid_vector(
+        self,
+        u: RuntimeArray,
+        v: RuntimeArray,
+    ) -> tuple[RuntimeArray, RuntimeArray]:
+        """Transfer one vector field pair to the target grid."""
+
 
 if TYPE_CHECKING:
     RegridderFactory: TypeAlias = Callable[..., Regridder]
@@ -44,7 +54,7 @@ else:
         def __call__(
             self,
             source_grid: RectilinearGrid,
-            destination_grid: RectilinearGrid,
+            target_grid: RectilinearGrid,
             **kwargs: Any,
         ) -> Regridder:
             """Return a regridder configured for one source/target grid pair."""
@@ -52,7 +62,7 @@ else:
 
 def bilinear(
     source_grid: RectilinearGrid,
-    destination_grid: RectilinearGrid,
+    target_grid: RectilinearGrid,
     *,
     periodic_longitude: bool = True,
     nan_renorm: bool = True,
@@ -65,7 +75,7 @@ def bilinear(
 
     return _bilinear(
         source_grid,
-        destination_grid,
+        target_grid,
         periodic_longitude=periodic_longitude,
         nan_renorm=nan_renorm,
         extrapolation_mode=extrapolation_mode,
@@ -77,20 +87,22 @@ def bilinear(
 
 def conservative(
     source_grid: RectilinearGrid,
-    destination_grid: RectilinearGrid,
+    target_grid: RectilinearGrid,
     *,
     source_mask: RuntimeArray | None = None,
     normalize: str = "conservation",
-    radius: float = 6371.0,
+    radius_km: float = 6371.0,
+    radius: float | None = None,
 ) -> Regridder:
     """Build a public conservative scalar regridder for one grid pair."""
 
+    effective_radius = radius_km if radius is None else radius
     return _conservative(
         source_grid,
-        destination_grid,
+        target_grid,
         source_mask=source_mask,
         normalize=normalize,
-        radius=radius,
+        radius=effective_radius,
     )
 
 

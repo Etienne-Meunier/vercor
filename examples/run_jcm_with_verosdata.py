@@ -2,7 +2,7 @@ from datetime import datetime
 
 from vercor import Clock, Coupler, Exchange
 from vercor.setups import make_erainterim_ocean
-from vercor.exchanges import (
+from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,

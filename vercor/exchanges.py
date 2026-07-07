@@ -1,51 +1,102 @@
-"""Public exchange declarations and bundled exchange field groups."""
+"""Public exchange declarations for coupled component field transfers."""
 
-from vercor._exchange import Exchange
-from vercor.fields import ExchangeField
-from vercor.regridding import RegridderFactory
-from vercor.setups.exchange_recipes import (
-    ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-    ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-    ATMOSPHERE_TO_LAND_BASIC_FIELDS,
-    ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
-    ATMOSPHERE_TO_LAND_STATE_FIELDS,
-    ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
-    ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
-    ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
-    JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
-    JCM_LAND_TO_ATMOSPHERE_FIELDS,
-    LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-    LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-    OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-    OCEAN_TO_SEAICE_SURFACE_FIELDS,
-    SEAICE_TO_OCEAN_FIELDS,
-    SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-    SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-    SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
-)
+from __future__ import annotations
 
-Exchange.__module__ = __name__
+from collections.abc import Sequence
+from dataclasses import dataclass
+from functools import partial
+from typing import Any, Callable
+import warnings
+
+from vercor.fields import ExchangeField, normalize_field_items
+from vercor.regridding import RegridderFactory, bilinear
+import vercor.recipes as _recipes
+
+
+def _regridder_factory_name(regridder_factory: Callable[..., object]) -> str:
+    """Return a stable display name for a regridder factory callable."""
+
+    if isinstance(regridder_factory, partial):
+        wrapped_factory = regridder_factory.func
+        if callable(wrapped_factory):
+            return _regridder_factory_name(wrapped_factory)
+        return wrapped_factory.__class__.__name__
+
+    name = getattr(regridder_factory, "__name__", None)
+    if isinstance(name, str):
+        return name
+    return regridder_factory.__class__.__name__
+
+
+@dataclass(frozen=True, init=False)
+class Exchange:
+    """Public exchange declaration connecting source fields to a target."""
+
+    source: str
+    target: str
+    fields: Sequence[ExchangeField]
+    regrid: RegridderFactory
+    _label: str | None
+    _regrid_key: str
+
+    def __init__(
+        self,
+        source: str,
+        target: str,
+        fields: Sequence[ExchangeField],
+        regrid: RegridderFactory = bilinear,
+        label: str | None = None,
+    ) -> None:
+        """Create an exchange declaration."""
+
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "fields", normalize_field_items(fields))
+        object.__setattr__(self, "regrid", regrid)
+        object.__setattr__(self, "_label", label)
+        object.__setattr__(self, "_regrid_key", _regridder_factory_name(regrid))
+
+    @property
+    def label(self) -> str:
+        """Return explicit name or a stable derived logging label."""
+
+        if self._label is not None:
+            return self._label
+        return f"{self.source} --({self._regrid_key})--> {self.target}"
+
+    def __str__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"├── Name: {self.label}\n"
+            f"├── Source component: {self.source}\n"
+            f"└── Target component: {self.target}\n"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(label={self._label}, source={self.source},"
+            f" target={self.target}, fields={self.fields})"
+        )
+
+
+_RECIPE_EXPORTS = {name: getattr(_recipes, name) for name in _recipes.__all__}
+
+
+def __getattr__(name: str) -> Any:
+    """Return staged compatibility recipe constants from ``vercor.recipes``."""
+
+    if name in _RECIPE_EXPORTS:
+        warnings.warn(
+            f"vercor.exchanges.{name} is deprecated; use vercor.recipes.{name} instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _RECIPE_EXPORTS[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
-    "ATMOSPHERE_TO_DATA_OCEAN_FIELDS",
-    "ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS",
-    "ATMOSPHERE_TO_LAND_BASIC_FIELDS",
-    "ATMOSPHERE_TO_LAND_RADIATION_FIELDS",
-    "ATMOSPHERE_TO_LAND_STATE_FIELDS",
-    "ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS",
-    "ATMOSPHERE_TO_OCEAN_STATE_FIELDS",
-    "ATMOSPHERE_TO_VEROS_FORCING_FIELDS",
     "Exchange",
     "ExchangeField",
-    "JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS",
-    "JCM_LAND_TO_ATMOSPHERE_FIELDS",
-    "LAND_TO_ATMOSPHERE_SOIL_FIELDS",
-    "LAND_TO_ATMOSPHERE_SURFACE_FIELDS",
-    "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS",
-    "OCEAN_TO_SEAICE_SURFACE_FIELDS",
     "RegridderFactory",
-    "SEAICE_TO_OCEAN_FIELDS",
-    "SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
-    "SLAB_ATMOSPHERE_TO_OCEAN_FIELDS",
-    "SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
 ]

@@ -9,6 +9,14 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local staged public-owner API rewrite validation: focused red/green
+  API/settings tests, full API-boundary fast pytest, focused settings pytest,
+  affected component/regridding fast pytest, example py_compile, Black, flake8,
+  mypy, full fast pytest, full pytest, and git diff whitespace check passed as
+  of 2026-07-07 using the direct `scipy` environment executable. Black emitted
+  the recurring Python 3.13/target-3.14 warning; full pytest emitted the
+  recurring JAX dtype-promotion `FutureWarning` and the existing xarray merge
+  `FutureWarning` in the real JAXGCM payload test.
 - Latest local staged API boundary facade validation: baseline fast pytest,
   focused red/green API-boundary pytest, affected runtime/output/regridding
   pytest, example py_compile, Black, flake8, mypy, full fast pytest, full
@@ -419,10 +427,35 @@ historical commands, failure messages, or detailed validation notes.
 ## Follow-Up Candidates
 
 - Keep remaining public simplification candidates review-only unless a
-  compatibility decision is made: `Grid` and component authoring mixins are
-  still public or boundary-tested surfaces.
+  compatibility decision is made: `RunState`/`ComponentView` still route
+  through staged runtime facades, and component `.data`/`.setup_metadata`
+  remain mutable setup attributes for compatibility even though raw constructor
+  inputs are no longer public.
 
 ## Recent Work
+
+### 2026-07-07: Staged Public-Owner API Rewrite
+
+- Moved public ownership for `RectilinearGrid`, `VectorField`, and `Exchange`
+  into `vercor.grids`, `vercor.fields`, and `vercor.exchanges`, leaving private
+  compatibility imports for existing internal modules.
+- Added `grid_from_coordinates(...)`, strict `Settings(custom={...})` handling
+  for custom settings, explicit `Regridder.regrid(...)` /
+  `regrid_vector(...)`, and a public `vercor.recipes` facade for bundled
+  `*_FIELDS` exchange recipes.
+- Tightened `Component` construction so raw `data=` and `setup_metadata=`
+  cannot bypass setup validation through the public constructor; staged mutable
+  attributes remain for existing setup adapters.
+- Updated examples, API/settings tests, `DESIGN.md`, and `DEPENDENCIES.md` for
+  the new public/private boundary.
+- Validation run for this change: focused red/green API/settings pytest,
+  full API-boundary fast pytest, focused settings pytest, affected
+  component/regridding fast pytest, example py_compile, Black, flake8, mypy,
+  full fast pytest, full pytest, and git diff whitespace check passed using
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
+  recurring Python 3.13/target-3.14 warning; full pytest emitted the recurring
+  JAX dtype-promotion `FutureWarning` and the existing xarray merge
+  `FutureWarning` in the real JAXGCM payload test.
 
 ### 2026-07-07: Staged API Boundary Facades
 

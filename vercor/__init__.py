@@ -35,7 +35,13 @@ from vercor.exceptions import (
 )
 from vercor.exchanges import Exchange
 from vercor.fields import VectorField, vector
-from vercor.grids import RectilinearGrid, rectilinear_grid, uniform_rectilinear_grid
+from vercor.grids import (
+    RectilinearGrid,
+    grid_from_coordinates,
+    rectilinear_grid,
+    uniform_rectilinear_grid,
+)
+import vercor.recipes as recipes
 from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
 from vercor.settings import SettingSpec, Settings
 from vercor.state import ComponentView, CouplerState, RunState
@@ -71,6 +77,7 @@ __all__ = [
     "DateTime360",
     "DateTime365",
     "RectilinearGrid",
+    "grid_from_coordinates",
     "rectilinear_grid",
     "uniform_rectilinear_grid",
     "Regridder",
@@ -78,6 +85,7 @@ __all__ = [
     "conservative",
     "Exchange",
     "fluxes",
+    "recipes",
     "ModelDateTime",
     "VectorField",
     "vector",

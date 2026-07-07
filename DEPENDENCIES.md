@@ -1,20 +1,20 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/physical_constants.py` - physical and bulk-formula default settings with AD-owned semantics
 3. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
-4. `vercor/settings.py` - unified metadata-backed public `Settings` container, `SettingSpec` metadata records, and static runtime controls built on (2)
-5. `vercor/_fields.py`, `vercor/fields.py`, and `vercor/field_names.py` - canonical public field vocabulary, vector-field declarations, and deprecated exchange-field compatibility alias
+4. `vercor/settings.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, and static runtime controls built on (2)
+5. `vercor/fields.py`, `vercor/_fields.py`, and `vercor/field_names.py` - canonical public field vocabulary and `VectorField` owner, private normalization compatibility imports, and deprecated exchange-field compatibility alias
 6. `vercor/calendar.py` and `vercor/forcing_index.py` - calendar constants, model-calendar datetime values, leap-year logic, month/day conversion, and daily forcing-index policy
 7. `vercor/fluxes/vertical_coordinates.py` - hybrid/sigma-coordinate pressure and altitude helpers built on (1, 4)
 8. `vercor/fluxes/utilities.py` - JAX-native scalar/array thermodynamic helpers built on (1, 4)
 9. `vercor/fluxes/bulk_formula_cesm.py` - JAX-native atmosphere-ocean / atmosphere-ice bulk flux kernels with local JAX-array normalization built on (1, 4, 8)
 10. `vercor/host_arrays.py` - explicit JAX/NumPy host-transfer boundary for non-differentiable adapters, output, and host `int64` NetCDF time coordinates
 11. `vercor/setups/external/_jax_gcm_pytree.py` - adapter-local JAXGCM PyTree leaf transforms and dtype casting helpers built on (1)
-12. `vercor/_grid.py` and `vercor/grids.py` - JAX-friendly `RectilinearGrid` holder with eager validation and PyTree registration plus public explicit/uniform grid constructors built on (3)
+12. `vercor/grids.py` and `vercor/_grid.py` - public JAX-friendly `RectilinearGrid` owner with eager validation, PyTree registration, `grid_from_coordinates(...)`, uniform grid construction, and private compatibility imports built on (1, 3)
 13. `vercor/grid_geometry.py` - rectilinear grid construction, center-to-edge geometry, and grid identity built on (1, 12)
 14. `vercor/field_layout.py` - shared canonical grid-field shape validation, component data-field layout validation, and time-last forcing normalization helpers built on (12)
 15. `vercor/interpolators/_bilinear_geometry.py`, `_bilinear_weights.py`, `_bilinear_extrapolation.py`, and `bilinear_rectilinear.py` - private spherical geometry, cell-weight, and extrapolation helper owners behind the public JAX-native bilinear scalar/vector interpolation facade built on (1, 3)
 16. `vercor/interpolators/conservative_remap_rectilinear.py` - JAX-native conservative scalar remapping runtime with eager overlap preprocessing built on (1, 3, 12, 13)
-17. `vercor/_regridders/base.py` and `vercor/regridding.py` - shared private regridder grid/interpolator/display state plus public `Regridder`/`RegridderFactory` protocols and factory facade built on (12, 13)
+17. `vercor/_regridders/base.py` and `vercor/regridding.py` - shared private regridder grid/interpolator/display state, explicit scalar/vector transfer methods, and public `Regridder`/`RegridderFactory` protocols and factory facade built on (12, 13)
 18. `vercor/_regridders/bilinear.py` - bilinear regridder wrapper over (15, 17)
 19. `vercor/_regridders/conservative.py` - conservative regridder wrapper over (13, 16, 17)
 20. `vercor/grid_masks.py` - land/ocean mask construction, rectilinear area mass calculation, and remap-conservation checks built on (1, 12, 13, 19)
@@ -25,7 +25,7 @@
 25. `vercor/_logging/*.py` and `vercor/jax_logging.py` - private logger configuration, protocol, host-emission, and JAX-callback owners behind the public logging facade for Python and traced JAX runtime diagnostics
 26. `vercor/setups/_time_helpers.py` - shared setup-time timestep validation, lifecycle assignment, spinup logging, forcing-index, and default-field seeding helpers built on (23)
 27. `vercor/setups/_lazy_imports.py` - shared lazy package export helper for setup modules with optional dependencies
-28. `vercor/_exchange.py` and `vercor/exchanges.py` - private exchange implementation with public `vercor.exchanges.Exchange` identity, canonical `target`/`fields`/`regrid` names, public exchange configuration type aliases, and canonical `*_FIELDS` exchange recipes built on (5, 12, 17, 18, 19)
+28. `vercor/exchanges.py`, `vercor/_exchange.py`, and `vercor/recipes.py` - public `Exchange` owner with canonical `target`/`fields`/`regrid` names, private runtime regrid-key helper, public exchange configuration type aliases, and canonical `*_FIELDS` exchange recipes built on (5, 12, 17, 18, 19)
 29. `vercor/setups/external/jax_gcm_tools.py` - JCM-specific parameter helpers, private input-data loading implementation, and deprecated direct generator compatibility wrapper built on (1, 7, 8)
 30. `vercor/setups/external/jax_gcm_fields.py` - public package-internal JCM output-field mapping and surface-temperature forcing helpers built on (1, 7)
 31. `vercor/output/__init__.py`, `variables.py`, `period_averages.py`, `period_files.py`, `adapters.py`, `datasets.py`, `time.py`, and `netcdf.py` - public output extension facade, shared period-output variable containers, JAX-backed sum/count period-average accumulation using the shared `OutputVariable` sample shape, shared mean-output conversion helpers, lightweight component output adapter ownership, single-record snapshot storage and writer registration, centralized record/write orchestration, period-average file write lifecycle, dataset coordinate discovery, VerCOR-calendar time encoding, cadence policy, and direct h5netcdf averaged/snapshot NetCDF writing with host conversion delegated to (10) built on (1, 6, 10, 25)

@@ -785,7 +785,7 @@ def test_initialized_slab_coupler_run_prefills_missing_imports() -> None:
 
 
 def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None:
-    from vercor.exchanges import (
+    from vercor.recipes import (
         ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
         JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
         JCM_LAND_TO_ATMOSPHERE_FIELDS,

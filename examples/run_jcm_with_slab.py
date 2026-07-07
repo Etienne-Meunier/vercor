@@ -3,12 +3,11 @@ from datetime import datetime
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange
+from vercor import Clock, Coupler, Exchange, grid_from_coordinates
 from vercor.setups import load_jcm_inputs, make_jax_gcm, make_slab_land, make_slab_ocean
 from vercor.dtypes import as_jax_real_array
-from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
-from vercor.exchanges import (
+from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
@@ -33,15 +32,15 @@ if __name__ == "__main__":
     lnd_binary_mask = 1 - ocn_binary_mask
 
     hgrid = coords.horizontal
-    lnd_grid = RectilinearGrid(
-        name="LND",
+    lnd_grid = grid_from_coordinates(
+        "LND",
         longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
         latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=lnd_binary_mask,
     )
 
-    ocn_grid = RectilinearGrid(
-        name="OCN",
+    ocn_grid = grid_from_coordinates(
+        "OCN",
         longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
         latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=ocn_binary_mask,

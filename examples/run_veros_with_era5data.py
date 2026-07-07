@@ -4,7 +4,7 @@ from vercor import Clock, Coupler, Exchange
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import make_veros_gcm
-from vercor.exchanges import (
+from vercor.recipes import (
     ATMOSPHERE_TO_LAND_BASIC_FIELDS,
     ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
     LAND_TO_ATMOSPHERE_SURFACE_FIELDS,

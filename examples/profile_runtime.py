@@ -18,7 +18,7 @@ from vercor.setups import (
     make_slab_ocean,
     make_slab_seaice,
 )
-from vercor.exchanges import (
+from vercor.recipes import (
     LAND_TO_ATMOSPHERE_SOIL_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
     OCEAN_TO_SEAICE_SURFACE_FIELDS,

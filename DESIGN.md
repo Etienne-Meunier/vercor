@@ -143,9 +143,13 @@ immutable runtime containers used during traced integration.
   immutable tuples. `vercor.state.RunState` and
   `vercor.state.ComponentView` are the public result/view names; the older
   `CouplerState` name remains as a staged compatibility alias.
-  `uniform_rectilinear_grid(...)` is the clear public constructor for generated
-  equally spaced rectilinear grids, while `rectilinear_grid(...)` remains a
-  compatibility alias.
+  `vercor.grids.RectilinearGrid`, `vercor.fields.VectorField`, and
+  `vercor.exchanges.Exchange` are owned by their public facade modules rather
+  than private implementation modules. `uniform_rectilinear_grid(...)` is the
+  clear public constructor for generated equally spaced rectilinear grids,
+  `grid_from_coordinates(...)` is the explicit constructor for coordinate
+  arrays, and `rectilinear_grid(...)` remains a staged compatibility alias for
+  uniform generated grids.
 - Component-author API: `Component`, `DataComponent`, and `HostComponent` are
   the stable extension points. Custom adapters should use the class-level
   authoring constructors where possible: `DataComponent.from_fields()` for
@@ -220,10 +224,9 @@ immutable runtime containers used during traced integration.
   `vercor.components.setup_validation`, giving runtime modules explicit
   component-owned bridge modules instead of importing private component
   internals. These internals are not exported from `vercor.components`.
-  Subclasses should call
-  the base constructor so `name`,
-  `grid`, `data`, and a component-owned `Settings` container are available
-  during initialization, execution, and finalization. `Component.data` is a
+  Subclasses should call the base constructor with `name`, `grid`, and optional
+  `settings`; raw setup `data` and `setup_metadata` are initialized internally
+  rather than accepted as public constructor inputs. `Component.data` is a
   grid-field store, not a
   general metadata store: all entries must use one of the canonical layouts
   `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
@@ -377,14 +380,17 @@ workflows should enter through `vercor.setups`.
 Examples and setup factories assemble runs through `Coupler(...)`,
 `Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
-  field recipes live in `vercor.exchanges` with `*_FIELDS` names. Short recipe
-  aliases and setup orchestration helpers such as `ExchangeSpec`,
-  `build_coupler()`, `build_exchanges()`, and `add_exchange_specs()` have been
-  removed. Public exchange configuration types, including `ExchangeField`, are
-  reexported beside recipes from `vercor.exchanges`. Public regridding
-  protocols, including `Regridder` and `RegridderFactory`, are owned by
-  `vercor.regridding`; concrete bilinear/conservative regridder classes remain
-  private implementation details.
+field recipes live in `vercor.recipes` with `*_FIELDS` names; staged
+compatibility attribute access from `vercor.exchanges` remains outside
+`__all__` for one release. Short recipe aliases and setup orchestration helpers
+such as `ExchangeSpec`, `build_coupler()`, `build_exchanges()`, and
+`add_exchange_specs()` have been removed. Public exchange configuration types,
+including `ExchangeField`, are reexported beside `Exchange` from
+`vercor.exchanges`. Public regridding protocols, including `Regridder` and
+`RegridderFactory`, are owned by `vercor.regridding`; concrete
+bilinear/conservative regridder classes remain private implementation details.
+Regridders expose explicit `regrid(field)` and `regrid_vector(u, v)` methods
+while retaining callable scalar/vector behavior for staged compatibility.
 
 Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live
@@ -528,7 +534,7 @@ should not import that private module directly.
 
 VerCOR uses one metadata-backed `Settings` class for both coupler-level
 and component-level settings. `vercor.settings.DEFAULT_SETTINGS` stores the
-defaults as `Settings(value, description, units)` namedtuple records; unitless
+defaults as `SettingSpec(value, description, units)` namedtuple records; unitless
 settings use `"-"` for units. Each `Coupler` and each `Component` receives an
 independent `Settings()` instance populated from those defaults at
 construction time, so setup-time changes on one owner do not leak into another.
@@ -538,10 +544,12 @@ and similar attribute reads resolve setting values dynamically through
 `__getattr__`, and assigning an existing attribute updates only that value
 through `__setattr__`. Known default
 settings are declared as class-level annotations so static type checkers retain
-useful types without per-setting runtime property descriptors. New custom
-settings must be introduced explicitly with `add()` or passed as keyword
-arguments to `Settings(...)`; existing settings should be updated with `set()`
-where production code is making an intentional configuration change. Use
+useful types without per-setting runtime property descriptors. Constructor
+keyword arguments may only override known default settings, so misspelled
+physics/configuration names fail eagerly. New custom settings must be introduced
+explicitly with `add()` or passed through `Settings(custom={...})`; existing
+settings should be updated with `set()` where production code is making an
+intentional configuration change. Use
 `get()`, `get_metadata()`, and `as_dict()` for explicit lookup and
 introspection. `dir(settings)` includes default and custom setting names for
 introspection. The obsolete `ComponentSettings` and `VercorSettings` aliases

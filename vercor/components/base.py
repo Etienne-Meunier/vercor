@@ -37,7 +37,7 @@ __all__ = [
 ]
 
 
-@dataclass
+@dataclass(init=False)
 class Component(
     ComponentFieldAuthoringMixin,
     ComponentLifecycleMixin,
@@ -86,6 +86,23 @@ class Component(
         init=False,
         repr=False,
     )
+
+    def __init__(
+        self,
+        name: str,
+        grid: RectilinearGrid,
+        *,
+        settings: Settings | None = None,
+    ) -> None:
+        """Create a component configuration shell for setup-time authoring."""
+
+        self.name = name
+        self.grid = grid
+        self.data = {}
+        self.settings = Settings() if settings is None else settings
+        self.setup_metadata = {}
+        self._field_spec = _FieldSpec()
+        self._lifecycle_hooks = ComponentLifecycleHooks()
 
     @classmethod
     def from_step(

@@ -14,7 +14,7 @@ from vercor.regridding import bilinear, conservative
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import make_erainterim_ocean
-from vercor.exchanges import (
+from vercor.recipes import (
     ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
     ATMOSPHERE_TO_LAND_STATE_FIELDS,
     ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,

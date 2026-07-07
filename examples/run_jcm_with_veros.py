@@ -5,7 +5,7 @@ from vercor.setups import make_veros_gcm
 from vercor.setups.external.jax_gcm_tools import (
     get_default_parameter_values,
 )
-from vercor.exchanges import (
+from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,

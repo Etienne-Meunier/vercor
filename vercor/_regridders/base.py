@@ -46,6 +46,24 @@ class Regridder:
 
         return self._interpolator
 
+    def __call__(self, *args: Any) -> Any:
+        """Apply the concrete regridding operation."""
+
+        raise NotImplementedError
+
+    def regrid(self, field: Any) -> Any:
+        """Transfer one scalar field from the source grid to the target grid."""
+
+        return self(field)
+
+    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
+        """Transfer one vector field pair from the source grid to the target grid."""
+
+        result = self(u, v)
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise TypeError("Vector regridding must return a two-field tuple.")
+        return result
+
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:"

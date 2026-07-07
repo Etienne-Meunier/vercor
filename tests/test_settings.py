@@ -37,8 +37,11 @@ def test_constructor_overrides_known_setting_without_losing_metadata() -> None:
     assert metadata.units == DEFAULT_SETTINGS["enable_x64"].units
 
 
-def test_constructor_adds_unknown_kwargs_as_custom_settings() -> None:
-    settings = Settings(custom_parameter=3.0)
+def test_constructor_rejects_unknown_kwargs_unless_marked_custom() -> None:
+    with pytest.raises(TypeError, match="Unknown setting"):
+        Settings(custom_parameter=3.0)
+
+    settings = Settings(custom={"custom_parameter": 3.0})
 
     assert settings.custom_parameter == 3.0
     assert settings.get_metadata("custom_parameter") == SettingSpec(3.0, "-", "-")
@@ -46,7 +49,7 @@ def test_constructor_adds_unknown_kwargs_as_custom_settings() -> None:
 
 def test_constructor_preserves_explicit_settings_metadata() -> None:
     metadata = SettingSpec(600.0, "Tracer timestep", "s")
-    settings = Settings(dt_tracer=metadata)
+    settings = Settings(custom={"dt_tracer": metadata})
 
     assert settings.dt_tracer == 600.0
     assert settings.get_metadata("dt_tracer") == metadata
@@ -122,7 +125,7 @@ def test_known_setting_attributes_are_typed_annotations_not_descriptors() -> Non
 
 
 def test_dir_lists_default_and_custom_settings() -> None:
-    settings = Settings(custom_parameter=3.0)
+    settings = Settings(custom={"custom_parameter": 3.0})
 
     names = dir(settings)
 

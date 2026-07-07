@@ -77,8 +77,45 @@ def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
         "vector",
         "Regridder",
         "RegridderFactory",
+        "grid_from_coordinates",
         "uniform_rectilinear_grid",
     }.issubset(vercor.__all__)
+
+
+@pytest.mark.fast_always
+def test_staged_api_rewrite_public_owners_and_facades() -> None:
+    import vercor.exchanges as exchanges_module
+    import vercor.fields as fields_module
+    import vercor.grids as grids_module
+    import vercor.recipes as recipes_module
+
+    assert vercor.RectilinearGrid.__module__ == "vercor.grids"
+    assert vercor.VectorField.__module__ == "vercor.fields"
+    assert vercor.Exchange.__module__ == "vercor.exchanges"
+    assert vercor.grid_from_coordinates is grids_module.grid_from_coordinates
+    assert "grid_from_coordinates" in grids_module.__all__
+    assert "grid_from_coordinates" in vercor.__all__
+
+    grid = grids_module.grid_from_coordinates(
+        "explicit-grid",
+        longitude=jnp.asarray([0.0, 90.0]),
+        latitude=jnp.asarray([-45.0, 45.0]),
+    )
+    assert isinstance(grid, grids_module.RectilinearGrid)
+    assert grid.shape == (2, 2)
+
+    assert fields_module.__all__ == [
+        "ExchangeField",
+        "FieldItem",
+        "VALID_FIELD_NAMES",
+        "VectorField",
+        "vector",
+    ]
+    assert recipes_module.OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS == (
+        "sea_surface_temperature",
+    )
+    assert "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS" in recipes_module.__all__
+    assert "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS" not in exchanges_module.__all__
 
 
 @pytest.mark.fast_always
@@ -226,6 +263,51 @@ def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> Non
         )
     with pytest.raises(TypeError):
         DataComponent.from_fields("ATM", grid, {"temperature": 280.0})  # type: ignore[misc]
+
+
+@pytest.mark.fast_always
+def test_staged_component_constructor_hides_raw_setup_internals() -> None:
+    grid = vercor.grid_from_coordinates(
+        "component-constructor-grid",
+        longitude=jnp.asarray([0.0, 90.0]),
+        latitude=jnp.asarray([-45.0, 45.0]),
+    )
+
+    class MinimalComponent(Component):
+        def step_runtime_state(
+            self,
+            component_state: RuntimeComponentState,
+            context: vercor.StepContext,
+        ) -> RuntimeComponentState:
+            _ = context
+            return component_state
+
+    assert "data" not in signature(Component).parameters
+    assert "setup_metadata" not in signature(Component).parameters
+    with pytest.raises(TypeError, match="data"):
+        MinimalComponent("ATM", grid, data={"temperature": 280.0})  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="setup_metadata"):
+        MinimalComponent("ATM", grid, setup_metadata={"source": "test"})  # type: ignore[call-arg]
+
+
+@pytest.mark.fast_always
+def test_staged_regridders_expose_explicit_scalar_and_vector_methods() -> None:
+    from vercor.regridding import Regridder
+
+    grid = vercor.grid_from_coordinates(
+        "regrid-methods",
+        longitude=jnp.asarray([0.0, 90.0]),
+        latitude=jnp.asarray([-45.0, 45.0]),
+    )
+    regridder = bilinear(grid, grid)
+    scalar = jnp.ones(grid.shape)
+    u = jnp.ones(grid.shape)
+    v = -jnp.ones(grid.shape)
+
+    assert isinstance(regridder, Regridder)
+    assert regridder.target_grid is grid
+    assert regridder.regrid(scalar) is scalar
+    assert regridder.regrid_vector(u, v) == (u, v)
 
 
 @pytest.mark.fast_always
@@ -515,9 +597,9 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
 
 @pytest.mark.fast_always
 def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
-    from vercor.exchanges import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
     from vercor.grids import RectilinearGrid as PublicRectilinearGrid
     from vercor.grids import rectilinear_grid
+    from vercor.recipes import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
     from vercor.regridding import (
         bilinear as public_bilinear,
         conservative as public_conservative,
@@ -1537,8 +1619,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert not hasattr(exchange_module, "VALID_EXCHANGE_FIELD_NAMES")
     assert "sea_surface_temperature" in VALID_FIELD_NAMES
 
-    assert exchange_module.ExchangeField == str | VectorField
-    assert hasattr(exchange_module, "RegridderFactory")
+    assert vercor.exchanges.ExchangeField == str | VectorField
+    assert hasattr(vercor.exchanges, "RegridderFactory")
 
     clock_source = Path("vercor/clock.py").read_text(encoding="utf-8")
     calendar_source = Path("vercor/calendar.py").read_text(encoding="utf-8")
@@ -1611,11 +1693,12 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     )
     assert "VALID_EXCHANGE_FIELD_NAMES: list[str]" not in exchange_source
     assert "ExchangeField: TypeAlias" not in exchange_source
-    assert "from vercor.regridding import RegridderFactory" in exchange_source
+    assert "from vercor.regridding import RegridderFactory" not in exchange_source
     assert "RegridderFactory: TypeAlias" not in exchange_source
     assert not coupler_helpers_path.exists()
     assert "ExchangeField: TypeAlias" not in exchange_recipes_source
-    assert "from vercor._exchange import Exchange" in exchanges_source
+    assert "class Exchange" in exchanges_source
+    assert "from vercor._exchange import Exchange" not in exchanges_source
     assert "from vercor.regridding import RegridderFactory" in exchanges_source
     assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
@@ -1736,7 +1819,9 @@ def test_concrete_regridders_own_call_dispatch() -> None:
         encoding="utf-8"
     )
 
-    assert "def __call__(" not in regridder_base_source
+    assert "def __call__(" in regridder_base_source
+    assert "def regrid(" in regridder_base_source
+    assert "def regrid_vector(" in regridder_base_source
     assert "def _ensure_ready(" not in regridder_base_source
     assert "def __call__(" in bilinear_source
     assert "apply_vector" in bilinear_source
@@ -2217,7 +2302,8 @@ def test_veros_runtime_settings_imports_runtime_settings_lazily() -> None:
 @pytest.mark.fast_always
 def test_common_exchange_recipes_are_centralized_for_examples() -> None:
     import vercor.exchanges as exchanges_module
-    from vercor.exchanges import (
+    import vercor.recipes as recipes_module
+    from vercor.recipes import (
         ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
         JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
         SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
@@ -2234,7 +2320,9 @@ def test_common_exchange_recipes_are_centralized_for_examples() -> None:
         "SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
     )
     for recipe_name in required_recipes:
-        assert hasattr(exchanges_module, recipe_name)
+        assert hasattr(recipes_module, recipe_name)
+        assert recipe_name in recipes_module.__all__
+        assert recipe_name not in exchanges_module.__all__
 
     removed_recipe_aliases = (
         "ATMOSPHERE_TO_DATA_OCEAN",
@@ -2259,7 +2347,7 @@ def test_common_exchange_recipes_are_centralized_for_examples() -> None:
     )
     for path in recipe_users:
         source = path.read_text(encoding="utf-8")
-        assert "from vercor.exchanges import" in source, path
+        assert "from vercor.recipes import" in source, path
         assert "from vercor.setups.exchange_recipes import" not in source, path
         if path.name.startswith("run_"):
             assert "Exchange(" in source, path
