@@ -1,7 +1,8 @@
 """Public exchange declarations and bundled exchange field groups."""
 
-from vercor._exchange import Exchange, RegridderFactory
+from vercor._exchange import Exchange
 from vercor.fields import ExchangeField
+from vercor.regridding import RegridderFactory
 from vercor.setups.exchange_recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
@@ -22,6 +23,8 @@ from vercor.setups.exchange_recipes import (
     SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
     SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
 )
+
+Exchange.__module__ = __name__
 
 __all__ = [
     "ATMOSPHERE_TO_DATA_OCEAN_FIELDS",

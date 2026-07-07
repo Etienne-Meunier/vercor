@@ -9,6 +9,16 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local staged API boundary facade validation: baseline fast pytest,
+  focused red/green API-boundary pytest, affected runtime/output/regridding
+  pytest, example py_compile, Black, flake8, mypy, full fast pytest, full
+  pytest, coverage pytest at 90% total, git diff whitespace check, and
+  `CONDA_NO_PLUGINS=true conda run -n scipy` fast pytest passed as of
+  2026-07-07 using the direct `scipy` environment executable for full-suite
+  validation. Black emitted the recurring Python 3.13/target-3.14 warning;
+  full pytest/coverage emitted the recurring JAX dtype-promotion
+  `FutureWarning` and the existing xarray merge `FutureWarning` in the real
+  JAXGCM payload test.
 - Latest local setup-facade/API-boundary validation: focused red/green pytest,
   Black, flake8, mypy, full fast pytest, and full pytest passed as of
   2026-07-07 using the direct `scipy` environment executables.
@@ -413,6 +423,32 @@ historical commands, failure messages, or detailed validation notes.
   still public or boundary-tested surfaces.
 
 ## Recent Work
+
+### 2026-07-07: Staged API Boundary Facades
+
+- Added canonical public state names through `vercor.state`: `RunState` and
+  `ComponentView`, with `CouplerState` kept as a staged compatibility alias.
+- Added public regridding and grid facades: `Regridder`,
+  `RegridderFactory`, `bilinear`, `conservative`, and
+  `uniform_rectilinear_grid(...)`; concrete regridder classes stay private
+  and public factory signatures no longer expose `_regridders` return types.
+- Made `vercor.exchanges.Exchange` the public owner in signatures/docs while
+  keeping `_exchange` as the implementation module.
+- Promoted the output extension surface through `vercor.output` for
+  `OutputVariable`, `ComponentOutputAdapter`, and snapshot-writer
+  registration while keeping runtime/period/netcdf helpers private-by-module.
+- Updated examples, API-boundary tests, `DESIGN.md`, and `DEPENDENCIES.md` to
+  describe the staged 0.4.x-compatible public API.
+- Validation run for this change: baseline fast pytest, focused red/green
+  API-boundary pytest, affected runtime/output/regridding pytest, example
+  py_compile, Black, flake8, mypy, full fast pytest, full pytest, coverage
+  pytest at 90% total, git diff whitespace check, and
+  `CONDA_NO_PLUGINS=true conda run -n scipy` fast pytest passed using
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python` for full-suite
+  validation. Black emitted the recurring Python 3.13/target-3.14 warning;
+  full pytest/coverage emitted the recurring JAX dtype-promotion
+  `FutureWarning` and the existing xarray merge `FutureWarning` in the real
+  JAXGCM payload test.
 
 ### 2026-07-06: V3 API Redesign Implementation
 

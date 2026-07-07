@@ -200,6 +200,7 @@ def test_exchange_uses_wrapped_factory_name_and_keeps_partial_options() -> None:
         regrid=regridder_factory,
     )
     created = exchange.regrid(source_grid, destination_grid)
+    private_created = cast(Any, created)
 
     assert not hasattr(exchange, "create")
     assert not hasattr(exchange, "name")
@@ -207,7 +208,7 @@ def test_exchange_uses_wrapped_factory_name_and_keeps_partial_options() -> None:
     assert not hasattr(exchange, "interpolation_type")
     assert created.source_grid is source_grid
     assert created.destination_grid is destination_grid
-    assert isinstance(created.interpolator, BilinearRectilinearInterpolator)
-    assert created.interpolator.periodic is False
-    assert created.interpolator.extrapolation_mode == "nearest"
-    assert created.interpolator.idw_k == 4
+    assert isinstance(private_created.interpolator, BilinearRectilinearInterpolator)
+    assert private_created.interpolator.periodic is False
+    assert private_created.interpolator.extrapolation_mode == "nearest"
+    assert private_created.interpolator.idw_k == 4

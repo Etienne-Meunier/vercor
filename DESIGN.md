@@ -140,7 +140,12 @@ immutable runtime containers used during traced integration.
   and bundled concrete components are the objects users compose when
   configuring a coupled run. `Coupler` and setup helpers accept plain
   component-name sequences for run order and normalize them internally to
-  immutable tuples.
+  immutable tuples. `vercor.state.RunState` and
+  `vercor.state.ComponentView` are the public result/view names; the older
+  `CouplerState` name remains as a staged compatibility alias.
+  `uniform_rectilinear_grid(...)` is the clear public constructor for generated
+  equally spaced rectilinear grids, while `rectilinear_grid(...)` remains a
+  compatibility alias.
 - Component-author API: `Component`, `DataComponent`, and `HostComponent` are
   the stable extension points. Custom adapters should use the class-level
   authoring constructors where possible: `DataComponent.from_fields()` for
@@ -274,7 +279,7 @@ immutable runtime containers used during traced integration.
   outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.
 - Internal runtime API: the `vercor.runtime` package owns
-  `RuntimeFieldStore`, `RuntimeComponentState`, `CouplerState`, runtime
+  `RuntimeFieldStore`, `RuntimeComponentState`, `RunState`, runtime
   contexts, dispatch contexts, and runtime helper functions. These containers
   carry immutable arrays and static metadata through JAX tracing. They are
   required for differentiability and stable scan carry structure. Runtime
@@ -300,7 +305,7 @@ immutable runtime containers used during traced integration.
   validation, and bilinear exchange patching live in
   `vercor.runtime.surface_masks`. `vercor.runtime.topology` remains the
   orchestration boundary that composes those owners and returns the explicit
-  topology state for the runtime facade to store. `CouplerState` carries
+  topology state for the runtime facade to store. `RunState` carries
   component states and fractional masks through `jax.lax.scan`; binary masks
   remain in `RuntimeTopologyMaps` for final output and topology bookkeeping.
   Setup-time component
@@ -309,7 +314,7 @@ immutable runtime containers used during traced integration.
   `vercor.runtime.initialization`. Runtime state preparation, contract refresh
   for created or validated states, validation, and initial outgoing-store
   priming live in `vercor.runtime.preparation`; it returns
-  `CouplerState` directly while refreshed contracts stay on
+  `RunState` directly while refreshed contracts stay on
   `CouplerRuntimeResources`. `vercor.runtime.facade` reexports these helpers for
   the coupler-facing runtime boundary but does not own their implementation.
   Frozen `RuntimeRunContext` execution inputs live in
@@ -352,7 +357,9 @@ immutable runtime containers used during traced integration.
   payload pytrees carried through `jax.lax.scan` must preserve every leaf's
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.
-  Internal runtime containers are not exported from the package top level.
+  Internal runtime containers are not exported from the package top level
+  except for staged public `RunState`/`CouplerState` aliases exposed through
+  `vercor.state` and `vercor`.
 
 ### Setup adapters and shared ownership
 
@@ -373,9 +380,11 @@ Examples and setup factories assemble runs through `Coupler(...)`,
   field recipes live in `vercor.exchanges` with `*_FIELDS` names. Short recipe
   aliases and setup orchestration helpers such as `ExchangeSpec`,
   `build_coupler()`, `build_exchanges()`, and `add_exchange_specs()` have been
-  removed. Public exchange configuration types, including `ExchangeField` and
-  `RegridderFactory`, are owned by `vercor.exchange` and reexported beside
-  recipes.
+  removed. Public exchange configuration types, including `ExchangeField`, are
+  reexported beside recipes from `vercor.exchanges`. Public regridding
+  protocols, including `Regridder` and `RegridderFactory`, are owned by
+  `vercor.regridding`; concrete bilinear/conservative regridder classes remain
+  private implementation details.
 
 Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live
@@ -416,9 +425,11 @@ builders, accumulation, cadence checks, and file writes through the shared
 adapter record boundary. Final JAXGCM snapshots are registered by the external
 factory and are written from the final runtime payload's `JCMState`, not from
 runtime data fields or declared component outputs.
-Shared cadence, calendar time metadata, dataset coordinate discovery,
-period-sample/output conversion, period-average file orchestration, and direct
-`h5netcdf` writing live in
+Shared output extension primitives for adapter authors are exported from
+`vercor.output`: `OutputVariable`, `ComponentOutputAdapter`, and snapshot-writer
+registration helpers. Shared cadence, calendar time metadata, dataset
+coordinate discovery, period-sample/output conversion, period-average file
+orchestration, and direct `h5netcdf` writing live in
 `vercor.output.time`, `vercor.output.datasets`,
 `vercor.output.period_averages`, `vercor.output.adapters`,
 `vercor.output.period_files`, and `vercor.output.netcdf`.

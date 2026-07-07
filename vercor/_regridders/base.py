@@ -35,6 +35,12 @@ class Regridder:
         return self._has_identical_grids
 
     @property
+    def target_grid(self) -> RectilinearGrid:
+        """Return the destination grid using public target terminology."""
+
+        return self.destination_grid
+
+    @property
     def interpolator(self) -> Any | None:
         """Return the concrete interpolator, or ``None`` for identity grids."""
 

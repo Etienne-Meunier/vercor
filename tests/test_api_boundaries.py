@@ -42,23 +42,96 @@ def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
     from vercor import (
         ComponentView,
         CouplerState,
+        RunState,
         VectorField as PublicVectorField,
         bilinear as public_bilinear,
         conservative as public_conservative,
         rectilinear_grid as public_rectilinear_grid,
+        uniform_rectilinear_grid as public_uniform_rectilinear_grid,
         vector as public_vector,
     )
+    from vercor.regridding import Regridder, RegridderFactory
+    from vercor.state import ComponentView as StateComponentView
+    from vercor.state import CouplerState as StateCouplerState
+    from vercor.state import RunState as StateRunState
 
     assert PublicVectorField is VectorField
     assert public_vector is vector
     assert public_bilinear is bilinear
     assert callable(public_conservative)
     assert public_rectilinear_grid is vercor.grids.rectilinear_grid
-    assert CouplerState.__name__ == "CouplerState"
+    assert public_uniform_rectilinear_grid is vercor.grids.uniform_rectilinear_grid
+    assert CouplerState is RunState
+    assert StateCouplerState is StateRunState
+    assert RunState is StateRunState
+    assert ComponentView is StateComponentView
+    assert RunState.__name__ == "RunState"
     assert ComponentView.__name__ == "ComponentView"
-    assert {"CouplerState", "ComponentView", "VectorField", "vector"}.issubset(
-        vercor.__all__
+    assert getattr(Regridder, "_is_protocol", False)
+    assert cast(Any, RegridderFactory).__name__ == "RegridderFactory"
+    assert {
+        "CouplerState",
+        "RunState",
+        "ComponentView",
+        "VectorField",
+        "vector",
+        "Regridder",
+        "RegridderFactory",
+        "uniform_rectilinear_grid",
+    }.issubset(vercor.__all__)
+
+
+@pytest.mark.fast_always
+def test_staged_public_facades_hide_private_implementation_modules() -> None:
+    import vercor.output as output_module
+    import vercor.regridding as regridding_module
+    import vercor.state as state_module
+    from vercor.output import (
+        ComponentOutputAdapter,
+        OutputVariable,
+        component_snapshot_writer,
+        register_component_snapshot_writer,
     )
+    from vercor.output.adapters import ComponentOutputAdapter as AdapterOwner
+    from vercor.output.variables import OutputVariable as VariableOwner
+
+    coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
+    exchange_signature = str(signature(Exchange))
+    public_bilinear_signature = str(signature(regridding_module.bilinear))
+    public_conservative_signature = str(signature(regridding_module.conservative))
+
+    assert "from vercor.exchanges import Exchange" in coupler_source
+    assert "from vercor._exchange import Exchange" not in coupler_source
+    assert Exchange.__module__ == "vercor.exchanges"
+    assert "_exchange" not in exchange_signature
+    assert "_regridders" not in exchange_signature
+    assert "RegridderFactory" in exchange_signature
+    assert regridding_module.bilinear.__module__ == "vercor.regridding"
+    assert regridding_module.conservative.__module__ == "vercor.regridding"
+    assert vercor.bilinear.__module__ == "vercor.regridding"
+    assert vercor.conservative.__module__ == "vercor.regridding"
+    assert "_regridders" not in public_bilinear_signature
+    assert "_regridders" not in public_conservative_signature
+    assert "Regridder" in public_bilinear_signature
+    assert "Regridder" in public_conservative_signature
+    assert regridding_module.__all__ == [
+        "Regridder",
+        "RegridderFactory",
+        "bilinear",
+        "conservative",
+    ]
+    assert state_module.__all__ == ["RunState", "CouplerState", "ComponentView"]
+    assert output_module.__all__ == [
+        "ComponentOutputAdapter",
+        "ComponentSnapshotWriter",
+        "OutputVariable",
+        "component_snapshot_writer",
+        "register_component_snapshot_writer",
+    ]
+    assert OutputVariable is VariableOwner
+    assert ComponentOutputAdapter is AdapterOwner
+    assert callable(component_snapshot_writer)
+    assert callable(register_component_snapshot_writer)
 
 
 @pytest.mark.fast_always
@@ -95,12 +168,12 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
     assert coupler.add_exchanges(()) is coupler
     assert Coupler.initialize.__annotations__.get("return") == "None"
     assert "enable_x64_computations" not in signature(Coupler.initialize).parameters
-    assert Coupler.state.__annotations__.get("return") == "CouplerState"
-    assert Coupler.run.__annotations__.get("return") == "CouplerState"
+    assert Coupler.state.__annotations__.get("return") == "RunState"
+    assert Coupler.run.__annotations__.get("return") == "RunState"
     assert Coupler.view.__annotations__.get("return") == "ComponentView"
 
     state = coupler.state()
-    assert isinstance(state, vercor.CouplerState)
+    assert isinstance(state, vercor.RunState)
     view = coupler.view(state, "ATM")
     assert isinstance(view, RuntimeComponentView)
     assert isinstance(view, vercor.ComponentView)
@@ -482,9 +555,10 @@ def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
         (regridding_module, "BilinearRectilinearRegridder"),
         (regridding_module, "ConservativeRegridder"),
         (regridding_module, "ConservativeRectilinearRegridder"),
-        (regridding_module, "Regridder"),
     ):
         assert not hasattr(module, name)
+    assert hasattr(regridding_module, "Regridder")
+    assert hasattr(regridding_module, "RegridderFactory")
     assert make_slab_ocean(grid).name == "OCN"
 
 
@@ -1537,10 +1611,12 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     )
     assert "VALID_EXCHANGE_FIELD_NAMES: list[str]" not in exchange_source
     assert "ExchangeField: TypeAlias" not in exchange_source
-    assert "RegridderFactory: TypeAlias" in exchange_source
+    assert "from vercor.regridding import RegridderFactory" in exchange_source
+    assert "RegridderFactory: TypeAlias" not in exchange_source
     assert not coupler_helpers_path.exists()
     assert "ExchangeField: TypeAlias" not in exchange_recipes_source
-    assert "from vercor._exchange import Exchange, RegridderFactory" in exchanges_source
+    assert "from vercor._exchange import Exchange" in exchanges_source
+    assert "from vercor.regridding import RegridderFactory" in exchanges_source
     assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
     assert not runtime_cache_path.exists()
@@ -1980,7 +2056,10 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def __getattr__(" not in output_init_source
     assert "def __dir__(" not in output_init_source
     assert "_RUNTIME_EXPORTS" not in output_init_source
-    assert "__all__: list[str] = []" in output_init_source
+    assert "from vercor.output.adapters import (" in output_init_source
+    assert "from vercor.output.variables import OutputVariable" in output_init_source
+    assert '"ComponentOutputAdapter"' in output_init_source
+    assert '"OutputVariable"' in output_init_source
     assert "from vercor.output.runtime import (" not in output_init_source
     assert "write_coupler_runtime_outputs" not in output_init_source
     assert "write_runtime_component_view_to_netcdf" not in output_init_source

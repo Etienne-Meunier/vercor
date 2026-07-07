@@ -6,7 +6,7 @@ from vercor._grid import RectilinearGrid
 from vercor.grid_geometry import make_rectilinear_grid
 
 
-def rectilinear_grid(
+def uniform_rectilinear_grid(
     name: str,
     *,
     nlon: int,
@@ -29,4 +29,25 @@ def rectilinear_grid(
     )
 
 
-__all__ = ["RectilinearGrid", "rectilinear_grid"]
+def rectilinear_grid(
+    name: str,
+    *,
+    nlon: int,
+    nlat: int,
+    longitude: tuple[float, float],
+    latitude: tuple[float, float],
+    binary_mask: Any | None = None,
+) -> RectilinearGrid:
+    """Compatibility alias for :func:`uniform_rectilinear_grid`."""
+
+    return uniform_rectilinear_grid(
+        name,
+        nlon=nlon,
+        nlat=nlat,
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=binary_mask,
+    )
+
+
+__all__ = ["RectilinearGrid", "rectilinear_grid", "uniform_rectilinear_grid"]

@@ -1,15 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, TypeAlias
+from typing import Callable
 
 from vercor.fields import ExchangeField, normalize_field_items
-from vercor._regridders.bilinear import BilinearRectilinearRegridder, bilinear
-from vercor._regridders.conservative import ConservativeRectilinearRegridder
-
-RegridderFactory: TypeAlias = Callable[
-    ..., BilinearRectilinearRegridder | ConservativeRectilinearRegridder
-]
+from vercor.regridding import RegridderFactory, bilinear
 
 
 def _regridder_factory_name(regridder_factory: Callable[..., object]) -> str:

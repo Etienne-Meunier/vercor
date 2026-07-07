@@ -10,7 +10,7 @@ import jax
 
 from vercor import Clock, Coupler, Exchange
 from vercor.dtypes import jax_ones
-from vercor.grids import rectilinear_grid
+from vercor.grids import uniform_rectilinear_grid
 from vercor.regridding import bilinear, conservative
 from vercor.setups import (
     make_slab_atmosphere,
@@ -81,7 +81,7 @@ def build_slab_coupler(
 ) -> Coupler:
     """Build and initialize a small pure-JAX slab coupler for profiling."""
 
-    atm_grid = rectilinear_grid(
+    atm_grid = uniform_rectilinear_grid(
         "profile-atm-grid",
         nlon=grid_nx,
         nlat=grid_ny,
@@ -89,7 +89,7 @@ def build_slab_coupler(
         latitude=(-90.0, 90.0),
     )
     ocn_mask = jax_ones((grid_ny, grid_nx)).at[:2, :].set(0.0)
-    ocn_grid = rectilinear_grid(
+    ocn_grid = uniform_rectilinear_grid(
         "profile-ocn-grid",
         nlon=grid_nx,
         nlat=grid_ny,
@@ -97,14 +97,14 @@ def build_slab_coupler(
         latitude=(-90.0, 90.0),
         binary_mask=ocn_mask,
     )
-    lnd_grid = rectilinear_grid(
+    lnd_grid = uniform_rectilinear_grid(
         "profile-lnd-grid",
         nlon=grid_nx,
         nlat=grid_ny,
         longitude=(0.0, 360.0),
         latitude=(-90.0, 90.0),
     )
-    ice_grid = rectilinear_grid(
+    ice_grid = uniform_rectilinear_grid(
         "profile-ice-grid",
         nlon=grid_nx,
         nlat=grid_ny,

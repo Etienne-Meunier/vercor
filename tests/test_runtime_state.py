@@ -246,8 +246,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class RuntimeFieldStore" in runtime_stores_source
     assert "class RuntimeFieldStore" not in runtime_source
     assert "class RuntimeComponentState" in runtime_source
-    assert "class CouplerState" in runtime_source
-    assert "RuntimeCouplerState = CouplerState" in runtime_source
+    assert "class RunState" in runtime_source
+    assert "CouplerState = RunState" in runtime_source
+    assert "RuntimeCouplerState = RunState" in runtime_source
     assert "class RuntimeStepInfo" in runtime_time_source
     assert "class RuntimeStepInfo" not in runtime_source
     assert "def dispatch_component_exchanges" in runtime_exchange_dispatch_source

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Self
 from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
 from vercor.exceptions import CouplerError
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.fields import VectorField
 from vercor.jax_logging import (
     JaxCallbackLogger,
@@ -20,9 +20,8 @@ from vercor.jax_logging import (
 from vercor._run_order import normalize_run_order
 import vercor.runtime.facade as _runtime_facade
 from vercor.runtime.resources import CouplerRuntimeResources
-from vercor.runtime.state import CouplerState
-from vercor.runtime.views import ComponentView
 from vercor.settings import Settings
+from vercor.state import ComponentView, RunState
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -205,7 +204,7 @@ class Coupler:
         self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
         self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
 
-    def state(self, *, prefill: bool = True) -> CouplerState:
+    def state(self, *, prefill: bool = True) -> RunState:
         """Create and validate the coupled runtime state."""
 
         return _runtime_facade.create_runtime_state(
@@ -215,7 +214,7 @@ class Coupler:
 
     def view(
         self,
-        state: CouplerState,
+        state: RunState,
         name: str,
     ) -> ComponentView:
         """Return a component view for diagnostics and output."""
@@ -228,7 +227,7 @@ class Coupler:
 
     def views(
         self,
-        state: CouplerState,
+        state: RunState,
         names: Sequence[str] | None = None,
     ) -> dict[str, ComponentView]:
         """Return component views for diagnostics and output."""
@@ -241,7 +240,7 @@ class Coupler:
 
     def write_outputs(
         self,
-        state: CouplerState,
+        state: RunState,
         *,
         output_dir: Path = Path("."),
         filename_template: str = "{component}.runtime_fields.nc",
@@ -278,8 +277,8 @@ class Coupler:
 
     def run(
         self,
-        state: CouplerState | None = None,
-    ) -> CouplerState:
+        state: RunState | None = None,
+    ) -> RunState:
         """
         Run all registered components through the unified runtime entrypoint.
 

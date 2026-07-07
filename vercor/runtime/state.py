@@ -68,7 +68,7 @@ class RuntimeComponentState(PyTreeNodeMixin):
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class CouplerState(PyTreeNodeMixin):
+class RunState(PyTreeNodeMixin):
     """Immutable coupled model state returned by the public coupler facade."""
 
     pytree_children = ("components", "fractional_masks")
@@ -106,14 +106,14 @@ class CouplerState(PyTreeNodeMixin):
 
     def set_component_state(
         self, name: str, component_state: RuntimeComponentState
-    ) -> "CouplerState":
+    ) -> "RunState":
         """Return a new coupler state with one component replaced."""
 
         if name not in self.component_indices:
             raise KeyError(f"Runtime component {name!r} not found")
         components = list(self.components)
         components[self.component_indices[name]] = component_state
-        return CouplerState(
+        return RunState(
             component_names=self.component_names,
             components=tuple(components),
             fractional_masks=self.fractional_masks,
@@ -129,4 +129,12 @@ class CouplerState(PyTreeNodeMixin):
         )
 
 
-RuntimeCouplerState = CouplerState
+CouplerState = RunState
+RuntimeCouplerState = RunState
+
+__all__ = [
+    "CouplerState",
+    "RunState",
+    "RuntimeComponentState",
+    "RuntimeCouplerState",
+]
