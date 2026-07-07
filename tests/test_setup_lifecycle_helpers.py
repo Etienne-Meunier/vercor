@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -124,6 +125,119 @@ def test_seed_grid_field_defaults_seeds_component_defaults_with_overrides() -> N
     assert jnp.all(component.data["humidity"] == 0.0)
 
 
+def test_load_jcm_inputs_facade_returns_named_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import vercor.setups as setups
+    import vercor.setups.jcm_setup_helpers as helper
+
+    coords = object()
+    terrain = object()
+    forcing = object()
+    calls: dict[str, object] = {}
+
+    def fake_generate(
+        *,
+        resolution: int = 31,
+        input_data_directory: Path | None = None,
+    ) -> tuple[object, object, object]:
+        calls["resolution"] = resolution
+        calls["input_data_directory"] = input_data_directory
+        return coords, terrain, forcing
+
+    monkeypatch.setattr(
+        helper,
+        "generate_jcm_coords_forcing_topography_files",
+        fake_generate,
+    )
+
+    inputs = setups.load_jcm_inputs(
+        resolution=42,
+        input_data_directory=tmp_path,
+    )
+
+    assert isinstance(inputs, setups.JCMInputs)
+    assert inputs.coords is coords
+    assert inputs.terrain is terrain
+    assert inputs.forcing is forcing
+    assert calls == {"resolution": 42, "input_data_directory": tmp_path}
+
+
+def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vercor.setups as setups
+    import vercor.setups.jcm_setup_helpers as helper
+
+    coords = object()
+    forcing = object()
+    terrain = SimpleNamespace(fmask="original-mask")
+    inputs = setups.JCMInputs(coords=coords, terrain=terrain, forcing=forcing)
+    ocean_grid = make_test_grid(name="ocn-grid")
+    land_mask = jnp.asarray([[1.0, 0.0], [0.0, 1.0]])
+    land: Any = SimpleNamespace(grid=SimpleNamespace(binary_mask=land_mask))
+    atmosphere: Any = object()
+    calls: dict[str, Any] = {}
+
+    def unexpected_generate() -> tuple[object, SimpleNamespace, object]:
+        pytest.fail("preloaded JCM inputs should avoid generating inputs again")
+
+    def fake_make_jcm_land(
+        received_coords: object,
+        received_forcing: object,
+        received_grid: object,
+    ) -> Any:
+        calls["land_args"] = (received_coords, received_forcing, received_grid)
+        return land
+
+    def fake_transposed_host_array(mask: object) -> str:
+        calls["mask"] = mask
+        return "patched-mask"
+
+    def fake_make_jax_gcm(
+        received_coords: object,
+        received_terrain: object,
+        **kwargs: object,
+    ) -> object:
+        calls["atmosphere_args"] = (received_coords, received_terrain, kwargs)
+        return atmosphere
+
+    monkeypatch.setattr(
+        helper,
+        "generate_jcm_coords_forcing_topography_files",
+        unexpected_generate,
+    )
+    monkeypatch.setattr(helper, "make_jcm_land", fake_make_jcm_land)
+    monkeypatch.setattr(helper, "transposed_host_array", fake_transposed_host_array)
+    monkeypatch.setattr(helper, "make_jax_gcm", fake_make_jax_gcm)
+
+    result = helper.make_jcm_land_atmosphere(
+        ocean_grid,
+        inputs=inputs,
+        do_spinup=False,
+    )
+
+    assert result.land is land
+    assert result.atmosphere is atmosphere
+    assert result.coords is coords
+    assert result.terrain is terrain
+    assert result.forcing is forcing
+    assert terrain.fmask == "patched-mask"
+    assert calls["mask"] is land_mask
+    assert calls["land_args"] == (coords, forcing, ocean_grid)
+    assert calls["atmosphere_args"] == (
+        coords,
+        terrain,
+        {
+            "forcing_data": forcing,
+            "do_spinup": False,
+            "jitted": True,
+            "output_frequency": "month",
+        },
+    )
+
+
 def test_initialize_camulator_forcing_cursor_returns_index_and_warns_on_mismatch() -> (
     None
 ):
@@ -202,7 +316,12 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     atmosphere: Any = object()
     calls: dict[str, Any] = {}
 
-    def fake_generate() -> tuple[object, SimpleNamespace, object]:
+    def fake_generate(
+        *,
+        resolution: int = 31,
+        input_data_directory: Path | None = None,
+    ) -> tuple[object, SimpleNamespace, object]:
+        calls["generate_args"] = (resolution, input_data_directory)
         calls["generated"] = True
         return coords, terrain, forcing
 
@@ -247,6 +366,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     assert result.terrain is terrain
     assert result.forcing is forcing
     assert terrain.fmask == "patched-mask"
+    assert calls["generate_args"] == (31, None)
     assert calls["mask"] is land_mask
     assert calls["land_args"] == (coords, forcing, ocean_grid)
     assert calls["atmosphere_args"] == (

@@ -10,7 +10,7 @@ from vercor.runtime.contracts import (
     build_runtime_contracts,
     exchange_key_name,
 )
-from vercor.runtime.state import RuntimeCouplerState
+from vercor.runtime.state import CouplerState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.types import RuntimeArray
 
@@ -25,7 +25,7 @@ def runtime_state_from_components(
     *,
     contracts: Mapping[str, RuntimeComponentContract] | None = None,
     prefill_missing: bool = False,
-) -> RuntimeCouplerState:
+) -> CouplerState:
     """Create immutable runtime state from component setup objects."""
 
     runtime_contracts = (
@@ -48,7 +48,7 @@ def runtime_state_from_components(
     runtime_fractional_masks = {
         exchange_key_name(*key): value for key, value in fractional_masks.items()
     }
-    return RuntimeCouplerState(
+    return CouplerState(
         component_names=tuple(components.keys()),
         components=runtime_components,
         fractional_masks=RuntimeFieldStore.from_mapping(runtime_fractional_masks),

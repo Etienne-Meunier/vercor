@@ -4,9 +4,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 from vercor import Clock, Coupler, Exchange
-from vercor.setups import make_jax_gcm
-from vercor.setups import make_slab_land
-from vercor.setups import make_slab_ocean
+from vercor.setups import load_jcm_inputs, make_jax_gcm, make_slab_land, make_slab_ocean
 from vercor.dtypes import as_jax_real_array
 from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
@@ -21,13 +19,12 @@ from vercor.diagnostics import (
     print_component_field_means_table,
 )
 
-from vercor.setups.external.jax_gcm_tools import (
-    generate_jcm_coords_forcing_topography_files,
-)
-
 if __name__ == "__main__":
 
-    coords, terrain, forcing = generate_jcm_coords_forcing_topography_files()
+    inputs = load_jcm_inputs()
+    coords = inputs.coords
+    terrain = inputs.terrain
+    forcing = inputs.forcing
 
     # Build components
     atm = make_jax_gcm(coords, terrain, forcing_data=forcing, jitted=True)

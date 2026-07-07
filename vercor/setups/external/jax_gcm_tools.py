@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional, Tuple
 from importlib import resources
+import warnings
 
 from dinosaur.coordinate_systems import CoordinateSystem
 
@@ -37,7 +38,7 @@ def get_default_parameter_values(
     return output
 
 
-def generate_jcm_coords_forcing_topography_files(
+def _generate_jcm_coords_forcing_topography_files(
     resolution: int = 31,
     input_data_directory: Optional[Path] = None,
 ) -> Tuple[CoordinateSystem, TerrainData, ForcingData]:
@@ -71,3 +72,22 @@ def generate_jcm_coords_forcing_topography_files(
     forcing = ForcingData.from_file(forcing_file, coords=coords)
 
     return (coords, terrain, forcing)
+
+
+def generate_jcm_coords_forcing_topography_files(
+    resolution: int = 31,
+    input_data_directory: Optional[Path] = None,
+) -> Tuple[CoordinateSystem, TerrainData, ForcingData]:
+    """Deprecated compatibility wrapper for direct JCM input generation."""
+
+    warnings.warn(
+        "vercor.setups.external.jax_gcm_tools."
+        "generate_jcm_coords_forcing_topography_files(...) is deprecated; "
+        "use vercor.setups.load_jcm_inputs(...) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _generate_jcm_coords_forcing_topography_files(
+        resolution=resolution,
+        input_data_directory=input_data_directory,
+    )

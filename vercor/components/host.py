@@ -12,10 +12,7 @@ from vercor.components.contracts import (
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
-)
-from vercor.components._constructor_options import (
-    normalize_field_spec,
-    normalize_lifecycle_hooks,
+    callable_component_options,
 )
 from vercor.components.base import Component
 from vercor.components._lifecycle import ComponentLifecycleHooks
@@ -47,20 +44,22 @@ class HostComponent(Component):
     ) -> "HostComponent":
         """Create a host-runtime component from a Python step callable."""
 
-        field_spec = normalize_field_spec(
+        options = callable_component_options(
+            step,
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
+            payload=payload,
+            hooks=hooks,
         )
-        lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
         return _CallableHostRuntimeComponent(
             name=name,
             grid=grid,
-            step=step,
-            payload=payload,
+            step=options.step,
+            payload=options.payload,
             settings=settings,
-            field_spec=field_spec,
-            lifecycle_hooks=lifecycle_hooks,
+            field_spec=options.field_spec,
+            lifecycle_hooks=options.lifecycle_hooks,
         )
 
     @final

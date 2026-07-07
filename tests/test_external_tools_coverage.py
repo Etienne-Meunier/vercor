@@ -174,12 +174,13 @@ def test_generate_jcm_coords_forcing_topography_files_uses_expected_paths(
         staticmethod(fake_forcing_from_file),
     )
 
-    actual_coords, terrain, forcing = (
-        jax_gcm_tools_module.generate_jcm_coords_forcing_topography_files(
-            resolution=21,
-            input_data_directory=input_data_directory,
+    with pytest.warns(DeprecationWarning, match="load_jcm_inputs"):
+        actual_coords, terrain, forcing = (
+            jax_gcm_tools_module.generate_jcm_coords_forcing_topography_files(
+                resolution=21,
+                input_data_directory=input_data_directory,
+            )
         )
-    )
 
     assert actual_coords is coords
     assert terrain == "terrain"

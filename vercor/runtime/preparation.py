@@ -12,7 +12,7 @@ from vercor._run_order import normalize_run_order
 from vercor.runtime.state_validation import (
     validate_runtime_state as _validate_runtime_state,
 )
-from vercor.runtime.state import RuntimeCouplerState
+from vercor.runtime.state import CouplerState
 from vercor.runtime.time import initial_runtime_step_info
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ def runtime_state_from_components(
     *,
     inputs: "RuntimeFacadeInputs",
     prefill_missing: bool,
-) -> RuntimeCouplerState:
+) -> CouplerState:
     """Build immutable runtime state from setup components and exchanges."""
 
     runtime_contracts = build_runtime_contracts(
@@ -44,7 +44,7 @@ def runtime_state_from_components(
 
 
 def validate_runtime_state(
-    runtime_state: RuntimeCouplerState,
+    runtime_state: CouplerState,
     *,
     inputs: "RuntimeFacadeInputs",
 ) -> dict[str, RuntimeComponentContract]:
@@ -71,7 +71,7 @@ def create_runtime_state(
     *,
     inputs: "RuntimeFacadeInputs",
     prefill_missing: bool,
-) -> RuntimeCouplerState:
+) -> CouplerState:
     """Create, prime, and validate immutable runtime state."""
 
     runtime_state = runtime_state_from_components(
@@ -102,11 +102,11 @@ def create_runtime_state(
 
 
 def prepare_runtime_state(
-    initial_state: RuntimeCouplerState | None,
+    initial_state: CouplerState | None,
     *,
     inputs: "RuntimeFacadeInputs",
     validate_state: bool = True,
-) -> RuntimeCouplerState:
+) -> CouplerState:
     """Return a runtime state ready for execution."""
 
     if initial_state is None:

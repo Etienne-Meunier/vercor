@@ -30,7 +30,7 @@ from vercor.calendar import DateTime360
 from vercor.clock import Clock
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
-from vercor.fields import VectorField, flatten_field_items, vector
+from vercor.fields import VALID_FIELD_NAMES, VectorField, flatten_field_items, vector
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.runtime.views import RuntimeComponentView
@@ -880,8 +880,11 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "class HostRuntimeComponent" not in base_source
     assert "def normalize_field_spec(" in constructor_options_source
     assert "def normalize_lifecycle_hooks(" in constructor_options_source
-    assert "normalize_field_spec(" in base_source
-    assert "normalize_field_spec(" in host_source
+    assert "normalize_field_spec(" not in base_source
+    assert "normalize_field_spec(" not in host_source
+    assert "def callable_component_options(" in callable_source
+    assert "callable_component_options(" in base_source
+    assert "callable_component_options(" in host_source
     assert "normalize_lifecycle_hooks(" in data_source
     assert "def normalize_author_field_values" in contracts_source
     assert "class _CallableRuntimeMixin" in callable_source
@@ -1398,7 +1401,6 @@ def test_setup_adapters_do_not_import_runtime_context_or_store_internals() -> No
 def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None:
     import vercor.calendar as calendar_module
     import vercor.clock as clock_module
-    import vercor.field_names as field_names_module
     import vercor.forcing_index as forcing_index_module
     import vercor.fluxes.vertical_coordinates as vertical_module
     import vercor.grid_geometry as grid_geometry_module
@@ -1459,7 +1461,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
         importlib.import_module("vercor.pytree_utils")
     assert "gravity" in physical_constants_module.PHYSICAL_CONSTANT_SETTINGS
     assert not hasattr(exchange_module, "VALID_EXCHANGE_FIELD_NAMES")
-    assert "sea_surface_temperature" in field_names_module.VALID_EXCHANGE_FIELD_NAMES
+    assert "sea_surface_temperature" in VALID_FIELD_NAMES
 
     assert exchange_module.ExchangeField == str | VectorField
     assert hasattr(exchange_module, "RegridderFactory")
@@ -1524,7 +1526,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "from vercor._exchange import VALID_EXCHANGE_FIELD_NAMES" not in (
         runtime_validation_source
     )
-    assert "from vercor.field_names import VALID_EXCHANGE_FIELD_NAMES" in (
+    assert "from vercor.fields import VALID_FIELD_NAMES" in (runtime_validation_source)
+    assert "from vercor.field_names import VALID_EXCHANGE_FIELD_NAMES" not in (
         runtime_validation_source
     )
     assert "from vercor.field_names import" not in exchange_source
@@ -1570,6 +1573,81 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "def mean_leaf(" not in jax_gcm_tools_source
     assert "def stack_objects(" not in jax_gcm_tools_source
     assert "def unwrap_leading_dims(" not in jax_gcm_tools_source
+
+
+@pytest.mark.fast_always
+def test_field_names_module_deprecates_duplicate_exchange_vocabulary() -> None:
+    import vercor.field_names as field_names_module
+    from vercor.fields import VALID_FIELD_NAMES
+
+    with pytest.warns(DeprecationWarning, match="VALID_FIELD_NAMES"):
+        legacy_names = field_names_module.VALID_EXCHANGE_FIELD_NAMES
+
+    assert legacy_names == VALID_FIELD_NAMES
+    assert field_names_module.__all__ == ["VALID_EXCHANGE_FIELD_NAMES"]
+
+
+@pytest.mark.fast_always
+def test_setup_lazy_exports_advertise_public_factories_only() -> None:
+    import vercor.setups as setups_module
+    import vercor.setups.data as data_setups_module
+    import vercor.setups.external as external_setups_module
+
+    assert {"JCMInputs", "load_jcm_inputs"}.issubset(set(setups_module.__all__))
+
+    for module_name in (
+        "era5_atmosphere",
+        "era5_land",
+        "era5_ocean",
+        "erainterim_ocean",
+        "jcm_land",
+    ):
+        assert module_name not in data_setups_module.__all__
+
+    for module_name in ("camulator_land", "jax_gcm"):
+        assert module_name not in external_setups_module.__all__
+
+    assert {
+        "make_era5_land",
+        "make_jcm_land",
+    }.issubset(set(data_setups_module.__all__))
+    assert {
+        "make_camulator_land",
+        "make_jax_gcm",
+        "make_veros_gcm",
+    }.issubset(set(external_setups_module.__all__))
+
+
+@pytest.mark.fast_always
+def test_callable_component_factories_share_normalized_options_owner() -> None:
+    callable_source = Path("vercor/components/_callable_wrappers.py").read_text(
+        encoding="utf-8"
+    )
+    base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+    host_source = Path("vercor/components/host.py").read_text(encoding="utf-8")
+
+    assert "class CallableComponentOptions" in callable_source
+    assert "def callable_component_options(" in callable_source
+    assert "callable_component_options(" in base_source
+    assert "callable_component_options(" in host_source
+
+
+@pytest.mark.fast_always
+def test_production_runtime_modules_use_coupler_state_name() -> None:
+    production_paths = (
+        Path("vercor/runtime/coupler_state.py"),
+        Path("vercor/runtime/driver.py"),
+        Path("vercor/runtime/exchange_dispatch.py"),
+        Path("vercor/runtime/facade.py"),
+        Path("vercor/runtime/preparation.py"),
+        Path("vercor/runtime/runner.py"),
+        Path("vercor/runtime/state_validation.py"),
+        Path("vercor/output/runtime.py"),
+    )
+
+    for path in production_paths:
+        source = path.read_text(encoding="utf-8")
+        assert "RuntimeCouplerState" not in source, path
 
 
 @pytest.mark.fast_always
@@ -2288,6 +2366,18 @@ def test_jax_gcm_factory_does_not_attach_test_only_setup_state() -> None:
 
     jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
     assert 'getattr(atm, "model")' not in jcm_slab_source
+
+
+@pytest.mark.fast_always
+def test_jcm_examples_use_public_input_loader_facade() -> None:
+    jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
+    assert "vercor.setups.external.jax_gcm_tools" not in jcm_slab_source
+    assert "load_jcm_inputs" in jcm_slab_source
+
+    jcm_veros_source = Path("examples/run_jcm_with_veros.py").read_text(
+        encoding="utf-8"
+    )
+    assert "generate_jcm_coords_forcing_topography_files" not in jcm_veros_source
 
 
 @pytest.mark.fast_always

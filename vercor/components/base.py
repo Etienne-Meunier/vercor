@@ -15,10 +15,7 @@ from vercor.components.contracts import (
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
-)
-from vercor.components._constructor_options import (
-    normalize_field_spec,
-    normalize_lifecycle_hooks,
+    callable_component_options,
 )
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle import ComponentLifecycleHooks
@@ -111,20 +108,22 @@ class Component(
         Scalar default values expand to this component's grid shape.
         """
 
-        field_spec = normalize_field_spec(
+        options = callable_component_options(
+            step,
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
+            payload=payload,
+            hooks=hooks,
         )
-        lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
         return _CallableComponent(
             name=name,
             grid=grid,
-            step=step,
-            payload=payload,
+            step=options.step,
+            payload=options.payload,
             settings=settings,
-            field_spec=field_spec,
-            lifecycle_hooks=lifecycle_hooks,
+            field_spec=options.field_spec,
+            lifecycle_hooks=options.lifecycle_hooks,
         )
 
     @abstractmethod

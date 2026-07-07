@@ -11,8 +11,6 @@ from vercor.setups._lazy_imports import (
 )
 
 _LAZY_EXPORTS = {
-    "camulator_land": LazyExport("camulator_land"),
-    "jax_gcm": LazyExport("jax_gcm"),
     "make_camulator_gcm": LazyExport("camulator", "make_camulator_gcm"),
     "make_camulator_land": LazyExport("camulator_land", "make_camulator_land"),
     "make_jax_gcm": LazyExport("jax_gcm", "make_jax_gcm"),

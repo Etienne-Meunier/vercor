@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from vercor.exceptions import CouplerError
 from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.runtime.contracts import RuntimeComponentContract, exchange_key_name
-from vercor.runtime.state import RuntimeCouplerState
+from vercor.runtime.state import CouplerState
 from vercor.runtime.validation import validate_component_runtime_contract_fields
 
 if TYPE_CHECKING:
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 def validate_runtime_state(
-    runtime_state: RuntimeCouplerState,
+    runtime_state: CouplerState,
     *,
     components: Mapping[str, Component],
     exchanges: Sequence[Exchange],

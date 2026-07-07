@@ -192,10 +192,11 @@ immutable runtime containers used during traced integration.
   Author-value normalization lives in private
   `vercor.components._contracts`; public constructor option normalization lives
   in private `vercor.components._constructor_options`; callable signature
-  adaptation, shared callable construction metadata, and shared callable runtime mechanics live in
-  private `vercor.components._callable_wrappers`, which carries lifecycle hooks
-  as that container and delegates hook precedence/default payload fallback to
-  the lifecycle mixin. The concrete callable-backed
+  adaptation, shared callable construction options, and shared callable runtime
+  mechanics live in private `vercor.components._callable_wrappers`, which
+  carries lifecycle hooks as that container and delegates hook
+  precedence/default payload fallback to the lifecycle mixin. The concrete
+  callable-backed
   differentiable wrapper is owned by `vercor.components.base`, and the concrete
   callable-backed host wrapper is owned by `vercor.components.host`, keeping
   each runtime kind beside its public abstract base. Private helper modules use
@@ -273,7 +274,7 @@ immutable runtime containers used during traced integration.
   outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.
 - Internal runtime API: the `vercor.runtime` package owns
-  `RuntimeFieldStore`, `RuntimeComponentState`, `RuntimeCouplerState`, runtime
+  `RuntimeFieldStore`, `RuntimeComponentState`, `CouplerState`, runtime
   contexts, dispatch contexts, and runtime helper functions. These containers
   carry immutable arrays and static metadata through JAX tracing. They are
   required for differentiability and stable scan carry structure. Runtime
@@ -299,7 +300,7 @@ immutable runtime containers used during traced integration.
   validation, and bilinear exchange patching live in
   `vercor.runtime.surface_masks`. `vercor.runtime.topology` remains the
   orchestration boundary that composes those owners and returns the explicit
-  topology state for the runtime facade to store. `RuntimeCouplerState` carries
+  topology state for the runtime facade to store. `CouplerState` carries
   component states and fractional masks through `jax.lax.scan`; binary masks
   remain in `RuntimeTopologyMaps` for final output and topology bookkeeping.
   Setup-time component
@@ -308,7 +309,7 @@ immutable runtime containers used during traced integration.
   `vercor.runtime.initialization`. Runtime state preparation, contract refresh
   for created or validated states, validation, and initial outgoing-store
   priming live in `vercor.runtime.preparation`; it returns
-  `RuntimeCouplerState` directly while refreshed contracts stay on
+  `CouplerState` directly while refreshed contracts stay on
   `CouplerRuntimeResources`. `vercor.runtime.facade` reexports these helpers for
   the coupler-facing runtime boundary but does not own their implementation.
   Frozen `RuntimeRunContext` execution inputs live in
@@ -360,6 +361,12 @@ Reusable concrete adapters live under the canonical packaged namespace
 should not depend on a top-level `setups` package. Setup adapters use
 `SetupContext`, `StepContext`, and plain runtime-array mappings at their author
 boundary instead of importing runtime context/store internals directly.
+The public setup facade exports concrete factory functions and the
+`JCMInputs`/`load_jcm_inputs(...)` loader for reusable JCM coordinate, terrain,
+and forcing inputs; setup subpackages no longer advertise lazy module objects in
+their `__all__` lists. Deep adapter modules remain importable for
+package-internal tests and optional-dependency boundaries, but supported user
+workflows should enter through `vercor.setups`.
 Examples and setup factories assemble runs through `Coupler(...)`,
 `Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
@@ -374,7 +381,9 @@ Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live
 in `vercor.calendar`. Daily forcing-index policy, including noleap and 360-day
 calendar mapping to forcing-file day indexes, lives in `vercor.forcing_index`.
-The canonical exchange field vocabulary lives in `vercor.field_names`.
+The canonical exchange field vocabulary lives in `vercor.fields` as
+`VALID_FIELD_NAMES`; `vercor.field_names.VALID_EXCHANGE_FIELD_NAMES` is a
+deprecated compatibility alias.
 Rectilinear grid construction, center-to-edge geometry, and grid identity checks
 live in `vercor.grid_geometry`; mask math lives in `vercor.grid_masks`, while
 default component-topology name validation and lookup are private to

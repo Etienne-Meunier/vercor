@@ -12,7 +12,7 @@ from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.output.adapters import component_snapshot_writer
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
-from vercor.runtime.state import RuntimeCouplerState
+from vercor.runtime.state import CouplerState
 from vercor.runtime.views import RuntimeComponentView
 from vercor.types import RuntimeArray
 
@@ -115,7 +115,7 @@ def _runtime_output_variable(
 
 def write_coupler_runtime_outputs(
     *,
-    final_state: RuntimeCouplerState,
+    final_state: CouplerState,
     components: Mapping[str, "Component"],
     exchanges: Sequence[Exchange],
     binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
@@ -158,7 +158,7 @@ def write_coupler_runtime_outputs(
 
 def write_coupler_component_snapshots(
     *,
-    final_state: RuntimeCouplerState,
+    final_state: CouplerState,
     components: Mapping[str, "Component"],
     output_time: datetime | ModelDateTime,
     output_dir: Path = Path("."),

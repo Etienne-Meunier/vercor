@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from vercor.components.contracts import (
+    AuthorFieldValues,
     AuthorStepCallable,
+    ComponentHooks,
     ComponentStepCallable,
     ComponentStepReturn,
     FieldSpec,
+    FieldNames,
+)
+from vercor.components._constructor_options import (
+    normalize_field_spec,
+    normalize_lifecycle_hooks,
 )
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.components._runtime_fields import apply_step_result
@@ -18,6 +26,39 @@ if TYPE_CHECKING:
     from vercor.components.base import Component
     from vercor.components.contexts import StepContext
     from vercor.runtime.state import RuntimeComponentState
+
+
+@dataclass(frozen=True)
+class CallableComponentOptions:
+    """Normalized callable-backed component construction options."""
+
+    step: AuthorStepCallable
+    payload: Any | None
+    field_spec: FieldSpec
+    lifecycle_hooks: ComponentLifecycleHooks
+
+
+def callable_component_options(
+    step: AuthorStepCallable,
+    *,
+    inputs: FieldNames = (),
+    outputs: FieldNames = (),
+    defaults: AuthorFieldValues = None,
+    payload: Any | None = None,
+    hooks: ComponentHooks | None = None,
+) -> CallableComponentOptions:
+    """Normalize shared public callable component constructor options."""
+
+    return CallableComponentOptions(
+        step=step,
+        payload=payload,
+        field_spec=normalize_field_spec(
+            inputs=inputs,
+            outputs=outputs,
+            defaults=defaults,
+        ),
+        lifecycle_hooks=normalize_lifecycle_hooks(hooks=hooks),
+    )
 
 
 def normalize_component_step_callable(

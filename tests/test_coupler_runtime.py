@@ -1703,13 +1703,15 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
     if fast_mode:
         pytest.skip("Real JCM payload structure regression runs outside --fast")
 
-    from vercor.setups import make_jax_gcm
-    from vercor.setups.external.jax_gcm_tools import (
-        generate_jcm_coords_forcing_topography_files,
-    )
+    from vercor.setups import load_jcm_inputs, make_jax_gcm
 
-    coords, terrain, forcing = generate_jcm_coords_forcing_topography_files()
-    component = make_jax_gcm(coords, terrain, forcing_data=forcing, jitted=True)
+    inputs = load_jcm_inputs()
+    component = make_jax_gcm(
+        inputs.coords,
+        inputs.terrain,
+        forcing_data=inputs.forcing,
+        jitted=True,
+    )
     settings = Settings()
     component.initialize(
         SetupContext(

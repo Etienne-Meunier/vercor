@@ -9,6 +9,9 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local setup-facade/API-boundary validation: focused red/green pytest,
+  Black, flake8, mypy, full fast pytest, and full pytest passed as of
+  2026-07-07 using the direct `scipy` environment executables.
 - Latest archived full validation status: passing as of 2026-05-15.
 - Latest archived fast validation status: `pytest tests/ -q --fast --tb=short`
   passed as of 2026-05-15.
