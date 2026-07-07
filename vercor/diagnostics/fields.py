@@ -5,14 +5,14 @@ from typing import Callable
 import jax.numpy as jnp
 
 from vercor.state import (
-    ComponentView,
+    ComponentState,
     RuntimeFieldSource,
     runtime_field,
     runtime_field_candidates,
 )
 from vercor.types import RuntimeArray
 
-ComponentMetric = str | Callable[[ComponentView], RuntimeArray | float]
+ComponentMetric = str | Callable[[ComponentState], RuntimeArray | float]
 
 
 def component_vector_speed(
@@ -42,7 +42,7 @@ def combine_surface_temperatures(
     )
 
 
-def total_surface_temperature(component: ComponentView) -> RuntimeArray:
+def total_surface_temperature(component: ComponentState) -> RuntimeArray:
     """Return combined land and sea surface temperature for diagnostics."""
 
     return combine_surface_temperatures(
@@ -51,7 +51,7 @@ def total_surface_temperature(component: ComponentView) -> RuntimeArray:
     )
 
 
-def safe_component_nanmean(component: ComponentView, field_name: str) -> float:
+def safe_component_nanmean(component: ComponentState, field_name: str) -> float:
     """Return a robust NaN-aware mean for a runtime component view field."""
 
     try:
@@ -61,7 +61,7 @@ def safe_component_nanmean(component: ComponentView, field_name: str) -> float:
 
 
 def component_plot_field(
-    component: ComponentView,
+    component: ComponentState,
     field_name: str,
 ) -> RuntimeArray:
     """Return a 2D field suitable for plotting when one is available."""
@@ -76,7 +76,7 @@ def component_plot_field(
 
 
 def component_plot_scalar(
-    component: ComponentView,
+    component: ComponentState,
     scalar: ComponentMetric,
 ) -> RuntimeArray | float:
     """Resolve a field name or callable diagnostic for plotting."""
@@ -87,7 +87,7 @@ def component_plot_scalar(
 
 
 def safe_component_metric_mean(
-    component: ComponentView,
+    component: ComponentState,
     metric: ComponentMetric,
 ) -> float:
     """Resolve a metric and return a robust mean value as float."""

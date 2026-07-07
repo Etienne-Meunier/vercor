@@ -7,7 +7,7 @@ from typing import Any
 
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 
 
 @dataclass(frozen=True)

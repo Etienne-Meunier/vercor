@@ -17,7 +17,8 @@ from vercor.components._callable_wrappers import (
 from vercor.components.base import Component
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.exceptions import ComponentError
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
+from vercor.output.adapters import ComponentOutput
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ class HostComponent(Component):
         payload: Any | None = None,
         settings: Settings | None = None,
         hooks: ComponentHooks | None = None,
+        output: ComponentOutput | None = None,
     ) -> "HostComponent":
         """Create a host-runtime component from a Python step callable."""
 
@@ -58,6 +60,7 @@ class HostComponent(Component):
             step=options.step,
             payload=options.payload,
             settings=settings,
+            output=output,
             field_spec=options.field_spec,
             lifecycle_hooks=options.lifecycle_hooks,
         )
@@ -98,17 +101,19 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         step: AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
+        output: ComponentOutput | None,
         field_spec: FieldSpec,
         lifecycle_hooks: ComponentLifecycleHooks,
     ) -> None:
         if settings is None:
-            Component.__init__(self, name=name, grid=grid)
+            Component.__init__(self, name=name, grid=grid, output=output)
         else:
             Component.__init__(
                 self,
                 name=name,
                 grid=grid,
                 settings=settings,
+                output=output,
             )
         self._initialize_callable_runtime(
             step=step,

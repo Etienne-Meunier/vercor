@@ -11,7 +11,6 @@ from vercor import (
     RectilinearGrid,
     StepContext,
     StepResult,
-    grid_from_coordinates,
 )
 from vercor.dtypes import as_jax_real_array
 
@@ -19,7 +18,7 @@ from vercor.dtypes import as_jax_real_array
 def make_example_grid() -> RectilinearGrid:
     """Return a small grid for custom component wrapper examples."""
 
-    return grid_from_coordinates(
+    return RectilinearGrid.from_coordinates(
         "example-grid",
         longitude=as_jax_real_array([0.0, 90.0]),
         latitude=as_jax_real_array([-30.0, 30.0]),

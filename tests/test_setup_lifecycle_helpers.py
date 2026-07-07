@@ -120,9 +120,9 @@ def test_seed_grid_field_defaults_seeds_component_defaults_with_overrides() -> N
         overrides={"temperature": 280.0},
     )
 
-    assert set(component.data) == {"temperature", "humidity"}
-    assert jnp.all(component.data["temperature"] == 280.0)
-    assert jnp.all(component.data["humidity"] == 0.0)
+    assert set(component._data) == {"temperature", "humidity"}
+    assert jnp.all(component._data["temperature"] == 280.0)
+    assert jnp.all(component._data["humidity"] == 0.0)
 
 
 def test_load_jcm_inputs_facade_returns_named_payload(

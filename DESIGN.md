@@ -140,14 +140,15 @@ immutable runtime containers used during traced integration.
   and bundled concrete components are the objects users compose when
   configuring a coupled run. `Coupler` and setup helpers accept plain
   component-name sequences for run order and normalize them internally to
-  immutable tuples. `vercor.state.RunState` and
-  `vercor.state.ComponentView` are the public result/view names.
-  `vercor.grids.RectilinearGrid`, `vercor.fields.VectorField`, and
+  immutable tuples. `vercor.state.RunState` is opaque: users inspect results
+  through `RunState.component(name) -> ComponentState` and
+  `ComponentState.field(...)`/`fields(...)`, while runtime stores remain
+  private. `vercor.grids.RectilinearGrid`, `vercor.fields.VectorField`, and
   `vercor.exchanges.Exchange` are owned by their public facade modules rather
-  than private implementation modules. `uniform_rectilinear_grid(...)` is the
-  clear public constructor for generated equally spaced rectilinear grids,
-  and `grid_from_coordinates(...)` is the explicit constructor for coordinate
-  arrays.
+  than private implementation modules. `RectilinearGrid.uniform(...)` builds
+  generated equally spaced rectilinear grids, and
+  `RectilinearGrid.from_coordinates(...)` builds grids from explicit
+  coordinate arrays.
 - Component-author API: `Component`, `DataComponent`, and `HostComponent` are
   the stable extension points. Custom adapters should use the class-level
   authoring constructors where possible: `DataComponent.from_fields()` for
@@ -169,10 +170,14 @@ immutable runtime containers used during traced integration.
   are reexported from `vercor.components` and `vercor`.
   `FieldSpec`, `field_spec`, and `declare_fields()` provide the same
   vocabulary and read-only introspection for subclasses. `field_names` exposes
-  setup-time seeded field names in insertion order. Subclass constructors can
-  use `update_settings(...)` for chainable updates to existing component
-  settings and `grid_field_defaults(...)` to build validated grid-shaped
-  default-field mappings with scalar expansion and field-specific overrides.
+  setup-time seeded field names in insertion order; direct `component.data`
+  and `component.setup_metadata` mutation is not public API. Subclass
+  constructors can use `seed_field(...)`, `seed_fields(...)`,
+  `update_settings(...)`, and `grid_field_defaults(...)` to build validated
+  grid-shaped default-field mappings with scalar expansion and field-specific
+  overrides. Components that write native snapshots receive a typed
+  `ComponentOutput(snapshot_writer=...)` spec; mutable period-output adapters
+  live under `vercor.output._adapters`.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
   components remain introspectable whether fields are declared up front or added

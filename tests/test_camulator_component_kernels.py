@@ -27,11 +27,11 @@ import vercor.setups.external.camulator_wind_filter as camulator_wind_filter_mod
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.output.adapters import ComponentOutputAdapter, component_snapshot_writer
+from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.variables import OutputVariable
 from vercor.setups.external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.state import RuntimeComponentState
@@ -704,7 +704,7 @@ def test_camulator_output_wrappers_do_not_import_xarray_or_credit_output() -> No
     camulator_imports_source = Path(
         "vercor/setups/external/camulator_imports.py"
     ).read_text(encoding="utf-8")
-    output_adapters_source = Path("vercor/output/adapters.py").read_text(
+    output_adapters_source = Path("vercor/output/_adapters.py").read_text(
         encoding="utf-8"
     )
 
@@ -1011,7 +1011,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
         == camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
     )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
-    assert callable(component_snapshot_writer(component))
+    assert callable(component.output.snapshot_writer)
 
 
 def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None:
@@ -1232,9 +1232,9 @@ def test_camulator_land_stores_jax_runtime_arrays(
     component.initialize(_make_coupler(start))
     assert component.field_spec.outputs == ("land_surface_temperature",)
     assert set(component.field_spec.defaults) == {"land_surface_temperature"}
-    assert isinstance(component.data["land_surface_temperature"], jax.Array)
+    assert isinstance(component._data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(
-        component.data["land_surface_temperature"], np.full((2, 2), 283.0)
+        component._data["land_surface_temperature"], np.full((2, 2), 283.0)
     )
 
     coupler = _make_coupler(start)
@@ -1357,12 +1357,12 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         latitude=jnp.asarray([0.0, 1.0]),
     )
     component.settings = Settings()
-    component.data = camulator_fields_module.initialize_camulator_runtime_fields(
+    component._data = camulator_fields_module.initialize_camulator_runtime_fields(
         component.grid.shape,
         component.settings,
     )
-    component.data["sea_surface_temperature"] = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
-    component.data["land_surface_temperature"] = jnp.asarray(
+    component._data["sea_surface_temperature"] = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+    component._data["land_surface_temperature"] = jnp.asarray(
         [[10.0, 20.0], [30.0, 40.0]]
     )
     component.accessor_input = _StepAccessor()
@@ -1407,7 +1407,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
     )
 
-    component_state = _runtime_component_state("ATM", component.data)
+    component_state = _runtime_component_state("ATM", component._data)
     step_context = StepContext(
         dt_seconds=float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
         settings=Settings(),

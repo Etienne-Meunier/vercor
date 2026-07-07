@@ -8,13 +8,13 @@ import pytest
 
 import vercor.host_arrays as host_arrays_module
 from vercor.diagnostics import component_vector_speed
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.host_arrays import transposed_host_array
 from tests.assertions import assert_allclose_compact
 from vercor.host_arrays import runtime_array_to_host
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.state import ComponentView
+from vercor.state import ComponentState
 
 
 def test_runtime_array_to_host_is_canonical_host_transfer() -> None:
@@ -67,7 +67,7 @@ def test_component_vector_speed_reads_runtime_component_view() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    view = ComponentView(
+    view = ComponentState(
         name="ATM",
         grid=grid,
         incoming=RuntimeFieldStore.from_mapping(

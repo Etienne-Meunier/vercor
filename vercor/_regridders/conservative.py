@@ -1,7 +1,7 @@
 from typing import Any, Optional
 
 from vercor.exceptions import RegridderError
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges, grids_identical
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
@@ -14,13 +14,13 @@ class ConservativeRectilinearRegridder(Regridder):
     def __init__(
         self,
         source_grid: RectilinearGrid,
-        destination_grid: RectilinearGrid,
+        target_grid: RectilinearGrid,
         source_mask: Optional[RuntimeArray] = None,
         normalize: str = "conservation",  # 'conservation' | 'fracarea'
         radius: float = 6371.0,
     ) -> None:
 
-        has_identical_grids = grids_identical(source_grid, destination_grid)
+        has_identical_grids = grids_identical(source_grid, target_grid)
         interpolator = None
 
         if not has_identical_grids:
@@ -35,14 +35,14 @@ class ConservativeRectilinearRegridder(Regridder):
                 src_lat_edges = centers_to_edges(source_grid.latitude, "lat")
 
             if (
-                destination_grid.longitude_edges is not None
-                and destination_grid.latitude_edges is not None
+                target_grid.longitude_edges is not None
+                and target_grid.latitude_edges is not None
             ):
-                dst_lon_edges = destination_grid.longitude_edges
-                dst_lat_edges = destination_grid.latitude_edges
+                dst_lon_edges = target_grid.longitude_edges
+                dst_lat_edges = target_grid.latitude_edges
             else:
-                dst_lon_edges = centers_to_edges(destination_grid.longitude, "lon")
-                dst_lat_edges = centers_to_edges(destination_grid.latitude, "lat")
+                dst_lon_edges = centers_to_edges(target_grid.longitude, "lon")
+                dst_lat_edges = centers_to_edges(target_grid.latitude, "lat")
 
             interpolator = ConservativeRectilinearRemapper(
                 src_lon_edges=src_lon_edges,
@@ -56,34 +56,35 @@ class ConservativeRectilinearRegridder(Regridder):
 
         super().__init__(
             source_grid,
-            destination_grid,
+            target_grid,
             interpolator=interpolator,
             has_identical_grids=has_identical_grids,
         )
 
-    def __call__(self, *args: Any) -> Any:
+    def regrid(self, field: Any) -> Any:
         """Apply conservative scalar regridding."""
 
-        if len(args) not in (1, 2):
-            raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
-        if len(args) == 2:
-            raise TypeError(
-                "Conservative regridding supports scalar fields only; use bilinear "
-                "regridding for vector fields."
-            )
-
         if self.has_identical_grids:
-            return args[0]
+            return field
 
         interpolator = self.interpolator
         if interpolator is None:
             raise RegridderError("Regridder not properly set up")
-        return interpolator.apply_scalar(args[0])
+        return interpolator.apply_scalar(field)
+
+    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
+        """Reject vector conservative regridding."""
+
+        _ = u, v
+        raise TypeError(
+            "Conservative regridding supports scalar fields only; use bilinear "
+            "regridding for vector fields."
+        )
 
 
 def conservative(
     source_grid: RectilinearGrid,
-    destination_grid: RectilinearGrid,
+    target_grid: RectilinearGrid,
     *,
     source_mask: Optional[RuntimeArray] = None,
     normalize: str = "conservation",
@@ -91,7 +92,7 @@ def conservative(
 ) -> ConservativeRectilinearRegridder:
     return ConservativeRectilinearRegridder(
         source_grid,
-        destination_grid,
+        target_grid,
         source_mask=source_mask,
         normalize=normalize,
         radius=radius,

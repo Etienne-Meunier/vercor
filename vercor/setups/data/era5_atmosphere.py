@@ -19,7 +19,7 @@ from vercor.fluxes.vertical_coordinates import (
     compute_hybrid_pressure_levels,
     get_altitudes_hybrid_sigma_levels,
 )
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.components import SetupContext
 from vercor.forcing_data import read_forcing as _read_forcing
 from vercor.settings import Settings
@@ -168,16 +168,16 @@ def make_era5_atmosphere(
         diagnostics = [
             _compute_monthly_diagnostics(
                 context.settings,
-                component.data["surface_pressure"][month_index],
+                component._data["surface_pressure"][month_index],
                 hyai,
                 hybi,
                 hyam,
                 hybm,
-                component.data["temperature_3d"][month_index],
-                component.data["specific_humidity_3d"][month_index],
-                component.data["temperature"][month_index],
+                component._data["temperature_3d"][month_index],
+                component._data["specific_humidity_3d"][month_index],
+                component._data["temperature"][month_index],
             )
-            for month_index in range(int(component.data["surface_pressure"].shape[0]))
+            for month_index in range(int(component._data["surface_pressure"].shape[0]))
         ]
         component.seed_fields(
             {
@@ -201,7 +201,7 @@ def make_era5_atmosphere(
         data_files=data_files,
         hooks=ComponentHooks(initialize=initialize),
     )
-    component.setup_metadata["hybrid_coefficients"] = {
+    component._setup_metadata["hybrid_coefficients"] = {
         "hyai": hyai,
         "hybi": hybi,
         "hyam": hyam,

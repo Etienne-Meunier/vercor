@@ -11,9 +11,9 @@ import pytest
 
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import GridError
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.fields import vector
-from vercor._grid import Grid, RectilinearGrid
+from vercor.grids import Grid, RectilinearGrid
 from vercor.grid_geometry import centers_to_edges
 from vercor.grid_masks import compute_land_mask
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
@@ -207,7 +207,7 @@ def test_exchange_uses_wrapped_factory_name_and_keeps_partial_options() -> None:
     assert exchange.label == "OCN --(bilinear)--> ATM"
     assert not hasattr(exchange, "interpolation_type")
     assert created.source_grid is source_grid
-    assert created.destination_grid is destination_grid
+    assert created.target_grid is destination_grid
     assert isinstance(private_created.interpolator, BilinearRectilinearInterpolator)
     assert private_created.interpolator.periodic is False
     assert private_created.interpolator.extrapolation_mode == "nearest"

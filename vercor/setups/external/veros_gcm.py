@@ -8,7 +8,7 @@ from functools import partial
 from typing import Any
 
 from vercor.components import ComponentHooks, HostComponent
-from vercor.output.adapters import register_component_snapshot_writer
+from vercor.output.adapters import ComponentOutput
 import vercor.setups.external.veros_gcm_state as _veros_gcm_state
 import vercor.setups.external.veros_output as _veros_output
 import vercor.setups.external.veros_runtime as _veros_runtime
@@ -52,10 +52,9 @@ def make_veros_gcm(
         outputs=("sea_surface_temperature",),
         defaults=_veros_gcm_state.veros_default_fields(),
         hooks=ComponentHooks(initialize=state.initialize),
-    )
-    register_component_snapshot_writer(
-        component,
-        partial(_veros_output.write_veros_snapshot_output, state),
+        output=ComponentOutput(
+            snapshot_writer=partial(_veros_output.write_veros_snapshot_output, state)
+        ),
     )
     return component
 

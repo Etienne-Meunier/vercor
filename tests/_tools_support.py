@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.types import RuntimeArray
 
 

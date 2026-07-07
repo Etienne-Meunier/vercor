@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from vercor.calendar import ModelDateTime
-from vercor._exchange import Exchange, _exchange_regrid_key
-from vercor.output.adapters import component_snapshot_writer
+from vercor.exchanges import Exchange
+from vercor.runtime.exchange_keys import exchange_regrid_key
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
 from vercor.state import RunState
-from vercor.state import ComponentView
+from vercor.state import ComponentState
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ def output_masks_for_component(
         if name != exchange.target:
             continue
 
-        key = (exchange.source, name, _exchange_regrid_key(exchange))
+        key = (exchange.source, name, exchange_regrid_key(exchange))
         source_destination_name = "_".join(key)
         masks["bmask_" + source_destination_name] = binary_masks[key]
         masks["fmask_" + source_destination_name] = fractional_masks[key]
@@ -42,7 +42,7 @@ def output_masks_for_component(
 
 
 def write_runtime_component_view_to_netcdf(
-    view: ComponentView,
+    view: ComponentState,
     filename: Path,
     *,
     masks: dict[str, RuntimeArray] | None = None,
@@ -63,16 +63,19 @@ def write_runtime_component_view_to_netcdf(
 
 
 def _runtime_coordinate_variables(
-    view: ComponentView,
+    view: ComponentState,
 ) -> dict[str, OutputVariable]:
+    if view.grid is None:
+        raise ValueError("ComponentState grid is required for runtime output.")
+    grid = view.grid
     return {
-        "latitude": OutputVariable(("nlat",), view.grid.latitude),
-        "longitude": OutputVariable(("nlon",), view.grid.longitude),
+        "latitude": OutputVariable(("nlat",), grid.latitude),
+        "longitude": OutputVariable(("nlon",), grid.longitude),
     }
 
 
 def _runtime_data_variables(
-    view: ComponentView,
+    view: ComponentState,
     *,
     masks: Mapping[str, RuntimeArray],
 ) -> dict[str, OutputVariable]:
@@ -96,7 +99,7 @@ def _runtime_data_variables(
 
 
 def _runtime_output_variable(
-    view: ComponentView,
+    view: ComponentState,
     value: RuntimeArray,
     *,
     runtime_store: str,
@@ -137,10 +140,10 @@ def write_coupler_runtime_outputs(
             )
         else:
             filepath = output_dir / Path(f"{name.lower()}_{output_file_mask}.nc")
-        view = ComponentView.from_component_state(
+        view = ComponentState.from_component_state(
             name,
             component.grid,
-            final_state.get_component_state(name),
+            final_state._component_state(name),
         )
         write_runtime_component_view_to_netcdf(
             view,
@@ -168,11 +171,11 @@ def write_coupler_component_snapshots(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for name, component in components.items():
-        writer = component_snapshot_writer(component)
+        writer = component.output.snapshot_writer
         if writer is None:
             continue
         writer(
-            final_state.get_component_state(name),
+            final_state._component_state(name),
             output_dir / f"{name.lower()}.snapshot.nc",
             output_time,
             logger,

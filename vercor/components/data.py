@@ -14,7 +14,8 @@ from vercor.components._contracts import (
 from vercor.components._constructor_options import normalize_lifecycle_hooks
 from vercor.components.base import Component
 from vercor.dtypes import PrecisionPolicy
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
+from vercor.output.adapters import ComponentOutput
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ class DataComponent(Component):
         settings: Settings | None = None,
         outputs: FieldNames = (),
         hooks: ComponentHooks | None = None,
+        output: ComponentOutput | None = None,
     ) -> "DataComponent":
         """Create a data-only component from user-provided grid fields.
 
@@ -52,9 +54,9 @@ class DataComponent(Component):
         """
 
         if settings is None:
-            component = cls(name=name, grid=grid)
+            component = cls(name=name, grid=grid, output=output)
         else:
-            component = cls(name=name, grid=grid, settings=settings)
+            component = cls(name=name, grid=grid, settings=settings, output=output)
         if fields is not None:
             component.seed_fields(fields)
         if tuple(outputs):

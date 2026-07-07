@@ -8,7 +8,7 @@ from typing import Optional
 
 from vercor.components import ComponentHooks, HostComponent
 from vercor.jax_logging import LoggerLike
-from vercor.output.adapters import register_component_snapshot_writer
+from vercor.output.adapters import ComponentOutput
 import vercor.setups.external.camulator_contracts as _camulator_contracts
 import vercor.setups.external.camulator_output as _camulator_output
 import vercor.setups.external.camulator_runtime as _camulator_runtime
@@ -51,10 +51,11 @@ def make_camulator_gcm(
         outputs=_camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
         defaults=_camulator_contracts.camulator_runtime_field_defaults(),
         hooks=ComponentHooks(initialize=state.initialize),
-    )
-    register_component_snapshot_writer(
-        component,
-        partial(_camulator_output.write_camulator_snapshot_output, state),
+        output=ComponentOutput(
+            snapshot_writer=partial(
+                _camulator_output.write_camulator_snapshot_output, state
+            )
+        ),
     )
     return component
 

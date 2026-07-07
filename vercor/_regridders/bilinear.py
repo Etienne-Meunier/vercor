@@ -1,7 +1,7 @@
-from typing import Any
+from typing import Any, cast
 
 from vercor.exceptions import RegridderError
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import grids_identical
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 from vercor._regridders.base import Regridder
@@ -11,7 +11,7 @@ class BilinearRectilinearRegridder(Regridder):
     def __init__(
         self,
         source_grid: RectilinearGrid,
-        destination_grid: RectilinearGrid,
+        target_grid: RectilinearGrid,
         periodic_longitude: bool = True,
         # keep nan_renorm = True otherwise NaN will propagate to another components
         # during regridding and will keep growing over domains
@@ -22,16 +22,16 @@ class BilinearRectilinearRegridder(Regridder):
         fill_value: float = float("nan"),
     ) -> None:
 
-        has_identical_grids = grids_identical(source_grid, destination_grid)
+        has_identical_grids = grids_identical(source_grid, target_grid)
         interpolator = None
         if not has_identical_grids:
             interpolator = BilinearRectilinearInterpolator(
                 source_grid.longitude,
                 source_grid.latitude,
-                destination_grid.longitude,
-                destination_grid.latitude,
+                target_grid.longitude,
+                target_grid.latitude,
                 src_mask=source_grid.binary_mask,
-                tgt_mask=destination_grid.binary_mask,
+                tgt_mask=target_grid.binary_mask,
                 periodic_longitude=periodic_longitude,
                 nan_renorm=nan_renorm,
                 extrapolation_mode=extrapolation_mode,
@@ -42,31 +42,36 @@ class BilinearRectilinearRegridder(Regridder):
 
         super().__init__(
             source_grid,
-            destination_grid,
+            target_grid,
             interpolator=interpolator,
             has_identical_grids=has_identical_grids,
         )
 
-    def __call__(self, *args: Any) -> Any:
-        """Apply bilinear scalar or vector regridding."""
-
-        if len(args) not in (1, 2):
-            raise TypeError("Provide scalar_src or (u_src, v_src) as positional args")
-
+    def regrid(self, field: Any) -> Any:
+        """Apply bilinear scalar regridding."""
         if self.has_identical_grids:
-            return args if len(args) == 2 else args[0]
+            return field
 
         interpolator = self.interpolator
         if interpolator is None:
             raise RegridderError("Regridder not properly set up")
-        if len(args) == 1:
-            return interpolator.apply_scalar(args[0])
-        return interpolator.apply_vector(args[0], args[1])
+        return interpolator.apply_scalar(field)
+
+    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
+        """Apply bilinear vector regridding."""
+
+        if self.has_identical_grids:
+            return u, v
+
+        interpolator = self.interpolator
+        if interpolator is None:
+            raise RegridderError("Regridder not properly set up")
+        return cast(tuple[Any, Any], interpolator.apply_vector(u, v))
 
 
 def bilinear(
     source_grid: RectilinearGrid,
-    destination_grid: RectilinearGrid,
+    target_grid: RectilinearGrid,
     *,
     periodic_longitude: bool = True,
     nan_renorm: bool = True,
@@ -77,7 +82,7 @@ def bilinear(
 ) -> BilinearRectilinearRegridder:
     return BilinearRectilinearRegridder(
         source_grid,
-        destination_grid,
+        target_grid,
         periodic_longitude=periodic_longitude,
         nan_renorm=nan_renorm,
         extrapolation_mode=extrapolation_mode,

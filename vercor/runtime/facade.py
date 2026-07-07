@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import vercor.output.runtime as _runtime_output
 from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor._run_order import normalize_run_order
 from vercor.runtime.dispatch_context import (
@@ -32,8 +32,8 @@ from vercor.runtime.runner import (
     run_coupler_runtime,
 )
 from vercor.state import RunState
-from vercor.state import ComponentView
 from vercor.settings import Settings
+from vercor.state import ComponentState
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -128,13 +128,13 @@ def runtime_component_view(
     components: Mapping[str, "Component"],
     runtime_state: RunState,
     name: str,
-) -> ComponentView:
+) -> ComponentState:
     """Return a single object containing component metadata and runtime fields."""
 
-    return ComponentView.from_component_state(
+    return ComponentState.from_component_state(
         name,
         components[name].grid,
-        runtime_state.get_component_state(name),
+        runtime_state._component_state(name),
     )
 
 
@@ -143,7 +143,7 @@ def runtime_component_views(
     components: Mapping[str, "Component"],
     runtime_state: RunState,
     names: Sequence[str] | None = None,
-) -> dict[str, ComponentView]:
+) -> dict[str, ComponentState]:
     """Return named runtime component views in component or requested order."""
 
     selected_names = tuple(components) if names is None else tuple(names)

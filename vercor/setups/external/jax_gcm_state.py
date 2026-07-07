@@ -30,8 +30,8 @@ from vercor.components import (
     SetupContext,
 )
 from vercor.dtypes import as_jax_real_array, jax_ones
-from vercor._grid import RectilinearGrid
-from vercor.output.adapters import ComponentOutputAdapter
+from vercor.grids import RectilinearGrid
+from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,

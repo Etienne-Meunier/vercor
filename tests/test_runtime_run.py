@@ -18,17 +18,18 @@ from vercor.setups.slab.land import make_slab_land
 from vercor.setups.slab.ocean import make_slab_ocean
 from vercor.setups.slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.runtime.state import RuntimeComponentState
 from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
 
 
 class _IdentityRegridder:
-    def __call__(self, *args: Any) -> Any:
-        if len(args) == 1:
-            return jnp.asarray(args[0])
-        return tuple(jnp.asarray(arg) for arg in args)
+    def regrid(self, field: Any) -> Any:
+        return jnp.asarray(field)
+
+    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
+        return jnp.asarray(u), jnp.asarray(v)
 
 
 def _identity_factory(*args: Any, **kwargs: Any) -> _IdentityRegridder:
@@ -210,12 +211,14 @@ def test_run_executes_pure_scanned_runtime_for_same_shapes_and_metadata() -> Non
     first = _block_until_ready(coupler.run(_runtime_state_with_sst(288.15)))
     second = _block_until_ready(coupler.run(_runtime_state_with_sst(291.15)))
 
-    assert first.get_component_state("OCN").data.get(
-        "sea_surface_temperature"
-    ).shape == (2, 2)
-    assert second.get_component_state("OCN").data.get(
-        "sea_surface_temperature"
-    ).shape == (2, 2)
+    assert first._component_state("OCN").data.get("sea_surface_temperature").shape == (
+        2,
+        2,
+    )
+    assert second._component_state("OCN").data.get("sea_surface_temperature").shape == (
+        2,
+        2,
+    )
 
 
 def test_run_api_does_not_expose_state_donation() -> None:
@@ -238,7 +241,7 @@ def test_run_preserves_runtime_treedef() -> None:
     assert _runtime_treedef_repr(second_final) == expected_treedef
     assert first_final.component_names == first_state.component_names
 
-    for before, after in zip(first_state.components, first_final.components):
+    for before, after in zip(first_state._components, first_final._components):
         assert after.data.field_names == before.data.field_names
         assert after.incoming.field_names == before.incoming.field_names
         assert after.outgoing.field_names == before.outgoing.field_names

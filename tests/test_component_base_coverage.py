@@ -45,7 +45,7 @@ from vercor.runtime.validation import (
     validate_component_runtime_contract_fields,
 )
 from vercor.runtime.time import scalar_runtime_step_info
-from vercor.state import ComponentView
+from vercor.state import ComponentState
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -193,7 +193,7 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
 
     grid = make_test_grid(name="data")
     component = StaticForcingComponent(name="OCN", grid=grid)
-    component.data["sea_surface_temperature"] = jnp.full(grid.shape, 280.0)
+    component._data["sea_surface_temperature"] = jnp.full(grid.shape, 280.0)
     contract = RuntimeComponentContract(exports=("sea_surface_temperature",))
     state = create_runtime_component_state(
         component,
@@ -225,7 +225,7 @@ def test_data_component_seeds_canonical_fields() -> None:
 
     assert isinstance(component, data_module.DataComponent)
     assert_allclose_compact(
-        component.data["temperature"],
+        component._data["temperature"],
         np.full(grid.shape, 281.0),
     )
 
@@ -293,7 +293,7 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
         "payload:OBS",
         "validate:OBS:True",
     ]
-    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 280.0))
+    assert_allclose_compact(component._data["temperature"], np.full(grid.shape, 280.0))
     assert_allclose_compact(state.data.get("humidity"), np.full(grid.shape, 0.5))
     assert state.runtime_payload == {"component": "OBS"}
 
@@ -319,7 +319,7 @@ def test_from_fields_and_from_step_facade_expand_scalar_defaults() -> None:
     )
     assert isinstance(data_component, data_module.DataComponent)
     assert_allclose_compact(
-        data_component.data["temperature"],
+        data_component._data["temperature"],
         np.full(grid.shape, 281.0),
     )
 
@@ -397,7 +397,7 @@ def test_data_component_from_fields_normalizes_author_fields_once(
     assert call_count == 1
     assert component.field_spec.outputs == ("temperature",)
     assert_allclose_compact(
-        component.data["temperature"],
+        component._data["temperature"],
         np.full(grid.shape, 281.0),
     )
 
@@ -527,8 +527,8 @@ def test_seed_declared_defaults_and_field_names_expose_author_state() -> None:
 
     assert returned is component
     assert component.field_names == ("temperature", "humidity")
-    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 280.0))
-    assert_allclose_compact(component.data["humidity"], np.full(grid.shape, 0.5))
+    assert_allclose_compact(component._data["temperature"], np.full(grid.shape, 280.0))
+    assert_allclose_compact(component._data["humidity"], np.full(grid.shape, 0.5))
 
 
 @pytest.mark.fast_always
@@ -551,8 +551,8 @@ def test_base_initialize_seeds_declared_defaults() -> None:
     )
 
     assert component.field_names == ("temperature", "humidity")
-    assert_allclose_compact(component.data["temperature"], np.full(grid.shape, 280.0))
-    assert_allclose_compact(component.data["humidity"], np.full(grid.shape, 0.5))
+    assert_allclose_compact(component._data["temperature"], np.full(grid.shape, 280.0))
+    assert_allclose_compact(component._data["humidity"], np.full(grid.shape, 0.5))
 
 
 @pytest.mark.fast_always
@@ -840,7 +840,7 @@ def test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled()
         settings=Settings(enable_x64=False),
     )
 
-    assert component.data["temperature"].dtype == jnp.float32
+    assert component._data["temperature"].dtype == jnp.float32
 
 
 @pytest.mark.fast_always
@@ -1421,7 +1421,7 @@ def test_host_component_runs_through_coupler_host_runtime() -> None:
     final_state = coupler.run()
 
     assert_allclose_compact(
-        final_state.get_component_state("HOST").data.get("temperature"),
+        final_state._component_state("HOST").data.get("temperature"),
         np.full(grid.shape, 6.0),
     )
 
@@ -1501,7 +1501,7 @@ def test_coupler_initialize_validates_component_setup_before_precision_sync() ->
         ComponentError,
         match="missing required setup attribute.*name.*grid.*data.*settings",
     ):
-        coupler.initialize()
+        coupler._initialize_runtime()
 
 
 @pytest.mark.fast_always
@@ -1512,7 +1512,7 @@ def test_component_data_layout_validation_accepts_canonical_grid_fields() -> Non
         latitude=np.asarray([-1.0, 1.0]),
     )
     component = DummyComponent(name="ATM", grid=grid)
-    component.data = {
+    component._data = {
         "snapshot_2d": jnp.zeros(grid.shape, dtype=jnp.float64),
         "time_surface_3d": jnp.zeros((12, *grid.shape), dtype=jnp.float64),
         "level_snapshot_3d": jnp.zeros((4, *grid.shape), dtype=jnp.float64),
@@ -1537,7 +1537,7 @@ def test_component_data_layout_validation_rejects_non_grid_data_fields() -> None
         latitude=np.asarray([-1.0, 1.0]),
     )
     component = DummyComponent(name="ATM", grid=grid)
-    component.data = {
+    component._data = {
         "noncanonical_monthly_temperature": jnp.zeros((3, 2, 12), dtype=jnp.float64),
         "hyai": jnp.zeros((4,), dtype=jnp.float64),
     }
@@ -1557,13 +1557,13 @@ def test_component_data_layout_validation_rejects_non_grid_data_fields() -> None
 def test_host_component_rejects_scanned_runtime_with_clear_error() -> None:
     grid = make_test_grid(name="host")
     component = _HostStepOnlyComponent(name="ATM", grid=grid)
-    component.data["temperature"] = jnp.ones(grid.shape)
+    component._data["temperature"] = jnp.ones(grid.shape)
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
         components=(component,),
         run_order=("ATM",),
     )
-    state = coupler.state()
+    state = coupler.initial_state()
 
     with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
         run_scanned_coupler(coupler, state)
@@ -1621,7 +1621,7 @@ def test_runtime_state_creation_receive_and_send() -> None:
         imports=("temperature",),
         exports=("sensible_heat_flux",),
     )
-    component.data["sensible_heat_flux"] = jnp.full(grid.shape, 2.0)
+    component._data["sensible_heat_flux"] = jnp.full(grid.shape, 2.0)
 
     state = create_runtime_component_state(
         component,
@@ -1658,12 +1658,11 @@ def test_runtime_state_creation_receive_and_send() -> None:
 def test_component_validation_and_runtime_receive_delegate() -> None:
     component = DummyComponent(name="ATM", grid=make_test_grid())
 
-    with pytest.raises(ComponentError, match="no fields to import"):
+    with pytest.raises(ComponentError, match="no runtime fields defined"):
         check_not_empty_import_export_lists(component, RuntimeComponentContract())
 
     import_only = RuntimeComponentContract(imports=("temperature",))
-    with pytest.raises(ComponentError, match="no fields to export"):
-        check_not_empty_import_export_lists(component, import_only)
+    check_not_empty_import_export_lists(component, import_only)
 
     overlapping = RuntimeComponentContract(
         imports=("temperature",),
@@ -1739,7 +1738,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component = DummyComponent(name="ATM", grid=grid)
     timestamp = datetime(2000, 1, 1)
     contract = RuntimeComponentContract(exports=("temperature",))
-    component.data["temperature"] = jnp.full(grid.shape, 1.0)
+    component._data["temperature"] = jnp.full(grid.shape, 1.0)
 
     component_state = send_runtime_fields(
         component,
@@ -1759,7 +1758,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     monthly = monthly.at[0].set(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
     component.settings.apply_time_interpolation = True
     component.settings.apply_daily_time_selection = False
-    component.data["temperature"] = monthly
+    component._data["temperature"] = monthly
     component_state = send_runtime_fields(
         component,
         create_runtime_component_state(component, contract=RuntimeComponentContract()),
@@ -1779,7 +1778,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     daily = jnp.arange(5 * 2 * 2, dtype=jnp.float64).reshape((5, *grid.shape))
     component.settings.apply_time_interpolation = False
     component.settings.apply_daily_time_selection = True
-    component.data["temperature"] = daily
+    component._data["temperature"] = daily
     component_state = send_runtime_fields(
         component,
         create_runtime_component_state(component, contract=RuntimeComponentContract()),
@@ -1844,7 +1843,7 @@ def test_read_forcing_and_runtime_write_round_trip(
     output = tmp_path / "runtime.nc"
 
     write_runtime_component_view_to_netcdf(
-        ComponentView.from_component_state("ATM", make_test_grid(), state),
+        ComponentState.from_component_state("ATM", make_test_grid(), state),
         output,
         masks={"fmask_OCN_ATM_bilinear": jnp.ones((2, 2))},
     )
@@ -1875,7 +1874,7 @@ def test_read_forcing_and_runtime_write_round_trip(
 
     view_output = tmp_path / "runtime-view.nc"
     write_runtime_component_view_to_netcdf(
-        ComponentView.from_component_state(
+        ComponentState.from_component_state(
             "ATM",
             make_test_grid(),
             state,

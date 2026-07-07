@@ -16,7 +16,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.components.data import DataComponent
 from vercor.clock import Clock
 from vercor.coupler import Coupler
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.components.contexts import SetupContext
 from vercor.settings import Settings
 from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
@@ -338,7 +338,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def _run_host_runtime" not in coupler_source
     assert "def _compiled_runtime_cache_key" not in coupler_source
     run_body = coupler_source.split("def run", 1)[1]
-    assert "host_component_names(self.components)" not in run_body
+    assert "host_component_names(self._components)" not in run_body
     assert "host_component_names(context.dispatch_context.components)" in (
         runtime_runner_source
     )
@@ -413,10 +413,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor.components.setup_validation import" in (
         runtime_component_state_source
     )
-    assert "from vercor.runtime.components import" not in coupler_source
-    assert "from vercor.runtime.components import" not in runtime_coupler_state_source
-    assert "from vercor.runtime.components import" not in runtime_driver_source
-    assert "from vercor.runtime.components import" not in runtime_fields_source
+    assert "from vercor.runtime._components import" not in coupler_source
+    assert "from vercor.runtime._components import" not in runtime_coupler_state_source
+    assert "from vercor.runtime._components import" not in runtime_driver_source
+    assert "from vercor.runtime._components import" not in runtime_fields_source
     assert 'def empty(cls) -> "RuntimeComponentContract"' not in runtime_source
     assert "RuntimeComponentContract.empty" not in coupler_source
     assert "RuntimeComponentContract.empty" not in runtime_driver_source
@@ -502,10 +502,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def write_runtime_component_view_to_netcdf" in output_source
     assert "def write_coupler_runtime_outputs" in output_source
     assert not Path("vercor/tools.py").exists()
-    assert "class RuntimeComponentView" not in diagnostics_source
-    assert "RuntimeComponentView =" not in diagnostics_source
-    assert "RuntimeComponentView" not in diagnostics_source
-    assert "ComponentView" in diagnostics_source
+    assert "class RuntimeComponentState" not in diagnostics_source
+    assert "RuntimeComponentState =" not in diagnostics_source
+    assert "RuntimeComponentState" not in diagnostics_source
+    assert "ComponentState" in diagnostics_source
     assert 'hasattr(store, "field_names")' not in diagnostics_source
     assert "elif field_name in store" not in diagnostics_source
     assert ".data.get(" not in diagnostics_source
@@ -771,7 +771,7 @@ def test_examples_use_coupler_runtime_component_view_factory() -> None:
     jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
 
     for source in (slab_driver_source, data_driver_source, jcm_slab_source):
-        assert "RuntimeComponentView.from_coupler_state" not in source
+        assert "RuntimeComponentState.from_coupler_state" not in source
         assert "cpl.views(final_state" in source
 
 
@@ -965,11 +965,11 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     )
 
     def update(value: RunState) -> RunState:
-        atm = value.get_component_state("ATM")
+        atm = value._component_state("ATM")
         atm = atm.with_data(
             atm.data.set("temperature", atm.data.get("temperature") + 2.0)
         )
-        return value.set_component_state("ATM", atm)
+        return value._with_component_state("ATM", atm)
 
     updated = jax.jit(update)(state)
 
@@ -977,7 +977,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     assert updated.component_indices == {"ATM": 0}
     assert updated.component_names == ("ATM",)
     assert_allclose_compact(
-        updated.get_component_state("ATM").data.get("temperature"),
+        updated._component_state("ATM").data.get("temperature"),
         np.full((2, 2), 3.0),
     )
 
@@ -999,7 +999,7 @@ def test_runtime_coupler_state_restores_component_index_cache_after_pytree_round
     restored = jax.tree_util.tree_unflatten(treedef, leaves)
 
     assert restored.component_indices == {"ATM": 0, "OCN": 1}
-    assert restored.get_component_state("OCN") is restored.components[1]
+    assert restored._component_state("OCN") is restored._components[1]
 
 
 def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:

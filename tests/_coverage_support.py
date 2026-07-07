@@ -12,8 +12,8 @@ from numpy.typing import NDArray
 
 from vercor.clock import Clock
 from vercor.components import DataComponent
-from vercor._grid import RectilinearGrid
 from vercor.components.contexts import SetupContext, StepContext
+from vercor.grids import RectilinearGrid
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -102,7 +102,7 @@ class CoverageCouplerStub:
 class DummyComponent(DataComponent):
     def initialize(self, context: SetupContext) -> None:
         _ = context
-        self.data.setdefault("temperature", np.zeros(self.grid.shape, dtype=float))
+        self._data.setdefault("temperature", np.zeros(self.grid.shape, dtype=float))
 
 
 class RecordingRegridder:
@@ -116,15 +116,16 @@ class RecordingRegridder:
         self.vector_result = vector_result
         self.calls: list[tuple[NDArray, ...]] = []
 
-    def __call__(
-        self, *args: RuntimeArray
-    ) -> RuntimeArray | tuple[RuntimeArray, RuntimeArray]:
-        self.calls.append(tuple(np.asarray(arg) for arg in args))
-        if len(args) == 1:
-            if self.scalar_result is not None:
-                return self.scalar_result
-            return np.asarray(args[0])
+    def regrid(self, field: RuntimeArray) -> RuntimeArray:
+        self.calls.append((np.asarray(field),))
+        if self.scalar_result is not None:
+            return self.scalar_result
+        return np.asarray(field)
 
+    def regrid_vector(
+        self, u: RuntimeArray, v: RuntimeArray
+    ) -> tuple[RuntimeArray, RuntimeArray]:
+        self.calls.append((np.asarray(u), np.asarray(v)))
         if self.vector_result is not None:
             return self.vector_result
-        return np.asarray(args[0]), np.asarray(args[1])
+        return np.asarray(u), np.asarray(v)

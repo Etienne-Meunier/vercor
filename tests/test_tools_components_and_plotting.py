@@ -20,14 +20,14 @@ import vercor.runtime.component_topology as component_topology_module
 from vercor.components.base import Component
 from vercor.exceptions import CouplerError
 from vercor.fields import vector
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.runtime.contracts import (
     append_unique_runtime_fields,
     flatten_exchange_fields,
 )
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.state import ComponentView
+from vercor.state import ComponentState
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
@@ -102,7 +102,7 @@ def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    comp = ComponentView(
+    comp = ComponentState(
         name="DUMMY",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -121,7 +121,7 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    view = ComponentView(
+    view = ComponentState(
         name="ATM",
         grid=grid,
         data=RuntimeFieldStore.from_mapping({"shared": jnp.asarray(1.0)}),
@@ -156,7 +156,7 @@ def test_print_component_field_means_table_with_callable_metric(
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    atm = ComponentView(
+    atm = ComponentState(
         name="ATM",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -167,7 +167,7 @@ def test_print_component_field_means_table_with_callable_metric(
             }
         ),
     )
-    ocn = ComponentView(
+    ocn = ComponentState(
         name="OCN",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -214,7 +214,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
         latitude=np.array([-2.0, 0.0, 2.0]),
     )
 
-    atm = ComponentView(
+    atm = ComponentState(
         name="ATM",
         grid=atm_grid,
         data=RuntimeFieldStore.from_mapping(
@@ -225,7 +225,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
             }
         ),
     )
-    ocn = ComponentView(
+    ocn = ComponentState(
         name="OCN",
         grid=ocn_grid,
         data=RuntimeFieldStore.from_mapping(
@@ -247,7 +247,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     )
 
     assert axs.shape == (2, 2)
-    assert isinstance(atm.data.get("scalar"), jax.Array)
+    assert isinstance(atm.field("scalar"), jax.Array)
     assert scalar_mappable is not None
     assert_allclose_compact(axs[0, 0].get_xlim(), axs[1, 0].get_xlim())
     assert_allclose_compact(axs[0, 1].get_xlim(), axs[1, 1].get_xlim())
@@ -288,7 +288,7 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         rows=[
             (
                 "ATM",
-                ComponentView.from_component_state("ATM", grid, runtime_state),
+                ComponentState.from_component_state("ATM", grid, runtime_state),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",
@@ -313,7 +313,7 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([-1.0, 1.0]),
     )
-    runtime_view = ComponentView(
+    runtime_view = ComponentState(
         name="ATM",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -349,7 +349,7 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
     )
 
     assert axs.shape == (1, 2)
-    assert "total_surface_temperature" not in runtime_view.data.field_names
+    assert "total_surface_temperature" not in runtime_view.fields()
     assert scalar_mappable is not None
 
     plt.close(fig)

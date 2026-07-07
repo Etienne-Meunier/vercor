@@ -23,7 +23,8 @@ from vercor.components._lifecycle_api import ComponentLifecycleMixin
 import vercor.components._runtime_fields as _runtime_field_adapters
 import vercor.components._runtime_validation as _runtime_field_validation
 from vercor.dtypes import PrecisionPolicy
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
+from vercor.output.adapters import ComponentOutput
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -64,18 +65,19 @@ class Component(
     Attributes:
         name: component name
         grid: component grid
-        data: internal storage for component data arrays to/from which fields
+        _data: internal storage for component data arrays to/from which fields
             seed the runtime state during initialization
         settings: component-specific settings
-        setup_metadata: non-runtime setup metadata for adapter provenance or
+        _setup_metadata: non-runtime setup metadata for adapter provenance or
             diagnostics that must not enter runtime field validation
     """
 
     name: str
     grid: RectilinearGrid
-    data: dict[str, RuntimeArray] = field(default_factory=dict)
+    _data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: Settings = field(default_factory=Settings)
-    setup_metadata: dict[str, Any] = field(default_factory=dict)
+    output: ComponentOutput = field(default_factory=ComponentOutput)
+    _setup_metadata: dict[str, Any] = field(default_factory=dict)
     _field_spec: _FieldSpec = field(
         default_factory=_FieldSpec,
         init=False,
@@ -93,14 +95,16 @@ class Component(
         grid: RectilinearGrid,
         *,
         settings: Settings | None = None,
+        output: ComponentOutput | None = None,
     ) -> None:
         """Create a component configuration shell for setup-time authoring."""
 
         self.name = name
         self.grid = grid
-        self.data = {}
+        self._data = {}
         self.settings = Settings() if settings is None else settings
-        self.setup_metadata = {}
+        self.output = ComponentOutput() if output is None else output
+        self._setup_metadata = {}
         self._field_spec = _FieldSpec()
         self._lifecycle_hooks = ComponentLifecycleHooks()
 
@@ -117,6 +121,7 @@ class Component(
         payload: Any | None = None,
         settings: Settings | None = None,
         hooks: _ComponentHooks | None = None,
+        output: ComponentOutput | None = None,
     ) -> "Component":
         """Create a differentiable component from a user step callable.
 
@@ -139,6 +144,7 @@ class Component(
             step=options.step,
             payload=options.payload,
             settings=settings,
+            output=output,
             field_spec=options.field_spec,
             lifecycle_hooks=options.lifecycle_hooks,
         )
@@ -292,17 +298,19 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         step: _AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
+        output: ComponentOutput | None,
         field_spec: _FieldSpec,
         lifecycle_hooks: ComponentLifecycleHooks,
     ) -> None:
         if settings is None:
-            Component.__init__(self, name=name, grid=grid)
+            Component.__init__(self, name=name, grid=grid, output=output)
         else:
             Component.__init__(
                 self,
                 name=name,
                 grid=grid,
                 settings=settings,
+                output=output,
             )
         self._initialize_callable_runtime(
             step=step,

@@ -26,7 +26,7 @@ from vercor.runtime.interrupts import (
 class _NoopRuntimeComponent(Component):
     def __init__(self, name: str) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.data["temperature"] = np.ones((2, 2), dtype=float)
+        self._data["temperature"] = np.ones((2, 2), dtype=float)
 
     def step_runtime_state(
         self,
@@ -40,7 +40,7 @@ class _NoopRuntimeComponent(Component):
 class _InterruptingHostComponent(HostComponent):
     def __init__(self, name: str) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.data["temperature"] = np.ones((2, 2), dtype=float)
+        self._data["temperature"] = np.ones((2, 2), dtype=float)
 
     def step_host_runtime_state(
         self,

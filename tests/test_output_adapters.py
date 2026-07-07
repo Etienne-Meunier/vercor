@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_allclose_compact
-from vercor.output.adapters import ComponentOutputAdapter
+from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.datasets import time_coordinate_variable
 from vercor.output.variables import OutputVariable
 

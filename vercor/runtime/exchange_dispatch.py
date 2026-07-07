@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 from vercor.exceptions import ExchangerError
-from vercor._exchange import Exchange, _exchange_regrid_key
+from vercor.exchanges import Exchange
+from vercor.runtime.exchange_keys import exchange_regrid_key
 from vercor.fields import VectorField
 from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
@@ -21,7 +22,7 @@ def _dispatch_vector_exchange_field(
         raise ExchangerError(
             f"Not all fields in vector {field_name} are present in source fields"
         )
-    u_vector, v_vector = regrid(
+    u_vector, v_vector = regrid.regrid_vector(
         source_fields.get(field_name.u),
         source_fields.get(field_name.v),
     )
@@ -41,7 +42,7 @@ def _dispatch_scalar_exchange_field(
     if field_name not in source_fields:
         raise ExchangerError(f"Field {field_name} not present in source fields")
     incoming_updates[field_name] = (
-        regrid(source_fields.get(field_name)) * fractional_mask
+        regrid.regrid(source_fields.get(field_name)) * fractional_mask
     )
 
 
@@ -53,16 +54,16 @@ def dispatch_component_exchanges(
 ) -> RunState:
     """Dispatch destination-specific exchanges into one component."""
 
-    destination_component = state.get_component_state(destination_name)
+    destination_component = state._component_state(destination_name)
     destination_incoming = destination_component.incoming
     incoming_updates: dict[str, Any] = {}
 
     for exchange in exchanges:
-        source_component = state.get_component_state(exchange.source)
+        source_component = state._component_state(exchange.source)
         source_fields = source_component.outgoing
-        key = (exchange.source, exchange.target, _exchange_regrid_key(exchange))
+        key = (exchange.source, exchange.target, exchange_regrid_key(exchange))
         regrid = regridders[key]
-        fractional_mask = state.get_fractional_mask(*key)
+        fractional_mask = state._fractional_mask(*key)
 
         for field_name in exchange.fields:
             if isinstance(field_name, VectorField):
@@ -83,4 +84,4 @@ def dispatch_component_exchanges(
 
     destination_incoming = destination_incoming.set_many(incoming_updates)
     destination_component = destination_component.with_incoming(destination_incoming)
-    return state.set_component_state(destination_name, destination_component)
+    return state._with_component_state(destination_name, destination_component)

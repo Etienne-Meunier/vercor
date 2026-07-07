@@ -3,7 +3,7 @@ from datetime import datetime
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange, grid_from_coordinates
+from vercor import Clock, Coupler, Exchange, RectilinearGrid
 from vercor.setups import load_jcm_inputs, make_jax_gcm, make_slab_land, make_slab_ocean
 from vercor.dtypes import as_jax_real_array
 from vercor.regridding import bilinear, conservative
@@ -32,14 +32,14 @@ if __name__ == "__main__":
     lnd_binary_mask = 1 - ocn_binary_mask
 
     hgrid = coords.horizontal
-    lnd_grid = grid_from_coordinates(
+    lnd_grid = RectilinearGrid.from_coordinates(
         "LND",
         longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
         latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=lnd_binary_mask,
     )
 
-    ocn_grid = grid_from_coordinates(
+    ocn_grid = RectilinearGrid.from_coordinates(
         "OCN",
         longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
         latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         ),
     )
 
-    cpl.initialize()
+    cpl.initial_state()
     final_state = cpl.run()
     cpl.write_outputs(final_state)
     views = cpl.views(final_state, names=("ATM", "OCN", "LND"))

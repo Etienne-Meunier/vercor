@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from vercor.components import ComponentHooks, DataComponent
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 
 
 def time_interpolated_data_component(
@@ -25,5 +25,5 @@ def time_interpolated_data_component(
     )
     component.declare_fields(outputs=outputs)
     component.update_settings(apply_time_interpolation=True)
-    component.setup_metadata["DATA_FILES"] = dict(data_files)
+    component._setup_metadata["DATA_FILES"] = dict(data_files)
     return component

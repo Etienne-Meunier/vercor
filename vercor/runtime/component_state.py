@@ -41,7 +41,7 @@ def create_runtime_component_state(
     """Create immutable runtime state from a component's seed data."""
 
     validate_component_setup(component)
-    data = dict(component.data)
+    data = dict(component._data)
     incoming: dict[str, RuntimeArray] = {}
     outgoing: dict[str, RuntimeArray] = {}
     if prefill_missing:

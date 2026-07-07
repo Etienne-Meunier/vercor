@@ -15,7 +15,7 @@ from vercor.components._contracts import (
 from vercor.components._field_names import unique_field_names as _unique_field_names
 from vercor.dtypes import PrecisionPolicy
 from vercor.exceptions import ComponentError
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -25,7 +25,7 @@ class ComponentFieldAuthoringMixin:
 
     name: str
     grid: RectilinearGrid
-    data: dict[str, RuntimeArray]
+    _data: dict[str, RuntimeArray]
     settings: Settings
     _field_spec: _FieldSpec
 
@@ -66,7 +66,7 @@ class ComponentFieldAuthoringMixin:
     def field_names(self) -> tuple[str, ...]:
         """Return setup-time field names in insertion order."""
 
-        return tuple(self.data)
+        return tuple(self._data)
 
     def update_settings(self, **values: object) -> Self:
         """Update component settings by name and return this component."""
@@ -127,7 +127,7 @@ class ComponentFieldAuthoringMixin:
             fields=fields,
             policy=self.settings if policy is None else policy,
         )
-        self.data.update(field_updates or {})
+        self._data.update(field_updates or {})
         return self
 
     def seed_declared_defaults(

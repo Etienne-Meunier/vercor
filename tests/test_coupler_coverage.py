@@ -35,7 +35,7 @@ from vercor.components.host import HostComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError, ExchangerError
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.fields import vector
 from vercor.jax_logging import (
     CANONICAL_LOG_DATE_FORMAT,
@@ -50,7 +50,7 @@ from vercor._regridders.conservative import conservative
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output.runtime import output_masks_for_component
-from vercor.output.adapters import register_component_snapshot_writer
+from vercor.output.adapters import ComponentOutput
 from vercor.runtime.surface_masks import (
     apply_surface_exchange_masks,
     create_surface_exchange_masks,
@@ -86,7 +86,7 @@ class _RunComponent(Component):
         _ = timestamp
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
-        self.data["temperature"] = np.ones((2, 2))
+        self._data["temperature"] = np.ones((2, 2))
 
     def step_runtime_state(
         self,
@@ -104,7 +104,7 @@ class _RunComponent(Component):
 class _LoggingRunComponent(Component):
     def __init__(self, name: str) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.data["temperature"] = np.ones((2, 2), dtype=float)
+        self._data["temperature"] = np.ones((2, 2), dtype=float)
 
     def step_runtime_state(
         self,
@@ -124,7 +124,7 @@ class _HostRunComponent(HostComponent):
     def __init__(self, name: str, events: list[str] | None = None) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
-        self.data["temperature"] = np.ones((2, 2))
+        self._data["temperature"] = np.ones((2, 2))
 
     def step_host_runtime_state(
         self,
@@ -141,7 +141,7 @@ class _HostRunComponent(HostComponent):
             "temperature",
             component_state.data.get("temperature") + context.dt_seconds,
         )
-        self.data["host_event"] = np.asarray(context.dt_seconds)
+        self._data["host_event"] = np.asarray(context.dt_seconds)
         return component_state.with_data(data.set("host_time_seen", np.asarray(1.0)))
 
 
@@ -317,7 +317,7 @@ def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
         )
     )
 
-    runtime_state = coupler.state(prefill=True)
+    runtime_state = coupler.initial_state(prefill=True)
 
     all_views = coupler.views(runtime_state)
     selected_views = coupler.views(runtime_state, names=("LND", "ATM"))
@@ -325,6 +325,7 @@ def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
     assert tuple(all_views) == ("ATM", "OCN", "LND")
     assert tuple(selected_views) == ("LND", "ATM")
     assert all_views["ATM"].name == "ATM"
+    assert selected_views["LND"].grid is not None
     assert selected_views["LND"].grid.name == "lnd"
 
 
@@ -531,7 +532,7 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
     )
 
     with pytest.raises(CouplerError, match="not registered in coupler"):
-        coupler.initialize()
+        coupler._initialize_runtime()
 
 
 def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64(
@@ -557,21 +558,21 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         ),
         "ICE": DummyComponent(name="ICE", grid=make_test_grid(name="ice")),
     }
-    components["ATM"].data.update(
+    components["ATM"]._data.update(
         {
             "downward_longwave_radiation_flux": np.full((2, 2), 1.0),
             "temperature_2m": np.full((2, 2), 2.0),
             "sensible_heat_flux": np.full((2, 2), 3.0),
         }
     )
-    components["OCN"].data.update(
+    components["OCN"]._data.update(
         {
             "temperature": np.full((2, 2), 4.0),
             "specific_humidity": np.full((2, 2), 5.0),
         }
     )
-    components["LND"].data["soil_moisture"] = np.full((2, 2), 6.0)
-    components["ICE"].data["ice_fraction"] = np.full((2, 2), 7.0)
+    components["LND"]._data["soil_moisture"] = np.full((2, 2), 6.0)
+    components["ICE"]._data["ice_fraction"] = np.full((2, 2), 7.0)
 
     for component in components.values():
         coupler.add_component(cast(Any, component))
@@ -581,8 +582,8 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     def recording_regridder_factory(
         interpolation_type: str,
     ) -> Any:
-        def factory(source_grid: Any, destination_grid: Any) -> RecordingRegridder:
-            created_keys.append((source_grid.name, destination_grid.name))
+        def factory(source_grid: Any, target_grid: Any) -> RecordingRegridder:
+            created_keys.append((source_grid.name, target_grid.name))
             return RecordingRegridder()
 
         factory.__name__ = interpolation_type
@@ -665,7 +666,7 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     )
 
     coupler.settings.enable_x64 = True
-    coupler.initialize()
+    coupler._initialize_runtime()
 
     assert coupler.settings.enable_x64 is True
     assert jax_calls == [("jax_enable_x64", True)]
@@ -1029,9 +1030,9 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source.data["temperature"] = jnp.full((2, 2), 5.0)
-    source.data["u_velocity"] = np.full((2, 2), 1.0)
-    source.data["v_velocity"] = np.full((2, 2), -1.0)
+    source._data["temperature"] = jnp.full((2, 2), 5.0)
+    source._data["u_velocity"] = np.full((2, 2), 1.0)
+    source._data["v_velocity"] = np.full((2, 2), -1.0)
 
     scalar_exchange = Exchange(
         source="OCN",
@@ -1077,7 +1078,7 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         runtime_state_from_coupler_components(coupler, prefill_missing=True),
         "ATM",
     )
-    destination_state = runtime_state.get_component_state("ATM")
+    destination_state = runtime_state._component_state("ATM")
 
     assert_allclose_compact(
         destination_state.incoming.get("temperature"),
@@ -1097,7 +1098,7 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
 def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source.data["temperature"] = np.full((2, 2), 5.0)
+    source._data["temperature"] = np.full((2, 2), 5.0)
 
     exchange = Exchange(
         source="OCN",
@@ -1130,7 +1131,7 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         runtime_state_from_coupler_components(coupler, prefill_missing=True),
         "ATM",
     )
-    destination_state = runtime_state.get_component_state("ATM")
+    destination_state = runtime_state._component_state("ATM")
 
     assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
     assert_allclose_compact(
@@ -1171,7 +1172,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
 
     vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     vector_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    vector_source.data["u_velocity"] = np.ones((2, 2))
+    vector_source._data["u_velocity"] = np.ones((2, 2))
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
@@ -1331,7 +1332,7 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     ) -> None:
         calls.append((component_state, output, output_time, logger))
 
-    register_component_snapshot_writer(component, write_snapshot)
+    component.output = ComponentOutput(snapshot_writer=write_snapshot)
 
     output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
@@ -1342,7 +1343,7 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
 
     assert calls == [
         (
-            state.get_component_state("ATM"),
+            state._component_state("ATM"),
             Path("atm.snapshot.nc"),
             datetime(2000, 1, 1, 0, 1),
             coupler.logger,
@@ -1447,7 +1448,7 @@ def test_host_runtime_components_use_explicit_host_contract() -> None:
     )
 
     final_state = coupler.run()
-    final_component = final_state.get_component_state("ATM")
+    final_component = final_state._component_state("ATM")
 
     assert isinstance(host_component, HostComponent)
     assert "host_time_seen" in final_component.data.field_names

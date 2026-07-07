@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
 
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor._regridders.bilinear import bilinear as _bilinear
 from vercor._regridders.conservative import conservative as _conservative
 from vercor.types import RuntimeArray
@@ -16,7 +16,6 @@ class Regridder(Protocol):
     """Public protocol for callable grid-to-grid transfer objects."""
 
     source_grid: RectilinearGrid
-    destination_grid: RectilinearGrid
 
     @property
     def target_grid(self) -> RectilinearGrid:
@@ -25,12 +24,6 @@ class Regridder(Protocol):
     @property
     def has_identical_grids(self) -> bool:
         """Return whether source and target grids are identical."""
-
-    def __call__(
-        self,
-        *fields: RuntimeArray,
-    ) -> RuntimeArray | tuple[RuntimeArray, RuntimeArray]:
-        """Transfer one scalar field or one vector pair to the target grid."""
 
     def regrid(self, field: RuntimeArray) -> RuntimeArray:
         """Transfer one scalar field to the target grid."""

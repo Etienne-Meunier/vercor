@@ -9,7 +9,7 @@ from vercor.components import (
     StepContext,
 )
 from vercor.dtypes import as_jax_real_array
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
 _OCEAN_INPUTS = ("sensible_heat_flux", "latent_heat_flux")

@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 import jax.numpy as jnp
 
 from vercor.exceptions import CouplerError
-from vercor._exchange import Exchange, _exchange_regrid_key
+from vercor.exchanges import Exchange
+from vercor.runtime.exchange_keys import exchange_regrid_key
 from vercor.runtime.contracts import RuntimeComponentContract, exchange_key_name
 from vercor.state import RunState
 from vercor.runtime.validation import validate_component_runtime_contract_fields
@@ -45,7 +46,7 @@ def validate_runtime_state(
             )
 
         component = components[cname]
-        component_state = runtime_state.get_component_state(cname)
+        component_state = runtime_state._component_state(cname)
         contract = contracts[cname]
         validate_component_runtime_contract_fields(
             component,
@@ -58,7 +59,7 @@ def validate_runtime_state(
         )
 
     for exchange in exchanges:
-        key = (exchange.source, exchange.target, _exchange_regrid_key(exchange))
+        key = (exchange.source, exchange.target, exchange_regrid_key(exchange))
         if exchange.source not in runtime_component_names:
             raise CouplerError(
                 f"Exchange source component '{exchange.source}' is missing from runtime state"
@@ -74,13 +75,13 @@ def validate_runtime_state(
             )
 
         mask_name = exchange_key_name(*key)
-        if mask_name not in runtime_state.fractional_masks.field_names:
+        if mask_name not in runtime_state._fractional_masks.field_names:
             raise CouplerError(
                 "Runtime requires an initialized fractional mask for exchange "
                 f"{exchange.label}"
             )
         destination_shape = components[exchange.target].grid.shape
-        mask_shape = jnp.asarray(runtime_state.fractional_masks.get(mask_name)).shape
+        mask_shape = jnp.asarray(runtime_state._fractional_masks.get(mask_name)).shape
         if mask_shape != destination_shape:
             raise CouplerError(
                 "Runtime fractional mask for exchange "

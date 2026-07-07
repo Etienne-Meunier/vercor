@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tests.assertions import assert_allclose_compact
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.fields import vector
 from vercor.runtime.dispatch_context import RuntimeDispatchContext
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
@@ -21,10 +21,11 @@ class _ScalingRegridder:
     def __init__(self, scale: float = 1.0) -> None:
         self.scale = scale
 
-    def __call__(self, *args: Any) -> Any:
-        if len(args) == 1:
-            return jnp.asarray(args[0]) * self.scale
-        return jnp.asarray(args[0]) + 1.0, jnp.asarray(args[1]) - 1.0
+    def regrid(self, field: Any) -> Any:
+        return jnp.asarray(field) * self.scale
+
+    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
+        return jnp.asarray(u) + 1.0, jnp.asarray(v) - 1.0
 
 
 def _factory(*args: Any, **kwargs: Any) -> _ScalingRegridder:
@@ -72,9 +73,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
             (exchange,),
             regridders,
         )
-        return jnp.sum(
-            dispatched.get_component_state("ATM").incoming.get("temperature")
-        )
+        return jnp.sum(dispatched._component_state("ATM").incoming.get("temperature"))
 
     source = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
     mask = jnp.asarray([[1.0, 0.5], [0.0, 1.0]])
@@ -122,7 +121,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     )
 
     dispatched = dispatch_component_exchanges(state, "ATM", (exchange,), regridders)
-    destination = dispatched.get_component_state("ATM")
+    destination = dispatched._component_state("ATM")
 
     assert_allclose_compact(
         destination.incoming.get("u_velocity"), np.full((2, 2), 6.0)

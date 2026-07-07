@@ -77,3 +77,16 @@ def runtime_state_from_coupler_components(
         inputs=runtime_facade_inputs(coupler),
         prefill_missing=prefill_missing,
     )
+
+
+def create_runtime_state_from_coupler(
+    coupler: Coupler,
+    *,
+    prefill_missing: bool,
+) -> RunState:
+    """Create, prime, and validate state using the coupler's installed topology."""
+
+    return runtime_facade.create_runtime_state(
+        inputs=runtime_facade_inputs(coupler),
+        prefill_missing=prefill_missing,
+    )

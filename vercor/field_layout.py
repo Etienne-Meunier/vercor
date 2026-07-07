@@ -107,7 +107,7 @@ def validate_component_data_layout(
             )
         except ValueError as exc:
             raise ComponentError(
-                f"{exc}. Non-grid metadata must be stored outside Component.data."
+                f"{exc}. Non-grid metadata must be stored outside component runtime fields."
             ) from exc
 
 

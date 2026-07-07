@@ -32,7 +32,7 @@ def step_runtime_component(
         dispatch_context.destination_exchanges(component_name),
         dispatch_context.regridders,
     )
-    component_state = runtime_state.get_component_state(component_name)
+    component_state = runtime_state._component_state(component_name)
     component = dispatch_context.components[component_name]
     contract = dispatch_context.contracts[component_name]
     component_state = receive_runtime_fields(
@@ -57,7 +57,7 @@ def step_runtime_component(
         step_info,
         contract=contract,
     )
-    return runtime_state.set_component_state(
+    return runtime_state._with_component_state(
         component_name,
         component_state,
     )
@@ -73,14 +73,14 @@ def prime_runtime_outgoing(
     """Populate outgoing stores once before the first exchange dispatch."""
 
     for component_name in run_order:
-        component_state = runtime_state.get_component_state(component_name)
+        component_state = runtime_state._component_state(component_name)
         component_state = send_runtime_fields(
             dispatch_context.components[component_name],
             component_state,
             step_info,
             contract=dispatch_context.contracts[component_name],
         )
-        runtime_state = runtime_state.set_component_state(
+        runtime_state = runtime_state._with_component_state(
             component_name,
             component_state,
         )

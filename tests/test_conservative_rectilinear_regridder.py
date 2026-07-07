@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_allclose_compact, assert_array_equal_compact
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
@@ -41,7 +41,7 @@ def test_regridder_constructor_sets_interpolator_and_grids() -> None:
     regridder = ConservativeRectilinearRegridder(src, dst)
 
     assert regridder.source_grid is src
-    assert regridder.destination_grid is dst
+    assert regridder.target_grid is dst
     assert regridder.interpolator is not None
 
 
@@ -102,7 +102,7 @@ def test_regridder_constructor_accepts_mixed_numpy_and_jax_edges() -> None:
     )
 
     assert regridder.interpolator is not None
-    out = regridder(np.array([[1.0, 2.0], [3.0, 4.0]]))
+    out = regridder.regrid(np.array([[1.0, 2.0], [3.0, 4.0]]))
     assert np.shape(out) == dst.shape
 
 
@@ -117,7 +117,7 @@ def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> Non
     regridder = ConservativeRectilinearRegridder(src, dst)
     src_field = np.array([[1.0, 2.0], [3.0, 4.0]])
 
-    out = regridder(src_field)
+    out = regridder.regrid(src_field)
 
     assert np.shape(out) == dst.shape
 
@@ -133,7 +133,9 @@ def test_regridder_vector_call_raises_scalar_only_type_error() -> None:
     regridder = ConservativeRectilinearRegridder(src, dst)
 
     with pytest.raises(TypeError, match="Conservative regridding supports scalar"):
-        regridder(np.ones((2, 2), dtype=float), np.ones((2, 2), dtype=float))
+        regridder.regrid_vector(
+            np.ones((2, 2), dtype=float), np.ones((2, 2), dtype=float)
+        )
 
 
 def test_regridder_identical_grid_vector_call_still_raises_scalar_only_type_error() -> (
@@ -145,7 +147,9 @@ def test_regridder_identical_grid_vector_call_still_raises_scalar_only_type_erro
     regridder = ConservativeRectilinearRegridder(src, dst)
 
     with pytest.raises(TypeError, match="Conservative regridding supports scalar"):
-        regridder(np.ones((2, 2), dtype=float), np.ones((2, 2), dtype=float))
+        regridder.regrid_vector(
+            np.ones((2, 2), dtype=float), np.ones((2, 2), dtype=float)
+        )
 
 
 def test_regridder_has_identical_grids_true_for_equal_coords() -> None:
@@ -231,7 +235,7 @@ def test_regridder_identical_grid_scalar_short_circuit_returns_input_object() ->
     regridder = ConservativeRectilinearRegridder(src, dst)
     src_field = np.array([[1.0, 2.0], [3.0, 4.0]])
 
-    out = regridder(src_field)
+    out = regridder.regrid(src_field)
 
     assert out is src_field
 
@@ -245,21 +249,17 @@ def test_regridder_identical_grid_scalar_short_circuit_with_jax_backed_coords() 
     regridder = ConservativeRectilinearRegridder(src, dst)
     src_field = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
 
-    out = regridder(src_field)
+    out = regridder.regrid(src_field)
 
     assert out is src_field
 
 
-def test_regridder_call_with_invalid_arg_count_raises_type_error() -> None:
+def test_regridder_is_not_callable() -> None:
     src = _grid("src", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
     dst = _grid("dst", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
     regridder = ConservativeRectilinearRegridder(src, dst)
 
-    with pytest.raises(TypeError, match="Provide scalar_src"):
-        regridder()
-
-    with pytest.raises(TypeError, match="Provide scalar_src"):
-        regridder(np.ones((2, 2)), np.ones((2, 2)), np.ones((2, 2)))
+    assert not callable(regridder)
 
 
 @pytest.mark.filterwarnings(
@@ -284,7 +284,7 @@ def test_regridder_source_mask_excludes_masked_cells_in_fracarea_mode() -> None:
     )
 
     src_field = np.array([[1.0, 2.0], [3.0, 4.0]])
-    out: np.ndarray = np.asarray(regridder(src_field))
+    out: np.ndarray = np.asarray(regridder.regrid(src_field))
 
     assert out.shape == (4, 4)
     assert np.all(np.isnan(out[0:2, 0:2]))
@@ -302,7 +302,7 @@ def test_regridder_accepts_jax_array_input() -> None:
     )
 
     regridder = ConservativeRectilinearRegridder(src, dst)
-    out = regridder(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
+    out = regridder.regrid(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
 
     assert np.shape(out) == dst.shape
     assert np.all(np.isfinite(np.asarray(out)))
@@ -316,7 +316,7 @@ def test_conservative_factory_returns_conservative_rectilinear_regridder() -> No
 
     assert isinstance(regridder, ConservativeRectilinearRegridder)
     assert regridder.source_grid is src
-    assert regridder.destination_grid is dst
+    assert regridder.target_grid is dst
 
 
 @pytest.mark.filterwarnings(
@@ -344,6 +344,6 @@ def test_conservative_factory_forwards_remapper_options() -> None:
     assert interp.normalize == "fracarea"
     assert_allclose_compact(interp.radius, 10.0, rtol=0.0, atol=0.0)
 
-    out = np.asarray(regridder(np.array([[1.0, 2.0], [3.0, 4.0]])))
+    out = np.asarray(regridder.regrid(np.array([[1.0, 2.0], [3.0, 4.0]])))
     assert np.all(np.isnan(out[0:2, 0:2]))
     assert_allclose_compact(out[0:2, 2:4], 2.0, rtol=0.0, atol=1e-14)

@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.settings import Settings
 

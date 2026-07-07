@@ -8,7 +8,7 @@ from vercor.clock import Clock
 from vercor.components.setup_validation import validate_component_setup
 from vercor.components.contexts import SetupContext
 from vercor.dtypes import as_jax_real_array
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor.runtime.component_topology import validate_component_topology_names
 from vercor.runtime.contracts import RuntimeComponentContract, build_runtime_contracts
@@ -43,9 +43,9 @@ def apply_run_precision_to_component(
 
     component.settings.set("enable_x64", settings.enable_x64)
     component.grid = component.grid.with_precision(settings)
-    component.data = {
+    component._data = {
         field_name: as_jax_real_array(field_value, settings)
-        for field_name, field_value in component.data.items()
+        for field_name, field_value in component._data.items()
     }
     field_spec = component.field_spec
     if field_spec.defaults:

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from vercor import Clock, Coupler, Exchange
 from vercor.dtypes import jax_ones
-from vercor.grids import uniform_rectilinear_grid
+from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
 from vercor.setups import (
     make_slab_atmosphere,
@@ -29,7 +29,7 @@ from vercor.diagnostics import (
 
 if __name__ == "__main__":
     # Build grids
-    atm_grid = uniform_rectilinear_grid(
+    atm_grid = RectilinearGrid.uniform(
         "atm-grid",
         nlon=128,
         nlat=64,
@@ -39,7 +39,7 @@ if __name__ == "__main__":
 
     ocn_grid_shape = (64, 32)
     binary_mask = jax_ones(ocn_grid_shape).T.at[:2, :].set(0.0)  # land points
-    ocn_grid = uniform_rectilinear_grid(
+    ocn_grid = RectilinearGrid.uniform(
         "ocn-grid",
         nlon=ocn_grid_shape[0],
         nlat=ocn_grid_shape[1],
@@ -48,14 +48,14 @@ if __name__ == "__main__":
         binary_mask=binary_mask,
     )
 
-    ice_grid = uniform_rectilinear_grid(
+    ice_grid = RectilinearGrid.uniform(
         "ice-grid",
         nlon=ocn_grid_shape[0],
         nlat=ocn_grid_shape[1],
         longitude=(0.0, 360.0),
         latitude=(-90.0, 90.0),
     )
-    lnd_grid = uniform_rectilinear_grid(
+    lnd_grid = RectilinearGrid.uniform(
         "lnd-grid",
         nlon=128,
         nlat=64,
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         ),
     )
 
-    cpl.initialize()
+    cpl.initial_state()
     final_state = cpl.run()
     cpl.write_outputs(final_state)
     views = cpl.views(final_state, names=("ATM", "OCN", "LND", "ICE"))

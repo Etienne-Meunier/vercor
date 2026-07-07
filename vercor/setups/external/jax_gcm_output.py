@@ -16,7 +16,7 @@ import jax.numpy as jnp
 from vercor.calendar import ModelDateTime
 from vercor.dtypes import as_jax_index_array, as_jax_real_array, jax_index_dtype
 from vercor.jax_logging import LoggerLike
-from vercor.output.adapters import ComponentOutputAdapter
+from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.datasets import time_coordinate_variable
 from vercor.output.time import TIME_NAME
 from vercor.output.variables import OutputVariable

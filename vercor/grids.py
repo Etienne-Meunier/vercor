@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 import jax
 import jax.numpy as jnp
@@ -133,53 +133,53 @@ class RectilinearGrid(PyTreeNodeMixin, Grid):
             policy=policy,
         )
 
+    @classmethod
+    def from_coordinates(
+        cls,
+        name: str,
+        *,
+        longitude: Any,
+        latitude: Any,
+        longitude_edges: Any | None = None,
+        latitude_edges: Any | None = None,
+        binary_mask: Any | None = None,
+        policy: PrecisionPolicy = None,
+    ) -> Self:
+        """Build a rectilinear grid from explicit coordinate arrays."""
 
-def grid_from_coordinates(
-    name: str,
-    *,
-    longitude: Any,
-    latitude: Any,
-    longitude_edges: Any | None = None,
-    latitude_edges: Any | None = None,
-    binary_mask: Any | None = None,
-    policy: PrecisionPolicy = None,
-) -> RectilinearGrid:
-    """Build a rectilinear grid from explicit coordinate arrays."""
+        return cls(
+            name=name,
+            longitude=longitude,
+            latitude=latitude,
+            longitude_edges=longitude_edges,
+            latitude_edges=latitude_edges,
+            binary_mask=binary_mask,
+            policy=policy,
+        )
 
-    return RectilinearGrid(
-        name=name,
-        longitude=longitude,
-        latitude=latitude,
-        longitude_edges=longitude_edges,
-        latitude_edges=latitude_edges,
-        binary_mask=binary_mask,
-        policy=policy,
-    )
+    @classmethod
+    def uniform(
+        cls,
+        name: str,
+        *,
+        nlon: int,
+        nlat: int,
+        longitude: tuple[float, float],
+        latitude: tuple[float, float],
+        binary_mask: Any | None = None,
+        policy: PrecisionPolicy = None,
+    ) -> Self:
+        """Build a rectilinear grid with equally spaced coordinate centers."""
 
-
-def uniform_rectilinear_grid(
-    name: str,
-    *,
-    nlon: int,
-    nlat: int,
-    longitude: tuple[float, float],
-    latitude: tuple[float, float],
-    binary_mask: Any | None = None,
-    policy: PrecisionPolicy = None,
-) -> RectilinearGrid:
-    """Build a rectilinear grid with equally spaced coordinate centers."""
-
-    return grid_from_coordinates(
-        name,
-        longitude=jax_linspace(longitude[0], longitude[1], nlon, policy=policy),
-        latitude=jax_linspace(latitude[0], latitude[1], nlat, policy=policy),
-        binary_mask=binary_mask,
-        policy=policy,
-    )
+        return cls.from_coordinates(
+            name,
+            longitude=jax_linspace(longitude[0], longitude[1], nlon, policy=policy),
+            latitude=jax_linspace(latitude[0], latitude[1], nlat, policy=policy),
+            binary_mask=binary_mask,
+            policy=policy,
+        )
 
 
 __all__ = [
     "RectilinearGrid",
-    "grid_from_coordinates",
-    "uniform_rectilinear_grid",
 ]

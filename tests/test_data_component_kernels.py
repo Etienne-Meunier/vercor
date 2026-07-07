@@ -26,7 +26,7 @@ from vercor.setups.data.erainterim_ocean import (
     _binary_ocean_mask_from_salinity,
 )
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.state import ComponentView
+from vercor.state import ComponentState
 from vercor.settings import Settings
 
 
@@ -115,7 +115,7 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
 
 
 def test_total_surface_temperature_diagnostic_uses_runtime_view_fields() -> None:
-    view = ComponentView(
+    view = ComponentState(
         name="ATM",
         grid=None,  # type: ignore[arg-type]
         incoming=RuntimeFieldStore.from_mapping(

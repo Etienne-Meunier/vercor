@@ -9,6 +9,19 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local v1.0 API redesign validation passed as of 2026-07-07 using the
+  direct `scipy` environment executable: Black, flake8, mypy, fast pytest,
+  full pytest, coverage pytest at 90% total, and `git diff --check`. Black
+  emitted the recurring Python 3.13/target-3.14 warning; full pytest/coverage
+  emitted the recurring JAX dtype-promotion `FutureWarning` and existing xarray
+  merge `FutureWarning` in the real JAXGCM payload test. The change removes
+  root/module-level grid constructor shims, `_grid.py`/`_exchange.py`, public
+  `Coupler.state()`/`initialize()`, public `RunState` runtime-store accessors,
+  public component `.data` and `.setup_metadata`, callable regridders, and
+  public output snapshot-writer registration. Public access is now
+  `RectilinearGrid.uniform/from_coordinates`, `Coupler.initial_state()`,
+  `RunState.component(...).field(...)`, explicit `regrid()`/`regrid_vector()`,
+  and typed `ComponentOutput`.
 - Latest local expired compatibility shim removal validation: focused cleanup
   pytest, full fast pytest, Black, flake8, mypy, full pytest, and git diff
   whitespace check passed as of 2026-07-07 using the direct `scipy`

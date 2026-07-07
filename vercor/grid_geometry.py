@@ -6,7 +6,7 @@ from jax import Array, lax
 import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_real_array, dtype_policy, jax_linspace
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.types import RuntimeArray
 
 

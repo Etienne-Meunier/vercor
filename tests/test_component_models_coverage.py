@@ -87,10 +87,10 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
         np.zeros(grid.shape),
     )
 
-    atmosphere.data["sea_surface_temperature"] = np.asarray(
+    atmosphere._data["sea_surface_temperature"] = np.asarray(
         [[280.0, 281.0], [282.0, 283.0]]
     )
-    initial_temperature_2m = np.asarray(atmosphere.data["temperature_2m"]).copy()
+    initial_temperature_2m = np.asarray(atmosphere._data["temperature_2m"]).copy()
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     atmosphere_data = atmosphere_state.data
     assert atmosphere_data.get("sensible_heat_flux").shape == grid.shape
@@ -110,7 +110,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert ocean.field_spec.outputs == ("sea_surface_temperature",)
     assert set(ocean.field_spec.defaults) == {"sea_surface_temperature"}
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
-    assert ocean.data == {}
+    assert ocean._data == {}
     assert ocean_state.data.field_names == ("sea_surface_temperature",)
     assert_allclose_compact(
         ocean_state.data.get("sea_surface_temperature"),
@@ -118,9 +118,9 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     ocean.initialize(coupler.init_context())
-    ocean.data["sensible_heat_flux"] = np.full(grid.shape, 20.0)
-    ocean.data["latent_heat_flux"] = np.full(grid.shape, 10.0)
-    starting_sst = ocean.data["sea_surface_temperature"].copy()
+    ocean._data["sensible_heat_flux"] = np.full(grid.shape, 20.0)
+    ocean._data["latent_heat_flux"] = np.full(grid.shape, 10.0)
+    starting_sst = ocean._data["sea_surface_temperature"].copy()
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
     ocean_sst = ocean_state.data.get("sea_surface_temperature")
     assert ocean_sst.shape == grid.shape
@@ -134,7 +134,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
         "land_surface_temperature",
     }
     land.initialize(coupler.init_context())
-    land.data["latent_heat_flux"] = np.full(grid.shape, 100.0)
+    land._data["latent_heat_flux"] = np.full(grid.shape, 100.0)
     land_state = _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
     soil_moisture = land_state.data.get("soil_moisture")
     assert soil_moisture.shape == grid.shape
@@ -145,12 +145,12 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert seaice.field_spec.outputs == ("ice_fraction",)
     assert set(seaice.field_spec.defaults) == {"ice_fraction"}
     seaice_state = _step_component(seaice, dt, timestamp, coupler)
-    assert seaice.data == {}
+    assert seaice._data == {}
     assert seaice_state.data.field_names == ("ice_fraction",)
     assert_allclose_compact(seaice_state.data.get("ice_fraction"), np.zeros(grid.shape))
 
     seaice.initialize(coupler.init_context())
-    seaice.data["sea_surface_temperature"] = np.asarray(
+    seaice._data["sea_surface_temperature"] = np.asarray(
         [[270.0, 272.0], [274.0, 276.0]]
     )
     seaice_state = _step_component(seaice, dt, timestamp, coupler)
@@ -200,18 +200,18 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
     component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component.setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
+    assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
     assert component.settings.apply_time_interpolation
     assert component.field_spec.outputs == ("land_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
-    assert isinstance(component.data["land_surface_temperature"], jax.Array)
+    assert isinstance(component._data["land_surface_temperature"], jax.Array)
     binary_mask = component.grid.binary_mask
     assert binary_mask is not None
     assert isinstance(binary_mask, jax.Array)
     assert_allclose_compact(binary_mask, forcing["mask"].T)
     assert_allclose_compact(
-        component.data["land_surface_temperature"],
+        component._data["land_surface_temperature"],
         forcing["skt"].transpose((2, 1, 0)),
     )
 
@@ -258,19 +258,19 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
     component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component.setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
+    assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
     assert component.settings.apply_time_interpolation
     assert component.field_spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
-    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
+    assert isinstance(component._data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(component.grid.latitude, np.asarray([-10.0, 10.0]))
     expected_mask = np.asarray([[0.0, 1.0], [0.0, 0.0]])
     binary_mask = component.grid.binary_mask
     assert binary_mask is not None
     assert_allclose_compact(binary_mask, expected_mask)
-    assert component.data["sea_surface_temperature"].shape == (2, 2, 2)
-    assert np.isnan(component.data["sea_surface_temperature"][0, 0, 0])
-    assert np.isclose(component.data["sea_surface_temperature"][0, 0, 1], 284.0)
+    assert component._data["sea_surface_temperature"].shape == (2, 2, 2)
+    assert np.isnan(component._data["sea_surface_temperature"][0, 0, 0])
+    assert np.isclose(component._data["sea_surface_temperature"][0, 0, 1], 284.0)
 
 
 def test_erainterim_ocean_constructor_builds_global_masked_grid(
@@ -313,19 +313,19 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
     component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component.setup_metadata["DATA_FILES"] == {"model_level": str(fake_path)}
+    assert component._setup_metadata["DATA_FILES"] == {"model_level": str(fake_path)}
     assert component.settings.apply_time_interpolation
     assert component.field_spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
-    assert isinstance(component.data["sea_surface_temperature"], jax.Array)
+    assert isinstance(component._data["sea_surface_temperature"], jax.Array)
     assert component.grid.shape == (46, 2)
     binary_mask = component.grid.binary_mask
     assert binary_mask is not None
     assert np.all(binary_mask[3:-3, :] == 1.0)
     assert np.all(binary_mask[:3, :] == 0.0)
-    assert component.data["sea_surface_temperature"].shape == (12, 46, 2)
-    assert np.isnan(component.data["sea_surface_temperature"][0, 0, 0])
-    assert np.isclose(component.data["sea_surface_temperature"][0, 3, 0], 283.15)
+    assert component._data["sea_surface_temperature"].shape == (12, 46, 2)
+    assert np.isnan(component._data["sea_surface_temperature"][0, 0, 0])
+    assert np.isclose(component._data["sea_surface_temperature"][0, 3, 0], 283.15)
 
 
 def test_era5_atmosphere_constructor_initialize_and_step(
@@ -479,7 +479,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
     coupler = cast(Any, CoverageCouplerStub())
     component = make_era5_atmosphere()
 
-    assert component.setup_metadata["DATA_FILES"] == {
+    assert component._setup_metadata["DATA_FILES"] == {
         "model_level": str(model_level_path),
         "surface": str(surface_path),
     }
@@ -499,21 +499,21 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         "potential_temperature",
     )
     assert isinstance(component.grid.longitude, jax.Array)
-    assert isinstance(component.data["surface_pressure"], jax.Array)
+    assert isinstance(component._data["surface_pressure"], jax.Array)
     assert_allclose_compact(component.grid.longitude, forcing["longitude"])
     assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
-    hybrid_coefficients = component.setup_metadata["hybrid_coefficients"]
+    hybrid_coefficients = component._setup_metadata["hybrid_coefficients"]
     assert_allclose_compact(hybrid_coefficients["hyai"], np.asarray([2.0, 3.0, 4.0]))
     assert_allclose_compact(hybrid_coefficients["hybi"], np.asarray([12.0, 13.0, 14.0]))
     assert_allclose_compact(hybrid_coefficients["hyam"], np.asarray([22.0, 23.0]))
     assert_allclose_compact(hybrid_coefficients["hybm"], np.asarray([32.0, 33.0]))
     for coefficient_name in ("hyai", "hybi", "hyam", "hybm"):
-        assert coefficient_name not in component.data
-    assert component.data["surface_pressure"].shape == (12, 3, 2)
-    assert component.data["specific_humidity_3d"].shape == (12, 2, 3, 2)
-    assert component.data["temperature_3d"].shape == (12, 2, 3, 2)
-    assert component.data["u_velocity"].shape == (12, 3, 2)
-    assert component.data["v_velocity"].shape == (12, 3, 2)
+        assert coefficient_name not in component._data
+    assert component._data["surface_pressure"].shape == (12, 3, 2)
+    assert component._data["specific_humidity_3d"].shape == (12, 2, 3, 2)
+    assert component._data["temperature_3d"].shape == (12, 2, 3, 2)
+    assert component._data["u_velocity"].shape == (12, 3, 2)
+    assert component._data["v_velocity"].shape == (12, 3, 2)
 
     component.initialize(coupler.init_context())
 
@@ -521,11 +521,11 @@ def test_era5_atmosphere_constructor_initialize_and_step(
     assert len(physics_calls["height"]) == 12
     assert len(physics_calls["density"]) == 12
     assert len(physics_calls["theta"]) == 12
-    assert component.data["model_level_height"].shape == (12, 3, 2)
-    assert component.data["density"].shape == (12, 3, 2)
-    assert component.data["potential_temperature"].shape == (12, 3, 2)
-    assert np.all(component.data["model_level_height"] > 0.0)
-    assert "total_surface_temperature" not in component.data
+    assert component._data["model_level_height"].shape == (12, 3, 2)
+    assert component._data["density"].shape == (12, 3, 2)
+    assert component._data["potential_temperature"].shape == (12, 3, 2)
+    assert np.all(component._data["model_level_height"] > 0.0)
+    assert "total_surface_temperature" not in component._data
 
 
 def test_jcm_land_constructor_converts_coords_and_preserves_data(
@@ -577,15 +577,15 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
         "soil_moisture",
     )
     assert isinstance(component.grid.longitude, jax.Array)
-    assert isinstance(component.data["land_surface_temperature"], jax.Array)
-    assert isinstance(component.data["soil_moisture"], jax.Array)
+    assert isinstance(component._data["land_surface_temperature"], jax.Array)
+    assert isinstance(component._data["soil_moisture"], jax.Array)
     assert_allclose_compact(recorded_inputs["atm_lon"], np.asarray([0.0, 180.0]))
     assert_allclose_compact(recorded_inputs["atm_lat"], np.asarray([-45.0, 45.0]))
     binary_mask = component.grid.binary_mask
     assert binary_mask is not None
     assert_allclose_compact(binary_mask, expected_mask)
     assert_allclose_compact(
-        component.data["land_surface_temperature"],
+        component._data["land_surface_temperature"],
         forcing.stl_am.T,
     )
-    assert_allclose_compact(component.data["soil_moisture"], forcing.soilw_am.T)
+    assert_allclose_compact(component._data["soil_moisture"], forcing.soilw_am.T)

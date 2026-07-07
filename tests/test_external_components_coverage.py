@@ -35,7 +35,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.calendar import DateTime360, DateTime365
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.output.adapters import ComponentOutputAdapter, component_snapshot_writer
+from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.variables import OutputVariable
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.state import RuntimeComponentState
@@ -578,7 +578,7 @@ def test_jax_gcm_constructor_builds_jax_backed_grid(
     assert_allclose_compact(component.grid.longitude, np.asarray([0.0, 180.0]))
     assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
-    assert callable(component_snapshot_writer(component))
+    assert callable(component.output.snapshot_writer)
 
 
 def test_jax_gcm_initialize_validates_timestep_multiple() -> None:
@@ -681,8 +681,8 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
         component.output_adapter.variables["spinup"].counts,
         np.asarray([2]),
     )
-    assert isinstance(hook_component.data["sea_surface_temperature"], jax.Array)
-    assert hook_component.data["sea_surface_temperature"].shape == component.grid.shape
+    assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
+    assert hook_component._data["sea_surface_temperature"].shape == component.grid.shape
 
 
 def test_jax_gcm_initialize_builds_default_forcing_when_missing(
@@ -1782,9 +1782,9 @@ def test_veros_initialize_can_spin_up_and_extract_surface_temperature() -> None:
 
     assert component.model_substeps == 2
     assert step_calls["count"] == 2
-    assert isinstance(hook_component.data["sea_surface_temperature"], jax.Array)
+    assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
-        hook_component.data["sea_surface_temperature"],
+        hook_component._data["sea_surface_temperature"],
         np.full((4, 4), 283.15),
     )
 
@@ -1851,9 +1851,9 @@ def test_veros_initialize_spinup_accumulates_selected_outputs(
         component.output_adapter.variables["temp"].counts,
         np.asarray([2]),
     )
-    assert isinstance(hook_component.data["sea_surface_temperature"], jax.Array)
+    assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
-        hook_component.data["sea_surface_temperature"],
+        hook_component._data["sea_surface_temperature"],
         np.full((4, 4), 283.15),
     )
 
@@ -1907,7 +1907,7 @@ def test_veros_constructor_builds_jax_backed_grid(
     )
     assert component.field_spec.outputs == ("sea_surface_temperature",)
     assert component.grid.binary_mask.shape == (4, 4)
-    assert callable(component_snapshot_writer(component))
+    assert callable(component.output.snapshot_writer)
     expected_mask = np.ones((4, 4))
     expected_mask[1, 0] = 0.0
     assert_allclose_compact(component.grid.binary_mask, expected_mask)

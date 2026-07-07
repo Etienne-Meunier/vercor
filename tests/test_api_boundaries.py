@@ -39,39 +39,38 @@ from vercor.regridding import bilinear
 @pytest.mark.fast_always
 def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
     from vercor import (
-        ComponentView,
+        ComponentState,
+        RectilinearGrid,
         RunState,
         VectorField as PublicVectorField,
         bilinear as public_bilinear,
         conservative as public_conservative,
-        uniform_rectilinear_grid as public_uniform_rectilinear_grid,
-        vector as public_vector,
     )
     from vercor.regridding import Regridder, RegridderFactory
-    from vercor.state import ComponentView as StateComponentView
+    from vercor.state import ComponentState as StateComponentState
     from vercor.state import RunState as StateRunState
 
     assert PublicVectorField is VectorField
-    assert public_vector is vector
+    assert RectilinearGrid is vercor.grids.RectilinearGrid
     assert public_bilinear is bilinear
     assert callable(public_conservative)
-    assert public_uniform_rectilinear_grid is vercor.grids.uniform_rectilinear_grid
     assert RunState is StateRunState
-    assert ComponentView is StateComponentView
+    assert ComponentState is StateComponentState
     assert RunState.__name__ == "RunState"
-    assert ComponentView.__name__ == "ComponentView"
+    assert ComponentState.__name__ == "ComponentState"
     assert getattr(Regridder, "_is_protocol", False)
     assert cast(Any, RegridderFactory).__name__ == "RegridderFactory"
     assert {
         "RunState",
-        "ComponentView",
+        "ComponentState",
         "VectorField",
-        "vector",
         "Regridder",
         "RegridderFactory",
-        "grid_from_coordinates",
-        "uniform_rectilinear_grid",
+        "RectilinearGrid",
     }.issubset(vercor.__all__)
+    assert "vector" not in vercor.__all__
+    assert "grid_from_coordinates" not in vercor.__all__
+    assert "uniform_rectilinear_grid" not in vercor.__all__
 
 
 @pytest.mark.fast_always
@@ -85,12 +84,11 @@ def test_staged_api_rewrite_public_owners_and_facades() -> None:
     assert vercor.VectorField.__module__ == "vercor.fields"
     assert vercor.Exchange.__module__ == "vercor.exchanges"
     assert vercor.RunState.__module__ == "vercor.state"
-    assert vercor.ComponentView.__module__ == "vercor.state"
-    assert vercor.grid_from_coordinates is grids_module.grid_from_coordinates
-    assert "grid_from_coordinates" in grids_module.__all__
-    assert "grid_from_coordinates" in vercor.__all__
+    assert vercor.ComponentState.__module__ == "vercor.state"
+    assert vercor.RectilinearGrid is grids_module.RectilinearGrid
+    assert "grid_from_coordinates" not in vercor.__all__
 
-    grid = grids_module.grid_from_coordinates(
+    grid = grids_module.RectilinearGrid.from_coordinates(
         "explicit-grid",
         longitude=jnp.asarray([0.0, 90.0]),
         latitude=jnp.asarray([-45.0, 45.0]),
@@ -120,12 +118,10 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
     import vercor.regridding as regridding_module
     import vercor.state as state_module
     from vercor.output import (
-        ComponentOutputAdapter,
+        ComponentOutput,
         OutputVariable,
-        component_snapshot_writer,
-        register_component_snapshot_writer,
     )
-    from vercor.output.adapters import ComponentOutputAdapter as AdapterOwner
+    from vercor.output.adapters import ComponentOutput as OutputSpecOwner
     from vercor.output.variables import OutputVariable as VariableOwner
 
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
@@ -134,7 +130,6 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
     public_conservative_signature = str(signature(regridding_module.conservative))
 
     assert "from vercor.exchanges import Exchange" in coupler_source
-    assert "from vercor._exchange import Exchange" not in coupler_source
     assert Exchange.__module__ == "vercor.exchanges"
     assert "_exchange" not in exchange_signature
     assert "_regridders" not in exchange_signature
@@ -153,18 +148,16 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
         "bilinear",
         "conservative",
     ]
-    assert state_module.__all__ == ["RunState", "ComponentView"]
+    assert state_module.__all__ == ["RunState", "ComponentState"]
     assert output_module.__all__ == [
-        "ComponentOutputAdapter",
-        "ComponentSnapshotWriter",
+        "ComponentOutput",
         "OutputVariable",
-        "component_snapshot_writer",
-        "register_component_snapshot_writer",
     ]
     assert OutputVariable is VariableOwner
-    assert ComponentOutputAdapter is AdapterOwner
-    assert callable(component_snapshot_writer)
-    assert callable(register_component_snapshot_writer)
+    assert ComponentOutput is OutputSpecOwner
+    assert not hasattr(output_module, "ComponentOutputAdapter")
+    assert not hasattr(output_module, "register_component_snapshot_writer")
+    assert not hasattr(output_module, "component_snapshot_writer")
 
 
 @pytest.mark.fast_always
@@ -199,16 +192,16 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
     )
 
     assert coupler.add_exchanges(()) is coupler
-    assert Coupler.initialize.__annotations__.get("return") == "None"
-    assert "enable_x64_computations" not in signature(Coupler.initialize).parameters
-    assert Coupler.state.__annotations__.get("return") == "RunState"
+    assert not hasattr(Coupler, "initialize")
+    assert not hasattr(Coupler, "state")
+    assert Coupler.initial_state.__annotations__.get("return") == "RunState"
     assert Coupler.run.__annotations__.get("return") == "RunState"
-    assert Coupler.view.__annotations__.get("return") == "ComponentView"
+    assert Coupler.view.__annotations__.get("return") == "ComponentState"
 
-    state = coupler.state()
+    state = coupler.initial_state()
     assert isinstance(state, vercor.RunState)
     view = coupler.view(state, "ATM")
-    assert isinstance(view, vercor.ComponentView)
+    assert isinstance(view, vercor.ComponentState)
 
     calls: list[dict[str, object]] = []
 
@@ -229,9 +222,7 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
 
 @pytest.mark.fast_always
 def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
-    from vercor.grids import uniform_rectilinear_grid
-
-    grid = uniform_rectilinear_grid(
+    grid = vercor.RectilinearGrid.uniform(
         "v3-grid",
         nlon=2,
         nlat=2,
@@ -249,7 +240,7 @@ def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> Non
     assert grid.binary_mask is not None
     assert component.field_spec.outputs == ("temperature",)
     with pytest.raises(TypeError, match="lon"):
-        uniform_rectilinear_grid(
+        vercor.RectilinearGrid.uniform(
             "old-grid",
             nlon=2,
             nlat=2,
@@ -262,7 +253,7 @@ def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> Non
 
 @pytest.mark.fast_always
 def test_staged_component_constructor_hides_raw_setup_internals() -> None:
-    grid = vercor.grid_from_coordinates(
+    grid = vercor.RectilinearGrid.from_coordinates(
         "component-constructor-grid",
         longitude=jnp.asarray([0.0, 90.0]),
         latitude=jnp.asarray([-45.0, 45.0]),
@@ -289,7 +280,7 @@ def test_staged_component_constructor_hides_raw_setup_internals() -> None:
 def test_staged_regridders_expose_explicit_scalar_and_vector_methods() -> None:
     from vercor.regridding import Regridder
 
-    grid = vercor.grid_from_coordinates(
+    grid = vercor.RectilinearGrid.from_coordinates(
         "regrid-methods",
         longitude=jnp.asarray([0.0, 90.0]),
         latitude=jnp.asarray([-45.0, 45.0]),
@@ -378,7 +369,7 @@ def test_public_api_uses_canonical_breaking_names(
     import vercor.settings as settings_module
 
     assert vercor.Settings is settings_module.Settings
-    assert vercor.SettingSpec is settings_module.SettingSpec
+    assert not hasattr(vercor, "SettingSpec")
     assert settings_module.SettingSpec(1.0, "value", "m").value == 1.0
 
     settings = vercor.Settings(enable_x64=True)
@@ -397,7 +388,7 @@ def test_public_api_uses_canonical_breaking_names(
     assert isinstance(model_time, DateTime360)
     assert model_time.day_of_year == 1
 
-    renamed_grid = grids_module.uniform_rectilinear_grid(
+    renamed_grid = grids_module.RectilinearGrid.uniform(
         "new-grid",
         nlon=2,
         nlat=2,
@@ -430,7 +421,7 @@ def test_public_api_uses_canonical_breaking_names(
         calls.append(kwargs)
 
     monkeypatch.setattr(_runtime_facade, "finalize", fake_finalize)
-    state = coupler.state()
+    state = coupler.initial_state()
     coupler.write_outputs(
         state,
         output_dir=tmp_path,
@@ -462,7 +453,7 @@ def test_v2_public_api_facade_exports_supported_names_only() -> None:
         "ComponentStepResult",
         "HostRuntimeComponent",
     }.isdisjoint(vercor.__all__)
-    assert "ComponentView" in vercor.__all__
+    assert "ComponentState" in vercor.__all__
     assert "CouplerState" not in vercor.__all__
 
     spec = FieldSpec(
@@ -575,7 +566,7 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
     assert coupler.run_order == coupler.run_order
 
     coupler.set_run_order(("ATM",))
-    state = coupler.state()
+    state = coupler.initial_state()
     view = coupler.view(state, "ATM")
     views = coupler.views(state)
 
@@ -594,7 +585,6 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
 @pytest.mark.fast_always
 def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     from vercor.grids import RectilinearGrid as PublicRectilinearGrid
-    from vercor.grids import uniform_rectilinear_grid
     from vercor.recipes import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
     from vercor.regridding import (
         bilinear as public_bilinear,
@@ -602,7 +592,7 @@ def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     )
     from vercor.setups import make_slab_ocean
 
-    grid = uniform_rectilinear_grid(
+    grid = PublicRectilinearGrid.uniform(
         "public-grid",
         nlon=4,
         nlat=3,
@@ -663,7 +653,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "ComponentInitContext",
         "RuntimeComponentContract",
         "RuntimeComponentState",
-        "RuntimeComponentView",
+        "RuntimeComponentState",
         "RuntimeCouplerState",
         "RuntimeDispatchContext",
         "RuntimeFieldStore",
@@ -907,7 +897,7 @@ def test_removed_api_surfaces_stay_absent() -> None:
         importlib.import_module("vercor.runtime.views")
 
     assert not hasattr(state_module, "CouplerState")
-    assert state_module.__all__ == ["RunState", "ComponentView"]
+    assert state_module.__all__ == ["RunState", "ComponentState"]
     assert not hasattr(runtime_state_module, "CouplerState")
     assert not hasattr(runtime_state_module, "RuntimeCouplerState")
     assert not hasattr(runtime_state_module, "RunState")
@@ -1315,9 +1305,10 @@ def test_setup_components_use_explicit_metadata_mapping() -> None:
         grid=make_test_grid(name="metadata-boundary"),
     )
 
-    component.setup_metadata["DATA_FILES"] = {"surface": "surface.nc"}
+    assert not hasattr(component, "setup_metadata")
+    component._setup_metadata["DATA_FILES"] = {"surface": "surface.nc"}
 
-    assert component.setup_metadata["DATA_FILES"] == {"surface": "surface.nc"}
+    assert component._setup_metadata["DATA_FILES"] == {"surface": "surface.nc"}
 
     helper_source = Path("vercor/setups/data/_component_helpers.py").read_text(
         encoding="utf-8"
@@ -1580,7 +1571,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     import vercor.grid_geometry as grid_geometry_module
     import vercor.grid_masks as grid_masks_module
     import vercor.physical_constants as physical_constants_module
-    import vercor._exchange as exchange_module
+    import vercor.exchanges as exchange_module
+    import vercor.runtime.exchange_keys as exchange_keys_module
     import vercor.settings as settings_module
     import vercor.time_selection as time_selection_module
 
@@ -1635,6 +1627,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
         importlib.import_module("vercor.pytree_utils")
     assert "gravity" in physical_constants_module.PHYSICAL_CONSTANT_SETTINGS
     assert not hasattr(exchange_module, "VALID_EXCHANGE_FIELD_NAMES")
+    assert callable(exchange_keys_module.exchange_regrid_key)
     assert "sea_surface_temperature" in VALID_FIELD_NAMES
 
     assert vercor.exchanges.ExchangeField == str | VectorField
@@ -1649,7 +1642,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     runtime_validation_source = Path("vercor/runtime/validation.py").read_text(
         encoding="utf-8"
     )
-    exchange_source = Path("vercor/_exchange.py").read_text(encoding="utf-8")
+    exchange_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
     coupler_helpers_path = Path("vercor/setups/coupler_helpers.py")
     exchange_recipes_source = Path("vercor/setups/exchange_recipes.py").read_text(
         encoding="utf-8"
@@ -1697,7 +1690,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "class DateTime365" not in clock_source
     assert "class DateTime360" not in clock_source
     assert "def runtime_daily_index(" not in runtime_time_source
-    assert "from vercor._exchange import VALID_EXCHANGE_FIELD_NAMES" not in (
+    assert "from vercor.exchanges import VALID_EXCHANGE_FIELD_NAMES" not in (
         runtime_validation_source
     )
     assert "from vercor.fields import VALID_FIELD_NAMES" in (runtime_validation_source)
@@ -1711,12 +1704,12 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     )
     assert "VALID_EXCHANGE_FIELD_NAMES: list[str]" not in exchange_source
     assert "ExchangeField: TypeAlias" not in exchange_source
-    assert "from vercor.regridding import RegridderFactory" not in exchange_source
+    assert "from vercor.regridding import RegridderFactory" in exchange_source
     assert "RegridderFactory: TypeAlias" not in exchange_source
     assert not coupler_helpers_path.exists()
     assert "ExchangeField: TypeAlias" not in exchange_recipes_source
     assert "class Exchange" in exchanges_source
-    assert "from vercor._exchange import Exchange" not in exchanges_source
+    assert "from vercor.exchanges import Exchange" not in exchanges_source
     assert "from vercor.regridding import RegridderFactory" in exchanges_source
     assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
@@ -1831,13 +1824,17 @@ def test_concrete_regridders_own_call_dispatch() -> None:
         encoding="utf-8"
     )
 
-    assert "def __call__(" in regridder_base_source
+    assert "def __call__(" not in regridder_base_source
     assert "def regrid(" in regridder_base_source
     assert "def regrid_vector(" in regridder_base_source
     assert "def _ensure_ready(" not in regridder_base_source
-    assert "def __call__(" in bilinear_source
+    assert "def __call__(" not in bilinear_source
+    assert "def regrid(" in bilinear_source
+    assert "def regrid_vector(" in bilinear_source
     assert "apply_vector" in bilinear_source
-    assert "def __call__(" in conservative_source
+    assert "def __call__(" not in conservative_source
+    assert "def regrid(" in conservative_source
+    assert "def regrid_vector(" in conservative_source
     assert "def _ensure_ready(" not in conservative_source
     assert "apply_vector" not in conservative_source
 
@@ -1854,7 +1851,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     import vercor.setups.external.camulator_runtime_settings as camulator_runtime_settings_module
     import vercor.setups.external.jax_gcm as jax_gcm_module
     import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
-    import vercor.output.adapters as output_adapters_module
+    import vercor.output._adapters as output_adapters_module
     import vercor.output.period_averages as period_averages_module
     import vercor.output.period_files as period_files_module
     import vercor.setups.external.veros_output as veros_output_module
@@ -1869,7 +1866,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
     assert callable(camulator_fields_module.prepare_camulator_surface_forcing)
     assert callable(camulator_runtime_settings_module.configure_camulator_runtime)
-    assert callable(output_adapters_module.ComponentOutputAdapter)
+    assert callable(output_adapters_module._ComponentOutputAdapter)
     assert callable(period_averages_module.PeriodAverageAccumulator)
     assert callable(period_files_module.write_period_average_netcdf)
     assert callable(jax_gcm_output_module.record_jax_gcm_period_output)
@@ -1949,7 +1946,10 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     period_averages_source = Path("vercor/output/period_averages.py").read_text(
         encoding="utf-8"
     )
-    output_adapters_source = Path("vercor/output/adapters.py").read_text(
+    output_public_adapters_source = Path("vercor/output/adapters.py").read_text(
+        encoding="utf-8"
+    )
+    output_adapters_source = Path("vercor/output/_adapters.py").read_text(
         encoding="utf-8"
     )
     output_datasets_source = Path("vercor/output/datasets.py").read_text(
@@ -2099,10 +2099,10 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
         "def write_coupler_component_snapshots(",
         1,
     )[1]
-    assert "component_snapshot_writer(" in snapshot_output_source
+    assert "component.output.snapshot_writer" in snapshot_output_source
     assert "field_spec.outputs" not in snapshot_output_source
     assert ".data.get(" not in snapshot_output_source
-    assert "RuntimeComponentView.from_component_state" not in snapshot_output_source
+    assert "RuntimeComponentState.from_component_state" not in snapshot_output_source
     assert "import numpy" not in period_averages_source
     assert "import numpy" not in period_files_source
     assert "import numpy" not in jax_gcm_output_source
@@ -2114,11 +2114,12 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def period_mean_output_variables(" in period_averages_source
     assert "def accumulate_output_variables(" not in period_averages_source
     assert "def write_period_average_netcdf(" in period_files_source
-    assert "class ComponentOutputAdapter" in output_adapters_source
+    assert "class _ComponentOutputAdapter" in output_adapters_source
+    assert "class ComponentOutput" in output_adapters_source
+    assert "class ComponentOutputAdapter" not in output_public_adapters_source
     assert "accumulate_output_variables(" not in output_adapters_source
     assert "self._accumulator.add_samples(" in output_adapters_source
     assert "def record_snapshot(" in output_adapters_source
-    assert "def register_component_snapshot_writer(" in output_adapters_source
     assert "def record_period_average_if_due(" in output_adapters_source
     assert "period_mean_output_variables(" in output_adapters_source
     assert "write_period_average_netcdf(" in output_adapters_source
@@ -2130,7 +2131,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "period_mean_output_variables(" not in jax_gcm_output_source
     assert "write_period_average_netcdf(" not in jax_gcm_output_source
     assert "def make_jax_gcm_output_adapter(" not in jax_gcm_output_source
-    assert "ComponentOutputAdapter(" in jax_gcm_state_source
+    assert "ComponentOutput(" in jax_gcm_source
     assert "def record_jax_gcm_period_output(" in jax_gcm_output_source
     assert "def write_jax_gcm_snapshot_output(" in jax_gcm_output_source
     assert "time_coordinate_variable(" in jax_gcm_output_source
@@ -2138,13 +2139,13 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "period_mean_output_variables(" not in veros_output_source
     assert "write_period_average_netcdf(" not in veros_output_source
     assert "def make_veros_output_adapter(" not in veros_output_source
-    assert "ComponentOutputAdapter(" in veros_gcm_state_source
+    assert "ComponentOutput(" in veros_gcm_source
     assert "def record_veros_period_output(" in veros_output_source
     assert "def write_veros_snapshot_output(" in veros_output_source
     assert "time_coordinate_variable(" in veros_output_source
     assert "used_dimension_names(" in veros_output_source
     assert "def make_camulator_output_adapter(" not in camulator_output_source
-    assert "ComponentOutputAdapter(" in camulator_gcm_state_source
+    assert "ComponentOutput(" in camulator_source
     assert "def record_camulator_period_output(" in camulator_output_source
     assert "def write_camulator_snapshot_output(" in camulator_output_source
     assert "write_period_average_if_due(" not in jax_gcm_runtime_source
@@ -2153,9 +2154,10 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def __getattr__(" not in output_init_source
     assert "def __dir__(" not in output_init_source
     assert "_RUNTIME_EXPORTS" not in output_init_source
-    assert "from vercor.output.adapters import (" in output_init_source
+    assert "ComponentOutput" in output_init_source
     assert "from vercor.output.variables import OutputVariable" in output_init_source
-    assert '"ComponentOutputAdapter"' in output_init_source
+    assert '"ComponentOutput"' in output_init_source
+    assert '"ComponentOutputAdapter"' not in output_init_source
     assert '"OutputVariable"' in output_init_source
     assert "from vercor.output.runtime import (" not in output_init_source
     assert "write_coupler_runtime_outputs" not in output_init_source

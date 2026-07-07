@@ -21,7 +21,7 @@ from vercor._run_order import normalize_run_order
 import vercor.runtime.facade as _runtime_facade
 from vercor.runtime.resources import CouplerRuntimeResources
 from vercor.settings import Settings
-from vercor.state import ComponentView, RunState
+from vercor.state import ComponentState, RunState
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -75,6 +75,7 @@ class Coupler:
         self._exchanges: tuple[Exchange, ...] = ()
         self._run_order: tuple[str, ...] = ()
         self._runtime_resources = CouplerRuntimeResources()
+        self._runtime_initialized = False
         configured_run_order = normalize_run_order(run_order)
 
         if isinstance(self.logger, logging.Logger):
@@ -99,6 +100,7 @@ class Coupler:
         """Clear cached runtime topology and contracts after setup changes."""
 
         self._runtime_resources = CouplerRuntimeResources()
+        self._runtime_initialized = False
 
     @property
     def components(self) -> MappingProxyType[str, "Component"]:
@@ -188,10 +190,11 @@ class Coupler:
             self.settings,
         )
 
-    def initialize(self) -> None:
-        """
-        Initialize the coupler and all registered components.
-        """
+    def _initialize_runtime(self) -> None:
+        """Initialize components, topology, masks, and runtime contracts."""
+
+        if self._runtime_initialized:
+            return
 
         initialized = _runtime_facade.initialize_coupler_runtime(
             inputs=self._runtime_inputs(),
@@ -203,10 +206,13 @@ class Coupler:
         self.ocn_fmask_on_atm_grid = surface_masks.ocn_fmask_on_atm_grid
         self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
         self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
+        self._runtime_initialized = True
 
-    def state(self, *, prefill: bool = True) -> RunState:
+    def initial_state(self, *, prefill: bool = True) -> RunState:
         """Create and validate the coupled runtime state."""
 
+        if self.exchanges:
+            self._initialize_runtime()
         return _runtime_facade.create_runtime_state(
             inputs=self._runtime_inputs(),
             prefill_missing=prefill,
@@ -216,7 +222,7 @@ class Coupler:
         self,
         state: RunState,
         name: str,
-    ) -> ComponentView:
+    ) -> ComponentState:
         """Return a component view for diagnostics and output."""
 
         return _runtime_facade.runtime_component_view(
@@ -229,7 +235,7 @@ class Coupler:
         self,
         state: RunState,
         names: Sequence[str] | None = None,
-    ) -> dict[str, ComponentView]:
+    ) -> dict[str, ComponentState]:
         """Return component views for diagnostics and output."""
 
         return _runtime_facade.runtime_component_views(
@@ -248,6 +254,8 @@ class Coupler:
     ) -> None:
         """Write final runtime fields and optional native component snapshots."""
 
+        if self.exchanges:
+            self._initialize_runtime()
         self.logger.info(" ------------ Writing coupler outputs ------------")
         _runtime_facade.finalize(
             final_state=state,
@@ -286,6 +294,8 @@ class Coupler:
         Host-backed components run through the Python host bridge.
         """
 
+        if state is None and self.exchanges:
+            self._initialize_runtime()
         inputs = self._runtime_inputs()
         runtime_state = _runtime_facade.prepare_runtime_state(
             state,

@@ -4,7 +4,8 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from vercor.dtypes import jax_ones
-from vercor._exchange import Exchange, _exchange_regrid_key
+from vercor.exchanges import Exchange
+from vercor.runtime.exchange_keys import exchange_regrid_key
 from vercor.jax_logging import LoggerLike
 from vercor.runtime.topology_state import RuntimeTopologyMaps
 from vercor.settings import Settings
@@ -33,7 +34,7 @@ def build_exchange_topology_maps(
         )
 
     for exchange in exchanges:
-        key = (exchange.source, exchange.target, _exchange_regrid_key(exchange))
+        key = (exchange.source, exchange.target, exchange_regrid_key(exchange))
 
         if key not in initialized_maps.regridders:
             initialized_maps.regridders[key] = exchange.regrid(

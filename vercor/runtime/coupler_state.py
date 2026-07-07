@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from vercor._exchange import Exchange
+from vercor.exchanges import Exchange
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.contracts import (
     RuntimeComponentContract,
@@ -52,4 +52,5 @@ def runtime_state_from_components(
         component_names=tuple(components.keys()),
         components=runtime_components,
         fractional_masks=RuntimeFieldStore.from_mapping(runtime_fractional_masks),
+        component_grids=tuple(component.grid for component in components.values()),
     )

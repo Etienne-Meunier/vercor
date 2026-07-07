@@ -110,13 +110,9 @@ def check_not_empty_import_export_lists(
 ) -> None:
     """Check that a component's runtime contract has valid field ownership."""
 
-    if not contract.imports:
+    if not contract.all_fields:
         raise ComponentError(
-            f"Component '{component.name}' has no fields to import defined."
-        )
-    if not contract.exports:
-        raise ComponentError(
-            f"Component '{component.name}' has no fields to export defined."
+            f"Component '{component.name}' has no runtime fields defined."
         )
 
     all_fields = set(contract.all_fields)

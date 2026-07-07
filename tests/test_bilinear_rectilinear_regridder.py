@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from tests.assertions import assert_array_equal_compact
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor._regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
@@ -28,7 +28,7 @@ def test_regridder_constructor_sets_interpolator_and_grids() -> None:
     regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
 
     assert regridder.source_grid is src_grid
-    assert regridder.destination_grid is dst_grid
+    assert regridder.target_grid is dst_grid
     assert regridder.interpolator is not None
 
 
@@ -76,7 +76,7 @@ def test_regridder_scalar_call_dispatches_and_returns_destination_shape() -> Non
     )
 
     src = np.arange(9.0).reshape(3, 3)
-    out = regridder(src)
+    out = regridder.regrid(src)
 
     assert out.shape == dst_grid.shape
 
@@ -90,7 +90,7 @@ def test_regridder_scalar_accepts_jax_array_input() -> None:
     )
 
     src = jnp.arange(9.0).reshape(3, 3)
-    out = regridder(src)
+    out = regridder.regrid(src)
 
     assert out.shape == dst_grid.shape
 
@@ -106,7 +106,7 @@ def test_regridder_vector_call_dispatches_and_returns_two_destination_arrays() -
     u_src = np.ones(src_grid.shape, dtype=float)
     v_src = -2.0 * np.ones(src_grid.shape, dtype=float)
 
-    out = regridder(u_src, v_src)
+    out = regridder.regrid_vector(u_src, v_src)
 
     assert isinstance(out, tuple)
     assert len(out) == 2
@@ -203,7 +203,7 @@ def test_regridder_identical_grid_scalar_short_circuit_returns_input_object() ->
     regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
 
     src = np.arange(6.0).reshape(2, 3)
-    out = regridder(src)
+    out = regridder.regrid(src)
 
     assert out is src
 
@@ -217,7 +217,7 @@ def test_regridder_identical_grid_scalar_short_circuit_with_jax_backed_coords() 
     regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
     src = jnp.arange(6.0).reshape(2, 3)
 
-    out = regridder(src)
+    out = regridder.regrid(src)
 
     assert out is src
 
@@ -233,22 +233,18 @@ def test_regridder_identical_grid_vector_short_circuit_returns_input_objects() -
     u_src = np.ones((2, 3), dtype=float)
     v_src = -np.ones((2, 3), dtype=float)
 
-    out_u, out_v = regridder(u_src, v_src)
+    out_u, out_v = regridder.regrid_vector(u_src, v_src)
 
     assert out_u is u_src
     assert out_v is v_src
 
 
-def test_regridder_call_with_invalid_arg_count_raises_type_error() -> None:
+def test_regridder_is_not_callable() -> None:
     src_grid = _make_grid("src", np.array([0.0, 1.0]), np.array([0.0, 1.0]))
     dst_grid = _make_grid("dst", np.array([0.0, 1.0]), np.array([0.0, 1.0]))
     regridder = BilinearRectilinearRegridder(src_grid, dst_grid)
 
-    with pytest.raises(TypeError, match="Provide scalar_src"):
-        regridder()
-
-    with pytest.raises(TypeError, match="Provide scalar_src"):
-        regridder(np.ones((2, 2)), np.ones((2, 2)), np.ones((2, 2)))
+    assert not callable(regridder)
 
 
 def test_bilinear_factory_returns_bilinear_rectilinear_regridder() -> None:
@@ -259,7 +255,7 @@ def test_bilinear_factory_returns_bilinear_rectilinear_regridder() -> None:
 
     assert isinstance(regridder, BilinearRectilinearRegridder)
     assert regridder.source_grid is src_grid
-    assert regridder.destination_grid is dst_grid
+    assert regridder.target_grid is dst_grid
 
 
 def test_bilinear_factory_forwards_interpolator_options() -> None:

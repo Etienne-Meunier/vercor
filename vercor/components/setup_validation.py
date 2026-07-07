@@ -4,14 +4,14 @@ from typing import Any
 
 from vercor.exceptions import ComponentError
 from vercor.field_layout import validate_component_data_layout
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.settings import Settings
 
 
 def validate_component_setup(component: Any) -> None:
     """Raise a clear error when a component skipped base initialization."""
 
-    required_attributes = ("name", "grid", "data", "settings")
+    required_attributes = ("name", "grid", "_data", "settings")
     missing = [
         attribute
         for attribute in required_attributes
@@ -31,9 +31,9 @@ def validate_component_setup(component: Any) -> None:
             f"Component '{component.name}' has invalid setup attribute 'grid'; "
             "expected RectilinearGrid."
         )
-    if not isinstance(component.data, dict):
+    if not isinstance(component._data, dict):
         raise ComponentError(
-            f"Component '{component.name}' has invalid setup attribute 'data'; "
+            f"Component '{component.name}' has invalid setup attribute '_data'; "
             "expected dict[str, RuntimeArray]."
         )
     if not isinstance(component.settings, Settings):
@@ -44,5 +44,5 @@ def validate_component_setup(component: Any) -> None:
     validate_component_data_layout(
         component_name=component.name,
         grid_shape=component.grid.shape,
-        data=component.data,
+        data=component._data,
     )

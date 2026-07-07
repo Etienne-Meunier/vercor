@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_real_array
 from vercor.exceptions import RegridderError
-from vercor._grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
@@ -33,7 +33,7 @@ def compute_ocn_lnd_masks_on_atm_grid(
 
     ocean_bmask = as_jax_real_array(ocean_binary_mask)
     ocn_fmask_on_atm_grid = jnp.clip(
-        as_jax_real_array(regridder(ocean_bmask)),
+        as_jax_real_array(regridder.regrid(ocean_bmask)),
         0.0,
         1.0,
     )
