@@ -10,11 +10,12 @@ historical commands, failure messages, or detailed validation notes.
 ## Current Status
 
 - Latest local staged public-owner API rewrite validation: focused red/green
-  API/settings tests, full API-boundary fast pytest, focused settings pytest,
-  affected component/regridding fast pytest, example py_compile, Black, flake8,
-  mypy, full fast pytest, full pytest, and git diff whitespace check passed as
-  of 2026-07-07 using the direct `scipy` environment executable. Black emitted
-  the recurring Python 3.13/target-3.14 warning; full pytest emitted the
+  API/settings/state tests, full API-boundary fast pytest, focused settings and
+  state/runtime pytest, affected component/regridding fast pytest, example
+  py_compile, Black, flake8, mypy, full fast pytest, full pytest, and git diff
+  whitespace check passed as of 2026-07-07 using the direct `scipy` environment
+  executable. Black emitted the recurring Python 3.13/target-3.14 warning; full
+  pytest emitted the
   recurring JAX dtype-promotion `FutureWarning` and the existing xarray merge
   `FutureWarning` in the real JAXGCM payload test.
 - Latest local staged API boundary facade validation: baseline fast pytest,
@@ -427,18 +428,18 @@ historical commands, failure messages, or detailed validation notes.
 ## Follow-Up Candidates
 
 - Keep remaining public simplification candidates review-only unless a
-  compatibility decision is made: `RunState`/`ComponentView` still route
-  through staged runtime facades, and component `.data`/`.setup_metadata`
-  remain mutable setup attributes for compatibility even though raw constructor
-  inputs are no longer public.
+  compatibility decision is made: component `.data`/`.setup_metadata` remain
+  mutable setup attributes for compatibility even though raw constructor inputs
+  are no longer public.
 
 ## Recent Work
 
 ### 2026-07-07: Staged Public-Owner API Rewrite
 
 - Moved public ownership for `RectilinearGrid`, `VectorField`, and `Exchange`
-  into `vercor.grids`, `vercor.fields`, and `vercor.exchanges`, leaving private
-  compatibility imports for existing internal modules.
+  into `vercor.grids`, `vercor.fields`, and `vercor.exchanges`, and moved
+  public ownership for `RunState` and `ComponentView` into `vercor.state`,
+  leaving private compatibility imports for existing internal modules.
 - Added `grid_from_coordinates(...)`, strict `Settings(custom={...})` handling
   for custom settings, explicit `Regridder.regrid(...)` /
   `regrid_vector(...)`, and a public `vercor.recipes` facade for bundled
@@ -448,13 +449,13 @@ historical commands, failure messages, or detailed validation notes.
   attributes remain for existing setup adapters.
 - Updated examples, API/settings tests, `DESIGN.md`, and `DEPENDENCIES.md` for
   the new public/private boundary.
-- Validation run for this change: focused red/green API/settings pytest,
-  full API-boundary fast pytest, focused settings pytest, affected
-  component/regridding fast pytest, example py_compile, Black, flake8, mypy,
-  full fast pytest, full pytest, and git diff whitespace check passed using
-  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
-  recurring Python 3.13/target-3.14 warning; full pytest emitted the recurring
-  JAX dtype-promotion `FutureWarning` and the existing xarray merge
+- Validation run for this change: focused red/green API/settings/state pytest,
+  full API-boundary fast pytest, focused settings and state/runtime pytest,
+  affected component/regridding fast pytest, example py_compile, Black, flake8,
+  mypy, full fast pytest, full pytest, and git diff whitespace check passed
+  using `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted
+  the recurring Python 3.13/target-3.14 warning; full pytest emitted the
+  recurring JAX dtype-promotion `FutureWarning` and the existing xarray merge
   `FutureWarning` in the real JAXGCM payload test.
 
 ### 2026-07-07: Staged API Boundary Facades

@@ -282,10 +282,11 @@ immutable runtime containers used during traced integration.
   outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.
 - Internal runtime API: the `vercor.runtime` package owns
-  `RuntimeFieldStore`, `RuntimeComponentState`, `RunState`, runtime
-  contexts, dispatch contexts, and runtime helper functions. These containers
-  carry immutable arrays and static metadata through JAX tracing. They are
-  required for differentiability and stable scan carry structure. Runtime
+  `RuntimeFieldStore`, `RuntimeComponentState`, runtime contexts, dispatch
+  contexts, and runtime helper functions. Public `RunState` is owned by
+  `vercor.state` while carrying immutable runtime component states and static
+  metadata through JAX tracing. These containers are required for
+  differentiability and stable scan carry structure. Runtime
   field stores live in `vercor.runtime.stores` and own name membership, mapping
   roundtrips, fallback reads, and replacement of existing fields while
   preserving established dtypes. Import/export contract construction lives in
@@ -308,7 +309,7 @@ immutable runtime containers used during traced integration.
   validation, and bilinear exchange patching live in
   `vercor.runtime.surface_masks`. `vercor.runtime.topology` remains the
   orchestration boundary that composes those owners and returns the explicit
-  topology state for the runtime facade to store. `RunState` carries
+  topology state for the runtime facade to store. Public `RunState` carries
   component states and fractional masks through `jax.lax.scan`; binary masks
   remain in `RuntimeTopologyMaps` for final output and topology bookkeeping.
   Setup-time component
@@ -339,13 +340,14 @@ immutable runtime containers used during traced integration.
   preparation, dispatch/run context construction, host/scanned execution,
   runtime views, and final output delegation enter through this module instead
   of direct `Coupler` imports of runtime implementation helpers.
-  Runtime component metadata and read-only field
-  resolution for diagnostics/output live in `vercor.runtime.views`;
-  `RuntimeComponentView`, `runtime_field_candidates(...)`, and
-  `runtime_field(...)` own data/incoming/outgoing lookup for explicit views and
-  compatible runtime states. `Coupler` exposes `state()`, `view()`, and
-  `views()` as the public facade for runtime-state and component-view
-  creation; the longer runtime-component method names have been removed.
+  Runtime component metadata and read-only field resolution for
+  diagnostics/output live in `vercor.state`; `vercor.runtime.views` remains a
+  compatibility import path for runtime modules. `ComponentView`,
+  `runtime_field_candidates(...)`, and `runtime_field(...)` own
+  data/incoming/outgoing lookup for explicit views and compatible runtime
+  states. `Coupler` exposes `state()`, `view()`, and `views()` as the public
+  facade for runtime-state and component-view creation; the longer
+  runtime-component method names have been removed.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output.runtime` helpers, with
   `vercor.runtime.facade` validating and delegating output writes for
@@ -360,9 +362,9 @@ immutable runtime containers used during traced integration.
   payload pytrees carried through `jax.lax.scan` must preserve every leaf's
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.
-  Internal runtime containers are not exported from the package top level
-  except for staged public `RunState`/`CouplerState` aliases exposed through
-  `vercor.state` and `vercor`.
+  Internal runtime containers are not exported from the package top level.
+  Public `RunState`/`ComponentView` are owned by `vercor.state`, while
+  `CouplerState` remains a staged compatibility alias of `RunState`.
 
 ### Setup adapters and shared ownership
 

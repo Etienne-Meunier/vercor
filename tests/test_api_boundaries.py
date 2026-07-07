@@ -92,6 +92,8 @@ def test_staged_api_rewrite_public_owners_and_facades() -> None:
     assert vercor.RectilinearGrid.__module__ == "vercor.grids"
     assert vercor.VectorField.__module__ == "vercor.fields"
     assert vercor.Exchange.__module__ == "vercor.exchanges"
+    assert vercor.RunState.__module__ == "vercor.state"
+    assert vercor.ComponentView.__module__ == "vercor.state"
     assert vercor.grid_from_coordinates is grids_module.grid_from_coordinates
     assert "grid_from_coordinates" in grids_module.__all__
     assert "grid_from_coordinates" in vercor.__all__
@@ -116,6 +118,8 @@ def test_staged_api_rewrite_public_owners_and_facades() -> None:
     )
     assert "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS" in recipes_module.__all__
     assert "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS" not in exchanges_module.__all__
+    state_source = Path("vercor/state.py").read_text(encoding="utf-8")
+    assert "__module__" not in state_source
 
 
 @pytest.mark.fast_always
