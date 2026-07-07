@@ -129,7 +129,7 @@ def test_compute_hybrid_pressure_levels_has_explicit_owner() -> None:
         (Path("/tmp/custom-jcm"), Path("/tmp/custom-jcm")),
     ],
 )
-def test_generate_jcm_coords_forcing_topography_files_uses_expected_paths(
+def test_load_jcm_coords_terrain_forcing_uses_expected_paths(
     monkeypatch: pytest.MonkeyPatch,
     input_data_directory: Path | None,
     expected_root: Path,
@@ -174,13 +174,12 @@ def test_generate_jcm_coords_forcing_topography_files_uses_expected_paths(
         staticmethod(fake_forcing_from_file),
     )
 
-    with pytest.warns(DeprecationWarning, match="load_jcm_inputs"):
-        actual_coords, terrain, forcing = (
-            jax_gcm_tools_module.generate_jcm_coords_forcing_topography_files(
-                resolution=21,
-                input_data_directory=input_data_directory,
-            )
+    actual_coords, terrain, forcing = (
+        jax_gcm_tools_module.load_jcm_coords_terrain_forcing(
+            resolution=21,
+            input_data_directory=input_data_directory,
         )
+    )
 
     assert actual_coords is coords
     assert terrain == "terrain"

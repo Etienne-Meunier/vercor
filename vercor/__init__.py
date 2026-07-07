@@ -38,20 +38,18 @@ from vercor.fields import VectorField, vector
 from vercor.grids import (
     RectilinearGrid,
     grid_from_coordinates,
-    rectilinear_grid,
     uniform_rectilinear_grid,
 )
 import vercor.recipes as recipes
 from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
 from vercor.settings import SettingSpec, Settings
-from vercor.state import ComponentView, CouplerState, RunState
+from vercor.state import ComponentView, RunState
 
 __all__ = [
     "AssetError",
     "bilinear",
     "Coupler",
     "CouplerError",
-    "CouplerState",
     "RunState",
     "Component",
     "ComponentError",
@@ -78,7 +76,6 @@ __all__ = [
     "DateTime365",
     "RectilinearGrid",
     "grid_from_coordinates",
-    "rectilinear_grid",
     "uniform_rectilinear_grid",
     "Regridder",
     "RegridderFactory",

@@ -12,8 +12,8 @@ from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.output.adapters import component_snapshot_writer
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
-from vercor.runtime.state import CouplerState
-from vercor.runtime.views import RuntimeComponentView
+from vercor.state import RunState
+from vercor.state import ComponentView
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -42,7 +42,7 @@ def output_masks_for_component(
 
 
 def write_runtime_component_view_to_netcdf(
-    view: RuntimeComponentView,
+    view: ComponentView,
     filename: Path,
     *,
     masks: dict[str, RuntimeArray] | None = None,
@@ -63,7 +63,7 @@ def write_runtime_component_view_to_netcdf(
 
 
 def _runtime_coordinate_variables(
-    view: RuntimeComponentView,
+    view: ComponentView,
 ) -> dict[str, OutputVariable]:
     return {
         "latitude": OutputVariable(("nlat",), view.grid.latitude),
@@ -72,7 +72,7 @@ def _runtime_coordinate_variables(
 
 
 def _runtime_data_variables(
-    view: RuntimeComponentView,
+    view: ComponentView,
     *,
     masks: Mapping[str, RuntimeArray],
 ) -> dict[str, OutputVariable]:
@@ -96,7 +96,7 @@ def _runtime_data_variables(
 
 
 def _runtime_output_variable(
-    view: RuntimeComponentView,
+    view: ComponentView,
     value: RuntimeArray,
     *,
     runtime_store: str,
@@ -115,7 +115,7 @@ def _runtime_output_variable(
 
 def write_coupler_runtime_outputs(
     *,
-    final_state: CouplerState,
+    final_state: RunState,
     components: Mapping[str, "Component"],
     exchanges: Sequence[Exchange],
     binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
@@ -137,7 +137,7 @@ def write_coupler_runtime_outputs(
             )
         else:
             filepath = output_dir / Path(f"{name.lower()}_{output_file_mask}.nc")
-        view = RuntimeComponentView.from_component_state(
+        view = ComponentView.from_component_state(
             name,
             component.grid,
             final_state.get_component_state(name),
@@ -158,7 +158,7 @@ def write_coupler_runtime_outputs(
 
 def write_coupler_component_snapshots(
     *,
-    final_state: CouplerState,
+    final_state: RunState,
     components: Mapping[str, "Component"],
     output_time: datetime | ModelDateTime,
     output_dir: Path = Path("."),

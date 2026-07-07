@@ -14,7 +14,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.host_arrays import runtime_array_to_host
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.views import RuntimeComponentView
+from vercor.state import ComponentView
 
 
 def test_runtime_array_to_host_is_canonical_host_transfer() -> None:
@@ -67,7 +67,7 @@ def test_component_vector_speed_reads_runtime_component_view() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    view = RuntimeComponentView(
+    view = ComponentView(
         name="ATM",
         grid=grid,
         incoming=RuntimeFieldStore.from_mapping(

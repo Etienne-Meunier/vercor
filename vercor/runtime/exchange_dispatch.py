@@ -5,7 +5,7 @@ from typing import Any, Mapping, Sequence
 from vercor.exceptions import ExchangerError
 from vercor._exchange import Exchange, _exchange_regrid_key
 from vercor.fields import VectorField
-from vercor.runtime.state import CouplerState
+from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
 
 
@@ -46,11 +46,11 @@ def _dispatch_scalar_exchange_field(
 
 
 def dispatch_component_exchanges(
-    state: CouplerState,
+    state: RunState,
     destination_name: str,
     exchanges: Sequence[Exchange],
     regridders: Mapping[tuple[str, str, str], Any],
-) -> CouplerState:
+) -> RunState:
     """Dispatch destination-specific exchanges into one component."""
 
     destination_component = state.get_component_state(destination_name)

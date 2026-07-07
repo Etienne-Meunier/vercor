@@ -45,7 +45,7 @@ from vercor.runtime.validation import (
     validate_component_runtime_contract_fields,
 )
 from vercor.runtime.time import scalar_runtime_step_info
-from vercor.runtime.views import RuntimeComponentView
+from vercor.state import ComponentView
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -1844,7 +1844,7 @@ def test_read_forcing_and_runtime_write_round_trip(
     output = tmp_path / "runtime.nc"
 
     write_runtime_component_view_to_netcdf(
-        RuntimeComponentView.from_component_state("ATM", make_test_grid(), state),
+        ComponentView.from_component_state("ATM", make_test_grid(), state),
         output,
         masks={"fmask_OCN_ATM_bilinear": jnp.ones((2, 2))},
     )
@@ -1875,7 +1875,7 @@ def test_read_forcing_and_runtime_write_round_trip(
 
     view_output = tmp_path / "runtime-view.nc"
     write_runtime_component_view_to_netcdf(
-        RuntimeComponentView.from_component_state(
+        ComponentView.from_component_state(
             "ATM",
             make_test_grid(),
             state,

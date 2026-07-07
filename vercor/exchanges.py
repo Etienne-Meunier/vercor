@@ -5,12 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable
-import warnings
+from typing import Callable
 
 from vercor.fields import ExchangeField, normalize_field_items
 from vercor.regridding import RegridderFactory, bilinear
-import vercor.recipes as _recipes
 
 
 def _regridder_factory_name(regridder_factory: Callable[..., object]) -> str:
@@ -77,22 +75,6 @@ class Exchange:
             f"{self.__class__.__name__}(label={self._label}, source={self.source},"
             f" target={self.target}, fields={self.fields})"
         )
-
-
-_RECIPE_EXPORTS = {name: getattr(_recipes, name) for name in _recipes.__all__}
-
-
-def __getattr__(name: str) -> Any:
-    """Return staged compatibility recipe constants from ``vercor.recipes``."""
-
-    if name in _RECIPE_EXPORTS:
-        warnings.warn(
-            f"vercor.exchanges.{name} is deprecated; use vercor.recipes.{name} instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return _RECIPE_EXPORTS[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [

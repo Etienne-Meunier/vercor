@@ -178,32 +178,8 @@ def uniform_rectilinear_grid(
     )
 
 
-def rectilinear_grid(
-    name: str,
-    *,
-    nlon: int,
-    nlat: int,
-    longitude: tuple[float, float],
-    latitude: tuple[float, float],
-    binary_mask: Any | None = None,
-    policy: PrecisionPolicy = None,
-) -> RectilinearGrid:
-    """Deprecated compatibility alias for :func:`uniform_rectilinear_grid`."""
-
-    return uniform_rectilinear_grid(
-        name,
-        nlon=nlon,
-        nlat=nlat,
-        longitude=longitude,
-        latitude=latitude,
-        binary_mask=binary_mask,
-        policy=policy,
-    )
-
-
 __all__ = [
     "RectilinearGrid",
     "grid_from_coordinates",
-    "rectilinear_grid",
     "uniform_rectilinear_grid",
 ]

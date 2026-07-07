@@ -141,15 +141,13 @@ immutable runtime containers used during traced integration.
   configuring a coupled run. `Coupler` and setup helpers accept plain
   component-name sequences for run order and normalize them internally to
   immutable tuples. `vercor.state.RunState` and
-  `vercor.state.ComponentView` are the public result/view names; the older
-  `CouplerState` name remains as a staged compatibility alias.
+  `vercor.state.ComponentView` are the public result/view names.
   `vercor.grids.RectilinearGrid`, `vercor.fields.VectorField`, and
   `vercor.exchanges.Exchange` are owned by their public facade modules rather
   than private implementation modules. `uniform_rectilinear_grid(...)` is the
   clear public constructor for generated equally spaced rectilinear grids,
-  `grid_from_coordinates(...)` is the explicit constructor for coordinate
-  arrays, and `rectilinear_grid(...)` remains a staged compatibility alias for
-  uniform generated grids.
+  and `grid_from_coordinates(...)` is the explicit constructor for coordinate
+  arrays.
 - Component-author API: `Component`, `DataComponent`, and `HostComponent` are
   the stable extension points. Custom adapters should use the class-level
   authoring constructors where possible: `DataComponent.from_fields()` for
@@ -341,8 +339,7 @@ immutable runtime containers used during traced integration.
   runtime views, and final output delegation enter through this module instead
   of direct `Coupler` imports of runtime implementation helpers.
   Runtime component metadata and read-only field resolution for
-  diagnostics/output live in `vercor.state`; `vercor.runtime.views` remains a
-  compatibility import path for runtime modules. `ComponentView`,
+  diagnostics/output live in `vercor.state`. `ComponentView`,
   `runtime_field_candidates(...)`, and `runtime_field(...)` own
   data/incoming/outgoing lookup for explicit views and compatible runtime
   states. `Coupler` exposes `state()`, `view()`, and `views()` as the public
@@ -363,8 +360,7 @@ immutable runtime containers used during traced integration.
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.
   Internal runtime containers are not exported from the package top level.
-  Public `RunState`/`ComponentView` are owned by `vercor.state`, while
-  `CouplerState` remains a staged compatibility alias of `RunState`.
+  Public `RunState`/`ComponentView` are owned by `vercor.state`.
 
 ### Setup adapters and shared ownership
 
@@ -382,9 +378,7 @@ workflows should enter through `vercor.setups`.
 Examples and setup factories assemble runs through `Coupler(...)`,
 `Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
-field recipes live in `vercor.recipes` with `*_FIELDS` names; staged
-compatibility attribute access from `vercor.exchanges` remains outside
-`__all__` for one release. Short recipe aliases and setup orchestration helpers
+field recipes live in `vercor.recipes` with `*_FIELDS` names. Short recipe aliases and setup orchestration helpers
 such as `ExchangeSpec`, `build_coupler()`, `build_exchanges()`, and
 `add_exchange_specs()` have been removed. Public exchange configuration types,
 including `ExchangeField`, are reexported beside `Exchange` from
@@ -399,8 +393,7 @@ model-calendar datetime values, leap-year logic, and month/day conversion live
 in `vercor.calendar`. Daily forcing-index policy, including noleap and 360-day
 calendar mapping to forcing-file day indexes, lives in `vercor.forcing_index`.
 The canonical exchange field vocabulary lives in `vercor.fields` as
-`VALID_FIELD_NAMES`; `vercor.field_names.VALID_EXCHANGE_FIELD_NAMES` is a
-deprecated compatibility alias.
+`VALID_FIELD_NAMES`.
 Rectilinear grid construction, center-to-edge geometry, and grid identity checks
 live in `vercor.grid_geometry`; mask math lives in `vercor.grid_masks`, while
 default component-topology name validation and lookup are private to
@@ -503,9 +496,8 @@ owns the NetCDF forcing-variable read boundary, including mapping-key
 resolution, variable lookup, file-to-runtime axis transpose, and optional
 latitude-axis flip.
 Diagnostics are split into `vercor.diagnostics.fields`, `vercor.diagnostics.tables`, and
-`vercor.diagnostics.plotting`, with field lookup delegated to
-`vercor.runtime.views` and `vercor.diagnostics` preserving the public reexport
-surface.
+`vercor.diagnostics.plotting`, with field lookup delegated to `vercor.state`
+and `vercor.diagnostics` preserving the public reexport surface.
 
 CAMulator runtime field contracts, optional CREDIT/postblock loading, forcing cursors,
 tensor accessors, runtime stepping, output, wind filtering, land forcing, and

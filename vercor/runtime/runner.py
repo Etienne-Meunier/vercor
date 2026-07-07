@@ -21,17 +21,17 @@ from vercor.runtime.progress import (
     runtime_step_progress_messages,
 )
 from vercor.runtime.run_context import RuntimeRunContext
-from vercor.runtime.state import CouplerState
+from vercor.state import RunState
 from vercor.runtime.time import build_runtime_step_info, scalar_runtime_step_info
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
 def run_coupler_runtime(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     *,
     context: RuntimeRunContext,
-) -> CouplerState:
+) -> RunState:
     """Run a validated runtime state through the host or compiled scanned path."""
 
     with context.interrupts.signal_scope():
@@ -57,17 +57,17 @@ def run_coupler_runtime(
 
 
 def _run_compiled_scanned_runtime(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     *,
     context: RuntimeRunContext,
-) -> CouplerState:
+) -> RunState:
     """Run a pure runtime state through a one-shot compiled scanned path."""
 
     try:
 
         def scanned_runtime(
-            state: CouplerState,
-        ) -> CouplerState:
+            state: RunState,
+        ) -> RunState:
             return run_scanned_runtime(
                 state,
                 run_order=context.run_order,
@@ -79,7 +79,7 @@ def _run_compiled_scanned_runtime(
             )
 
         compiled_runtime = cast(
-            Callable[[CouplerState], CouplerState],
+            Callable[[RunState], RunState],
             jax.jit(scanned_runtime),
         )
         return compiled_runtime(runtime_state)
@@ -104,7 +104,7 @@ def _warn_non_differentiable_host_runtime(
 
 
 def run_host_runtime(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     *,
     run_order: Sequence[str],
     clock: Clock,
@@ -112,7 +112,7 @@ def run_host_runtime(
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
     interrupts: RuntimeInterruptController,
-) -> CouplerState:
+) -> RunState:
     """Run the host-enabled runtime path for non-differentiable adapters."""
 
     for n, time, dt in clock.iter():
@@ -139,7 +139,7 @@ def run_host_runtime(
 
 
 def run_scanned_runtime(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     *,
     run_order: Sequence[str],
     clock: Clock,
@@ -147,7 +147,7 @@ def run_scanned_runtime(
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
     interrupts: RuntimeInterruptController,
-) -> CouplerState:
+) -> RunState:
     """Run the unified runtime path under ``jax.lax.scan`` and return state."""
 
     step_infos = build_runtime_step_info(clock, settings)
@@ -155,9 +155,9 @@ def run_scanned_runtime(
     step_progress_messages = runtime_step_progress_messages(clock)
 
     def step_all_components(
-        state: CouplerState,
+        state: RunState,
         scan_input: tuple[RuntimeArray, Any],
-    ) -> tuple[CouplerState, None]:
+    ) -> tuple[RunState, None]:
         step_index, step_info = scan_input
         interrupts.scanned_checkpoint(
             "scanned runtime step",

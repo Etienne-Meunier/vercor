@@ -40,7 +40,8 @@ from vercor.fields import flatten_field_items
 from vercor.forcing_index import daily_forcing_index
 from vercor._grid import RectilinearGrid
 from vercor.regridding import bilinear, conservative
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
+from vercor.runtime.state import RuntimeComponentState
+from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.settings import Settings
 from vercor.time_selection import (
@@ -600,7 +601,7 @@ def _make_initialized_mixed_grid_slab_coupler(steps: int) -> Coupler:
     return coupler
 
 
-def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerState:
+def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
     zeros = jnp.zeros_like(sea_surface_temperature)
     temperature_2m = jnp.full_like(sea_surface_temperature, 288.15)
     components = (
@@ -653,7 +654,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
             exports=("ice_fraction",),
         ),
     )
-    return RuntimeCouplerState(
+    return RunState(
         component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
         fractional_masks=RuntimeFieldStore.from_mapping(
@@ -667,9 +668,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
     )
 
 
-def _with_ocean_sst(
-    state: RuntimeCouplerState, sea_surface_temperature: jax.Array
-) -> RuntimeCouplerState:
+def _with_ocean_sst(state: RunState, sea_surface_temperature: jax.Array) -> RunState:
     ocean = state.get_component_state("OCN")
     ocean = ocean.with_data(
         ocean.data.set("sea_surface_temperature", sea_surface_temperature)
@@ -1934,7 +1933,7 @@ def test_run_validates_regridders_and_fractional_masks() -> None:
         run_scanned_coupler(coupler, state)
 
     coupler = _make_coupler(steps=1)
-    state = RuntimeCouplerState(
+    state = RunState(
         component_names=state.component_names,
         components=state.components,
         fractional_masks=RuntimeFieldStore.empty(),
@@ -2015,7 +2014,7 @@ def test_run_validates_missing_jax_gcm_preseed_before_scan() -> None:
 def test_run_validates_fractional_mask_shape_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    state = RuntimeCouplerState(
+    state = RunState(
         component_names=state.component_names,
         components=state.components,
         fractional_masks=RuntimeFieldStore.from_mapping(

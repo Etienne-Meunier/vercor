@@ -19,7 +19,8 @@ from vercor.setups.slab.ocean import make_slab_ocean
 from vercor.setups.slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor._exchange import Exchange
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
+from vercor.runtime.state import RuntimeComponentState
+from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
 
 
@@ -121,7 +122,7 @@ def _make_coupler(steps: int) -> Coupler:
     return coupler
 
 
-def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerState:
+def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
     zeros = jnp.zeros_like(sea_surface_temperature)
     temperature_2m = jnp.full_like(sea_surface_temperature, 288.15)
     components = (
@@ -174,7 +175,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
             exports=("ice_fraction",),
         ),
     )
-    return RuntimeCouplerState(
+    return RunState(
         component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
         fractional_masks=RuntimeFieldStore.from_mapping(
@@ -188,18 +189,18 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
     )
 
 
-def _runtime_state_with_sst(value: float) -> RuntimeCouplerState:
+def _runtime_state_with_sst(value: float) -> RunState:
     return _make_initial_state(jnp.full((2, 2), value, dtype=jnp.float64))
 
 
-def _block_until_ready(value: RuntimeCouplerState) -> RuntimeCouplerState:
+def _block_until_ready(value: RunState) -> RunState:
     for leaf in jax.tree_util.tree_leaves(value):
         if hasattr(leaf, "block_until_ready"):
             leaf.block_until_ready()
     return value
 
 
-def _runtime_treedef_repr(value: RuntimeCouplerState) -> str:
+def _runtime_treedef_repr(value: RunState) -> str:
     return repr(jax.tree_util.tree_structure(value))
 
 

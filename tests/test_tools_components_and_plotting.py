@@ -27,7 +27,7 @@ from vercor.runtime.contracts import (
 )
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.views import RuntimeComponentView
+from vercor.state import ComponentView
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
@@ -102,7 +102,7 @@ def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    comp = RuntimeComponentView(
+    comp = ComponentView(
         name="DUMMY",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -121,7 +121,7 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    view = RuntimeComponentView(
+    view = ComponentView(
         name="ATM",
         grid=grid,
         data=RuntimeFieldStore.from_mapping({"shared": jnp.asarray(1.0)}),
@@ -156,7 +156,7 @@ def test_print_component_field_means_table_with_callable_metric(
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    atm = RuntimeComponentView(
+    atm = ComponentView(
         name="ATM",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -167,7 +167,7 @@ def test_print_component_field_means_table_with_callable_metric(
             }
         ),
     )
-    ocn = RuntimeComponentView(
+    ocn = ComponentView(
         name="OCN",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(
@@ -214,7 +214,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
         latitude=np.array([-2.0, 0.0, 2.0]),
     )
 
-    atm = RuntimeComponentView(
+    atm = ComponentView(
         name="ATM",
         grid=atm_grid,
         data=RuntimeFieldStore.from_mapping(
@@ -225,7 +225,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
             }
         ),
     )
-    ocn = RuntimeComponentView(
+    ocn = ComponentView(
         name="OCN",
         grid=ocn_grid,
         data=RuntimeFieldStore.from_mapping(
@@ -288,7 +288,7 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         rows=[
             (
                 "ATM",
-                RuntimeComponentView.from_component_state("ATM", grid, runtime_state),
+                ComponentView.from_component_state("ATM", grid, runtime_state),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",
@@ -313,7 +313,7 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([-1.0, 1.0]),
     )
-    runtime_view = RuntimeComponentView(
+    runtime_view = ComponentView(
         name="ATM",
         grid=grid,
         data=RuntimeFieldStore.from_mapping(

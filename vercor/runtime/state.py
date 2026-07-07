@@ -7,7 +7,6 @@ import jax
 
 from vercor.pytree import PyTreeNodeMixin
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.state import RunState
 
 
 @jax.tree_util.register_pytree_node_class
@@ -65,12 +64,4 @@ class RuntimeComponentState(PyTreeNodeMixin):
         )
 
 
-CouplerState = RunState
-RuntimeCouplerState = RunState
-
-__all__ = [
-    "CouplerState",
-    "RunState",
-    "RuntimeComponentState",
-    "RuntimeCouplerState",
-]
+__all__ = ["RuntimeComponentState"]

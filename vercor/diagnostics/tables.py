@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from vercor.diagnostics.fields import ComponentMetric, safe_component_metric_mean
-from vercor.runtime.views import RuntimeComponentView
+from vercor.state import ComponentView
 
 
 def print_component_field_means_table(
-    components: Mapping[str, RuntimeComponentView],
+    components: Mapping[str, ComponentView],
     fields: Sequence[tuple[ComponentMetric, str]],
     component_order: Sequence[str] | None = None,
 ) -> None:

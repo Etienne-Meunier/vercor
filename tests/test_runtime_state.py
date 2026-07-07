@@ -23,10 +23,11 @@ from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.component_state import create_runtime_component_state
 from vercor.runtime.field_transfer import send_runtime_fields
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
+from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.runtime.time import RuntimeStepInfo
 from vercor.runtime.topology_state import RuntimeTopologyMaps
+from vercor.state import RunState
 from vercor.types import RuntimeArray
 
 
@@ -247,9 +248,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class RuntimeFieldStore" not in runtime_source
     assert "class RuntimeComponentState" in runtime_source
     assert "class RunState" not in runtime_source
-    assert "from vercor.state import RunState" in runtime_source
-    assert "CouplerState = RunState" in runtime_source
-    assert "RuntimeCouplerState = RunState" in runtime_source
+    assert "from vercor.state import RunState" not in runtime_source
+    assert "CouplerState" not in runtime_source
+    assert "RuntimeCouplerState" not in runtime_source
     assert "class RuntimeStepInfo" in runtime_time_source
     assert "class RuntimeStepInfo" not in runtime_source
     assert "def dispatch_component_exchanges" in runtime_exchange_dispatch_source
@@ -503,7 +504,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert not Path("vercor/tools.py").exists()
     assert "class RuntimeComponentView" not in diagnostics_source
     assert "RuntimeComponentView =" not in diagnostics_source
-    assert "RuntimeComponentView" in diagnostics_source
+    assert "RuntimeComponentView" not in diagnostics_source
+    assert "ComponentView" in diagnostics_source
     assert 'hasattr(store, "field_names")' not in diagnostics_source
     assert "elif field_name in store" not in diagnostics_source
     assert ".data.get(" not in diagnostics_source
@@ -954,7 +956,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     assert not hasattr(component, "name")
     assert not hasattr(component, "fields_to_import")
     assert not hasattr(component, "fields_to_export")
-    state = RuntimeCouplerState(
+    state = RunState(
         component_names=("ATM",),
         components=(component,),
         fractional_masks=RuntimeFieldStore.from_mapping(
@@ -962,7 +964,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
         ),
     )
 
-    def update(value: RuntimeCouplerState) -> RuntimeCouplerState:
+    def update(value: RunState) -> RunState:
         atm = value.get_component_state("ATM")
         atm = atm.with_data(
             atm.data.set("temperature", atm.data.get("temperature") + 2.0)
@@ -988,7 +990,7 @@ def test_runtime_coupler_state_restores_component_index_cache_after_pytree_round
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
     )
-    state = RuntimeCouplerState(
+    state = RunState(
         component_names=("ATM", "OCN"),
         components=(component, component),
         fractional_masks=RuntimeFieldStore.empty(),

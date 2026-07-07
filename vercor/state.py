@@ -84,9 +84,6 @@ class RunState(PyTreeNodeMixin):
         )
 
 
-CouplerState = RunState
-
-
 @dataclass(frozen=True)
 class ComponentView:
     """Explicit component metadata plus runtime fields for diagnostics/output."""
@@ -173,4 +170,4 @@ def runtime_field(source: RuntimeFieldSource, name: str) -> RuntimeArray:
     raise KeyError(f"Field {name!r} not found")
 
 
-__all__ = ["RunState", "CouplerState", "ComponentView"]
+__all__ = ["RunState", "ComponentView"]

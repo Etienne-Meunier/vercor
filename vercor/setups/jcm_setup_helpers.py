@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import warnings
 
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
@@ -31,16 +30,6 @@ class JCMInputs:
     forcing: Any
 
 
-def generate_jcm_coords_forcing_topography_files(*args: Any, **kwargs: Any) -> Any:
-    """Load JCM setup data through the optional JCM dependency boundary."""
-
-    from vercor.setups.external.jax_gcm_tools import (
-        _generate_jcm_coords_forcing_topography_files as _generate,
-    )
-
-    return _generate(*args, **kwargs)
-
-
 def load_jcm_inputs(
     *,
     resolution: int = 31,
@@ -48,7 +37,9 @@ def load_jcm_inputs(
 ) -> JCMInputs:
     """Load JCM coordinate, terrain, and forcing inputs."""
 
-    coords, terrain, forcing = generate_jcm_coords_forcing_topography_files(
+    from vercor.setups.external.jax_gcm_tools import load_jcm_coords_terrain_forcing
+
+    coords, terrain, forcing = load_jcm_coords_terrain_forcing(
         resolution=resolution,
         input_data_directory=input_data_directory,
     )
@@ -110,18 +101,3 @@ def make_jcm_land_atmosphere(
         terrain=terrain,
         forcing=forcing,
     )
-
-
-def build_jcm_land_atmosphere_components(
-    *args: Any,
-    **kwargs: Any,
-) -> JCMLandAtmosphereSetup:
-    """Deprecated alias for :func:`make_jcm_land_atmosphere`."""
-
-    warnings.warn(
-        "build_jcm_land_atmosphere_components(...) is deprecated; use "
-        "make_jcm_land_atmosphere(...) instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return make_jcm_land_atmosphere(*args, **kwargs)

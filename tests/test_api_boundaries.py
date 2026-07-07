@@ -33,7 +33,6 @@ from vercor.exchanges import Exchange
 from vercor.fields import VALID_FIELD_NAMES, VectorField, flatten_field_items, vector
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.views import RuntimeComponentView
 from vercor.regridding import bilinear
 
 
@@ -41,28 +40,22 @@ from vercor.regridding import bilinear
 def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
     from vercor import (
         ComponentView,
-        CouplerState,
         RunState,
         VectorField as PublicVectorField,
         bilinear as public_bilinear,
         conservative as public_conservative,
-        rectilinear_grid as public_rectilinear_grid,
         uniform_rectilinear_grid as public_uniform_rectilinear_grid,
         vector as public_vector,
     )
     from vercor.regridding import Regridder, RegridderFactory
     from vercor.state import ComponentView as StateComponentView
-    from vercor.state import CouplerState as StateCouplerState
     from vercor.state import RunState as StateRunState
 
     assert PublicVectorField is VectorField
     assert public_vector is vector
     assert public_bilinear is bilinear
     assert callable(public_conservative)
-    assert public_rectilinear_grid is vercor.grids.rectilinear_grid
     assert public_uniform_rectilinear_grid is vercor.grids.uniform_rectilinear_grid
-    assert CouplerState is RunState
-    assert StateCouplerState is StateRunState
     assert RunState is StateRunState
     assert ComponentView is StateComponentView
     assert RunState.__name__ == "RunState"
@@ -70,7 +63,6 @@ def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
     assert getattr(Regridder, "_is_protocol", False)
     assert cast(Any, RegridderFactory).__name__ == "RegridderFactory"
     assert {
-        "CouplerState",
         "RunState",
         "ComponentView",
         "VectorField",
@@ -161,7 +153,7 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
         "bilinear",
         "conservative",
     ]
-    assert state_module.__all__ == ["RunState", "CouplerState", "ComponentView"]
+    assert state_module.__all__ == ["RunState", "ComponentView"]
     assert output_module.__all__ == [
         "ComponentOutputAdapter",
         "ComponentSnapshotWriter",
@@ -216,7 +208,6 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
     state = coupler.state()
     assert isinstance(state, vercor.RunState)
     view = coupler.view(state, "ATM")
-    assert isinstance(view, RuntimeComponentView)
     assert isinstance(view, vercor.ComponentView)
 
     calls: list[dict[str, object]] = []
@@ -238,9 +229,9 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
 
 @pytest.mark.fast_always
 def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
-    from vercor.grids import rectilinear_grid
+    from vercor.grids import uniform_rectilinear_grid
 
-    grid = rectilinear_grid(
+    grid = uniform_rectilinear_grid(
         "v3-grid",
         nlon=2,
         nlat=2,
@@ -258,7 +249,7 @@ def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> Non
     assert grid.binary_mask is not None
     assert component.field_spec.outputs == ("temperature",)
     with pytest.raises(TypeError, match="lon"):
-        rectilinear_grid(
+        uniform_rectilinear_grid(
             "old-grid",
             nlon=2,
             nlat=2,
@@ -406,7 +397,7 @@ def test_public_api_uses_canonical_breaking_names(
     assert isinstance(model_time, DateTime360)
     assert model_time.day_of_year == 1
 
-    renamed_grid = grids_module.rectilinear_grid(
+    renamed_grid = grids_module.uniform_rectilinear_grid(
         "new-grid",
         nlon=2,
         nlat=2,
@@ -471,7 +462,8 @@ def test_v2_public_api_facade_exports_supported_names_only() -> None:
         "ComponentStepResult",
         "HostRuntimeComponent",
     }.isdisjoint(vercor.__all__)
-    assert {"ComponentView", "CouplerState"}.issubset(vercor.__all__)
+    assert "ComponentView" in vercor.__all__
+    assert "CouplerState" not in vercor.__all__
 
     spec = FieldSpec(
         inputs=("temperature", "temperature"),
@@ -602,7 +594,7 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
 @pytest.mark.fast_always
 def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     from vercor.grids import RectilinearGrid as PublicRectilinearGrid
-    from vercor.grids import rectilinear_grid
+    from vercor.grids import uniform_rectilinear_grid
     from vercor.recipes import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
     from vercor.regridding import (
         bilinear as public_bilinear,
@@ -610,7 +602,7 @@ def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     )
     from vercor.setups import make_slab_ocean
 
-    grid = rectilinear_grid(
+    grid = uniform_rectilinear_grid(
         "public-grid",
         nlon=4,
         nlat=3,
@@ -679,6 +671,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "RuntimeStepInfo",
     }
     removed_public_names = {
+        "CouplerState",
         "CustomDateTime",
         "RunSequence",
         "data_component",
@@ -687,11 +680,14 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "make_data_component",
         "make_differentiable_component",
         "make_host_component",
+        "rectilinear_grid",
     }
 
     assert expected_public_names.issubset(set(vercor.__all__))
     assert runtime_internal_names.isdisjoint(set(vercor.__all__))
     assert removed_public_names.isdisjoint(set(vercor.__all__))
+    for removed_name in removed_public_names:
+        assert not hasattr(vercor, removed_name)
 
     assert vercor.Component is Component
     assert (
@@ -880,11 +876,16 @@ def test_setup_and_examples_do_not_import_removed_component_factories() -> None:
 @pytest.mark.fast_always
 def test_removed_api_surfaces_stay_absent() -> None:
     import vercor.forcing_data as forcing_data_module
+    import vercor.exchanges as exchanges_module
+    import vercor.grids as grids_module
+    import vercor.recipes as recipes_module
     import vercor.runtime as runtime_module
+    import vercor.runtime.state as runtime_state_module
     import vercor.settings as settings_module
     import vercor.setups.external as external_module
     import vercor.setups.external.camulator_tensors as camulator_tensors_module
     import vercor.setups.external.jax_gcm as jax_gcm_module
+    import vercor.state as state_module
 
     removed_runtime_reexports = {
         "RuntimeComponentContract",
@@ -902,6 +903,19 @@ def test_removed_api_surfaces_stay_absent() -> None:
         assert not hasattr(runtime_module, name)
     assert getattr(runtime_module, "__all__", []) == []
     assert not Path("vercor/runtime/contexts.py").exists()
+    with pytest.raises(ModuleNotFoundError, match="vercor.runtime.views"):
+        importlib.import_module("vercor.runtime.views")
+
+    assert not hasattr(state_module, "CouplerState")
+    assert state_module.__all__ == ["RunState", "ComponentView"]
+    assert not hasattr(runtime_state_module, "CouplerState")
+    assert not hasattr(runtime_state_module, "RuntimeCouplerState")
+    assert not hasattr(runtime_state_module, "RunState")
+    assert runtime_state_module.__all__ == ["RuntimeComponentState"]
+    assert not hasattr(grids_module, "rectilinear_grid")
+    assert "rectilinear_grid" not in grids_module.__all__
+    for recipe_name in recipes_module.__all__:
+        assert not hasattr(exchanges_module, recipe_name)
 
     assert not hasattr(jax_gcm_module, "JAXGCMRuntimePayload")
     assert "JAXGCMRuntimePayload" not in external_module.__all__
@@ -1739,15 +1753,9 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
 
 
 @pytest.mark.fast_always
-def test_field_names_module_deprecates_duplicate_exchange_vocabulary() -> None:
-    import vercor.field_names as field_names_module
-    from vercor.fields import VALID_FIELD_NAMES
-
-    with pytest.warns(DeprecationWarning, match="VALID_FIELD_NAMES"):
-        legacy_names = field_names_module.VALID_EXCHANGE_FIELD_NAMES
-
-    assert legacy_names == VALID_FIELD_NAMES
-    assert field_names_module.__all__ == ["VALID_EXCHANGE_FIELD_NAMES"]
+def test_removed_field_names_module_stays_absent() -> None:
+    with pytest.raises(ModuleNotFoundError, match="vercor.field_names"):
+        importlib.import_module("vercor.field_names")
 
 
 @pytest.mark.fast_always

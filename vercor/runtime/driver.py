@@ -10,12 +10,12 @@ from vercor.jax_logging import LoggerLike
 from vercor.runtime.dispatch_context import RuntimeDispatchContext
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.runtime.field_transfer import receive_runtime_fields, send_runtime_fields
-from vercor.runtime.state import CouplerState
+from vercor.state import RunState
 from vercor.runtime.time import RuntimeStepInfo
 
 
 def step_runtime_component(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     component_name: str,
     step_info: RuntimeStepInfo,
     *,
@@ -23,7 +23,7 @@ def step_runtime_component(
     allow_host_runtime: bool,
     time: datetime | ModelDateTime | None = None,
     logger: LoggerLike | None = None,
-) -> CouplerState:
+) -> RunState:
     """Advance one component through dispatch, receive, step, and send phases."""
 
     runtime_state = dispatch_component_exchanges(
@@ -64,12 +64,12 @@ def step_runtime_component(
 
 
 def prime_runtime_outgoing(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     run_order: Sequence[str],
     *,
     dispatch_context: RuntimeDispatchContext,
     step_info: RuntimeStepInfo,
-) -> CouplerState:
+) -> RunState:
     """Populate outgoing stores once before the first exchange dispatch."""
 
     for component_name in run_order:

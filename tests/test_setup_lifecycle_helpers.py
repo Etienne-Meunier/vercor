@@ -130,14 +130,14 @@ def test_load_jcm_inputs_facade_returns_named_payload(
     tmp_path: Path,
 ) -> None:
     import vercor.setups as setups
-    import vercor.setups.jcm_setup_helpers as helper
+    import vercor.setups.external.jax_gcm_tools as jax_gcm_tools
 
     coords = object()
     terrain = object()
     forcing = object()
     calls: dict[str, object] = {}
 
-    def fake_generate(
+    def fake_load(
         *,
         resolution: int = 31,
         input_data_directory: Path | None = None,
@@ -147,9 +147,9 @@ def test_load_jcm_inputs_facade_returns_named_payload(
         return coords, terrain, forcing
 
     monkeypatch.setattr(
-        helper,
-        "generate_jcm_coords_forcing_topography_files",
-        fake_generate,
+        jax_gcm_tools,
+        "load_jcm_coords_terrain_forcing",
+        fake_load,
     )
 
     inputs = setups.load_jcm_inputs(
@@ -180,8 +180,8 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     atmosphere: Any = object()
     calls: dict[str, Any] = {}
 
-    def unexpected_generate() -> tuple[object, SimpleNamespace, object]:
-        pytest.fail("preloaded JCM inputs should avoid generating inputs again")
+    def unexpected_load_jcm_inputs() -> object:
+        pytest.fail("preloaded JCM inputs should avoid loading inputs again")
 
     def fake_make_jcm_land(
         received_coords: object,
@@ -205,8 +205,8 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
 
     monkeypatch.setattr(
         helper,
-        "generate_jcm_coords_forcing_topography_files",
-        unexpected_generate,
+        "load_jcm_inputs",
+        unexpected_load_jcm_inputs,
     )
     monkeypatch.setattr(helper, "make_jcm_land", fake_make_jcm_land)
     monkeypatch.setattr(helper, "transposed_host_array", fake_transposed_host_array)
@@ -316,14 +316,9 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     atmosphere: Any = object()
     calls: dict[str, Any] = {}
 
-    def fake_generate(
-        *,
-        resolution: int = 31,
-        input_data_directory: Path | None = None,
-    ) -> tuple[object, SimpleNamespace, object]:
-        calls["generate_args"] = (resolution, input_data_directory)
-        calls["generated"] = True
-        return coords, terrain, forcing
+    def fake_load_jcm_inputs() -> Any:
+        calls["load_inputs"] = True
+        return helper.JCMInputs(coords=coords, terrain=terrain, forcing=forcing)
 
     def fake_make_jcm_land(
         received_coords: object,
@@ -345,9 +340,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         calls["atmosphere_args"] = (received_coords, received_terrain, kwargs)
         return atmosphere
 
-    monkeypatch.setattr(
-        helper, "generate_jcm_coords_forcing_topography_files", fake_generate
-    )
+    monkeypatch.setattr(helper, "load_jcm_inputs", fake_load_jcm_inputs)
     monkeypatch.setattr(helper, "make_jcm_land", fake_make_jcm_land)
     monkeypatch.setattr(helper, "transposed_host_array", fake_transposed_host_array)
     monkeypatch.setattr(helper, "make_jax_gcm", fake_make_jax_gcm)
@@ -366,7 +359,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     assert result.terrain is terrain
     assert result.forcing is forcing
     assert terrain.fmask == "patched-mask"
-    assert calls["generate_args"] == (31, None)
+    assert calls["load_inputs"] is True
     assert calls["mask"] is land_mask
     assert calls["land_args"] == (coords, forcing, ocean_grid)
     assert calls["atmosphere_args"] == (
@@ -382,24 +375,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     )
 
 
-def test_build_jcm_land_atmosphere_components_is_deprecated_alias(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_jcm_land_atmosphere_components_is_removed() -> None:
     import vercor.setups.jcm_setup_helpers as helper
 
-    sentinel = object()
-
-    def fake_make(*args: object, **kwargs: object) -> object:
-        assert args == ("grid",)
-        assert kwargs == {"do_spinup": False}
-        return sentinel
-
-    monkeypatch.setattr(helper, "make_jcm_land_atmosphere", fake_make)
-
-    with pytest.warns(DeprecationWarning, match="make_jcm_land_atmosphere"):
-        result = helper.build_jcm_land_atmosphere_components(
-            "grid",
-            do_spinup=False,
-        )
-
-    assert result is sentinel
+    assert not hasattr(helper, "build_jcm_land_atmosphere_components")

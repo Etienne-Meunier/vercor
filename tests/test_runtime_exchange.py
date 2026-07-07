@@ -12,7 +12,8 @@ from vercor._exchange import Exchange
 from vercor.fields import vector
 from vercor.runtime.dispatch_context import RuntimeDispatchContext
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
+from vercor.runtime.state import RuntimeComponentState
+from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
 
 
@@ -55,7 +56,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
     regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder(scale=2.0)}
 
     def loss(source: jax.Array, mask: jax.Array) -> jax.Array:
-        state = RuntimeCouplerState(
+        state = RunState(
             component_names=("OCN", "ATM"),
             components=(
                 _component("OCN", outgoing={"temperature": source}),
@@ -99,7 +100,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder()}
     u_velocity = jnp.full((2, 2), 5.0)
     v_velocity = jnp.full((2, 2), -2.0)
-    state = RuntimeCouplerState(
+    state = RunState(
         component_names=("OCN", "ATM"),
         components=(
             _component(

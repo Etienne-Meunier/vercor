@@ -11,7 +11,8 @@ from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.pytree import PyTreeNodeMixin
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
+from vercor.runtime.state import RuntimeComponentState
+from vercor.state import RunState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.runtime.time import RuntimeStepInfo
 from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
@@ -22,7 +23,7 @@ def test_registered_pytree_classes_inherit_shared_flatten_methods() -> None:
         RuntimeStepInfo,
         RuntimeFieldStore,
         RuntimeComponentState,
-        RuntimeCouplerState,
+        RunState,
         RectilinearGrid,
         BilinearRectilinearInterpolator,
         ConservativeRectilinearRemapper,

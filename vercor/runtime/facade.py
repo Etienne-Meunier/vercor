@@ -31,8 +31,8 @@ from vercor.runtime.run_context import RuntimeRunContext
 from vercor.runtime.runner import (
     run_coupler_runtime,
 )
-from vercor.runtime.state import CouplerState
-from vercor.runtime.views import RuntimeComponentView
+from vercor.state import RunState
+from vercor.state import ComponentView
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -107,11 +107,11 @@ def runtime_run_context(
 
 
 def run(
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     *,
     inputs: RuntimeFacadeInputs,
     logger: LoggerLike,
-) -> CouplerState:
+) -> RunState:
     """Run a validated runtime state through the selected runtime path."""
 
     return run_coupler_runtime(
@@ -126,12 +126,12 @@ def run(
 def runtime_component_view(
     *,
     components: Mapping[str, "Component"],
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     name: str,
-) -> RuntimeComponentView:
+) -> ComponentView:
     """Return a single object containing component metadata and runtime fields."""
 
-    return RuntimeComponentView.from_component_state(
+    return ComponentView.from_component_state(
         name,
         components[name].grid,
         runtime_state.get_component_state(name),
@@ -141,9 +141,9 @@ def runtime_component_view(
 def runtime_component_views(
     *,
     components: Mapping[str, "Component"],
-    runtime_state: CouplerState,
+    runtime_state: RunState,
     names: Sequence[str] | None = None,
-) -> dict[str, RuntimeComponentView]:
+) -> dict[str, ComponentView]:
     """Return named runtime component views in component or requested order."""
 
     selected_names = tuple(components) if names is None else tuple(names)
@@ -159,7 +159,7 @@ def runtime_component_views(
 
 def finalize(
     *,
-    final_state: CouplerState,
+    final_state: RunState,
     inputs: RuntimeFacadeInputs,
     output_file_mask: Path | None = None,
     output_dir: Path = Path("."),

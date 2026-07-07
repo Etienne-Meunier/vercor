@@ -7,7 +7,7 @@ from vercor.types import RuntimeArray
 import vercor.runtime.facade as runtime_facade
 from vercor.coupler import Coupler
 from vercor.runtime.runner import run_scanned_runtime
-from vercor.runtime.state import RuntimeCouplerState
+from vercor.state import RunState
 from vercor.runtime.topology_state import RuntimeTopologyMaps
 
 
@@ -42,10 +42,10 @@ def replace_runtime_topology_maps(
 
 def run_scanned_coupler(
     coupler: Coupler,
-    initial_state: RuntimeCouplerState | None = None,
+    initial_state: RunState | None = None,
     *,
     validate_state: bool = True,
-) -> RuntimeCouplerState:
+) -> RunState:
     """Run a coupler through the canonical scanned runtime for focused tests."""
 
     prepared = runtime_facade.prepare_runtime_state(
@@ -70,7 +70,7 @@ def runtime_state_from_coupler_components(
     coupler: Coupler,
     *,
     prefill_missing: bool,
-) -> RuntimeCouplerState:
+) -> RunState:
     """Build runtime state from a Coupler's components for focused tests."""
 
     return runtime_facade.runtime_state_from_components(

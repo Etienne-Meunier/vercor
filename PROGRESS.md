@@ -9,6 +9,13 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local expired compatibility shim removal validation: focused cleanup
+  pytest, full fast pytest, Black, flake8, mypy, full pytest, and git diff
+  whitespace check passed as of 2026-07-07 using the direct `scipy`
+  environment executable. Black emitted the recurring Python 3.13/target-3.14
+  warning; full pytest emitted the recurring JAX dtype-promotion
+  `FutureWarning` and the existing xarray merge `FutureWarning` in the real
+  JAXGCM payload test.
 - Latest local staged public-owner API rewrite validation: focused red/green
   API/settings/state tests, full API-boundary fast pytest, focused settings and
   state/runtime pytest, affected component/regridding fast pytest, example
@@ -434,12 +441,36 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Recent Work
 
+### 2026-07-07: Expired Compatibility Shim Removal
+
+- Removed expired 0.5.0 compatibility surfaces: public `CouplerState`,
+  runtime `RuntimeCouplerState`, runtime-view `RuntimeComponentView`,
+  `rectilinear_grid(...)`, `vercor.field_names`, exchange recipe fallback
+  access from `vercor.exchanges`, direct JCM input generator wrappers, and the
+  `build_jcm_land_atmosphere_components(...)` setup alias.
+- Migrated runtime, diagnostics, output, and tests to the supported owners:
+  `RunState`, `ComponentView`, `uniform_rectilinear_grid(...)`,
+  `vercor.recipes`, `load_jcm_inputs(...)`, and
+  `load_jcm_coords_terrain_forcing(...)`.
+- Deleted obsolete shim modules `vercor/field_names.py`,
+  `vercor/runtime/views.py`, and `vercor/_fields.py`; refreshed API-boundary
+  tests so removed modules and symbols stay absent without warning tests.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to describe only the supported
+  public API.
+- Validation run for this change: focused cleanup pytest, full fast pytest,
+  Black, flake8, mypy, full pytest, and git diff whitespace check passed using
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
+  recurring Python 3.13/target-3.14 warning; full pytest emitted the recurring
+  JAX dtype-promotion `FutureWarning` and the existing xarray merge
+  `FutureWarning` in the real JAXGCM payload test.
+
 ### 2026-07-07: Staged Public-Owner API Rewrite
 
 - Moved public ownership for `RectilinearGrid`, `VectorField`, and `Exchange`
   into `vercor.grids`, `vercor.fields`, and `vercor.exchanges`, and moved
   public ownership for `RunState` and `ComponentView` into `vercor.state`,
-  leaving private compatibility imports for existing internal modules.
+  with internal modules using focused public owners or private implementation
+  imports where appropriate.
 - Added `grid_from_coordinates(...)`, strict `Settings(custom={...})` handling
   for custom settings, explicit `Regridder.regrid(...)` /
   `regrid_vector(...)`, and a public `vercor.recipes` facade for bundled
@@ -461,7 +492,7 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-07-07: Staged API Boundary Facades
 
 - Added canonical public state names through `vercor.state`: `RunState` and
-  `ComponentView`, with `CouplerState` kept as a staged compatibility alias.
+  `ComponentView`.
 - Added public regridding and grid facades: `Regridder`,
   `RegridderFactory`, `bilinear`, `conservative`, and
   `uniform_rectilinear_grid(...)`; concrete regridder classes stay private

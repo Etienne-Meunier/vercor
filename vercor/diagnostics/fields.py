@@ -4,15 +4,15 @@ from typing import Callable
 
 import jax.numpy as jnp
 
-from vercor.runtime.views import (
-    RuntimeComponentView,
+from vercor.state import (
+    ComponentView,
     RuntimeFieldSource,
     runtime_field,
     runtime_field_candidates,
 )
 from vercor.types import RuntimeArray
 
-ComponentMetric = str | Callable[[RuntimeComponentView], RuntimeArray | float]
+ComponentMetric = str | Callable[[ComponentView], RuntimeArray | float]
 
 
 def component_vector_speed(
@@ -42,7 +42,7 @@ def combine_surface_temperatures(
     )
 
 
-def total_surface_temperature(component: RuntimeComponentView) -> RuntimeArray:
+def total_surface_temperature(component: ComponentView) -> RuntimeArray:
     """Return combined land and sea surface temperature for diagnostics."""
 
     return combine_surface_temperatures(
@@ -51,7 +51,7 @@ def total_surface_temperature(component: RuntimeComponentView) -> RuntimeArray:
     )
 
 
-def safe_component_nanmean(component: RuntimeComponentView, field_name: str) -> float:
+def safe_component_nanmean(component: ComponentView, field_name: str) -> float:
     """Return a robust NaN-aware mean for a runtime component view field."""
 
     try:
@@ -61,7 +61,7 @@ def safe_component_nanmean(component: RuntimeComponentView, field_name: str) -> 
 
 
 def component_plot_field(
-    component: RuntimeComponentView,
+    component: ComponentView,
     field_name: str,
 ) -> RuntimeArray:
     """Return a 2D field suitable for plotting when one is available."""
@@ -76,7 +76,7 @@ def component_plot_field(
 
 
 def component_plot_scalar(
-    component: RuntimeComponentView,
+    component: ComponentView,
     scalar: ComponentMetric,
 ) -> RuntimeArray | float:
     """Resolve a field name or callable diagnostic for plotting."""
@@ -87,7 +87,7 @@ def component_plot_scalar(
 
 
 def safe_component_metric_mean(
-    component: RuntimeComponentView,
+    component: ComponentView,
     metric: ComponentMetric,
 ) -> float:
     """Resolve a metric and return a robust mean value as float."""
