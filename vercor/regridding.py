@@ -13,7 +13,7 @@ from vercor.types import RuntimeArray
 
 @runtime_checkable
 class Regridder(Protocol):
-    """Public protocol for callable grid-to-grid transfer objects."""
+    """Public protocol for grid-to-grid transfer objects."""
 
     source_grid: RectilinearGrid
 
@@ -85,17 +85,15 @@ def conservative(
     source_mask: RuntimeArray | None = None,
     normalize: str = "conservation",
     radius_km: float = 6371.0,
-    radius: float | None = None,
 ) -> Regridder:
     """Build a public conservative scalar regridder for one grid pair."""
 
-    effective_radius = radius_km if radius is None else radius
     return _conservative(
         source_grid,
         target_grid,
         source_mask=source_mask,
         normalize=normalize,
-        radius=effective_radius,
+        radius=radius_km,
     )
 
 

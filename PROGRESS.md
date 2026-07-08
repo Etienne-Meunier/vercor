@@ -454,6 +454,28 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Recent Work
 
+### 2026-07-08: v1 Deprecation Cleanup
+
+- Removed the remaining public conservative-regridder compatibility keyword:
+  `vercor.regridding.conservative(...)` now accepts `radius_km` only and passes
+  that value to the private conservative regridder's internal `radius`
+  parameter.
+- Added v1 boundary coverage so the public conservative factory keeps
+  `radius` absent and active docs do not advertise removed transition APIs such
+  as `ComponentView`, `Coupler.state()`, public `Coupler.initialize()`,
+  public `Component.data` / `Component.setup_metadata`, or callable
+  regridders.
+- Updated `DESIGN.md` and `DEPENDENCIES.md` to describe
+  `ComponentState`, `Coupler.initial_state()`, non-callable regridders, and
+  private setup stores only.
+- Validation run for this change: focused red/green boundary tests, focused
+  cleanup pytest, Black, flake8, mypy, full fast pytest, full pytest, and git
+  diff whitespace check passed using
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
+  recurring Python 3.13/target-3.14 warning; full pytest emitted the recurring
+  JAX dtype-promotion `FutureWarning` and the existing xarray merge
+  `FutureWarning` in the real JAXGCM payload test.
+
 ### 2026-07-07: Expired Compatibility Shim Removal
 
 - Removed expired 0.5.0 compatibility surfaces: public `CouplerState`,

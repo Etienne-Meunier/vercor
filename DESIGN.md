@@ -229,8 +229,8 @@ immutable runtime containers used during traced integration.
   internals. These internals are not exported from `vercor.components`.
   Subclasses should call the base constructor with `name`, `grid`, and optional
   `settings`; raw setup `data` and `setup_metadata` are initialized internally
-  rather than accepted as public constructor inputs. `Component.data` is a
-  grid-field store, not a
+  rather than accepted as public constructor inputs. The private `_data` store
+  contains grid fields, not a
   general metadata store: all entries must use one of the canonical layouts
   `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
   `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
@@ -253,10 +253,10 @@ immutable runtime containers used during traced integration.
   `prefill_runtime_fields()` for ordinary output/default fields. Non-grid
   metadata such as hybrid-level coefficients belongs on component attributes or
   runtime payloads. Factory-created setup adapters should put non-runtime setup
-  metadata in
-  `Component.setup_metadata` rather than attaching ad-hoc attributes to the
-  component object. Examples include forcing-file provenance and diagnostic
-  coefficients that should not enter runtime field validation or JAX scan state.
+  metadata in private `_setup_metadata` rather than attaching ad-hoc attributes
+  to the component object. Examples include forcing-file provenance and
+  diagnostic coefficients that should not enter runtime field validation or JAX
+  scan state.
   `Component` for differentiable active models and implement
   `step_runtime_state()`. Use `DataComponent` for forcing/static data adapters
   that intentionally keep the shared no-op runtime step and do not create
@@ -344,11 +344,11 @@ immutable runtime containers used during traced integration.
   runtime views, and final output delegation enter through this module instead
   of direct `Coupler` imports of runtime implementation helpers.
   Runtime component metadata and read-only field resolution for
-  diagnostics/output live in `vercor.state`. `ComponentView`,
+  diagnostics/output live in `vercor.state`. `ComponentState`,
   `runtime_field_candidates(...)`, and `runtime_field(...)` own
   data/incoming/outgoing lookup for explicit views and compatible runtime
-  states. `Coupler` exposes `state()`, `view()`, and `views()` as the public
-  facade for runtime-state and component-view creation; the longer
+  states. `Coupler` exposes `initial_state()`, `view()`, and `views()` as the
+  public facade for runtime-state and component-state view creation; the longer
   runtime-component method names have been removed.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output.runtime` helpers, with
@@ -365,7 +365,7 @@ immutable runtime containers used during traced integration.
   shape and dtype between input and output; per-step slices or adapted forcing
   objects should be local values unless they are shape-stable runtime state.
   Internal runtime containers are not exported from the package top level.
-  Public `RunState`/`ComponentView` are owned by `vercor.state`.
+  Public `RunState`/`ComponentState` are owned by `vercor.state`.
 
 ### Setup adapters and shared ownership
 
@@ -391,7 +391,7 @@ including `ExchangeField`, are reexported beside `Exchange` from
 `RegridderFactory`, are owned by `vercor.regridding`; concrete
 bilinear/conservative regridder classes remain private implementation details.
 Regridders expose explicit `regrid(field)` and `regrid_vector(u, v)` methods
-while retaining callable scalar/vector behavior for staged compatibility.
+and are not callable.
 
 Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live
@@ -559,10 +559,12 @@ have been removed; use `Settings` directly.
 VerCOR-owned array dtypes are centralized in `vercor.dtypes`. Real-valued JAX
 and NumPy arrays use the `Settings.enable_x64` precision switch whenever a
 settings object is available: `False` maps to 32-bit real arrays and `True` maps
-to 64-bit real arrays. `Coupler.initialize()` treats the coupler setting as the
-run-level precision policy, synchronizes component settings to that policy, and
-recasts component-owned grid/data arrays before runtime state creation. Helpers
-that create arrays without a settings object follow the active JAX global
+to 64-bit real arrays. Runtime initialization through
+`Coupler.initial_state()`, `Coupler.run()`, or `Coupler.write_outputs()` treats
+the coupler setting as the run-level precision policy, synchronizes component
+settings to that policy, and recasts component-owned grid/data arrays before
+runtime state creation. Helpers that create arrays without a settings object
+follow the active JAX global
 `jax_enable_x64` configuration; conversion helpers preserve an already-typed
 real array when no settings object is supplied.
 Integer/index arrays use the canonical 32-bit index dtype in both
@@ -600,8 +602,9 @@ emission, and `callback` owns traced-value partitioning plus
 Initialization, runtime, and finalization helpers that are reached outside a
 coupler context use the default `VerCOR` Python logger from
 `vercor.jax_logging.get_default_logger()`. Helpers reached from
-`Coupler.initialize()`, `Coupler.run()`, or component runtime contexts receive
-the coupler logger explicitly instead of writing directly to stdout.
+`Coupler.initial_state()`, `Coupler.run()`, `Coupler.write_outputs()`, or
+component runtime contexts receive the coupler logger explicitly instead of
+writing directly to stdout.
 The host and scanned coupler runtime paths share progress formatting and traced
 callback helpers in `vercor.runtime.progress`. The scanned path precomputes
 datetime and timestep labels on the host, then selects the per-step label inside

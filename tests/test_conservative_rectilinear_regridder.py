@@ -16,6 +16,7 @@ from vercor._regridders.conservative import (
     ConservativeRectilinearRegridder,
     conservative,
 )
+from vercor.regridding import conservative as public_conservative
 
 
 def _grid(
@@ -48,6 +49,18 @@ def test_regridder_constructor_sets_interpolator_and_grids() -> None:
 def test_conservative_regridder_api_does_not_expose_noop_fill_value() -> None:
     assert "fill_value" not in signature(ConservativeRectilinearRegridder).parameters
     assert "fill_value" not in signature(conservative).parameters
+
+
+def test_public_conservative_factory_exposes_radius_km_only() -> None:
+    parameters = signature(public_conservative).parameters
+    assert "radius_km" in parameters
+    assert "radius" not in parameters
+
+    src = _grid("src", np.array([0.5, 1.5]), np.array([0.5, 1.5]))
+    dst = _grid("dst", np.array([0.25, 0.75]), np.array([0.25, 0.75]))
+
+    with pytest.raises(TypeError, match="radius"):
+        public_conservative(src, dst, radius=10.0)  # type: ignore[call-arg]
 
 
 def test_regridder_constructor_uses_provided_edges_when_available() -> None:

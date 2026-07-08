@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import importlib
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -139,6 +140,27 @@ def test_v1_private_grid_and_exchange_shims_are_removed() -> None:
         importlib.import_module("vercor._grid")
     with pytest.raises(ModuleNotFoundError, match="vercor._exchange"):
         importlib.import_module("vercor._exchange")
+
+
+@pytest.mark.fast_always
+def test_v1_active_docs_do_not_advertise_removed_transition_apis() -> None:
+    active_docs = (
+        Path("DESIGN.md").read_text(encoding="utf-8")
+        + "\n"
+        + Path("DEPENDENCIES.md").read_text(encoding="utf-8")
+    )
+    stale_markers = (
+        "ComponentView",
+        "`Coupler` exposes `state()`",
+        "`run()`, `state()`",
+        "callable scalar/vector behavior for staged compatibility",
+        "`Coupler.initialize()`",
+        "`Component.setup_metadata`",
+        "`Component.data`",
+    )
+
+    for marker in stale_markers:
+        assert marker not in active_docs
 
 
 @pytest.mark.fast_always
