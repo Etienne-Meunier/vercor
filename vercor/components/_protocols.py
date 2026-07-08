@@ -1,22 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
 class HostRuntimeExecutionProtocol(Protocol):
     """Private structural contract for components that require host stepping."""
 
-    def step_host_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: "StepContext",
-    ) -> "RuntimeComponentState":
-        """Return this component advanced by one Python host runtime step."""
+    def _requires_host_runtime(self) -> bool:
+        """Return whether this component requires Python host runtime stepping."""
         ...
 
 

@@ -18,6 +18,7 @@ import vercor.setups.data.jcm_land as jcm_land_module
 from tests._coverage_support import CoverageCouplerStub, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.contexts import StepContext
+from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.setups.data.era5_atmosphere import make_era5_atmosphere
 from vercor.setups.data.era5_land import make_era5_land
 from vercor.setups.data.era5_ocean import make_era5_ocean
@@ -40,7 +41,8 @@ def _step_component(
 ) -> Any:
     """Advance one component through the runtime-state API."""
 
-    return component.step_runtime_state(
+    return step_component_runtime_state(
+        component,
         create_runtime_component_state(
             component,
             prefill_missing=True,
@@ -52,6 +54,7 @@ def _step_component(
             time=time,
             logger=coupler.logger,
         ),
+        allow_host_runtime=False,
     )
 
 

@@ -34,7 +34,7 @@ from vercor.exceptions import (
     RegridderError,
 )
 from vercor.exchanges import Exchange
-from vercor.fields import VectorField
+from vercor.fields import VectorField, vector
 from vercor.grids import RectilinearGrid
 import vercor.recipes as recipes
 from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
@@ -78,4 +78,5 @@ __all__ = [
     "recipes",
     "ModelDateTime",
     "VectorField",
+    "vector",
 ]

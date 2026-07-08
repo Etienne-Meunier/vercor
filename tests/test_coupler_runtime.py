@@ -659,7 +659,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
             exports=("ice_fraction",),
         ),
     )
-    return RunState(
+    return RunState._from_runtime(
         component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
         fractional_masks=RuntimeFieldStore.from_mapping(
@@ -1932,7 +1932,7 @@ def test_run_validates_regridders_and_fractional_masks() -> None:
         run_scanned_coupler(coupler, state)
 
     coupler = _make_coupler(steps=1)
-    state = RunState(
+    state = RunState._from_runtime(
         component_names=state.component_names,
         components=state._components,
         fractional_masks=RuntimeFieldStore.empty(),
@@ -2013,7 +2013,7 @@ def test_run_validates_missing_jax_gcm_preseed_before_scan() -> None:
 def test_run_validates_fractional_mask_shape_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    state = RunState(
+    state = RunState._from_runtime(
         component_names=state.component_names,
         components=state._components,
         fractional_masks=RuntimeFieldStore.from_mapping(

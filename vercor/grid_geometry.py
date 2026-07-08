@@ -5,7 +5,7 @@ from typing import Any, cast
 from jax import Array, lax
 import jax.numpy as jnp
 
-from vercor.dtypes import as_jax_real_array, dtype_policy, jax_linspace
+from vercor.dtypes import as_jax_real_array, dtype_policy
 from vercor.grids import RectilinearGrid
 from vercor.types import RuntimeArray
 
@@ -27,28 +27,6 @@ def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
         g0.shape == g1.shape
         and _coordinate_allclose(g0.latitude, g1.latitude)
         and _coordinate_allclose(g0.longitude, g1.longitude)
-    )
-
-
-def make_rectilinear_grid(
-    name: str,
-    nlon: int,
-    nlat: int,
-    longitude_start: float,
-    longitude_end: float,
-    latitude_start: float,
-    latitude_end: float,
-    mask: Any | None = None,
-) -> RectilinearGrid:
-    """Build a rectilinear grid with equally spaced coordinate centers."""
-
-    longitude = jax_linspace(longitude_start, longitude_end, nlon)
-    latitude = jax_linspace(latitude_start, latitude_end, nlat)
-    return RectilinearGrid(
-        name=name,
-        longitude=longitude,
-        latitude=latitude,
-        binary_mask=mask,
     )
 
 

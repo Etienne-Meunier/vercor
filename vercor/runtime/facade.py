@@ -131,7 +131,7 @@ def runtime_component_view(
 ) -> ComponentState:
     """Return a single object containing component metadata and runtime fields."""
 
-    return ComponentState.from_component_state(
+    return ComponentState._from_runtime(
         name,
         components[name].grid,
         runtime_state._component_state(name),

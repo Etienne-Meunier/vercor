@@ -97,16 +97,6 @@ def flatten_field_items(fields: Sequence[FieldItem]) -> list[str]:
     return flattened
 
 
-def unique_field_names(fields: Iterable[str]) -> tuple[str, ...]:
-    """Return unique field names while preserving first-seen order."""
-
-    unique: list[str] = []
-    for field in fields:
-        if field not in unique:
-            unique.append(field)
-    return tuple(unique)
-
-
 __all__ = [
     "ExchangeField",
     "FieldItem",

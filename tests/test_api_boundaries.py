@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from inspect import signature
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import Any, cast
 import ast
@@ -45,12 +45,14 @@ def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
         VectorField as PublicVectorField,
         bilinear as public_bilinear,
         conservative as public_conservative,
+        vector as public_vector,
     )
     from vercor.regridding import Regridder, RegridderFactory
     from vercor.state import ComponentState as StateComponentState
     from vercor.state import RunState as StateRunState
 
     assert PublicVectorField is VectorField
+    assert public_vector is vector
     assert RectilinearGrid is vercor.grids.RectilinearGrid
     assert public_bilinear is bilinear
     assert callable(public_conservative)
@@ -67,8 +69,8 @@ def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
         "Regridder",
         "RegridderFactory",
         "RectilinearGrid",
+        "vector",
     }.issubset(vercor.__all__)
-    assert "vector" not in vercor.__all__
     assert "grid_from_coordinates" not in vercor.__all__
     assert "uniform_rectilinear_grid" not in vercor.__all__
 
@@ -126,6 +128,7 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
 
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     exchange_signature = str(signature(Exchange))
+    exchange_parameters = signature(Exchange).parameters
     public_bilinear_signature = str(signature(regridding_module.bilinear))
     public_conservative_signature = str(signature(regridding_module.conservative))
 
@@ -134,6 +137,7 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
     assert "_exchange" not in exchange_signature
     assert "_regridders" not in exchange_signature
     assert "RegridderFactory" in exchange_signature
+    assert exchange_parameters["regrid"].kind is Parameter.KEYWORD_ONLY
     assert regridding_module.bilinear.__module__ == "vercor.regridding"
     assert regridding_module.conservative.__module__ == "vercor.regridding"
     assert vercor.bilinear.__module__ == "vercor.regridding"
@@ -155,6 +159,7 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
     ]
     assert OutputVariable is VariableOwner
     assert ComponentOutput is OutputSpecOwner
+    assert ComponentOutput.__module__ == "vercor.output.adapters"
     assert not hasattr(output_module, "ComponentOutputAdapter")
     assert not hasattr(output_module, "register_component_snapshot_writer")
     assert not hasattr(output_module, "component_snapshot_writer")
@@ -173,6 +178,55 @@ def test_v3_fields_facade_owns_vector_field_contract() -> None:
 
     with pytest.raises(TypeError, match="VectorField"):
         Exchange("ATM", "OCN", (("u_velocity", "v_velocity"),))  # type: ignore[arg-type]
+
+
+@pytest.mark.fast_always
+def test_v1_state_constructors_do_not_expose_runtime_stores() -> None:
+    run_state_signature = str(signature(vercor.RunState))
+    component_state_signature = signature(vercor.ComponentState)
+
+    assert "RuntimeComponentState" not in run_state_signature
+    assert "RuntimeFieldStore" not in run_state_signature
+    assert "components" not in component_state_signature.parameters
+    assert "data" not in component_state_signature.parameters
+    assert "RuntimeFieldStore" not in str(component_state_signature)
+    assert "fields" in component_state_signature.parameters
+
+    with pytest.raises(TypeError, match="Coupler"):
+        vercor.RunState()
+
+
+@pytest.mark.fast_always
+def test_v1_private_regridder_base_does_not_shadow_public_protocol() -> None:
+    base_module = importlib.import_module("vercor._regridders.base")
+
+    assert hasattr(base_module, "_BaseRegridder")
+    assert not hasattr(base_module, "Regridder")
+    assert "class _BaseRegridder" in Path("vercor/_regridders/base.py").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.fast_always
+def test_v1_field_name_deduplication_has_one_private_owner() -> None:
+    assert not Path("vercor/components/_field_names.py").exists()
+    assert Path("vercor/_field_names.py").exists()
+    assert "def unique_field_names(" not in Path("vercor/fields.py").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.fast_always
+def test_v1_removed_component_setup_attributes_are_blocked() -> None:
+    component = DataComponent.from_fields(
+        "ATM",
+        make_test_grid(name="blocked-component-attrs"),
+        fields={"temperature": 280.0},
+    )
+
+    for attribute in ("data", "setup_metadata"):
+        with pytest.raises(AttributeError, match="not public API"):
+            setattr(component, attribute, {})
 
 
 @pytest.mark.fast_always
@@ -486,6 +540,8 @@ def test_v2_public_api_facade_exports_supported_names_only() -> None:
 
 @pytest.mark.fast_always
 def test_v2_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> None:
+    from vercor.components._runtime_fields import apply_step_result
+
     component = DataComponent.from_fields(
         name="ATM",
         grid=make_test_grid(name="payload-sentinel"),
@@ -499,11 +555,13 @@ def test_v2_step_result_payload_sentinel_preserves_runtime_payload_by_default() 
         runtime_payload=payload,
     )
 
-    preserved = component.apply_step_result(
+    preserved = apply_step_result(
+        component,
         runtime_state,
         vercor.StepResult(fields={"temperature": jnp.asarray(281.0)}),
     )
-    cleared = component.apply_step_result(
+    cleared = apply_step_result(
+        component,
         runtime_state,
         vercor.StepResult(fields={"temperature": jnp.asarray(282.0)}, payload=None),
     )
@@ -1178,8 +1236,9 @@ def test_component_base_owns_runtime_access_methods_directly() -> None:
         "seed_field",
         "seed_fields",
         "seed_declared_defaults",
+        "step",
     }
-    expected_runtime_methods = {
+    removed_runtime_methods = {
         "runtime_fields",
         "runtime_field",
         "has_runtime_field",
@@ -1189,6 +1248,7 @@ def test_component_base_owns_runtime_access_methods_directly() -> None:
         "apply_step_result",
         "require_runtime_fields",
         "prefill_runtime_fields",
+        "step_runtime_state",
     }
     expected_lifecycle_methods = {
         "initialize",
@@ -1197,10 +1257,10 @@ def test_component_base_owns_runtime_access_methods_directly() -> None:
         "validate_runtime_state",
     }
 
-    for method_name in (
-        expected_author_methods | expected_runtime_methods | expected_lifecycle_methods
-    ):
+    for method_name in expected_author_methods | expected_lifecycle_methods:
         assert hasattr(Component, method_name)
+    for method_name in removed_runtime_methods:
+        assert not hasattr(Component, method_name)
     assert not hasattr(Component, "seed_zero_field")
     assert not hasattr(Component, "seed_zero_fields")
     assert not hasattr(Component, "seed_constant_field")
@@ -1216,8 +1276,8 @@ def test_component_base_owns_runtime_access_methods_directly() -> None:
         node.name for node in component_class.body if isinstance(node, ast.FunctionDef)
     }
 
-    assert expected_author_methods.isdisjoint(directly_defined_methods)
-    assert expected_runtime_methods.issubset(directly_defined_methods)
+    assert {"step"}.issubset(directly_defined_methods)
+    assert removed_runtime_methods.isdisjoint(directly_defined_methods)
     assert expected_lifecycle_methods.isdisjoint(directly_defined_methods)
     assert "ComponentFieldAuthoringMixin" in source
     assert "ComponentRuntimeAccessMixin" not in source
@@ -1250,7 +1310,7 @@ def test_lifecycle_mixin_has_no_cast_accessor_indirection() -> None:
 
 @pytest.mark.fast_always
 def test_component_contract_modules_share_field_name_deduplication_owner() -> None:
-    field_names_module = importlib.import_module("vercor.components._field_names")
+    field_names_module = importlib.import_module("vercor._field_names")
     private_contracts_module = importlib.import_module("vercor.components._contracts")
 
     assert field_names_module.unique_field_names(("a", "b", "a")) == ("a", "b")
@@ -1270,8 +1330,8 @@ def test_component_contract_modules_share_field_name_deduplication_owner() -> No
     )
     assert "def _unique_field_names(" not in contracts_source
     assert "def unique_field_names(" not in private_contracts_source
-    assert "vercor.components._field_names" in contracts_source
-    assert "vercor.components._field_names" in private_contracts_source
+    assert "vercor._field_names" in contracts_source
+    assert "vercor._field_names" in private_contracts_source
 
 
 @pytest.mark.fast_always
@@ -1440,7 +1500,7 @@ def test_multi_exchange_setup_scripts_use_shared_add_exchanges_helper() -> None:
 def test_slab_driver_uses_runtime_views_for_ice_diagnostics() -> None:
     slab_source = Path("examples/run_slab_driver.py").read_text(encoding="utf-8")
 
-    assert 'names=("ATM", "OCN", "LND", "ICE")' in slab_source
+    assert 'final_state.components(("ATM", "OCN", "LND", "ICE"))' in slab_source
     assert 'views["ICE"].field("ice_fraction")' in slab_source
     assert 'get_component_state("ICE").data.get("ice_fraction")' not in slab_source
 
@@ -1601,7 +1661,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert not hasattr(clock_module, "ModelDateTime")
     assert not hasattr(clock_module.Clock, "days_per_year")
     assert not hasattr(clock_module.Clock, "fixed_30_day_months")
-    assert callable(grid_geometry_module.make_rectilinear_grid)
+    assert not hasattr(grid_geometry_module, "make_rectilinear_grid")
     assert callable(grid_geometry_module.centers_to_edges)
     assert not hasattr(grid_masks_module, "grids_identical")
     assert not hasattr(vertical_module, "compute_pressure_levels")
@@ -2115,7 +2175,8 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def accumulate_output_variables(" not in period_averages_source
     assert "def write_period_average_netcdf(" in period_files_source
     assert "class _ComponentOutputAdapter" in output_adapters_source
-    assert "class ComponentOutput" in output_adapters_source
+    assert "class ComponentOutput" not in output_adapters_source
+    assert "class ComponentOutput" in output_public_adapters_source
     assert "class ComponentOutputAdapter" not in output_public_adapters_source
     assert "accumulate_output_variables(" not in output_adapters_source
     assert "self._accumulator.add_samples(" in output_adapters_source

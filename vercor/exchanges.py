@@ -42,6 +42,7 @@ class Exchange:
         source: str,
         target: str,
         fields: Sequence[ExchangeField],
+        *,
         regrid: RegridderFactory = bilinear,
         label: str | None = None,
     ) -> None:

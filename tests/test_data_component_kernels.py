@@ -25,7 +25,6 @@ from vercor.setups.data.erainterim_ocean import (
     _assemble_erainterim_latitude,
     _binary_ocean_mask_from_salinity,
 )
-from vercor.runtime.stores import RuntimeFieldStore
 from vercor.state import ComponentState
 from vercor.settings import Settings
 
@@ -118,16 +117,12 @@ def test_total_surface_temperature_diagnostic_uses_runtime_view_fields() -> None
     view = ComponentState(
         name="ATM",
         grid=None,  # type: ignore[arg-type]
-        incoming=RuntimeFieldStore.from_mapping(
-            {
-                "land_surface_temperature": jnp.asarray(
-                    [[jnp.nan, 270.0], [271.0, jnp.nan]]
-                ),
-                "sea_surface_temperature": jnp.asarray(
-                    [[272.0, jnp.nan], [273.0, 274.0]]
-                ),
-            }
-        ),
+        incoming={
+            "land_surface_temperature": jnp.asarray(
+                [[jnp.nan, 270.0], [271.0, jnp.nan]]
+            ),
+            "sea_surface_temperature": jnp.asarray([[272.0, jnp.nan], [273.0, 274.0]]),
+        },
     )
 
     total = diagnostics_module.total_surface_temperature(view)

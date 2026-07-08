@@ -105,9 +105,7 @@ def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
     comp = ComponentState(
         name="DUMMY",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])}
-        ),
+        fields={"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])},
     )
 
     assert np.isclose(safe_component_nanmean(comp, "foo"), 3.0)
@@ -124,11 +122,9 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
     view = ComponentState(
         name="ATM",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping({"shared": jnp.asarray(1.0)}),
-        incoming=RuntimeFieldStore.from_mapping(
-            {"shared": jnp.asarray(2.0), "only_incoming": jnp.asarray(3.0)}
-        ),
-        outgoing=RuntimeFieldStore.from_mapping({"only_outgoing": jnp.asarray(4.0)}),
+        fields={"shared": jnp.asarray(1.0)},
+        incoming={"shared": jnp.asarray(2.0), "only_incoming": jnp.asarray(3.0)},
+        outgoing={"only_outgoing": jnp.asarray(4.0)},
     )
 
     assert [float(value) for value in view.field_candidates("shared")] == [1.0, 2.0]
@@ -159,24 +155,20 @@ def test_print_component_field_means_table_with_callable_metric(
     atm = ComponentState(
         name="ATM",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u": np.array([[3.0, 4.0], [0.0, 0.0]]),
-                "v": np.array([[4.0, 3.0], [0.0, 0.0]]),
-                "temp": np.array([[280.0, 282.0], [284.0, 286.0]]),
-            }
-        ),
+        fields={
+            "u": np.array([[3.0, 4.0], [0.0, 0.0]]),
+            "v": np.array([[4.0, 3.0], [0.0, 0.0]]),
+            "temp": np.array([[280.0, 282.0], [284.0, 286.0]]),
+        },
     )
     ocn = ComponentState(
         name="OCN",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u": np.array([[1.0, 2.0], [0.0, 0.0]]),
-                "v": np.array([[2.0, 1.0], [0.0, 0.0]]),
-                "temp": np.array([[270.0, 271.0], [272.0, 273.0]]),
-            }
-        ),
+        fields={
+            "u": np.array([[1.0, 2.0], [0.0, 0.0]]),
+            "v": np.array([[2.0, 1.0], [0.0, 0.0]]),
+            "temp": np.array([[270.0, 271.0], [272.0, 273.0]]),
+        },
     )
 
     print_component_field_means_table(
@@ -217,24 +209,20 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     atm = ComponentState(
         name="ATM",
         grid=atm_grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
-                "u": jnp.ones((2, 3)),
-                "v": jnp.zeros((2, 3)),
-            }
-        ),
+        fields={
+            "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
+            "u": jnp.ones((2, 3)),
+            "v": jnp.zeros((2, 3)),
+        },
     )
     ocn = ComponentState(
         name="OCN",
         grid=ocn_grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "scalar": np.array([[7.0, 10.0], [8.0, 11.0], [9.0, 12.0]]),
-                "u": np.zeros((3, 2)),
-                "v": np.ones((3, 2)),
-            }
-        ),
+        fields={
+            "scalar": np.array([[7.0, 10.0], [8.0, 11.0], [9.0, 12.0]]),
+            "u": np.zeros((3, 2)),
+            "v": np.ones((3, 2)),
+        },
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
@@ -288,7 +276,7 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         rows=[
             (
                 "ATM",
-                ComponentState.from_component_state("ATM", grid, runtime_state),
+                ComponentState._from_runtime("ATM", grid, runtime_state),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",
@@ -316,22 +304,16 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
     runtime_view = ComponentState(
         name="ATM",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u_velocity": jnp.ones(grid.shape),
-                "v_velocity": jnp.zeros(grid.shape),
-            }
-        ),
-        incoming=RuntimeFieldStore.from_mapping(
-            {
-                "land_surface_temperature": jnp.asarray(
-                    [[jnp.nan, 270.0], [271.0, jnp.nan]]
-                ),
-                "sea_surface_temperature": jnp.asarray(
-                    [[272.0, jnp.nan], [273.0, 274.0]]
-                ),
-            }
-        ),
+        fields={
+            "u_velocity": jnp.ones(grid.shape),
+            "v_velocity": jnp.zeros(grid.shape),
+        },
+        incoming={
+            "land_surface_temperature": jnp.asarray(
+                [[jnp.nan, 270.0], [271.0, jnp.nan]]
+            ),
+            "sea_surface_temperature": jnp.asarray([[272.0, jnp.nan], [273.0, 274.0]]),
+        },
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(

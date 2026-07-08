@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     AuthorFieldValues,
     ComponentHooks,
+    ComponentStepReturn,
     FieldNames,
 )
 from vercor.components._contracts import (
@@ -20,7 +21,7 @@ from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor.types import RuntimeArray
 
 
 class DataComponent(Component):
@@ -30,8 +31,7 @@ class DataComponent(Component):
     limited to importing/exporting seeded fields through the coupler contract.
     Data components must not own active runtime stepping behavior; compute
     plotting-only diagnostics outside runtime state. Active differentiable models
-    should inherit :class:`Component` and implement
-    :meth:`Component.step_runtime_state` instead.
+    should inherit :class:`Component` and implement :meth:`Component.step`.
     """
 
     @classmethod
@@ -78,16 +78,16 @@ class DataComponent(Component):
         self._field_spec = merge_component_outputs(self.field_spec, fields.keys())
         return self
 
-    @final
-    def step_runtime_state(
+    def step(
         self,
-        component_state: "RuntimeComponentState",
-        context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Return the runtime state unchanged for data-only components."""
+        fields: Mapping[str, "RuntimeArray"],
+        context: "StepContext",
+        payload: Any | None = None,
+    ) -> ComponentStepReturn:
+        """Return no updates for data-only components."""
 
-        _ = context
-        return component_state
+        _ = fields, context, payload
+        return {}
 
 
 __all__ = ["DataComponent"]

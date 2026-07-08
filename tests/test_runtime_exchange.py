@@ -57,7 +57,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
     regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder(scale=2.0)}
 
     def loss(source: jax.Array, mask: jax.Array) -> jax.Array:
-        state = RunState(
+        state = RunState._from_runtime(
             component_names=("OCN", "ATM"),
             components=(
                 _component("OCN", outgoing={"temperature": source}),
@@ -99,7 +99,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder()}
     u_velocity = jnp.full((2, 2), 5.0)
     v_velocity = jnp.full((2, 2), -2.0)
-    state = RunState(
+    state = RunState._from_runtime(
         component_names=("OCN", "ATM"),
         components=(
             _component(

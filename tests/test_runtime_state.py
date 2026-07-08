@@ -772,7 +772,7 @@ def test_examples_use_coupler_runtime_component_view_factory() -> None:
 
     for source in (slab_driver_source, data_driver_source, jcm_slab_source):
         assert "RuntimeComponentState.from_coupler_state" not in source
-        assert "cpl.views(final_state" in source
+        assert "final_state.components(" in source
 
 
 def test_examples_import_concrete_components_directly() -> None:
@@ -956,7 +956,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     assert not hasattr(component, "name")
     assert not hasattr(component, "fields_to_import")
     assert not hasattr(component, "fields_to_export")
-    state = RunState(
+    state = RunState._from_runtime(
         component_names=("ATM",),
         components=(component,),
         fractional_masks=RuntimeFieldStore.from_mapping(
@@ -990,7 +990,7 @@ def test_runtime_coupler_state_restores_component_index_cache_after_pytree_round
         incoming=RuntimeFieldStore.empty(),
         outgoing=RuntimeFieldStore.empty(),
     )
-    state = RunState(
+    state = RunState._from_runtime(
         component_names=("ATM", "OCN"),
         components=(component, component),
         fractional_masks=RuntimeFieldStore.empty(),

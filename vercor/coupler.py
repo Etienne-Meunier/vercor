@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import MappingProxyType
@@ -225,11 +226,12 @@ class Coupler:
     ) -> ComponentState:
         """Return a component view for diagnostics and output."""
 
-        return _runtime_facade.runtime_component_view(
-            components=self.components,
-            runtime_state=state,
-            name=name,
+        warnings.warn(
+            "Coupler.view() is deprecated; use RunState.component(name) instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        return state.component(name)
 
     def views(
         self,
@@ -238,10 +240,13 @@ class Coupler:
     ) -> dict[str, ComponentState]:
         """Return component views for diagnostics and output."""
 
-        return _runtime_facade.runtime_component_views(
-            components=self.components,
-            runtime_state=state,
-            names=names,
+        warnings.warn(
+            "Coupler.views() is deprecated; use RunState.components(names) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return dict(
+            state.components(tuple(self.components) if names is None else names)
         )
 
     def write_outputs(

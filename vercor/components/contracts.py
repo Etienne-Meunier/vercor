@@ -8,7 +8,7 @@ from vercor.components.contexts import (
     SetupContext,
     StepContext,
 )
-from vercor.components._field_names import unique_field_names as _unique_field_names
+from vercor._field_names import unique_field_names as _unique_field_names
 from vercor.types import RuntimeArray
 
 KEEP_PAYLOAD: Final = object()

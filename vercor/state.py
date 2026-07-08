@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
+import warnings
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import jax
@@ -15,6 +16,8 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.runtime.state import RuntimeComponentState
+
+FieldStore: TypeAlias = Literal["data", "incoming", "outgoing"]
 
 
 @jax.tree_util.register_pytree_node_class
@@ -31,14 +34,43 @@ class RunState(PyTreeNodeMixin):
     _fractional_masks: RuntimeFieldStore
     component_indices: dict[str, int] = field(init=False, repr=False, compare=False)
 
-    def __init__(
+    def __init__(self) -> None:
+        """Block direct public construction of opaque runtime state."""
+
+        raise TypeError(
+            "RunState is created by Coupler.initial_state() or Coupler.run(); "
+            "use those Coupler methods to create coupled runtime state."
+        )
+
+    @classmethod
+    def _from_runtime(
+        cls,
+        *,
+        component_names: tuple[str, ...],
+        components: tuple["RuntimeComponentState", ...],
+        fractional_masks: RuntimeFieldStore,
+        component_grids: tuple[RectilinearGrid | None, ...] = (),
+    ) -> "RunState":
+        """Create an opaque public run state from private runtime containers."""
+
+        state = object.__new__(cls)
+        state._initialize_runtime(
+            component_names=component_names,
+            components=components,
+            fractional_masks=fractional_masks,
+            component_grids=component_grids,
+        )
+        return state
+
+    def _initialize_runtime(
         self,
+        *,
         component_names: tuple[str, ...],
         components: tuple["RuntimeComponentState", ...],
         fractional_masks: RuntimeFieldStore,
         component_grids: tuple[RectilinearGrid | None, ...] = (),
     ) -> None:
-        """Create an opaque public run state from private runtime containers."""
+        """Assign private runtime containers after construction is authorized."""
 
         object.__setattr__(self, "component_names", component_names)
         object.__setattr__(
@@ -73,11 +105,44 @@ class RunState(PyTreeNodeMixin):
     def component(self, name: str) -> "ComponentState":
         """Return a public field view for one component."""
 
-        return ComponentState.from_component_state(
+        return ComponentState._from_runtime(
             name,
             self.component_grids[self._component_index(name)],
             self._component_state(name),
         )
+
+    def components(
+        self,
+        names: Sequence[str] | None = None,
+    ) -> Mapping[str, "ComponentState"]:
+        """Return public field views for selected components."""
+
+        selected_names = self.component_names if names is None else tuple(names)
+        return MappingProxyType({name: self.component(name) for name in selected_names})
+
+    def with_fields(
+        self,
+        component: str,
+        fields: Mapping[str, RuntimeArray],
+        *,
+        store: FieldStore = "data",
+    ) -> "RunState":
+        """Return a new run state with existing component fields replaced."""
+
+        component_state = self._component_state(component)
+        runtime_store = _runtime_store(component_state, store)
+        missing = tuple(field for field in fields if field not in runtime_store)
+        if missing:
+            raise KeyError(f"Runtime field {missing[0]!r} not found")
+
+        updated_store = runtime_store.replace_many(fields)
+        if store == "data":
+            updated_component = component_state.with_data(updated_store)
+        elif store == "incoming":
+            updated_component = component_state.with_incoming(updated_store)
+        else:
+            updated_component = component_state.with_outgoing(updated_store)
+        return self._with_component_state(component, updated_component)
 
     def with_component_fields(
         self,
@@ -86,14 +151,13 @@ class RunState(PyTreeNodeMixin):
     ) -> "RunState":
         """Return a new run state with existing data fields replaced."""
 
-        component_state = self._component_state(name)
-        missing = tuple(field for field in fields if field not in component_state.data)
-        if missing:
-            raise KeyError(f"Runtime field {missing[0]!r} not found")
-        return self._with_component_state(
-            name,
-            component_state.with_data(component_state.data.replace_many(fields)),
+        warnings.warn(
+            "RunState.with_component_fields() is deprecated; use "
+            "RunState.with_fields(component, fields) instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        return self.with_fields(name, fields)
 
     def _component_index(self, name: str) -> int:
         try:
@@ -115,7 +179,7 @@ class RunState(PyTreeNodeMixin):
 
         components = list(self._components)
         components[self._component_index(name)] = component_state
-        return RunState(
+        return RunState._from_runtime(
             component_names=self.component_names,
             components=tuple(components),
             fractional_masks=self._fractional_masks,
@@ -149,29 +213,18 @@ class ComponentState:
         self,
         name: str,
         grid: RectilinearGrid | None,
-        data: RuntimeFieldStore | None = None,
-        incoming: RuntimeFieldStore | None = None,
-        outgoing: RuntimeFieldStore | None = None,
+        *,
+        fields: Mapping[str, Any] | None = None,
+        incoming: Mapping[str, Any] | None = None,
+        outgoing: Mapping[str, Any] | None = None,
     ) -> None:
-        """Create a public component-state view from runtime stores."""
+        """Create a public component-state view from plain field mappings."""
 
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "grid", grid)
-        object.__setattr__(
-            self,
-            "_data",
-            RuntimeFieldStore.empty() if data is None else data,
-        )
-        object.__setattr__(
-            self,
-            "_incoming",
-            RuntimeFieldStore.empty() if incoming is None else incoming,
-        )
-        object.__setattr__(
-            self,
-            "_outgoing",
-            RuntimeFieldStore.empty() if outgoing is None else outgoing,
-        )
+        object.__setattr__(self, "_data", _field_store_from_mapping(fields))
+        object.__setattr__(self, "_incoming", _field_store_from_mapping(incoming))
+        object.__setattr__(self, "_outgoing", _field_store_from_mapping(outgoing))
 
     def field_candidates(self, name: str) -> list[RuntimeArray]:
         """Return all runtime fields named ``name`` in data, incoming, outgoing order."""
@@ -182,7 +235,7 @@ class ComponentState:
         self,
         name: str,
         *,
-        store: Literal["data", "incoming", "outgoing"] | None = None,
+        store: FieldStore | None = None,
     ) -> RuntimeArray:
         """Return one runtime field, optionally constrained to one store."""
 
@@ -194,30 +247,44 @@ class ComponentState:
     def fields(
         self,
         *,
-        store: Literal["data", "incoming", "outgoing"] = "data",
+        store: FieldStore = "data",
     ) -> Mapping[str, RuntimeArray]:
         """Return one runtime store as a read-only field mapping."""
 
         return MappingProxyType(self._store(store).to_mapping())
 
-    def iter_store_fields(
+    def iter_fields(
         self,
-        *store_names: str,
-    ) -> Iterator[tuple[str, str, RuntimeArray]]:
+        *stores: FieldStore,
+    ) -> Iterator[tuple[FieldStore, str, RuntimeArray]]:
         """Yield ``(store_name, field_name, value)`` for selected runtime stores."""
 
-        stores = self._stores()
-        selected_store_names = store_names or tuple(stores)
+        runtime_stores = self._stores()
+        selected_store_names = stores or tuple(runtime_stores)
         for store_name in selected_store_names:
             try:
-                store = stores[store_name]
+                store = runtime_stores[store_name]
             except KeyError as exc:
                 raise KeyError(f"Runtime view store {store_name!r} not found") from exc
             for field_name, value in zip(store.field_names, store.values, strict=True):
                 yield store_name, field_name, value
 
+    def iter_store_fields(
+        self,
+        *store_names: FieldStore,
+    ) -> Iterator[tuple[FieldStore, str, RuntimeArray]]:
+        """Deprecated wrapper for :meth:`iter_fields`."""
+
+        warnings.warn(
+            "ComponentState.iter_store_fields() is deprecated; use "
+            "ComponentState.iter_fields() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        yield from self.iter_fields(*store_names)
+
     @classmethod
-    def from_component_state(
+    def _from_runtime(
         cls,
         name: str,
         grid: RectilinearGrid | None,
@@ -225,15 +292,15 @@ class ComponentState:
     ) -> "ComponentState":
         """Create a field view from component metadata and runtime state."""
 
-        return cls(
-            name=name,
-            grid=grid,
-            data=component_state.data,
-            incoming=component_state.incoming,
-            outgoing=component_state.outgoing,
-        )
+        view = object.__new__(cls)
+        object.__setattr__(view, "name", name)
+        object.__setattr__(view, "grid", grid)
+        object.__setattr__(view, "_data", component_state.data)
+        object.__setattr__(view, "_incoming", component_state.incoming)
+        object.__setattr__(view, "_outgoing", component_state.outgoing)
+        return view
 
-    def _stores(self) -> dict[str, RuntimeFieldStore]:
+    def _stores(self) -> dict[FieldStore, RuntimeFieldStore]:
         return {
             "data": self._data,
             "incoming": self._incoming,
@@ -242,12 +309,41 @@ class ComponentState:
 
     def _store(
         self,
-        name: Literal["data", "incoming", "outgoing"],
+        name: FieldStore,
     ) -> RuntimeFieldStore:
         try:
             return self._stores()[name]
         except KeyError as exc:
             raise KeyError(f"Runtime view store {name!r} not found") from exc
+
+
+def _field_store_from_mapping(
+    fields: Mapping[str, Any] | None,
+) -> RuntimeFieldStore:
+    """Return a runtime field store from public plain field mappings."""
+
+    if fields is None:
+        return RuntimeFieldStore.empty()
+    if isinstance(fields, RuntimeFieldStore):
+        raise TypeError(
+            "ComponentState expects plain field mappings, not runtime stores"
+        )
+    return RuntimeFieldStore.from_mapping(fields)
+
+
+def _runtime_store(
+    component_state: "RuntimeComponentState",
+    store: FieldStore,
+) -> RuntimeFieldStore:
+    """Return a runtime component store by public store name."""
+
+    if store == "data":
+        return component_state.data
+    if store == "incoming":
+        return component_state.incoming
+    if store == "outgoing":
+        return component_state.outgoing
+    raise KeyError(f"Runtime view store {store!r} not found")
 
 
 if TYPE_CHECKING:

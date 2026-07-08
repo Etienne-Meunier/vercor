@@ -86,9 +86,9 @@ mean-output conversion, single-record snapshot storage, period-file write
 lifecycle, and NetCDF writing live in `vercor.output`;
 model-specific output helpers live beside their setup adapters in
 `vercor.setups.external` and adapt native model objects into that shared output
-boundary. Setup-state constructors instantiate `ComponentOutputAdapter`
-directly from model-specific output constants and helpers; output modules do
-not keep one-case adapter factories.
+boundary. Setup-state constructors instantiate the private
+`_ComponentOutputAdapter` directly from model-specific output constants and
+helpers; output modules do not keep one-case adapter factories.
 VerCOR-owned period output samples, accumulators, extracted variables, mean
 variables, and runtime-view fields stay JAX-backed until the file boundary;
 `vercor.host_arrays` owns the final host transfer. NetCDF time-coordinate
@@ -192,10 +192,10 @@ immutable runtime containers used during traced integration.
   `vercor.components.base` owns only the abstract differentiable `Component`
   contract, `vercor.components.data` owns `DataComponent`, and
   `vercor.components.host` owns `HostComponent`.
-  Field-name de-duplication lives in private
-  `vercor.components._field_names`, and component authoring methods for field
-  declarations, setup seeding, and settings updates live in private
-  `vercor.components._field_authoring`. Lifecycle hook storage lives on the
+  Field-name de-duplication lives in private `vercor._field_names`, and
+  component authoring methods for field declarations, setup seeding, and
+  settings updates live in private `vercor.components._field_authoring`.
+  Lifecycle hook storage lives on the
   private `_lifecycle_hooks` component field; constructors build one
   `ComponentLifecycleHooks` container and callable/data wrappers assign it
   directly. Default lifecycle dispatch lives in private
@@ -215,13 +215,11 @@ immutable runtime containers used during traced integration.
   type-only `Component` annotations where they need concrete component shape.
   `vercor.components._protocols` is reserved for the runtime-checkable
   `HostRuntimeExecutionProtocol`, so host-runtime detection remains structural
-  rather than a concrete component class check. The protocol requires only
-  `step_host_runtime_state()` because every `Component` already owns the
-  differentiable `step_runtime_state()` contract. Component-facing runtime-field
-  adapters live in private `vercor.components._runtime_fields`, runtime-field
-  convenience methods live directly on `Component`, and component-facing
-  required-field validation lives in private
-  `vercor.components._runtime_validation`.
+  rather than a concrete component class check. The protocol requires only the
+  private `_requires_host_runtime()` marker. Component-facing runtime-field
+  adapters and runtime-store mutation helpers live in private
+  `vercor.components._runtime_fields`, and component-facing required-field
+  validation lives in private `vercor.components._runtime_validation`.
   Component host/scanned execution policy lives in internal
   `vercor.components.runtime_execution`, and setup validation lives in internal
   `vercor.components.setup_validation`, giving runtime modules explicit
@@ -236,35 +234,32 @@ immutable runtime containers used during traced integration.
   `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
   contract before traced execution. Subclasses should seed fields with
   `seed_field()` or `seed_fields()` for scalar or array-like author values
-  rather than mutating `data` directly; step methods
-  should read fields with `runtime_field()`, `runtime_fields()`,
-  `runtime_field_or()`, or `runtime_field_or_zeros_like()` and return updates
-  with `with_runtime_fields()` where possible. These component helpers are
-  author-facing adapters in `vercor.components._runtime_fields` over
-  `RuntimeFieldStore` membership, mapping, zero-like fallback, and
-  existing-field replacement mechanics owned by the runtime; default fallback
-  normalization stays in the component adapter layer.
-  When a step also needs to replace runtime payload, `apply_step_result()`
-  applies either a field mapping or `StepResult` through the same validated
-  update path used by callable wrappers.
+  rather than mutating `data` directly; step methods should implement the
+  mapping-based `step(fields, context, payload=None)` contract and return a
+  field-update mapping or `StepResult(fields, payload)` when the runtime payload
+  must be replaced. Private runtime adapters in
+  `vercor.components.runtime_execution` translate between those public mappings
+  and `RuntimeFieldStore` membership, zero-like fallback, and existing-field
+  replacement mechanics owned by the runtime.
   `seed_declared_defaults()` seeds fields from a component's declared
   defaults, and the base `initialize()` hook now does this automatically when
-  subclasses do not need custom setup. Prefill hooks should use
-  `prefill_runtime_fields()` for ordinary output/default fields. Non-grid
+  subclasses do not need custom setup. Runtime prefill hooks are adapted through
+  private `vercor.components._runtime_fields` helpers for ordinary
+  output/default fields. Non-grid
   metadata such as hybrid-level coefficients belongs on component attributes or
   runtime payloads. Factory-created setup adapters should put non-runtime setup
   metadata in private `_setup_metadata` rather than attaching ad-hoc attributes
   to the component object. Examples include forcing-file provenance and
   diagnostic coefficients that should not enter runtime field validation or JAX
   scan state.
-  `Component` for differentiable active models and implement
-  `step_runtime_state()`. Use `DataComponent` for forcing/static data adapters
-  that intentionally keep the shared no-op runtime step and do not create
-  plotting-only runtime fields. Derived diagnostics, such as a combined land/sea
-  surface temperature used only for plots, belong in diagnostics or setups.
-  Use `HostComponent` for non-differentiable adapters and implement
-  `step_host_runtime_state()`; host-backed adapters must run through
-  `Coupler.run()` so VerCOR can select the Python host runtime path. Optional
+  `Component` for differentiable active models and implement `step(...)`. Use
+  `DataComponent` for forcing/static data adapters that intentionally keep the
+  shared no-op runtime step and do not create plotting-only runtime fields.
+  Derived diagnostics, such as a combined land/sea surface temperature used only
+  for plots, belong in diagnostics or setups. Use `HostComponent` for
+  non-differentiable adapters and implement the same mapping-based `step(...)`;
+  host-backed adapters must run through `Coupler.run()` so VerCOR can select the
+  Python host runtime path. Optional
   hooks include `initialize()`, `create_runtime_payload()`,
   `prefill_runtime_state_fields()`, and `validate_runtime_state()`. Callable
   wrappers may accept `(fields)`, `(fields, context)`, or
@@ -347,9 +342,10 @@ immutable runtime containers used during traced integration.
   diagnostics/output live in `vercor.state`. `ComponentState`,
   `runtime_field_candidates(...)`, and `runtime_field(...)` own
   data/incoming/outgoing lookup for explicit views and compatible runtime
-  states. `Coupler` exposes `initial_state()`, `view()`, and `views()` as the
-  public facade for runtime-state and component-state view creation; the longer
-  runtime-component method names have been removed.
+  states. `Coupler` exposes `initial_state()` and `run()` for runtime-state
+  creation, while `RunState.component(...)` and `RunState.components(...)` are
+  the canonical component-view factories. `Coupler.view(...)` and
+  `Coupler.views(...)` remain deprecated compatibility wrappers.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output.runtime` helpers, with
   `vercor.runtime.facade` validating and delegating output writes for
@@ -422,18 +418,18 @@ spinup policy, initialization, and the canonical `JCMState` bundle.
 setup state and binds runtime-owned lifecycle hooks directly without
 reexporting state bundles or owning runtime payload/setup-state internals.
 JAXGCM output extraction, coordinate adaptation, and unit metadata live in
-`vercor.setups.external.jax_gcm_output`; `JAXGCMSetupState` owns a
-`vercor.output.ComponentOutputAdapter` that streams prediction objects into the
-shared JAX-backed sum/count period accumulator instead of retaining all period
-samples or calling xarray adapters. JAXGCM-specific output helpers construct
-the configured adapter and delegate prediction extraction, coordinate/metadata
+`vercor.setups.external.jax_gcm_output`; `JAXGCMSetupState` owns a private
+`_ComponentOutputAdapter` that streams prediction objects into the shared
+JAX-backed sum/count period accumulator instead of retaining all period samples
+or calling xarray adapters. JAXGCM-specific output helpers construct the
+configured adapter and delegate prediction extraction, coordinate/metadata
 builders, accumulation, cadence checks, and file writes through the shared
 adapter record boundary. Final JAXGCM snapshots are registered by the external
 factory and are written from the final runtime payload's `JCMState`, not from
 runtime data fields or declared component outputs.
 Shared output extension primitives for adapter authors are exported from
-`vercor.output`: `OutputVariable`, `ComponentOutputAdapter`, and snapshot-writer
-registration helpers. Shared cadence, calendar time metadata, dataset
+`vercor.output`: `OutputVariable`, `ComponentOutput`, and snapshot-writer
+type aliases. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
 orchestration, and direct `h5netcdf` writing live in
 `vercor.output.time`, `vercor.output.datasets`,
@@ -452,7 +448,7 @@ finite-value count array per variable as JAX arrays, preserving current
 extraction, native Veros variable metadata handling, ghost-cell removal, and
 write-time native Veros spatial-axis ordering policy live in
 `vercor.setups.external.veros_output`; `VerosGCMSetupState` owns the same
-shared `ComponentOutputAdapter`, and `vercor.setups.external.veros_runtime`
+private `_ComponentOutputAdapter`, and `vercor.setups.external.veros_runtime`
 streams selected snapshots through the Veros output helper, which delegates
 accumulation, cadence checks, and file writes to the shared adapter record
 boundary with the same day/month/year cadence policy used by JAXGCM. Veros
@@ -482,7 +478,7 @@ setup-time model resources, timestep alignment, field seeding, and lifecycle
 callbacks, while `vercor.setups.external.camulator` remains the thin public
 factory. CAMulator forecast-increment output remains the default when
 `output_frequency` is unset; when `output_frequency` is `day`, `month`, or
-`year`, `CAMulatorGCMSetupState` owns the same shared `ComponentOutputAdapter`
+`year`, `CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter`
 and `vercor.setups.external.camulator_runtime` streams native prediction
 tensors through the CAMulator output helper, which delegates average
 accumulation, cadence checks, and file writes to the shared adapter record

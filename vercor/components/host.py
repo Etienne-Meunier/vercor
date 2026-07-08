@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, final
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     AuthorFieldValues,
     AuthorStepCallable,
     ComponentHooks,
+    ComponentStepReturn,
     FieldSpec,
     FieldNames,
 )
@@ -23,11 +24,16 @@ from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor.types import RuntimeArray
 
 
 class HostComponent(Component):
     """Base class for host-backed adapters that cannot run inside JAX scan."""
+
+    def _requires_host_runtime(self) -> bool:
+        """Return whether this component requires the host runtime path."""
+
+        return True
 
     @classmethod
     def from_step(
@@ -65,29 +71,19 @@ class HostComponent(Component):
             lifecycle_hooks=options.lifecycle_hooks,
         )
 
-    @final
-    def step_runtime_state(
+    def step(
         self,
-        component_state: "RuntimeComponentState",
-        context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Reject accidental execution on the differentiable scanned runtime."""
+        fields: Mapping[str, "RuntimeArray"],
+        context: "StepContext",
+        payload: Any | None = None,
+    ) -> ComponentStepReturn:
+        """Return field updates for one host-runtime step."""
 
-        _ = component_state, context
-        component_name = getattr(self, "name", self.__class__.__name__)
+        _ = fields, context, payload
         raise ComponentError(
-            f"Component '{component_name}' is host-backed and cannot run through "
-            "the differentiable scanned runtime. Use Coupler.run() so VerCOR can "
-            "select the host runtime path, or implement a differentiable Component."
+            f"Host component '{self.name}' must implement step(...) or be created "
+            "with HostComponent.from_step(...)."
         )
-
-    @abstractmethod
-    def step_host_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Advance this non-differentiable host adapter by one runtime step."""
 
 
 class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
@@ -122,14 +118,15 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
             lifecycle_hooks=lifecycle_hooks,
         )
 
-    def step_host_runtime_state(
+    def step(
         self,
-        component_state: "RuntimeComponentState",
-        context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Advance this callable-backed host component one step."""
+        fields: Mapping[str, "RuntimeArray"],
+        context: "StepContext",
+        payload: Any | None = None,
+    ) -> ComponentStepReturn:
+        """Return field updates from the callable-backed host component step."""
 
-        return self._step_callable_runtime_state(component_state, context)
+        return self._step(fields, context, payload)
 
 
 __all__ = ["HostComponent"]

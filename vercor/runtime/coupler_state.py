@@ -48,7 +48,7 @@ def runtime_state_from_components(
     runtime_fractional_masks = {
         exchange_key_name(*key): value for key, value in fractional_masks.items()
     }
-    return RunState(
+    return RunState._from_runtime(
         component_names=tuple(components.keys()),
         components=runtime_components,
         fractional_masks=RuntimeFieldStore.from_mapping(runtime_fractional_masks),

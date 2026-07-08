@@ -58,7 +58,8 @@ def test_host_runtime_execution_protocol_is_only_private_structural_contract() -
     assert "class ComponentExecutionProtocol" not in protocol_source
     assert "@runtime_checkable\nclass HostRuntimeExecutionProtocol" in protocol_source
     assert "def step_runtime_state(" not in host_execution_protocol_source
-    assert "def step_host_runtime_state(" in host_execution_protocol_source
+    assert "def step_host_runtime_state(" not in host_execution_protocol_source
+    assert "def _requires_host_runtime(" in host_execution_protocol_source
     assert "from vercor.components.base import Component" not in protocol_source
     assert "from vercor.components.host import HostRuntimeComponent" not in (
         protocol_source

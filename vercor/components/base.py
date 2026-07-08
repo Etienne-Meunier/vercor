@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -20,9 +20,6 @@ from vercor.components._callable_wrappers import (
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
-import vercor.components._runtime_fields as _runtime_field_adapters
-import vercor.components._runtime_validation as _runtime_field_validation
-from vercor.dtypes import PrecisionPolicy
 from vercor.grids import RectilinearGrid
 from vercor.output.adapters import ComponentOutput
 from vercor.settings import Settings
@@ -30,7 +27,6 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
 
 
 __all__ = [
@@ -49,11 +45,11 @@ class Component(
     Component instances own mutable setup-time metadata: name, grid, seed data,
     and component-specific settings. During coupling, the coupler copies those
     seed fields into immutable runtime state containers so JAX can trace the
-    integration. Active differentiable components must implement
-    :meth:`step_runtime_state` while preserving its signature. Data-only forcing
-    adapters should inherit :class:`vercor.components.DataComponent`;
-    non-differentiable adapters should inherit
-    :class:`vercor.components.HostComponent`.
+    integration. Active differentiable components implement :meth:`step`, which
+    receives read-only field mappings and returns field updates or
+    :class:`vercor.components.StepResult`. Data-only forcing adapters should
+    inherit :class:`vercor.components.DataComponent`; non-differentiable adapters
+    should inherit :class:`vercor.components.HostComponent`.
 
     Common exchange-field conventions:
         - fields use SI units
@@ -149,129 +145,52 @@ class Component(
             lifecycle_hooks=options.lifecycle_hooks,
         )
 
-    @abstractmethod
-    def step_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Return this differentiable component advanced by one runtime step."""
+    @property
+    def data(self) -> None:
+        """Block removed public setup-data access."""
 
-    def runtime_fields(
-        self,
-        component_state: "RuntimeComponentState",
-    ) -> dict[str, RuntimeArray]:
-        """Return runtime data fields as a plain name-to-array mapping."""
-
-        return _runtime_field_adapters.runtime_fields(component_state)
-
-    def runtime_field(
-        self,
-        component_state: "RuntimeComponentState",
-        name: str,
-    ) -> RuntimeArray:
-        """Return one runtime data field with a component-oriented error."""
-
-        return _runtime_field_adapters.runtime_field(self, component_state, name)
-
-    def has_runtime_field(
-        self,
-        component_state: "RuntimeComponentState",
-        name: str,
-    ) -> bool:
-        """Return whether one runtime data field exists."""
-
-        return _runtime_field_adapters.has_runtime_field(component_state, name)
-
-    def runtime_field_or(
-        self,
-        component_state: "RuntimeComponentState",
-        name: str,
-        default: object,
-        policy: PrecisionPolicy = None,
-    ) -> RuntimeArray:
-        """Return one runtime field or a grid-shaped/default array fallback."""
-
-        return _runtime_field_adapters.runtime_field_or(
-            self,
-            component_state,
-            name,
-            default,
-            policy,
+        raise AttributeError(
+            "Component.data is not public API; use seed_field()/seed_fields() "
+            "for setup fields or RunState.component(...).field(...) for results."
         )
 
-    def runtime_field_or_zeros_like(
-        self,
-        component_state: "RuntimeComponentState",
-        name: str,
-        like: str | RuntimeArray,
-    ) -> RuntimeArray:
-        """Return one runtime field or zeros matching another field/array."""
-
-        return _runtime_field_adapters.runtime_field_or_zeros_like(
-            self,
-            component_state,
-            name,
-            like,
+    @data.setter
+    def data(self, value: object) -> None:
+        _ = value
+        raise AttributeError(
+            "Component.data is not public API; use seed_field()/seed_fields() "
+            "for setup fields or RunState.component(...).field(...) for results."
         )
 
-    def with_runtime_fields(
+    @property
+    def setup_metadata(self) -> None:
+        """Block removed public setup-metadata access."""
+
+        raise AttributeError(
+            "Component.setup_metadata is not public API; setup metadata is "
+            "adapter-private."
+        )
+
+    @setup_metadata.setter
+    def setup_metadata(self, value: object) -> None:
+        _ = value
+        raise AttributeError(
+            "Component.setup_metadata is not public API; setup metadata is "
+            "adapter-private."
+        )
+
+    def step(
         self,
-        component_state: "RuntimeComponentState",
         fields: Mapping[str, RuntimeArray],
-    ) -> "RuntimeComponentState":
-        """Return ``component_state`` with existing runtime data fields updated."""
+        context: "StepContext",
+        payload: Any | None = None,
+    ) -> _ComponentStepReturn:
+        """Return runtime field updates for one component step."""
 
-        return _runtime_field_adapters.with_runtime_fields(
-            self,
-            component_state,
-            fields,
-        )
-
-    def apply_step_result(
-        self,
-        component_state: "RuntimeComponentState",
-        result: _ComponentStepReturn,
-    ) -> "RuntimeComponentState":
-        """Apply a field mapping or ``StepResult`` to runtime state."""
-
-        return _runtime_field_adapters.apply_step_result(
-            self,
-            component_state,
-            result,
-        )
-
-    def require_runtime_fields(
-        self,
-        component_state: "RuntimeComponentState",
-        *names: str,
-    ) -> None:
-        """Validate that named runtime data fields use canonical grid layout."""
-
-        _runtime_field_validation.require_runtime_fields(
-            self,
-            component_state,
-            *names,
-        )
-
-    def prefill_runtime_fields(
-        self,
-        data: dict[str, RuntimeArray],
-        field_spec: _FieldSpec | None = None,
-        *,
-        outputs: _FieldNames = (),
-        defaults: _AuthorFieldValues = None,
-        policy: PrecisionPolicy = None,
-    ) -> None:
-        """Prefill a mutable runtime data mapping with declared fields."""
-
-        _runtime_field_adapters.prefill_runtime_fields(
-            self,
-            data,
-            field_spec,
-            outputs=outputs,
-            defaults=defaults,
-            policy=policy,
+        _ = fields, context, payload
+        raise NotImplementedError(
+            f"Component '{self.name}' must implement step(...) or be created "
+            "with Component.from_step(...)."
         )
 
     def __str__(self) -> str:
@@ -319,11 +238,12 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
             lifecycle_hooks=lifecycle_hooks,
         )
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: "RuntimeComponentState",
+        fields: Mapping[str, RuntimeArray],
         context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Advance this callable-backed differentiable component one step."""
+        payload: Any | None = None,
+    ) -> _ComponentStepReturn:
+        """Return field updates from the callable-backed component step."""
 
-        return self._step_callable_runtime_state(component_state, context)
+        return self._step(fields, context, payload)

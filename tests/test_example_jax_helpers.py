@@ -70,12 +70,10 @@ def test_component_vector_speed_reads_runtime_component_view() -> None:
     view = ComponentState(
         name="ATM",
         grid=grid,
-        incoming=RuntimeFieldStore.from_mapping(
-            {
-                "u": jnp.asarray([[5.0, 0.0], [12.0, 0.0]]),
-                "v": jnp.asarray([[12.0, 0.0], [5.0, 0.0]]),
-            }
-        ),
+        incoming={
+            "u": jnp.asarray([[5.0, 0.0], [12.0, 0.0]]),
+            "v": jnp.asarray([[12.0, 0.0], [5.0, 0.0]]),
+        },
     )
 
     speed = component_vector_speed(view, "u", "v")

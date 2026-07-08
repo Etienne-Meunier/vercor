@@ -18,7 +18,7 @@ from vercor.components._constructor_options import (
     normalize_lifecycle_hooks,
 )
 from vercor.components._lifecycle import ComponentLifecycleHooks
-from vercor.components._runtime_fields import apply_step_result
+from vercor.components._runtime_fields import apply_step_result, runtime_fields
 from vercor.exceptions import ComponentError
 from vercor.types import RuntimeArray
 
@@ -199,7 +199,7 @@ class _CallableRuntimeMixin:
             component,
             component_state,
             self._step(
-                component.runtime_fields(component_state),
+                runtime_fields(component_state),
                 context,
                 component_state.runtime_payload,
             ),

@@ -9,6 +9,23 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local v1 API boundary rewrite validation passed as of 2026-07-08
+  using the direct `scipy` environment executable: Black, flake8, mypy, full
+  fast pytest, full pytest, coverage pytest at 90% total, example
+  `compileall`, and `git diff --check`. Black emitted the recurring Python
+  3.13/target-3.14 warning; full pytest/coverage emitted expected deprecation
+  warnings from one-release compatibility wrappers plus the recurring JAX
+  dtype-promotion `FutureWarning` and existing xarray merge `FutureWarning` in
+  the real JAXGCM payload test. The rewrite moves `ComponentOutput` and
+  `ComponentSnapshotWriter` to public `vercor.output.adapters`, keeps
+  `_ComponentOutputAdapter` private, replaces public runtime-state component
+  stepping with mapping-based `step(...)`, blocks removed component `.data` and
+  `.setup_metadata` attributes, creates the shared private
+  `vercor._field_names` owner, renames the private regridder base to
+  `_BaseRegridder`, makes `Exchange.regrid` keyword-only, removes
+  `grid_geometry.make_rectilinear_grid`, exports root `vector`, and makes
+  `RunState.component(...)` / `RunState.components(...)` the canonical runtime
+  view API.
 - Latest local v1.0 API redesign validation passed as of 2026-07-07 using the
   direct `scipy` environment executable: Black, flake8, mypy, fast pytest,
   full pytest, coverage pytest at 90% total, and `git diff --check`. Black

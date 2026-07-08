@@ -16,4 +16,4 @@ def unique_field_names(field_names: FieldNames) -> tuple[str, ...]:
     return tuple(unique)
 
 
-__all__ = ["unique_field_names"]
+__all__ = ["FieldNames", "unique_field_names"]

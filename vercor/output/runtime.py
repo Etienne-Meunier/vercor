@@ -80,7 +80,7 @@ def _runtime_data_variables(
     masks: Mapping[str, RuntimeArray],
 ) -> dict[str, OutputVariable]:
     data_variables: dict[str, OutputVariable] = {}
-    for store_name, name, value in view.iter_store_fields("incoming", "outgoing"):
+    for store_name, name, value in view.iter_fields("incoming", "outgoing"):
         data_variables[f"{store_name}_{name}"] = _runtime_output_variable(
             view,
             value,
@@ -140,7 +140,7 @@ def write_coupler_runtime_outputs(
             )
         else:
             filepath = output_dir / Path(f"{name.lower()}_{output_file_mask}.nc")
-        view = ComponentState.from_component_state(
+        view = ComponentState._from_runtime(
             name,
             component.grid,
             final_state._component_state(name),

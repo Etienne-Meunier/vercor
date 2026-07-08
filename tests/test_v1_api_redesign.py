@@ -59,8 +59,8 @@ def test_v1_run_state_exposes_component_state_view_not_runtime_state() -> None:
     assert view.field("temperature").shape == component.grid.shape
     assert view.field("temperature", store="data").shape == component.grid.shape
     assert tuple(view.fields()) == ("temperature",)
+    assert isinstance(state.components()["ATM"], vercor.ComponentState)
     assert not hasattr(state, "get_component_state")
-    assert not hasattr(state, "components")
     assert not hasattr(view, "data")
     assert not hasattr(vercor, "ComponentView")
     assert "ComponentState" in vercor.__all__

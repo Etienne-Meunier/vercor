@@ -9,6 +9,8 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components import Component, StepContext, StepResult
+from vercor.components._runtime_fields import prefill_runtime_fields
+from vercor.components._runtime_validation import require_runtime_fields
 from vercor.dtypes import as_jax_real_array, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.pytree import PyTreeNodeMixin
@@ -105,7 +107,8 @@ def prefill_jax_gcm_runtime_fields(
 ) -> None:
     """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
-    component.prefill_runtime_fields(
+    prefill_runtime_fields(
+        component,
         data,
         defaults=component.grid_field_defaults(
             jax_gcm_default_field_names(
@@ -141,8 +144,10 @@ def validate_jax_gcm_runtime_state(
             f"for component '{component.name}'"
         )
 
-    component.require_runtime_fields(
-        component_state, *_jax_gcm_fields.JAXGCM_REQUIRED_GRID_FIELD_NAMES
+    require_runtime_fields(
+        component,
+        component_state,
+        *_jax_gcm_fields.JAXGCM_REQUIRED_GRID_FIELD_NAMES,
     )
 
     if "pressure" not in component_state.data:

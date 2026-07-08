@@ -6,11 +6,11 @@ from vercor.grid_geometry import centers_to_edges, grids_identical
 from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
-from vercor._regridders.base import Regridder
+from vercor._regridders.base import _BaseRegridder
 from vercor.types import RuntimeArray
 
 
-class ConservativeRectilinearRegridder(Regridder):
+class ConservativeRectilinearRegridder(_BaseRegridder):
     def __init__(
         self,
         source_grid: RectilinearGrid,

@@ -27,6 +27,7 @@ import vercor.setups.external.camulator_wind_filter as camulator_wind_filter_mod
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
 from vercor.components.contexts import SetupContext, StepContext
+from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.variables import OutputVariable
 from vercor.setups.external.camulator import make_camulator_gcm
@@ -1238,7 +1239,8 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     coupler = _make_coupler(start)
-    component_state = component.step_host_runtime_state(
+    component_state = step_component_runtime_state(
+        component,
         create_runtime_component_state(
             component,
             prefill_missing=True,
@@ -1250,6 +1252,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
             time=start,
             logger=coupler.logger,
         ),
+        allow_host_runtime=True,
     )
     land_surface_temperature = component_state.data.get("land_surface_temperature")
     assert isinstance(land_surface_temperature, jax.Array)

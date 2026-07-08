@@ -106,7 +106,7 @@ if __name__ == "__main__":
     cpl.initial_state()
     final_state = cpl.run()
     cpl.write_outputs(final_state)
-    views = cpl.views(final_state, names=("ATM", "OCN", "LND"))
+    views = final_state.components(("ATM", "OCN", "LND"))
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(

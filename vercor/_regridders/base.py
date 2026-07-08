@@ -4,7 +4,7 @@ from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import grids_identical
 
 
-class Regridder:
+class _BaseRegridder:
     """Shared grid, interpolator, and display state for concrete regridders.
 
     Concrete subclasses own their call contracts because scalar/vector support

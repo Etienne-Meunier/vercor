@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import Any
 
 from vercor.calendar import ModelDateTime
 from vercor.jax_logging import LoggerLike
@@ -19,21 +17,6 @@ from vercor.output.period_averages import (
 from vercor.output.period_files import write_period_average_netcdf
 from vercor.output.time import TIME_NAME, should_write_period_output
 from vercor.output.variables import OutputVariable
-
-if TYPE_CHECKING:
-    from vercor.runtime.state import RuntimeComponentState
-
-ComponentSnapshotWriter: TypeAlias = Callable[
-    ["RuntimeComponentState", Path, datetime | ModelDateTime, LoggerLike | None],
-    None,
-]
-
-
-@dataclass(frozen=True)
-class ComponentOutput:
-    """Public output extension specification for a component."""
-
-    snapshot_writer: ComponentSnapshotWriter | None = None
 
 
 class _ComponentOutputAdapter:
@@ -277,7 +260,5 @@ class _ComponentOutputAdapter:
 
 
 __all__ = [
-    "ComponentOutput",
     "_ComponentOutputAdapter",
-    "ComponentSnapshotWriter",
 ]

@@ -176,7 +176,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
             exports=("ice_fraction",),
         ),
     )
-    return RunState(
+    return RunState._from_runtime(
         component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
         fractional_masks=RuntimeFieldStore.from_mapping(

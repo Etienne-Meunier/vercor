@@ -11,7 +11,7 @@ from vercor.components.contracts import (
     FieldNames,
     StepResult,
 )
-from vercor.components._field_names import unique_field_names
+from vercor._field_names import unique_field_names
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
 from vercor.field_layout import validate_component_data_layout
 from vercor.grids import RectilinearGrid

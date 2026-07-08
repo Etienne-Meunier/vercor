@@ -12,7 +12,7 @@ from vercor.components._constructor_options import normalize_field_spec
 from vercor.components._contracts import (
     normalize_author_field_values as _normalize_author_field_values,
 )
-from vercor.components._field_names import unique_field_names as _unique_field_names
+from vercor._field_names import unique_field_names as _unique_field_names
 from vercor.dtypes import PrecisionPolicy
 from vercor.exceptions import ComponentError
 from vercor.grids import RectilinearGrid
