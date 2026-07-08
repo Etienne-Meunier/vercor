@@ -14,7 +14,20 @@ from vercor.regridding import bilinear
 
 if __name__ == "__main__":
     atm = make_era5_atmosphere()
-    ocn = make_veros_gcm(restore_to_climatology=True)
+    ocn = make_veros_gcm(
+        restore_to_climatology=True,
+        output_frequency="month",
+        output_variables=(
+            "temp",
+            "salt",
+            "u",
+            "v",
+            "w",
+            "surface_taux",
+            "surface_tauy",
+            "psi",
+        )
+    )
     lnd = make_era5_land()
 
     # Clock and sequence
