@@ -4,10 +4,10 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
-    AuthorStepCallable,
     LifecycleHooks,
-    ComponentStepReturn,
     ComponentSpec,
+    _AuthorStepCallable,
+    _ComponentStepReturn,
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
@@ -36,7 +36,7 @@ class HostComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: AuthorStepCallable,
+        step: _AuthorStepCallable,
         *,
         spec: ComponentSpec | None = None,
         payload: Any | None = None,
@@ -64,7 +64,7 @@ class HostComponent(Component):
         fields: Mapping[str, "RuntimeArray"],
         context: "StepContext",
         payload: Any | None = None,
-    ) -> ComponentStepReturn:
+    ) -> _ComponentStepReturn:
         """Return field updates for one host-runtime step."""
 
         _ = fields, context, payload
@@ -82,7 +82,7 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         name: str,
         grid: RectilinearGrid,
         *,
-        step: AuthorStepCallable,
+        step: _AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
         spec: ComponentSpec,
@@ -110,7 +110,7 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         fields: Mapping[str, "RuntimeArray"],
         context: "StepContext",
         payload: Any | None = None,
-    ) -> ComponentStepReturn:
+    ) -> _ComponentStepReturn:
         """Return field updates from the callable-backed host component step."""
 
         return self._step(fields, context, payload)

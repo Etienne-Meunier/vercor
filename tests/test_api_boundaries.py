@@ -120,11 +120,10 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     import vercor.regridding as regridding_module
     import vercor.state as state_module
     from vercor.output import (
-        OutputVariable,
         OutputConfig,
+        OutputVariable,
+        PeriodOutput,
     )
-    from vercor.output.adapters import OutputConfig as OutputConfigOwner
-    from vercor.output.variables import OutputVariable as VariableOwner
 
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     exchange_signature = str(signature(Exchange))
@@ -156,16 +155,30 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     assert output_module.__all__ == [
         "OutputConfig",
         "OutputVariable",
+        "PeriodOutput",
         "SnapshotContext",
         "SnapshotWriter",
     ]
-    assert OutputVariable is VariableOwner
-    assert OutputConfig is OutputConfigOwner
-    assert OutputConfig.__module__ == "vercor.output.adapters"
+    assert OutputConfig is output_module.OutputConfig
+    assert OutputVariable is output_module.OutputVariable
+    assert PeriodOutput is output_module.PeriodOutput
+    assert OutputConfig.__module__ == "vercor.output"
+    assert PeriodOutput.__module__ == "vercor.output"
     assert not hasattr(output_module, "ComponentOutputAdapter")
     assert not hasattr(output_module, "ComponentOutput")
     assert not hasattr(output_module, "register_component_snapshot_writer")
     assert not hasattr(output_module, "component_snapshot_writer")
+    for removed_module in (
+        "vercor.output.adapters",
+        "vercor.output.variables",
+        "vercor.output.datasets",
+        "vercor.output.period_averages",
+        "vercor.output.period_files",
+        "vercor.output.netcdf",
+        "vercor.output.runtime",
+    ):
+        with pytest.raises(ModuleNotFoundError, match=removed_module):
+            importlib.import_module(removed_module)
 
 
 @pytest.mark.fast_always
@@ -424,7 +437,7 @@ def test_top_level_exports_public_exceptions() -> None:
         AssetError,
         ComponentError,
         CouplerError,
-        ExchangerError,
+        ExchangeError,
         GridError,
         RegridderError,
     )
@@ -432,8 +445,10 @@ def test_top_level_exports_public_exceptions() -> None:
     assert issubclass(ComponentError, CouplerError)
     assert issubclass(GridError, CouplerError)
     assert issubclass(RegridderError, CouplerError)
-    assert issubclass(ExchangerError, CouplerError)
+    assert issubclass(ExchangeError, CouplerError)
     assert issubclass(AssetError, Exception)
+    assert "ExchangeError" in vercor.__all__
+    assert not hasattr(vercor, "ExchangerError")
 
 
 @pytest.mark.fast_always
@@ -756,6 +771,9 @@ def test_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     assert hasattr(regridding_module, "Regridder")
     assert hasattr(regridding_module, "RegridderFactory")
     assert make_slab_ocean(grid).name == "OCN"
+    assert make_slab_ocean(grid, mixed_layer_depth=30.0).name == "OCN"
+    with pytest.raises(TypeError):
+        make_slab_ocean(grid, H=30.0)  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -854,6 +872,16 @@ def test_removed_facade_modules_are_not_importable() -> None:
 
 
 @pytest.mark.fast_always
+def test_jcm_setup_helpers_do_not_reexport_lazy_factories() -> None:
+    helper_module = importlib.import_module("vercor.setups.jcm_setup_helpers")
+
+    assert not hasattr(helper_module, "make_jcm_land")
+    assert not hasattr(helper_module, "make_jax_gcm")
+    assert "make_jcm_land" in vercor.setups.__all__
+    assert "make_jax_gcm" in vercor.setups.__all__
+
+
+@pytest.mark.fast_always
 def test_components_package_exports_only_component_author_contracts() -> None:
     contracts_module = importlib.import_module("vercor.components.contracts")
     private_contracts_module = importlib.import_module("vercor.components._contracts")
@@ -921,6 +949,11 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         (components_module, "HostRuntimeComponent"),
         (contracts_module, "ComponentComponentSpec"),
         (contracts_module, "ComponentStepResult"),
+        (contracts_module, "AuthorFieldValues"),
+        (contracts_module, "AuthorStepCallable"),
+        (contracts_module, "ComponentStepCallable"),
+        (contracts_module, "ComponentStepReturn"),
+        (contracts_module, "FieldNames"),
         (component_contexts_module, "ComponentSetupContext"),
         (component_contexts_module, "ComponentStepContext"),
         (host_module, "HostRuntimeComponent"),
@@ -1936,7 +1969,7 @@ def test_production_runtime_modules_use_coupler_state_name() -> None:
         Path("vercor/_runtime/preparation.py"),
         Path("vercor/_runtime/runner.py"),
         Path("vercor/_runtime/state_validation.py"),
-        Path("vercor/output/runtime.py"),
+        Path("vercor/output/_runtime.py"),
     )
 
     for path in production_paths:
@@ -1981,9 +2014,9 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     import vercor.setups.external.camulator_runtime_settings as camulator_runtime_settings_module
     import vercor.setups.external.jax_gcm as jax_gcm_module
     import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
-    import vercor.output._adapters as output_adapters_module
-    import vercor.output.period_averages as period_averages_module
-    import vercor.output.period_files as period_files_module
+    import vercor.output._component_adapter as output_adapters_module
+    import vercor.output._period as period_averages_module
+    import vercor.output._period_files as period_files_module
     import vercor.setups.external.veros_output as veros_output_module
     import vercor.setups.external.veros_fluxes as veros_fluxes_module
     import vercor.setups.external.veros_gcm as veros_gcm_module
@@ -2072,20 +2105,19 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     )
     output_init_source = Path("vercor/output/__init__.py").read_text(encoding="utf-8")
     facade_source = Path("vercor/_runtime/facade.py").read_text(encoding="utf-8")
-    runtime_output_source = Path("vercor/output/runtime.py").read_text(encoding="utf-8")
-    period_averages_source = Path("vercor/output/period_averages.py").read_text(
+    runtime_output_source = Path("vercor/output/_runtime.py").read_text(
         encoding="utf-8"
     )
-    output_public_adapters_source = Path("vercor/output/adapters.py").read_text(
+    period_averages_source = Path("vercor/output/_period.py").read_text(
         encoding="utf-8"
     )
-    output_adapters_source = Path("vercor/output/_adapters.py").read_text(
+    output_adapters_source = Path("vercor/output/_component_adapter.py").read_text(
         encoding="utf-8"
     )
-    output_datasets_source = Path("vercor/output/datasets.py").read_text(
+    output_datasets_source = Path("vercor/output/_dataset.py").read_text(
         encoding="utf-8"
     )
-    period_files_source = Path("vercor/output/period_files.py").read_text(
+    period_files_source = Path("vercor/output/_period_files.py").read_text(
         encoding="utf-8"
     )
     jax_gcm_output_source = Path("vercor/setups/external/jax_gcm_output.py").read_text(
@@ -2094,7 +2126,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     veros_output_source = Path("vercor/setups/external/veros_output.py").read_text(
         encoding="utf-8"
     )
-    netcdf_output_source = Path("vercor/output/netcdf.py").read_text(encoding="utf-8")
+    netcdf_output_source = Path("vercor/output/_netcdf.py").read_text(encoding="utf-8")
     host_arrays_source = Path("vercor/host_arrays.py").read_text(encoding="utf-8")
     camulator_imports_source = Path(
         "vercor/setups/external/camulator_imports.py"
@@ -2107,13 +2139,18 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert Path("vercor/setups/external/camulator_runtime.py").exists()
     assert Path("vercor/setups/external/camulator_gcm_state.py").exists()
     assert not Path("vercor/output/jax_gcm.py").exists()
-    assert Path("vercor/output/netcdf.py").exists()
-    assert Path("vercor/output/period_averages.py").exists()
-    assert Path("vercor/output/adapters.py").exists()
-    assert Path("vercor/output/period_files.py").exists()
-    assert Path("vercor/output/datasets.py").exists()
-    assert Path("vercor/output/time.py").exists()
-    assert Path("vercor/output/variables.py").exists()
+    assert Path("vercor/output/_netcdf.py").exists()
+    assert Path("vercor/output/_period.py").exists()
+    assert Path("vercor/output/_component_adapter.py").exists()
+    assert Path("vercor/output/_period_files.py").exists()
+    assert Path("vercor/output/_dataset.py").exists()
+    assert not Path("vercor/output/netcdf.py").exists()
+    assert not Path("vercor/output/period_averages.py").exists()
+    assert not Path("vercor/output/adapters.py").exists()
+    assert not Path("vercor/output/period_files.py").exists()
+    assert not Path("vercor/output/datasets.py").exists()
+    assert not Path("vercor/output/time.py").exists()
+    assert not Path("vercor/output/variables.py").exists()
     assert not Path("vercor/output/veros.py").exists()
     assert Path("vercor/setups/external/jax_gcm_fields.py").exists()
     assert Path("vercor/setups/external/jax_gcm_runtime.py").exists()
@@ -2211,16 +2248,16 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "import h5netcdf" in netcdf_output_source
     assert "import xarray" not in runtime_output_source
     assert ".to_netcdf(" not in runtime_output_source
-    assert "from vercor.output.netcdf import write_netcdf_dataset" in (
+    assert "from vercor.output._netcdf import write_netcdf_dataset" in (
         runtime_output_source
     )
-    assert "from vercor.output.netcdf import write_netcdf_dataset" in (
+    assert "from vercor.output._netcdf import write_netcdf_dataset" in (
         period_files_source
     )
-    assert "from vercor.output.netcdf import write_netcdf_dataset" not in (
+    assert "from vercor.output._netcdf import write_netcdf_dataset" not in (
         jax_gcm_output_source
     )
-    assert "from vercor.output.netcdf import write_netcdf_dataset" not in (
+    assert "from vercor.output._netcdf import write_netcdf_dataset" not in (
         veros_output_source
     )
     assert "write_netcdf_dataset(" in runtime_output_source
@@ -2246,8 +2283,9 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def write_period_average_netcdf(" in period_files_source
     assert "class _ComponentOutputAdapter" in output_adapters_source
     assert "class ComponentOutput" not in output_adapters_source
-    assert "class OutputConfig" in output_public_adapters_source
-    assert "class ComponentOutputAdapter" not in output_public_adapters_source
+    assert "class OutputConfig" in output_init_source
+    assert "class PeriodOutput" in output_init_source
+    assert "class ComponentOutputAdapter" not in output_init_source
     assert "accumulate_output_variables(" not in output_adapters_source
     assert "self._accumulator.add_samples(" in output_adapters_source
     assert "def record_snapshot(" in output_adapters_source
@@ -2286,14 +2324,14 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def __dir__(" not in output_init_source
     assert "_RUNTIME_EXPORTS" not in output_init_source
     assert "OutputConfig" in output_init_source
-    assert "from vercor.output.variables import OutputVariable" in output_init_source
     assert '"OutputConfig"' in output_init_source
+    assert '"PeriodOutput"' in output_init_source
     assert '"ComponentOutputAdapter"' not in output_init_source
     assert '"OutputVariable"' in output_init_source
-    assert "from vercor.output.runtime import (" not in output_init_source
+    assert "from vercor.output._runtime import (" not in output_init_source
     assert "write_coupler_runtime_outputs" not in output_init_source
     assert "write_runtime_component_view_to_netcdf" not in output_init_source
-    assert "import vercor.output.runtime as _runtime_output" in facade_source
+    assert "import vercor.output._runtime as _runtime_output" in facade_source
     assert "def array_to_host(" in host_arrays_source
     assert "def host_int64_array(" in host_arrays_source
     assert "from vercor.setups.external.camulator_wind_filter import" not in (

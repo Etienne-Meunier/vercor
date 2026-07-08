@@ -3,7 +3,7 @@ from datetime import datetime
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange, JaxGCMConfig, RectilinearGrid
+from vercor import Clock, Coupler, Exchange, JAXGCMConfig, RectilinearGrid
 from vercor.setups import load_jcm_inputs, make_jax_gcm, make_slab_land, make_slab_ocean
 from vercor.dtypes import as_jax_real_array
 from vercor.regridding import bilinear, conservative
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     atm = make_jax_gcm(
         coords,
         terrain,
-        config=JaxGCMConfig(forcing_data=forcing, jitted=True),
+        config=JAXGCMConfig(forcing_data=forcing, jitted=True),
     )
 
     ocn_binary_mask = jnp.where(as_jax_real_array(terrain.fmask) < 1, 1, 0).T

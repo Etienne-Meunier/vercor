@@ -1,7 +1,7 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/physical_constants.py` - physical and bulk-formula default settings with AD-owned semantics
 3. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
-4. `vercor/settings.py` and `vercor/setup_config.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, grouped public `Spinup`/`PeriodOutput` setup options, and static runtime controls built on (2)
+4. `vercor/settings.py` and `vercor/setup_config.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, grouped public setup configs such as `Spinup`, and static runtime controls built on (2)
 5. `vercor/_field_names.py` and `vercor/fields.py` - private shared field-name de-duplication plus canonical public field vocabulary, `ExchangeField` normalization, and `VectorField` owner
 6. `vercor/calendar.py` and `vercor/forcing_index.py` - calendar constants, model-calendar datetime values, leap-year logic, month/day conversion, and daily forcing-index policy
 7. `vercor/fluxes/vertical_coordinates.py` - hybrid/sigma-coordinate pressure and altitude helpers built on (1, 4)
@@ -9,7 +9,7 @@
 9. `vercor/fluxes/bulk_formula_cesm.py` - JAX-native atmosphere-ocean / atmosphere-ice bulk flux kernels with local JAX-array normalization built on (1, 4, 8)
 10. `vercor/host_arrays.py` - explicit JAX/NumPy host-transfer boundary for non-differentiable adapters, output, and host `int64` NetCDF time coordinates
 11. `vercor/setups/external/_jax_gcm_pytree.py` - adapter-local JAXGCM PyTree leaf transforms and dtype casting helpers built on (1)
-12. `vercor/grids.py` - public JAX-friendly `RectilinearGrid` owner with eager validation, PyTree registration, `RectilinearGrid.from_coordinates(...)`, and `RectilinearGrid.uniform(...)` built on (1, 3)
+12. `vercor/grids.py` - public JAX-friendly `RectilinearGrid` owner with eager validation, keyword-only coordinate construction, PyTree registration, `RectilinearGrid.from_coordinates(...)`, and `RectilinearGrid.uniform(...)` built on (1, 3)
 13. `vercor/grid_geometry.py` - rectilinear center-to-edge geometry and grid identity built on (1, 12)
 14. `vercor/field_layout.py` - shared canonical grid-field shape validation, component data-field layout validation, and time-last forcing normalization helpers built on (12)
 15. `vercor/interpolators/_bilinear_geometry.py`, `_bilinear_weights.py`, `_bilinear_extrapolation.py`, and `bilinear_rectilinear.py` - private spherical geometry, cell-weight, and extrapolation helper owners behind the public JAX-native bilinear scalar/vector interpolation facade built on (1, 3)
@@ -28,7 +28,7 @@
 28. `vercor/exchanges.py`, `vercor/_runtime/exchange_keys.py`, and `vercor/recipes.py` - public `Exchange` owner with canonical `target`/`fields`/`regrid` names, private runtime regrid-key helper, public exchange configuration type aliases, and canonical `*_FIELDS` exchange recipes built on (5, 12, 17, 18, 19)
 29. `vercor/setups/external/jax_gcm_tools.py` - JCM-specific parameter helpers and direct coordinate/terrain/forcing input-data loading built on (1, 7, 8)
 30. `vercor/setups/external/jax_gcm_fields.py` - public package-internal JCM output-field mapping and surface-temperature forcing helpers built on (1, 7)
-31. `vercor/output/__init__.py`, `variables.py`, `period_averages.py`, `period_files.py`, `adapters.py`, `_adapters.py`, `datasets.py`, `time.py`, and `netcdf.py` - public output extension facade with typed `OutputConfig`, `SnapshotContext`, and `SnapshotWriter`, shared period-output variable containers, JAX-backed sum/count period-average accumulation using the shared `OutputVariable` sample shape, shared mean-output conversion helpers, private mutable `_ComponentOutputAdapter` ownership, centralized record/write orchestration, period-average file write lifecycle, dataset coordinate discovery, VerCOR-calendar time encoding, cadence policy, and direct h5netcdf averaged/snapshot NetCDF writing with host conversion delegated to (10) built on (1, 6, 10, 25)
+31. `vercor/output/__init__.py`, `_period.py`, `_period_files.py`, `_component_adapter.py`, `_dataset.py`, `_runtime.py`, and `_netcdf.py` - public output extension facade with typed `OutputVariable`, `PeriodOutput`, `OutputConfig`, `SnapshotContext`, and `SnapshotWriter`, shared JAX-backed sum/count period-average accumulation using the shared `OutputVariable` sample shape, shared mean-output conversion helpers, private mutable `_ComponentOutputAdapter` ownership, centralized record/write orchestration, period-average file write lifecycle, dataset coordinate discovery, VerCOR-calendar time encoding, cadence policy, runtime-view output writing, and direct h5netcdf averaged/snapshot NetCDF writing with host conversion delegated to (10) built on (1, 6, 10, 12, 25)
 32. `vercor/setups/external/jax_gcm_output.py`, `jax_gcm_runtime.py`, `jax_gcm_state.py`, and `jax_gcm.py` - JAXGCM prediction/state-to-output adaptation, metadata helpers, setup-state direct private output-adapter construction, period-output record delegation and final native snapshot writing through `OutputConfig`, payload/hooks/stepping with concrete setup-state annotations, setup-state initialization and canonical `JCMState` ownership, direct runtime hook binding, and thin JCM adapter factory boundary built on (1, 3, 4, 11, 26, 29, 30, 31, 62)
 33. `vercor/setups/external/veros_runtime_settings.py` - explicit lazy Veros backend/runtime configuration side-effect boundary
 34. `vercor/setups/external/veros_setup.py` - concrete Veros setup subclass and setup policy built on (33)
@@ -54,7 +54,7 @@
 54. `vercor/setups/data/era5_land.py` - ERA5 land forcing adapter with canonical layout and runtime temperature storage built on (12, 14, 22, 49, 51)
 55. `vercor/setups/data/erainterim_ocean.py` - ERA-Interim ocean forcing adapter built on (12, 14, 22, 49, 50, 51)
 56. `vercor/setups/data/jcm_land.py` - JCM land forcing adapter with coordinate conversion and runtime storage built on (1, 12, 20, 50)
-57. `vercor/setups/jcm_setup_helpers.py` - `JCMInputs`, public `load_jcm_inputs(...)`, paired JCM atmosphere/land setup construction through `make_jcm_land_atmosphere(...)` with optional preloaded inputs, and lazy optional JCM adapter imports built on (10, 32, 56)
+57. `vercor/setups/jcm_setup_helpers.py` - `JCMInputs`, public `load_jcm_inputs(...)`, paired JCM atmosphere/land setup construction through `make_jcm_land_atmosphere(...)` with optional preloaded inputs, and private lazy optional JCM factory loading built on (10, 32, 56)
 58. `vercor/setups/slab/atmosphere.py`, `ocean.py`, `land.py`, and `seaice.py` - slab model adapters built on (1, 9, 12)
 59. `vercor/components/contexts.py` - immutable component setup and step context payloads built on calendar, tuple run-order sequences, settings helpers, and (25)
 60. `vercor/state.py` - public `RunState` and `ComponentState` owners plus shared read-only field resolution for diagnostics/output views and runtime states built on (3, 12, 63, 64)
@@ -73,7 +73,7 @@
 73. `vercor/_runtime/resources.py` - private per-coupler runtime resource holder for topology maps, refreshed contracts, and interrupts built on (63, 64, 69, 72)
 74. `vercor/_runtime/preparation.py` - direct runtime state preparation, refreshed contract validation through runtime resources, and initial sent-store priming built on (24, 63, 64, 65, 67, 69, 73)
 75. `vercor/_runtime/runner.py` - host/scanned runtime loops, run-mode selection, one-shot compiled scanned dispatch, and interrupt translation built on (65, 67, 72)
-76. `vercor/output/runtime.py` - runtime-view output mask selection/naming, provider-registered external component snapshot output, and coupler-final-output direct h5netcdf boundary through (31) built on (10, 12, 31, 60, 64)
+76. `vercor/output/_runtime.py` - runtime-view output mask selection/naming, provider-registered external component snapshot output, and coupler-final-output direct h5netcdf boundary through (31) built on (10, 12, 31, 60, 64)
 77. `vercor/_runtime/facade.py` - high-level runtime orchestration boundary, runtime resource construction, and internal repeated-input bundle for the public coupler facade built on (24, 25, 59, 60, 63, 64, 67, 69, 71, 72, 73, 74, 75, 76)
-78. `vercor/coupler.py` - public setup/output facade for `initial_state()`, `run()`, and `write_outputs()` built on (25, 28, 59, 62, 77)
+78. `vercor/coupler.py` - public setup/output facade for `initial_state(*, prefill_missing=True)`, `run()`, and `write_outputs()` built on (25, 28, 59, 62, 77)
 79. `examples/` - runnable setup scripts that assemble packaged adapters from `vercor.setups`

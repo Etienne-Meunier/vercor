@@ -32,7 +32,7 @@ from vercor.exceptions import (
     AssetError,
     ComponentError,
     CouplerError,
-    ExchangerError,
+    ExchangeError,
     GridError,
     RegridderError,
 )
@@ -40,14 +40,19 @@ from vercor.exchanges import Exchange
 from vercor.fields import VectorField, vector
 from vercor.grids import RectilinearGrid
 from vercor.dtypes import DTypePolicy
-from vercor.output import OutputConfig, OutputVariable, SnapshotContext, SnapshotWriter
+from vercor.output import (
+    OutputConfig,
+    OutputVariable,
+    PeriodOutput,
+    SnapshotContext,
+    SnapshotWriter,
+)
 import vercor.recipes as recipes
 from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
 from vercor.settings import Settings
 from vercor.setup_config import (
     CAMulatorConfig,
-    JaxGCMConfig,
-    PeriodOutput,
+    JAXGCMConfig,
     Spinup,
     VerosConfig,
 )
@@ -71,11 +76,11 @@ __all__ = [
     "ComponentValidateHook",
     "DataComponent",
     "DTypePolicy",
-    "ExchangerError",
+    "ExchangeError",
     "ComponentSpec",
     "GridError",
     "HostComponent",
-    "JaxGCMConfig",
+    "JAXGCMConfig",
     "KEEP_PAYLOAD",
     "OutputConfig",
     "OutputVariable",

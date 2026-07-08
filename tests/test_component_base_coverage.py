@@ -41,7 +41,7 @@ from vercor.clock import Clock
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.output.runtime import write_runtime_component_view_to_netcdf
+from vercor.output._runtime import write_runtime_component_view_to_netcdf
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
 from vercor._runtime.field_transfer import (

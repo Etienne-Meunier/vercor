@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
-    AuthorStepCallable as _AuthorStepCallable,
     LifecycleHooks,
-    ComponentStepReturn as _ComponentStepReturn,
     ComponentSpec as _ComponentSpec,
+    _AuthorStepCallable,
+    _ComponentStepReturn,
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,

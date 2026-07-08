@@ -12,11 +12,13 @@ from vercor.calendar import ModelDateTime
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.host_arrays import array_to_host
 from vercor.jax_logging import LoggerLike
-from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
-from vercor.output.adapters import SnapshotContext
-from vercor.output.datasets import time_coordinate_variable, used_dimension_names
-from vercor.output.time import TIME_NAME
-from vercor.output.variables import OutputVariable
+from vercor.output._component_adapter import (
+    _ComponentOutputAdapter as ComponentOutputAdapter,
+)
+from vercor.output import SnapshotContext
+from vercor.output._dataset import time_coordinate_variable, used_dimension_names
+from vercor.output._period import TIME_NAME
+from vercor.output import OutputVariable
 from vercor.setups.external.veros_runtime_settings import configure_veros_runtime
 
 configure_veros_runtime()

@@ -4,8 +4,8 @@ from datetime import datetime
 
 import numpy as np
 
-from vercor.output.datasets import time_coordinate_variable, used_dimension_names
-from vercor.output.variables import OutputVariable
+from vercor.output._dataset import time_coordinate_variable, used_dimension_names
+from vercor.output import OutputVariable
 
 
 def test_time_coordinate_variable_preserves_calendar_attrs() -> None:

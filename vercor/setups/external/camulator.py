@@ -5,8 +5,8 @@ from __future__ import annotations
 from functools import partial
 
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
-from vercor.output.adapters import OutputConfig
-from vercor.setup_config import CAMulatorConfig, PeriodOutput
+from vercor.output import OutputConfig
+from vercor.setup_config import CAMulatorConfig
 import vercor.setups.external.camulator_contracts as _camulator_contracts
 import vercor.setups.external.camulator_output as _camulator_output
 import vercor.setups.external.camulator_runtime as _camulator_runtime
@@ -19,9 +19,7 @@ def make_camulator_gcm(
 ) -> HostComponent:
     """Return a host-backed CAMulator atmosphere component."""
 
-    period_output = (
-        PeriodOutput() if config.output.period is None else config.output.period
-    )
+    period_output = config.output.period
     state = CAMulatorGCMSetupState(
         config_path=config.config_path,
         name=config.name,
@@ -32,7 +30,7 @@ def make_camulator_gcm(
         do_spinup=config.spinup.enabled,
         device=config.device,
         output_cpus_number=config.output_cpus_number,
-        output_frequency=period_output.frequency,
+        output_frequency=None if period_output is None else period_output.frequency,
         logger=config.logger,
     )
     component = HostComponent.from_step(

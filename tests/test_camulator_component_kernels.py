@@ -28,9 +28,12 @@ from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
-from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
-from vercor.output.variables import OutputVariable
-from vercor.setup_config import CAMulatorConfig, OutputConfig, PeriodOutput
+from vercor.output._component_adapter import (
+    _ComponentOutputAdapter as ComponentOutputAdapter,
+)
+from vercor.output import OutputVariable
+from vercor.output import OutputConfig, PeriodOutput
+from vercor.setup_config import CAMulatorConfig
 from vercor.setups.external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
 from vercor.grids import RectilinearGrid
@@ -619,7 +622,7 @@ def test_camulator_record_period_output_accumulates_and_writes_mean_dataset(
         second_prediction,
         output_time=datetime(2000, 1, 2, 0, 0, 0),
         dt=timedelta(days=1),
-        output_frequency=None,
+        output_frequency="day",
         latitude=np.asarray([-45.0, 45.0]),
         longitude=np.asarray([0.0, 90.0]),
         init_str="2000-01-01T00Z",
@@ -706,7 +709,7 @@ def test_camulator_output_wrappers_do_not_import_xarray_or_credit_output() -> No
     camulator_imports_source = Path(
         "vercor/setups/external/camulator_imports.py"
     ).read_text(encoding="utf-8")
-    output_adapters_source = Path("vercor/output/_adapters.py").read_text(
+    output_adapters_source = Path("vercor/output/_component_adapter.py").read_text(
         encoding="utf-8"
     )
 

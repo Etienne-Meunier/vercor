@@ -36,10 +36,13 @@ from vercor.calendar import DateTime360, DateTime365
 from vercor.components.contracts import PrefillContext
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
-from vercor.output.adapters import SnapshotContext
-from vercor.output.variables import OutputVariable
-from vercor.setup_config import OutputConfig, PeriodOutput, VerosConfig
+from vercor.output._component_adapter import (
+    _ComponentOutputAdapter as ComponentOutputAdapter,
+)
+from vercor.output import SnapshotContext
+from vercor.output import OutputVariable
+from vercor.output import OutputConfig, PeriodOutput
+from vercor.setup_config import VerosConfig
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
 from vercor.settings import Settings
@@ -1123,7 +1126,7 @@ def test_jax_gcm_record_period_output_accumulates_and_writes_mean_dataset(
         physics_module=physics_module,
         output_time=datetime(2000, 1, 2),
         dt=timedelta(days=1),
-        output_frequency=None,
+        output_frequency="day",
     )
 
     assert not first_written
@@ -1690,7 +1693,7 @@ def test_veros_record_period_output_accumulates_and_writes_mean_dataset(
         output_variables=("temp", "salt", "u", "surface_taux", "psi"),
         output_time=datetime(2000, 1, 2),
         dt=timedelta(days=1),
-        output_frequency=None,
+        output_frequency="day",
     )
 
     assert not first_written

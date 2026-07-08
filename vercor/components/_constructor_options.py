@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from vercor.components.contracts import (
-    AuthorFieldValues,
-    FieldNames,
     ComponentSpec,
+    _AuthorFieldValues,
+    _FieldNames,
 )
 
 
 def normalize_component_spec(
     *,
-    inputs: FieldNames = (),
-    outputs: FieldNames = (),
-    defaults: AuthorFieldValues = None,
+    inputs: _FieldNames = (),
+    outputs: _FieldNames = (),
+    defaults: _AuthorFieldValues = None,
 ) -> ComponentSpec:
     """Normalize public field declaration options to one ``ComponentSpec``."""
 

@@ -28,7 +28,11 @@ class RegridderError(CouplerError):
     pass
 
 
-class ExchangerError(CouplerError):
+class ExchangeError(CouplerError):
     """Base class for exceptions during data exchange between components."""
 
     pass
+
+
+ExchangerError = ExchangeError
+"""Temporary compatibility alias for the 0.7 transition."""

@@ -11,13 +11,13 @@ import pytest
 
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
-from vercor.output.datasets import time_coordinate_variable
-from vercor.output.period_averages import (
+from vercor.output._dataset import time_coordinate_variable
+from vercor.output._period import (
     PeriodAverageAccumulator,
     period_mean_output_variables,
 )
-from vercor.output.period_files import write_period_average_netcdf
-from vercor.output.variables import OutputVariable
+from vercor.output._period_files import write_period_average_netcdf
+from vercor.output import OutputVariable
 
 
 def _accumulator_with_temperature() -> PeriodAverageAccumulator:

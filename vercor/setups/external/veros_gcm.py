@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from functools import partial
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
-from vercor.output.adapters import OutputConfig
-from vercor.setup_config import PeriodOutput, VerosConfig
+from vercor.output import OutputConfig
+from vercor.setup_config import VerosConfig
 import vercor.setups.external.veros_gcm_state as _veros_gcm_state
 import vercor.setups.external.veros_output as _veros_output
 import vercor.setups.external.veros_runtime as _veros_runtime
@@ -26,17 +26,15 @@ def make_veros_gcm(
     """Return a host-backed Veros GCM component."""
 
     config = VerosConfig() if config is None else config
-    period_output = (
-        PeriodOutput() if config.output.period is None else config.output.period
-    )
+    period_output = config.output.period
     state = VerosGCMSetupState(
         name=config.name,
         spinup_time=config.spinup.duration,
         custom_parameters=config.custom_parameters,
         restore_to_climatology=config.restore_to_climatology,
         do_spinup=config.spinup.enabled,
-        output_frequency=period_output.frequency,
-        output_variables=period_output.variables,
+        output_frequency=None if period_output is None else period_output.frequency,
+        output_variables=() if period_output is None else period_output.variables,
         jitted=config.jitted,
     )
     component = HostComponent.from_step(

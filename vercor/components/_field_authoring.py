@@ -4,9 +4,9 @@ from collections.abc import Mapping
 from typing import Self
 
 from vercor.components.contracts import (
-    AuthorFieldValues as _AuthorFieldValues,
     ComponentSpec as _ComponentSpec,
-    FieldNames as _FieldNames,
+    _AuthorFieldValues,
+    _FieldNames,
 )
 from vercor.components._constructor_options import normalize_component_spec
 from vercor.components._contracts import (

@@ -10,6 +10,7 @@ import pytest
 
 import vercor
 import vercor.output
+import vercor.setup_config
 from tests._coverage_support import make_test_grid
 from vercor import Clock, Coupler, DataComponent, RectilinearGrid
 from vercor.output import OutputVariable
@@ -33,6 +34,13 @@ def test_grid_constructors_live_on_rectilinear_grid_class() -> None:
 
     assert grid.shape == (2, 2)
     assert explicit.shape == (2, 2)
+    grid_type = getattr(vercor, "RectilinearGrid")
+    with pytest.raises(TypeError):
+        grid_type(
+            "positional-grid",
+            jnp.asarray([0.0, 90.0]),
+            jnp.asarray([-45.0, 45.0]),
+        )
     assert "grid_from_coordinates" not in vercor.__all__
     assert "uniform_rectilinear_grid" not in vercor.__all__
     assert not hasattr(vercor, "grid_from_coordinates")
@@ -80,6 +88,9 @@ def test_coupler_uses_initial_state_name() -> None:
     )
 
     assert isinstance(coupler.initial_state(), vercor.RunState)
+    assert isinstance(coupler.initial_state(prefill_missing=True), vercor.RunState)
+    with pytest.raises(TypeError):
+        coupler.initial_state(prefill=True)  # type: ignore[call-arg]
     assert not hasattr(Coupler, "state")
     assert isinstance(coupler.initial_state().component("ATM"), vercor.ComponentState)
 
@@ -120,17 +131,29 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
 
     assert hasattr(vercor.output, "OutputConfig")
     output = vercor.output.OutputConfig(snapshot_writer=writer)
+    period = vercor.output.PeriodOutput()
 
     assert output.snapshot_writer is writer
+    assert output.period is None
+    assert period.frequency == "step"
     assert OutputVariable(dims=("time",), values=jnp.asarray([1.0])).dims == ("time",)
-    assert "OutputConfig" in vercor.output.__all__
-    assert "SnapshotContext" in vercor.output.__all__
-    assert "ComponentOutput" not in vercor.output.__all__
-    assert "ComponentOutputAdapter" not in vercor.output.__all__
-    assert "register_component_snapshot_writer" not in vercor.output.__all__
-    assert not hasattr(vercor.output, "ComponentOutput")
-    assert not hasattr(vercor.output, "ComponentOutputAdapter")
-    assert not hasattr(vercor.output, "register_component_snapshot_writer")
+    assert vercor.output.OutputConfig.__module__ == "vercor.output"
+    assert vercor.output.PeriodOutput.__module__ == "vercor.output"
+    assert vercor.output.__all__ == [
+        "OutputConfig",
+        "OutputVariable",
+        "PeriodOutput",
+        "SnapshotContext",
+        "SnapshotWriter",
+    ]
+    for removed_name in (
+        "ComponentOutput",
+        "ComponentOutputAdapter",
+        "register_component_snapshot_writer",
+    ):
+        assert removed_name not in vercor.output.__all__
+        assert not hasattr(vercor.output, removed_name)
+    assert not hasattr(vercor.setup_config, "OutputConfig")
 
 
 @pytest.mark.fast_always
@@ -268,11 +291,13 @@ def test_output_and_setup_configs_use_final_names() -> None:
     output = vercor.OutputConfig(period=period)
     spinup = vercor.Spinup(enabled=True)
     veros = vercor.VerosConfig(spinup=spinup, output=output)
-    jax_gcm = vercor.JaxGCMConfig(spinup=spinup, output=output)
+    jax_gcm = vercor.JAXGCMConfig(spinup=spinup, output=output)
     camulator = vercor.CAMulatorConfig(
         config_path="config.yml", spinup=spinup, output=output
     )
 
+    assert vercor.PeriodOutput().frequency == "step"
+    assert vercor.OutputConfig().period is None
     assert output.period is period
     assert spinup.duration.days == 2
     assert veros.output.period is period
@@ -375,6 +400,7 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert output.variables == ("temp", "salt")
     assert spinup.duration.days == 2
     assert vercor.DTypePolicy(enable_x64=True).enable_x64
+    assert vercor.PeriodOutput is vercor.output.PeriodOutput
     assert "PeriodOutput" in vercor.__all__
     assert "Spinup" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__

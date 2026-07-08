@@ -19,7 +19,8 @@ import vercor.setups.external.camulator_forcing as camulator_forcing_module
 from vercor.setups.external.camulator_forcing import initialize_camulator_forcing_cursor
 from tests._coverage_support import make_test_grid
 from vercor.components import DataComponent
-from vercor.setup_config import JaxGCMConfig, OutputConfig, PeriodOutput, Spinup
+from vercor.output import OutputConfig, PeriodOutput
+from vercor.setup_config import JAXGCMConfig, Spinup
 from vercor.settings import Settings
 
 
@@ -204,14 +205,16 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         calls["atmosphere_args"] = (received_coords, received_terrain, kwargs)
         return atmosphere
 
+    def fake_load_jcm_factories() -> tuple[Any, Any]:
+        return fake_make_jcm_land, fake_make_jax_gcm
+
     monkeypatch.setattr(
         helper,
         "load_jcm_inputs",
         unexpected_load_jcm_inputs,
     )
-    monkeypatch.setattr(helper, "make_jcm_land", fake_make_jcm_land)
+    monkeypatch.setattr(helper, "_load_jcm_factories", fake_load_jcm_factories)
     monkeypatch.setattr(helper, "transposed_host_array", fake_transposed_host_array)
-    monkeypatch.setattr(helper, "make_jax_gcm", fake_make_jax_gcm)
 
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
@@ -231,7 +234,7 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         coords,
         terrain,
         {
-            "config": JaxGCMConfig(
+            "config": JAXGCMConfig(
                 forcing_data=forcing,
                 spinup=Spinup(enabled=False),
                 output=OutputConfig(period=PeriodOutput(frequency="month")),
@@ -343,10 +346,12 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         calls["atmosphere_args"] = (received_coords, received_terrain, kwargs)
         return atmosphere
 
+    def fake_load_jcm_factories() -> tuple[Any, Any]:
+        return fake_make_jcm_land, fake_make_jax_gcm
+
     monkeypatch.setattr(helper, "load_jcm_inputs", fake_load_jcm_inputs)
-    monkeypatch.setattr(helper, "make_jcm_land", fake_make_jcm_land)
+    monkeypatch.setattr(helper, "_load_jcm_factories", fake_load_jcm_factories)
     monkeypatch.setattr(helper, "transposed_host_array", fake_transposed_host_array)
-    monkeypatch.setattr(helper, "make_jax_gcm", fake_make_jax_gcm)
 
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
@@ -369,7 +374,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         coords,
         terrain,
         {
-            "config": JaxGCMConfig(
+            "config": JAXGCMConfig(
                 custom_parameters={"surface_flux.vgust": 5.01},
                 forcing_data=forcing,
                 spinup=Spinup(enabled=False),

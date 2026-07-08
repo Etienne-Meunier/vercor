@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from vercor.components.contracts import (
-    AuthorFieldValues,
-    AuthorStepCallable,
-    ComponentStepCallable,
-    ComponentStepReturn,
     ComponentSpec,
-    FieldNames,
     StepResult,
+    _AuthorFieldValues,
+    _AuthorStepCallable,
+    _ComponentStepCallable,
+    _ComponentStepReturn,
+    _FieldNames,
 )
 from vercor._field_names import unique_field_names
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
@@ -22,7 +22,7 @@ def normalize_author_field_values(
     *,
     component_name: str,
     grid: RectilinearGrid,
-    fields: AuthorFieldValues,
+    fields: _AuthorFieldValues,
     policy: PrecisionPolicy = None,
 ) -> dict[str, RuntimeArray] | None:
     """Return author-provided fields as canonical runtime arrays.
@@ -80,13 +80,13 @@ def merge_component_outputs(
 
 
 __all__ = [
-    "AuthorFieldValues",
-    "AuthorStepCallable",
-    "ComponentStepCallable",
-    "ComponentStepReturn",
     "ComponentSpec",
-    "FieldNames",
     "StepResult",
+    "_AuthorFieldValues",
+    "_AuthorStepCallable",
+    "_ComponentStepCallable",
+    "_ComponentStepReturn",
+    "_FieldNames",
     "declared_runtime_field_names",
     "merge_component_outputs",
     "normalize_author_field_values",

@@ -9,6 +9,22 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local VerCOR 0.7 API cleanup validation passed as of 2026-07-08 using
+  the direct `scipy` environment executable: focused public API/boundary/output
+  pytest, affected runtime/external fast pytest, full fast pytest, full pytest,
+  coverage pytest at 90% total, Black, flake8, mypy, example `compileall`, and
+  `git diff --check`. The breaking cleanup moves `PeriodOutput` into
+  `vercor.output`, makes `OutputConfig.period is None` mean disabled and
+  `PeriodOutput(frequency="step")` mean every-step output, hides output
+  implementation helpers behind underscore modules, renames `JaxGCMConfig` to
+  `JAXGCMConfig`, renames root `ExchangerError` to `ExchangeError` while
+  keeping the one-release `vercor.exceptions.ExchangerError` alias, makes
+  `RectilinearGrid` coordinates keyword-only, renames slab-ocean `H` to
+  `mixed_layer_depth`, removes duplicate JCM setup helper wrappers, and keeps
+  internal component author-normalization aliases private. Black emitted the
+  recurring Python 3.13/target-3.14 warning; full pytest/coverage emitted only
+  the existing external JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 - Latest local API vocabulary cleanup validation passed as of 2026-07-08 using
   the direct `scipy` environment executable: focused API/runtime-boundary
   pytest, full fast pytest, full pytest, coverage pytest at 90% total, Black,

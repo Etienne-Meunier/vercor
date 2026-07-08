@@ -6,10 +6,10 @@ import pytest
 import jax
 import jax.numpy as jnp
 
-import vercor.output.period_averages as period_averages_module
+import vercor.output._period as period_averages_module
 from tests.assertions import assert_allclose_compact
-from vercor.output.variables import OutputVariable
-from vercor.output.period_averages import (
+from vercor.output import OutputVariable
+from vercor.output._period import (
     PeriodAverageAccumulator,
     period_mean_output_variables,
     period_mean_sample_to_output_variable,

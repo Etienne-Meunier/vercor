@@ -43,7 +43,7 @@ def _advance_sea_surface_temperature(
 def make_slab_ocean(
     grid: RectilinearGrid,
     name: str = "OCN",
-    H: float = 30.0,
+    mixed_layer_depth: float = 30.0,
 ) -> Component:
     """Return a toy slab ocean component factory instance."""
 
@@ -73,7 +73,7 @@ def make_slab_ocean(
             dt_seconds,
             rho,
             cp,
-            H,
+            mixed_layer_depth,
             lambda_relax,
             _REFERENCE_SEA_SURFACE_TEMPERATURE,
         )

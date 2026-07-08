@@ -15,11 +15,13 @@ import torch
 import yaml
 
 from vercor.jax_logging import LoggerLike, get_default_logger
-from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
-from vercor.output.adapters import SnapshotContext
-from vercor.output.datasets import time_coordinate_variable, used_dimension_names
-from vercor.output.netcdf import write_netcdf_dataset
-from vercor.output.variables import OutputVariable
+from vercor.output._component_adapter import (
+    _ComponentOutputAdapter as ComponentOutputAdapter,
+)
+from vercor.output import SnapshotContext
+from vercor.output._dataset import time_coordinate_variable, used_dimension_names
+from vercor.output._netcdf import write_netcdf_dataset
+from vercor.output import OutputVariable
 
 CAMULATOR_TIME_DIM = "time"
 CAMULATOR_AVERAGE_EMPTY_ERROR_MESSAGE = (

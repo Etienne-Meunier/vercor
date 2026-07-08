@@ -4,12 +4,12 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from vercor.components.contracts import (
-    AuthorFieldValues,
     KEEP_PAYLOAD,
-    ComponentStepReturn,
     ComponentSpec,
-    FieldNames,
     StepResult,
+    _AuthorFieldValues,
+    _ComponentStepReturn,
+    _FieldNames,
 )
 from vercor.components._constructor_options import normalize_component_spec
 from vercor.components._contracts import (
@@ -130,7 +130,7 @@ def with_runtime_fields(
 def apply_step_result(
     component: "Component",
     component_state: "ComponentRuntimeState",
-    result: ComponentStepReturn,
+    result: _ComponentStepReturn,
 ) -> "ComponentRuntimeState":
     """Apply a field mapping or ``StepResult`` to runtime state."""
 
@@ -148,8 +148,8 @@ def prefill_runtime_fields(
     data: dict[str, RuntimeArray],
     spec: ComponentSpec | None = None,
     *,
-    outputs: FieldNames = (),
-    defaults: AuthorFieldValues = None,
+    outputs: _FieldNames = (),
+    defaults: _AuthorFieldValues = None,
     policy: PrecisionPolicy = None,
 ) -> None:
     """Prefill a mutable runtime data mapping with declared fields."""

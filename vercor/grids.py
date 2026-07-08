@@ -70,6 +70,7 @@ class RectilinearGrid(PyTreeNodeMixin, Grid):
     def __init__(
         self,
         name: str,
+        *,
         longitude: RuntimeArray,
         latitude: RuntimeArray,
         longitude_edges: RuntimeArray | None = None,

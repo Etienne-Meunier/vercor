@@ -28,7 +28,9 @@ from vercor.setups.external.jax_gcm_fields import JAXGCM_OUTPUT_GRID_FIELD_NAMES
 import vercor.setups.external.jax_gcm_runtime as jax_gcm_runtime_module
 import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
 import vercor.setups.external.jax_gcm_state as jax_gcm_state_module
-from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
+from vercor.output._component_adapter import (
+    _ComponentOutputAdapter as ComponentOutputAdapter,
+)
 from vercor.setups.external.jax_gcm_state import JCMState
 from vercor.setups.slab.atmosphere import make_slab_atmosphere
 from vercor.setups.slab.land import make_slab_land
@@ -1709,13 +1711,13 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
         pytest.skip("Real JCM payload structure regression runs outside --fast")
 
     from vercor.setups import load_jcm_inputs, make_jax_gcm
-    from vercor.setup_config import JaxGCMConfig
+    from vercor.setup_config import JAXGCMConfig
 
     inputs = load_jcm_inputs()
     component = make_jax_gcm(
         inputs.coords,
         inputs.terrain,
-        config=JaxGCMConfig(
+        config=JAXGCMConfig(
             forcing_data=inputs.forcing,
             jitted=True,
         ),

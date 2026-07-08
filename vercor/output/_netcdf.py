@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import h5netcdf
 
 from vercor.host_arrays import array_to_host
-from vercor.output.variables import OutputVariable
+from vercor.output import OutputVariable
 
 if TYPE_CHECKING:
     from vercor.jax_logging import LoggerLike

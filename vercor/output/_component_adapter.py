@@ -5,18 +5,19 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from vercor.calendar import ModelDateTime
 from vercor.jax_logging import LoggerLike
-from vercor.output.period_averages import (
+from vercor.output._period import (
     AccumulatedPeriodVariable,
+    TIME_NAME,
     PeriodAverageAccumulator,
     period_mean_output_variables,
+    should_write_period_output,
 )
-from vercor.output.period_files import write_period_average_netcdf
-from vercor.output.time import TIME_NAME, should_write_period_output
-from vercor.output.variables import OutputVariable
+from vercor.output._period_files import write_period_average_netcdf
+from vercor.output import OutputFrequency, OutputVariable, PeriodOutput
 
 
 class _ComponentOutputAdapter:
@@ -169,6 +170,10 @@ class _ComponentOutputAdapter:
     ) -> bool:
         """Accumulate one sample and write a period file when due."""
 
+        period = _period_from_output_frequency(output_frequency)
+        if period is None:
+            return False
+
         self.accumulate(variables, summation_dim=summation_dim)
         return self.write_period_average_if_due(
             time=time,
@@ -230,11 +235,8 @@ class _ComponentOutputAdapter:
     ) -> bool:
         """Write a period file when the configured cadence is reached."""
 
-        if not should_write_period_output(
-            time=time,
-            dt=dt,
-            output_frequency=output_frequency,
-        ):
+        period = _period_from_output_frequency(output_frequency)
+        if not should_write_period_output(period, time=time, dt=dt):
             return False
 
         output_path = output(time) if callable(output) else output
@@ -257,6 +259,12 @@ class _ComponentOutputAdapter:
             value_dims_for_sample=self._value_dims_for_sample,
             dimension_order=self._dimension_order,
         )
+
+
+def _period_from_output_frequency(output_frequency: str | None) -> PeriodOutput | None:
+    if output_frequency is None:
+        return None
+    return PeriodOutput(frequency=cast(OutputFrequency, output_frequency))
 
 
 __all__ = [

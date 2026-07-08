@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 from vercor.jax_logging import LoggerLike, get_default_logger
-from vercor.output.netcdf import write_netcdf_dataset
-from vercor.output.period_averages import PeriodAverageAccumulator
-from vercor.output.variables import OutputVariable
+from vercor.output._netcdf import write_netcdf_dataset
+from vercor.output._period import PeriodAverageAccumulator
+from vercor.output import OutputVariable
 
 
 def write_period_average_netcdf(

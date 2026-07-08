@@ -4,9 +4,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
-    AuthorFieldValues,
-    ComponentStepReturn,
     ComponentSpec,
+    _AuthorFieldValues,
+    _ComponentStepReturn,
 )
 from vercor.components._contracts import (
     merge_component_outputs,
@@ -36,7 +36,7 @@ class DataComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        fields: AuthorFieldValues = None,
+        fields: _AuthorFieldValues = None,
         *,
         settings: Settings | None = None,
         spec: ComponentSpec | None = None,
@@ -79,7 +79,7 @@ class DataComponent(Component):
         fields: Mapping[str, "RuntimeArray"],
         context: "StepContext",
         payload: Any | None = None,
-    ) -> ComponentStepReturn:
+    ) -> _ComponentStepReturn:
         """Return no updates for data-only components."""
 
         _ = fields, context, payload

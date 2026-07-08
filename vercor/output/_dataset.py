@@ -6,8 +6,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from vercor.calendar import ModelDateTime
-from vercor.output.time import TIME_NAME, output_time_value_and_attrs
-from vercor.output.variables import OutputVariable
+from vercor.output._period import TIME_NAME, output_time_value_and_attrs
+from vercor.output import OutputVariable
 
 
 def time_coordinate_variable(

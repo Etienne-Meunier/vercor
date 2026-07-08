@@ -207,14 +207,14 @@ class Coupler:
         self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
         self._runtime_initialized = True
 
-    def initial_state(self, *, prefill: bool = True) -> RunState:
+    def initial_state(self, *, prefill_missing: bool = True) -> RunState:
         """Create and validate the coupled runtime state."""
 
         if self.exchanges:
             self._initialize_runtime()
         return _runtime_facade.create_runtime_state(
             inputs=self._runtime_inputs(),
-            prefill_missing=prefill,
+            prefill_missing=prefill_missing,
         )
 
     def write_outputs(

@@ -16,7 +16,7 @@ import pytest
 
 import vercor._runtime.surface_masks as surface_masks_module
 import vercor.coupler as coupler_module
-import vercor.output.runtime as output_runtime_module
+import vercor.output._runtime as output_runtime_module
 from tests._coverage_support import (
     DummyComponent,
     RecordingRegridder,
@@ -35,7 +35,7 @@ from vercor.components.contracts import ComponentSpec
 from vercor.components.host import HostComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
-from vercor.exceptions import ComponentError, CouplerError, ExchangerError
+from vercor.exceptions import ComponentError, CouplerError, ExchangeError
 from vercor.exchanges import Exchange
 from vercor.fields import vector
 from vercor.jax_logging import (
@@ -50,8 +50,8 @@ from vercor._regridders.bilinear import bilinear
 from vercor._regridders.conservative import conservative
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
-from vercor.output.runtime import output_masks_for_component
-from vercor.output.adapters import OutputConfig, SnapshotContext
+from vercor.output._runtime import output_masks_for_component
+from vercor.output import OutputConfig, SnapshotContext
 from vercor._runtime.surface_masks import (
     apply_surface_exchange_masks,
     create_surface_exchange_masks,
@@ -323,7 +323,7 @@ def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
         )
     )
 
-    runtime_state = coupler.initial_state(prefill=True)
+    runtime_state = coupler.initial_state(prefill_missing=True)
 
     all_views = runtime_state.components(coupler.run_order)
     selected_views = runtime_state.components(("LND", "ATM"))
@@ -1167,7 +1167,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         fractional_masks={("OCN", "ATM", "bilinear"): np.ones((2, 2))},
     )
 
-    with pytest.raises(ExchangerError, match="Field temperature not present"):
+    with pytest.raises(ExchangeError, match="Field temperature not present"):
         _dispatch_runtime_fields(
             coupler,
             runtime_state_from_coupler_components(coupler, prefill_missing=False),
@@ -1201,7 +1201,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         fractional_masks={("OCN", "ATM", "conservative"): np.ones((2, 2))},
     )
 
-    with pytest.raises(ExchangerError, match="Not all fields in vector"):
+    with pytest.raises(ExchangeError, match="Not all fields in vector"):
         _dispatch_runtime_fields(
             coupler,
             runtime_state_from_coupler_components(coupler, prefill_missing=False),

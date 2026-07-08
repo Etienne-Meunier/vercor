@@ -148,7 +148,9 @@ immutable runtime containers used during traced integration.
   than private implementation modules. `RectilinearGrid.uniform(...)` builds
   generated equally spaced rectilinear grids, and
   `RectilinearGrid.from_coordinates(...)` builds grids from explicit
-  coordinate arrays.
+  coordinate arrays. Direct `RectilinearGrid(...)` construction requires
+  keyword-only coordinate arguments to avoid accidental longitude/latitude
+  swaps.
 - Component-author API: `Component`, `DataComponent`, and `HostComponent` are
   the stable extension points. Custom adapters should use the class-level
   authoring constructors where possible: `DataComponent.from_fields()` for
@@ -185,7 +187,7 @@ immutable runtime containers used during traced integration.
   `SnapshotContext`, which exposes the public `ComponentState`, component
   payload, output path, time, and logger without exposing
   `ComponentRuntimeState`. Mutable period-output adapters live under
-  `vercor.output._adapters`.
+  `vercor.output._component_adapter`.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
   components remain introspectable whether fields are declared up front or added
@@ -196,10 +198,11 @@ immutable runtime containers used during traced integration.
   class-level `from_fields()` / `from_step()` constructors, or subclasses with
   `declare_fields(...)`. `vercor.components` and `vercor` reexport the
   component-author facade.
-  `vercor.components.contracts` owns public author-facing contract types,
-  `vercor.components.base` owns only the abstract differentiable `Component`
-  contract, `vercor.components.data` owns `DataComponent`, and
-  `vercor.components.host` owns `HostComponent`.
+  `vercor.components.contracts` owns public author-facing context, result,
+  spec, and lifecycle-hook types. Internal callable/field-normalization type
+  aliases remain private underscored names. `vercor.components.base` owns only
+  the abstract differentiable `Component` contract, `vercor.components.data`
+  owns `DataComponent`, and `vercor.components.host` owns `HostComponent`.
   Field-name de-duplication lives in private `vercor._field_names`, and
   component authoring methods for field declarations, setup seeding, and
   settings updates live in private `vercor.components._field_authoring`.
@@ -355,7 +358,7 @@ immutable runtime containers used during traced integration.
   `RunState.component(...)` and `RunState.components(...)` are the only public
   component-view factories.
   Final runtime output iteration, output-mask naming/selection, and
-  view writing live in private `vercor.output.runtime` helpers, with
+  view writing live in private `vercor.output._runtime` helpers, with
   `vercor._runtime.facade` validating and delegating output writes for
   `Coupler.write_outputs()`. `Coupler.finalize()` has been removed; users write
   outputs through `Coupler.write_outputs()`. `Coupler` delegates to the runtime
@@ -436,14 +439,16 @@ adapter record boundary. Final JAXGCM snapshots are registered by the external
 factory and are written from the final runtime payload's `JCMState`, not from
 runtime data fields or declared component outputs.
 Shared output extension primitives for adapter authors are exported from
-`vercor.output`: `OutputVariable`, `OutputConfig`, `SnapshotContext`, and
-`SnapshotWriter`. Snapshot writers receive only public component/result views
-and the component payload. Shared cadence, calendar time metadata, dataset
+`vercor.output`: `OutputVariable`, `PeriodOutput`, `OutputConfig`,
+`SnapshotContext`, and `SnapshotWriter`. `OutputConfig.period is None`
+disables period output; `PeriodOutput(frequency="step")` requests every-step
+period output. Snapshot writers receive only public component/result views and
+the component payload. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
-orchestration, and direct `h5netcdf` writing live in
-`vercor.output.time`, `vercor.output.datasets`,
-`vercor.output.period_averages`, `vercor.output.adapters`,
-`vercor.output.period_files`, and `vercor.output.netcdf`.
+orchestration, and direct `h5netcdf` writing live in private
+`vercor.output._period`, `vercor.output._dataset`,
+`vercor.output._component_adapter`, `vercor.output._period_files`, and
+`vercor.output._netcdf`.
 Surface-temperature cleanup and output-field mapping live in
 `vercor.setups.external.jax_gcm_fields`. Veros host-runtime flux application and
 substep orchestration live in `vercor.setups.external.veros_runtime` with
@@ -584,10 +589,11 @@ derive them explicitly with `np.dtype(jax_real_dtype(policy))` or
 `np.dtype(jax_index_dtype(policy))`. NumPy remains restricted to explicit host
 and dtype boundaries. File-output adapters should keep VerCOR-owned values
 JAX-backed and delegate external component period-average orchestration to
-`vercor.output.adapters`, period-file writes to `vercor.output.period_files`,
-and final file-transfer conversion to `vercor.output.netcdf`, which calls
-`vercor.host_arrays` only when a non-JAX consumer, such as `h5netcdf` or a
-host-backed model runtime, requires a host array.
+`vercor.output._component_adapter`, period-file writes to
+`vercor.output._period_files`, and final file-transfer conversion to
+`vercor.output._netcdf`, which calls `vercor.host_arrays` only when a non-JAX
+consumer, such as `h5netcdf` or a host-backed model runtime, requires a host
+array.
 
 ### Logging across JAX runtime transforms
 

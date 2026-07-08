@@ -9,7 +9,7 @@ from vercor.components.contexts import (
     StepContext,
 )
 from vercor._field_names import unique_field_names as _unique_field_names
-from vercor.output.adapters import OutputConfig
+from vercor.output import OutputConfig
 from vercor.types import RuntimeArray
 
 KEEP_PAYLOAD: Final = object()
@@ -60,14 +60,14 @@ class ValidationContext:
     sends: tuple[str, ...] = ()
 
 
-ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
-ComponentStepCallable: TypeAlias = Callable[
+_ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
+_ComponentStepCallable: TypeAlias = Callable[
     [Mapping[str, RuntimeArray], StepContext, Any | None],
-    ComponentStepReturn,
+    _ComponentStepReturn,
 ]
-AuthorStepCallable: TypeAlias = Callable[..., ComponentStepReturn]
-FieldNames: TypeAlias = Iterable[str]
-AuthorFieldValues: TypeAlias = Mapping[str, object] | None
+_AuthorStepCallable: TypeAlias = Callable[..., _ComponentStepReturn]
+_FieldNames: TypeAlias = Iterable[str]
+_AuthorFieldValues: TypeAlias = Mapping[str, object] | None
 ComponentInitializeHook = Callable[[Any, SetupContext], None]
 ComponentCreatePayloadHook = Callable[[Any], Any | None]
 ComponentPrefillHook = Callable[[Any, PrefillContext], PrefillResult | None]
@@ -95,16 +95,16 @@ class ComponentSpec:
         defaults: Field defaults used when runtime state is created.
     """
 
-    inputs: FieldNames = ()
-    outputs: FieldNames = ()
+    inputs: _FieldNames = ()
+    outputs: _FieldNames = ()
     defaults: Mapping[str, object] = field(default_factory=dict)
     lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)
     output: OutputConfig = field(default_factory=OutputConfig)
 
     def __init__(
         self,
-        inputs: FieldNames = (),
-        outputs: FieldNames = (),
+        inputs: _FieldNames = (),
+        outputs: _FieldNames = (),
         defaults: Mapping[str, object] | None = None,
         *,
         lifecycle: LifecycleHooks | None = None,
@@ -128,16 +128,11 @@ class ComponentSpec:
 
 
 __all__ = [
-    "AuthorFieldValues",
-    "AuthorStepCallable",
     "ComponentCreatePayloadHook",
     "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",
-    "ComponentStepCallable",
-    "ComponentStepReturn",
     "ComponentValidateHook",
-    "FieldNames",
     "ComponentSpec",
     "KEEP_PAYLOAD",
     "PrefillContext",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from vercor.exceptions import ExchangerError
+from vercor.exceptions import ExchangeError
 from vercor.exchanges import Exchange
 from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.fields import VectorField
@@ -19,7 +19,7 @@ def _dispatch_vector_exchange_field(
     """Dispatch one vector exchange field into the received update mapping."""
 
     if not all(name in source_fields for name in (field_name.u, field_name.v)):
-        raise ExchangerError(
+        raise ExchangeError(
             f"Not all fields in vector {field_name} are present in source fields"
         )
     u_vector, v_vector = regrid.regrid_vector(
@@ -40,7 +40,7 @@ def _dispatch_scalar_exchange_field(
     """Dispatch one scalar exchange field into the received update mapping."""
 
     if field_name not in source_fields:
-        raise ExchangerError(f"Field {field_name} not present in source fields")
+        raise ExchangeError(f"Field {field_name} not present in source fields")
     received_updates[field_name] = (
         regrid.regrid(source_fields.get(field_name)) * fractional_mask
     )

@@ -5,11 +5,11 @@ from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from vercor.components.contracts import (
-    AuthorStepCallable,
     LifecycleHooks,
-    ComponentStepCallable,
-    ComponentStepReturn,
     ComponentSpec,
+    _AuthorStepCallable,
+    _ComponentStepCallable,
+    _ComponentStepReturn,
 )
 from vercor.components._runtime_fields import apply_step_result, runtime_fields
 from vercor.exceptions import ComponentError
@@ -25,14 +25,14 @@ if TYPE_CHECKING:
 class CallableComponentOptions:
     """Normalized callable-backed component construction options."""
 
-    step: AuthorStepCallable
+    step: _AuthorStepCallable
     payload: Any | None
     spec: ComponentSpec
     lifecycle_hooks: LifecycleHooks
 
 
 def callable_component_options(
-    step: AuthorStepCallable,
+    step: _AuthorStepCallable,
     *,
     spec: ComponentSpec | None = None,
     payload: Any | None = None,
@@ -49,8 +49,8 @@ def callable_component_options(
 
 
 def normalize_component_step_callable(
-    step: AuthorStepCallable,
-) -> ComponentStepCallable:
+    step: _AuthorStepCallable,
+) -> _ComponentStepCallable:
     """Adapt supported author step signatures to the runtime wrapper shape."""
 
     try:
@@ -112,7 +112,7 @@ def normalize_component_step_callable(
             fields: Mapping[str, RuntimeArray],
             context: StepContext,
             payload: Any | None,
-        ) -> ComponentStepReturn:
+        ) -> _ComponentStepReturn:
             _ = context, payload
             return step(fields)
 
@@ -124,7 +124,7 @@ def normalize_component_step_callable(
             fields: Mapping[str, RuntimeArray],
             context: StepContext,
             payload: Any | None,
-        ) -> ComponentStepReturn:
+        ) -> _ComponentStepReturn:
             _ = payload
             return step(fields, context)
 
@@ -134,7 +134,7 @@ def normalize_component_step_callable(
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None,
-    ) -> ComponentStepReturn:
+    ) -> _ComponentStepReturn:
         return step(fields, context, payload)
 
     return step_fields_context_and_payload
@@ -152,13 +152,13 @@ def _component_step_signature_error() -> ComponentError:
 class _CallableRuntimeMixin:
     """Shared metadata hooks for callable-backed component wrappers."""
 
-    _step: ComponentStepCallable
+    _step: _ComponentStepCallable
     _payload: Any | None
 
     def _initialize_callable_runtime(
         self,
         *,
-        step: AuthorStepCallable,
+        step: _AuthorStepCallable,
         payload: Any | None,
         spec: ComponentSpec,
         lifecycle_hooks: LifecycleHooks,

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import vercor.output.runtime as _runtime_output
+import vercor.output._runtime as _runtime_output
 from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
 from vercor.exchanges import Exchange

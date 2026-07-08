@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,8 +8,8 @@ from typing import Any
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
 from vercor.grids import RectilinearGrid
-from vercor.output import OutputConfig
-from vercor.setup_config import JaxGCMConfig, PeriodOutput, Spinup
+from vercor.output import OutputConfig, PeriodOutput
+from vercor.setup_config import JAXGCMConfig, Spinup
 
 
 @dataclass(frozen=True)
@@ -48,20 +48,16 @@ def load_jcm_inputs(
     return JCMInputs(coords=coords, terrain=terrain, forcing=forcing)
 
 
-def make_jcm_land(*args: Any, **kwargs: Any) -> DataComponent:
-    """Create a JCM land component through the optional JCM dependency boundary."""
+def _load_jcm_factories() -> tuple[
+    Callable[..., DataComponent],
+    Callable[..., Component],
+]:
+    """Return optional JCM setup factories from their owning modules."""
 
-    from vercor.setups.data.jcm_land import make_jcm_land as _make_jcm_land
+    from vercor.setups.data.jcm_land import make_jcm_land
+    from vercor.setups.external.jax_gcm import make_jax_gcm
 
-    return _make_jcm_land(*args, **kwargs)
-
-
-def make_jax_gcm(*args: Any, **kwargs: Any) -> Component:
-    """Create a JAXGCM component through the optional JCM dependency boundary."""
-
-    from vercor.setups.external.jax_gcm import make_jax_gcm as _make_jax_gcm
-
-    return _make_jax_gcm(*args, **kwargs)
+    return make_jcm_land, make_jax_gcm
 
 
 def make_jcm_land_atmosphere(
@@ -75,6 +71,7 @@ def make_jcm_land_atmosphere(
 ) -> JCMLandAtmosphereSetup:
     """Create paired JCM land and atmosphere setup components for an ocean grid."""
 
+    make_jcm_land, make_jax_gcm = _load_jcm_factories()
     spinup_config = Spinup(enabled=True) if spinup is None else spinup
     output_config = (
         OutputConfig(period=PeriodOutput(frequency="month"))
@@ -95,7 +92,7 @@ def make_jcm_land_atmosphere(
     atmosphere = make_jax_gcm(
         coords,
         terrain,
-        config=JaxGCMConfig(
+        config=JAXGCMConfig(
             custom_parameters=(
                 None if custom_parameters is None else dict(custom_parameters)
             ),

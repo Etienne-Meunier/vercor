@@ -8,8 +8,8 @@ from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.physics_interface import TerrainData
 
 from vercor.components import Component, LifecycleHooks, ComponentSpec
-from vercor.output.adapters import OutputConfig
-from vercor.setup_config import JaxGCMConfig, PeriodOutput
+from vercor.output import OutputConfig
+from vercor.setup_config import JAXGCMConfig
 import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
 import vercor.setups.external.jax_gcm_output as _jax_gcm_output
 import vercor.setups.external.jax_gcm_runtime as _jax_gcm_runtime
@@ -28,14 +28,12 @@ def make_jax_gcm(
     coords: CoordinateSystem,
     terrain: TerrainData,
     *,
-    config: JaxGCMConfig | None = None,
+    config: JAXGCMConfig | None = None,
 ) -> Component:
     """Return a differentiable JAXGCM/JCM atmosphere component."""
 
-    config = JaxGCMConfig() if config is None else config
-    period_output = (
-        PeriodOutput() if config.output.period is None else config.output.period
-    )
+    config = JAXGCMConfig() if config is None else config
+    period_output = config.output.period
     state = JAXGCMSetupState(
         coords=coords,
         terrain=terrain,
@@ -45,7 +43,7 @@ def make_jax_gcm(
         save_interval=config.save_interval,
         spinup_time=config.spinup.duration,
         forcing_data=config.forcing_data,
-        output_frequency=period_output.frequency,
+        output_frequency=None if period_output is None else period_output.frequency,
         do_spinup=config.spinup.enabled,
         jitted=config.jitted,
     )
