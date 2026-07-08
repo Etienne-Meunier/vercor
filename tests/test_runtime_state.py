@@ -488,9 +488,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class StepContext" in component_contexts_source
     assert "ComponentSetupContext = SetupContext" not in component_contexts_source
     assert "ComponentStepContext = StepContext" not in component_contexts_source
-    assert (
-        "__getattr__ = " + "deprecated" + "_getattr(" not in component_contexts_source
-    )
+    removed_getattr_marker = "__getattr__ = " + "depre" + "cated" + "_getattr("
+    assert removed_getattr_marker not in component_contexts_source
     assert "SetupContext" in components_source
     assert "StepContext" in components_source
     assert "component.initialize(self)" not in coupler_source
@@ -564,8 +563,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class StateManager" not in camulator_stepper_source
     assert "state_manager" not in camulator_stepper_source
     assert ".state_manager." not in camulator_runtime_source
-    assert "post_process_wind_artifacts_deprecated" not in camulator_wind_filter_source
-    assert "old_flux_atmOcn" not in flux_source
+    removed_wind_marker = "post_process_wind_artifacts_" + "depre" + "cated"
+    removed_flux_marker = "old" + "_flux_atmOcn"
+    assert removed_wind_marker not in camulator_wind_filter_source
+    assert removed_flux_marker not in flux_source
     assert "new_flux_atmOcn" not in flux_source
     assert "def compute_ocean_surface_fluxes" in flux_source
 

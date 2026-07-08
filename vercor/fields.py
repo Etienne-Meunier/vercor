@@ -75,7 +75,7 @@ def normalize_field_items(fields: Sequence[FieldItem]) -> tuple[FieldItem, ...]:
             continue
         if isinstance(field, tuple):
             raise TypeError(
-                "Tuple vector fields were removed in V3; use "
+                "Tuple vector field declarations are unsupported; use "
                 "vercor.vector('u_field', 'v_field') to create a VectorField."
             )
         raise TypeError(

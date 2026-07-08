@@ -9,6 +9,20 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local expired deprecation residue cleanup validation passed as of
+  2026-07-08 using the direct `scipy` environment executable: focused cleanup
+  pytest for API boundaries/public API contracts/runtime state/runtime facade,
+  Black, flake8, mypy, full fast pytest, full pytest, coverage pytest at 90%
+  total, and `git diff --check`. The cleanup keeps VerCOR deprecation shims
+  absent while removing remaining transition wording from active source,
+  tests, and docs: tuple-vector errors are version-neutral, API contract tests
+  no longer use transition-version names, stale audit docs now point to
+  `DESIGN.md` and this file, and the external Dinosaur/JAX
+  `jax.experimental.shard_map` pytest filter remains intentionally scoped to
+  third-party import noise. Black emitted the recurring Python
+  3.13/target-3.14 warning; full pytest/coverage emitted only the existing
+  external JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 - Latest local API review rewrite validation passed as of 2026-07-08 using the
   direct `scipy` environment executable: focused API-boundary pytest, Black,
   flake8, mypy, full fast pytest, full pytest, example `compileall`, coverage

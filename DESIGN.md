@@ -188,7 +188,7 @@ immutable runtime containers used during traced integration.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
   components remain introspectable whether fields are declared up front or added
-  through constructor seeding. The legacy `wrap()` classmethods and
+  through constructor seeding. The removed `wrap()` classmethods and
   `make_*_component()` factory functions have been removed. The module-level
   `data_component()`, `differentiable_component()`, and `host_component()`
   factory helpers have also been removed. Component authors should use
@@ -337,7 +337,7 @@ immutable runtime containers used during traced integration.
   the interrupt controller. Runtime facade and preparation code update those
   grouped resources directly. `Coupler` passes repeated runtime inputs through
   the internal `vercor.runtime.facade.RuntimeFacadeInputs` bundle; there are no
-  private compatibility aliases for individual runtime maps.
+  per-map private aliases for individual runtime maps.
   Host/scanned runtime loops, run-mode
   selection, one-shot compiled scanned dispatch, and interrupt translation live
   in `vercor.runtime.runner`. High-level runtime orchestration

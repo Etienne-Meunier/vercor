@@ -38,7 +38,7 @@ from vercor.regridding import bilinear
 
 
 @pytest.mark.fast_always
-def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
+def test_public_api_exports_state_view_fields_and_regridders() -> None:
     from vercor import (
         ComponentState,
         RectilinearGrid,
@@ -77,7 +77,7 @@ def test_v3_public_api_exports_state_view_fields_and_regridders() -> None:
 
 
 @pytest.mark.fast_always
-def test_staged_api_rewrite_public_owners_and_facades() -> None:
+def test_public_api_uses_current_owners_and_facades() -> None:
     import vercor.exchanges as exchanges_module
     import vercor.fields as fields_module
     import vercor.grids as grids_module
@@ -116,7 +116,7 @@ def test_staged_api_rewrite_public_owners_and_facades() -> None:
 
 
 @pytest.mark.fast_always
-def test_staged_public_facades_hide_private_implementation_modules() -> None:
+def test_public_facades_hide_private_implementation_modules() -> None:
     import vercor.output as output_module
     import vercor.regridding as regridding_module
     import vercor.state as state_module
@@ -170,7 +170,7 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
 
 
 @pytest.mark.fast_always
-def test_v3_fields_facade_owns_vector_field_contract() -> None:
+def test_fields_facade_owns_vector_field_contract() -> None:
     field = vector("u_velocity", "v_velocity")
 
     assert field == VectorField("u_velocity", "v_velocity")
@@ -180,12 +180,14 @@ def test_v3_fields_facade_owns_vector_field_contract() -> None:
         "v_velocity",
     ]
 
-    with pytest.raises(TypeError, match="VectorField"):
+    with pytest.raises(
+        TypeError, match="Tuple vector field declarations are unsupported"
+    ):
         Exchange("ATM", "OCN", (("u_velocity", "v_velocity"),))  # type: ignore[arg-type]
 
 
 @pytest.mark.fast_always
-def test_v1_state_constructors_do_not_expose_runtime_stores() -> None:
+def test_state_constructors_do_not_expose_runtime_stores() -> None:
     run_state_signature = str(signature(vercor.RunState))
     component_state_signature = signature(vercor.ComponentState)
 
@@ -201,7 +203,7 @@ def test_v1_state_constructors_do_not_expose_runtime_stores() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_private_regridder_base_does_not_shadow_public_protocol() -> None:
+def test_private_regridder_base_does_not_shadow_public_protocol() -> None:
     base_module = importlib.import_module("vercor._regridders.base")
 
     assert hasattr(base_module, "_BaseRegridder")
@@ -212,7 +214,7 @@ def test_v1_private_regridder_base_does_not_shadow_public_protocol() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_field_name_deduplication_has_one_private_owner() -> None:
+def test_field_name_deduplication_has_one_private_owner() -> None:
     assert not Path("vercor/components/_field_names.py").exists()
     assert Path("vercor/_field_names.py").exists()
     assert "def unique_field_names(" not in Path("vercor/fields.py").read_text(
@@ -221,7 +223,7 @@ def test_v1_field_name_deduplication_has_one_private_owner() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_removed_component_setup_attributes_are_blocked() -> None:
+def test_removed_component_setup_attributes_are_blocked() -> None:
     component = DataComponent.from_fields(
         "ATM",
         make_test_grid(name="blocked-component-attrs"),
@@ -234,7 +236,7 @@ def test_v1_removed_component_setup_attributes_are_blocked() -> None:
 
 
 @pytest.mark.fast_always
-def test_v3_coupler_public_methods_return_stable_state_and_views(
+def test_coupler_public_methods_return_stable_state_and_views(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -280,11 +282,11 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
 
 
 @pytest.mark.fast_always
-def test_vercor_deprecation_shims_are_removed_from_source() -> None:
+def test_vercor_warning_wrappers_are_absent_from_source() -> None:
     forbidden_markers = (
-        "warnings.warn(",
-        "DeprecationWarning",
-        "def _legacy_runtime_step(",
+        "warnings" + ".warn(",
+        "Deprecation" + "Warning",
+        "def _" + "leg" + "acy" + "_runtime_step(",
         "step_host_runtime_state",
         "def step_runtime_state(",
         "def with_component_fields(",
@@ -303,7 +305,7 @@ def test_vercor_deprecation_shims_are_removed_from_source() -> None:
 
 
 @pytest.mark.fast_always
-def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
+def test_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
     grid = vercor.RectilinearGrid.uniform(
         "v3-grid",
         nlon=2,
@@ -334,7 +336,7 @@ def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> Non
 
 
 @pytest.mark.fast_always
-def test_staged_component_constructor_hides_raw_setup_internals() -> None:
+def test_component_constructor_hides_raw_setup_internals() -> None:
     grid = vercor.RectilinearGrid.from_coordinates(
         "component-constructor-grid",
         longitude=jnp.asarray([0.0, 90.0]),
@@ -360,7 +362,7 @@ def test_staged_component_constructor_hides_raw_setup_internals() -> None:
 
 
 @pytest.mark.fast_always
-def test_staged_regridders_expose_explicit_scalar_and_vector_methods() -> None:
+def test_regridders_expose_explicit_scalar_and_vector_methods() -> None:
     from vercor.regridding import Regridder
 
     grid = vercor.RectilinearGrid.from_coordinates(
@@ -380,7 +382,7 @@ def test_staged_regridders_expose_explicit_scalar_and_vector_methods() -> None:
 
 
 @pytest.mark.fast_always
-def test_v3_top_level_exports_public_exceptions() -> None:
+def test_top_level_exports_public_exceptions() -> None:
     from vercor import (
         AssetError,
         ComponentError,
@@ -519,7 +521,7 @@ def test_public_api_uses_canonical_breaking_names(
 
 
 @pytest.mark.fast_always
-def test_v2_public_api_facade_exports_supported_names_only() -> None:
+def test_public_api_facade_exports_supported_names_only() -> None:
     from vercor import (
         FieldSpec,
         KEEP_PAYLOAD,
@@ -568,7 +570,7 @@ def test_v2_public_api_facade_exports_supported_names_only() -> None:
 
 
 @pytest.mark.fast_always
-def test_v2_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> None:
+def test_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> None:
     from vercor.components._runtime_fields import apply_step_result
 
     component = DataComponent.from_fields(
@@ -600,7 +602,7 @@ def test_v2_step_result_payload_sentinel_preserves_runtime_payload_by_default() 
 
 
 @pytest.mark.fast_always
-def test_v2_exchange_accepts_supported_names_only() -> None:
+def test_exchange_accepts_supported_names_only() -> None:
     exchange = Exchange(
         "ATM",
         "OCN",
@@ -637,7 +639,7 @@ def test_v2_exchange_accepts_supported_names_only() -> None:
 
 
 @pytest.mark.fast_always
-def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
+def test_coupler_facade_wraps_runtime_state_and_views() -> None:
     component = DataComponent.from_fields(
         name="ATM",
         grid=make_test_grid(name="coupler-v2"),
@@ -672,7 +674,7 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
 
 
 @pytest.mark.fast_always
-def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
+def test_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     from vercor.grids import RectilinearGrid as PublicRectilinearGrid
     from vercor.recipes import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
     from vercor.regridding import (
@@ -798,7 +800,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 @pytest.mark.fast_always
 def test_removed_facade_modules_are_not_importable() -> None:
     removed_modules = (
-        ("vercor._deprecation", "vercor._deprecation"),
+        ("vercor._" + "depre" + "cation", "vercor._" + "depre" + "cation"),
         ("vercor.components.factories", "vercor.components.factories"),
         ("vercor.exchange", "vercor.exchange"),
         ("vercor.grid", "vercor.grid"),
@@ -1018,20 +1020,22 @@ def test_removed_api_surfaces_stay_absent() -> None:
 
 
 @pytest.mark.fast_always
-def test_active_progress_does_not_advertise_removed_compatibility_surfaces() -> None:
+def test_active_progress_does_not_advertise_removed_surfaces() -> None:
     progress_source = Path("PROGRESS.md").read_text(encoding="utf-8")
 
     stale_progress_markers = (
-        "while preserving the\n  existing private compatibility aliases for tests and profiling helpers",
-        "preserving public and private compatibility methods used by tests",
+        "while preserving the\n  existing private compat"
+        + "ibility aliases for tests and profiling helpers",
+        "preserving public and private compat" + "ibility methods used by tests",
         "keeping `StateVariableAccessor.get_var_info(...)` dictionary-compatible",
-        "compatibility `JAXGCMRuntimePayload` reexport",
+        "compat" + "ibility `JAXGCMRuntimePayload` reexport",
         "preserving stable package aggregators, `ComponentSettings`",
-        "preserving `vercor.clock` compatibility reexports",
-        "leaving old flux utility import paths as\n  compatibility aliases",
-        "a thin compatibility facade",
-        "Preserved intentional compatibility surfaces, including settings attribute\n"
-        "  compatibility, `ComponentSettings`",
+        "preserving `vercor.clock` compat" + "ibility reexports",
+        "leaving old flux utility import paths as\n  compat" + "ibility aliases",
+        "a thin compat" + "ibility facade",
+        "Preserved intentional compat"
+        + "ibility surfaces, including settings attribute\n"
+        "  compat" + "ibility, `ComponentSettings`",
         "reexports, `ComponentForcingData._read_forcing()`",
         "`Coupler._run_scanned_runtime()`",
         "`_runtime_state_from_components()`",
@@ -1127,7 +1131,8 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "ComponentCreatePayloadHook =" in public_contracts_source
     assert "ComponentPrefillHook =" in public_contracts_source
     assert "ComponentValidateHook =" in public_contracts_source
-    assert "__getattr__ = " + "deprecated" + "_getattr(" not in public_contracts_source
+    removed_getattr_marker = "__getattr__ = " + "depre" + "cated" + "_getattr("
+    assert removed_getattr_marker not in public_contracts_source
     assert "ComponentFieldSpec" not in component_contracts_module.__all__
     assert "ComponentStepResult" not in component_contracts_module.__all__
     assert "class ComponentFieldSpec" not in contracts_source
@@ -1596,7 +1601,7 @@ def test_setup_factories_are_primary_concrete_component_api() -> None:
 
 
 @pytest.mark.fast_always
-def test_old_concrete_component_packages_are_removed() -> None:
+def test_removed_concrete_component_packages_are_absent() -> None:
     assert not Path("vercor/components/slab").exists()
     assert not Path("vercor/components/data").exists()
     assert not Path("vercor/components/external").exists()

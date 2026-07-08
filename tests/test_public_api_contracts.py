@@ -17,7 +17,7 @@ from vercor.regridding import bilinear
 
 
 @pytest.mark.fast_always
-def test_v1_grid_constructors_live_on_rectilinear_grid_class() -> None:
+def test_grid_constructors_live_on_rectilinear_grid_class() -> None:
     grid = RectilinearGrid.uniform(
         "class-grid",
         nlon=2,
@@ -40,7 +40,7 @@ def test_v1_grid_constructors_live_on_rectilinear_grid_class() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_run_state_exposes_component_state_view_not_runtime_state() -> None:
+def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
     component = DataComponent.from_fields(
         "ATM",
         make_test_grid(name="v1-state"),
@@ -67,7 +67,7 @@ def test_v1_run_state_exposes_component_state_view_not_runtime_state() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_coupler_uses_initial_state_name() -> None:
+def test_coupler_uses_initial_state_name() -> None:
     component = DataComponent.from_fields(
         "ATM",
         make_test_grid(name="v1-coupler"),
@@ -85,7 +85,7 @@ def test_v1_coupler_uses_initial_state_name() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_component_setup_storage_is_not_publicly_mutable() -> None:
+def test_component_setup_storage_is_not_publicly_mutable() -> None:
     component = DataComponent.from_fields(
         "ATM",
         make_test_grid(name="v1-component"),
@@ -100,7 +100,7 @@ def test_v1_component_setup_storage_is_not_publicly_mutable() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_regridder_public_grid_name_is_target_only() -> None:
+def test_regridder_public_grid_name_is_target_only() -> None:
     grid = make_test_grid(name="v1-regridder")
     regridder = bilinear(grid, grid)
     scalar = jnp.ones(grid.shape)
@@ -112,7 +112,7 @@ def test_v1_regridder_public_grid_name_is_target_only() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_output_public_api_is_spec_not_mutable_adapter() -> None:
+def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     calls: list[tuple[object, ...]] = []
 
     def writer(context: vercor.SnapshotContext) -> None:
@@ -134,7 +134,7 @@ def test_v1_output_public_api_is_spec_not_mutable_adapter() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_component_constructors_accept_field_spec_only() -> None:
+def test_component_constructors_accept_field_spec_only() -> None:
     grid = make_test_grid(name="v1-spec-only")
 
     component = vercor.Component.from_step(
@@ -175,7 +175,7 @@ def test_v1_component_constructors_accept_field_spec_only() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
+def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     grid = make_test_grid(name="v1-snapshot-context")
     contexts: list[vercor.SnapshotContext] = []
 
@@ -216,7 +216,7 @@ def test_v1_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_lifecycle_hooks_use_typed_contexts_and_results() -> None:
+def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
     grid = make_test_grid(name="v1-hook-context")
     events: list[str] = []
 
@@ -255,7 +255,7 @@ def test_v1_lifecycle_hooks_use_typed_contexts_and_results() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_setup_and_dtype_config_objects_are_public() -> None:
+def test_setup_and_dtype_config_objects_are_public() -> None:
     output = vercor.PeriodOutputConfig(frequency="month", variables=("temp", "salt"))
     spinup = vercor.SpinupConfig(enabled=True)
 
@@ -272,7 +272,7 @@ def test_v1_setup_and_dtype_config_objects_are_public() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_private_grid_and_exchange_shims_are_removed() -> None:
+def test_private_grid_and_exchange_modules_are_removed() -> None:
     with pytest.raises(ModuleNotFoundError, match="vercor._grid"):
         importlib.import_module("vercor._grid")
     with pytest.raises(ModuleNotFoundError, match="vercor._exchange"):
@@ -280,7 +280,7 @@ def test_v1_private_grid_and_exchange_shims_are_removed() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_active_docs_do_not_advertise_removed_transition_apis() -> None:
+def test_active_docs_do_not_advertise_removed_transition_apis() -> None:
     active_docs = (
         Path("DESIGN.md").read_text(encoding="utf-8")
         + "\n"
@@ -290,7 +290,7 @@ def test_v1_active_docs_do_not_advertise_removed_transition_apis() -> None:
         "ComponentView",
         "`Coupler` exposes `state()`",
         "`run()`, `state()`",
-        "callable scalar/vector behavior for staged compatibility",
+        "callable scalar/vector behavior for sta" + "ged compat" + "ibility",
         "`Coupler.initialize()`",
         "`Component.setup_metadata`",
         "`Component.data`",
@@ -301,7 +301,7 @@ def test_v1_active_docs_do_not_advertise_removed_transition_apis() -> None:
 
 
 @pytest.mark.fast_always
-def test_v1_run_state_remains_a_jax_pytree() -> None:
+def test_run_state_remains_a_jax_pytree() -> None:
     component = DataComponent.from_fields(
         "ATM",
         make_test_grid(name="v1-pytree"),

@@ -149,12 +149,12 @@ def test_runtime_resources_expose_simple_public_resource_fields() -> None:
     preparation_source = source_for("vercor/runtime/preparation.py")
     run_context_source = source_for("vercor/runtime/run_context.py")
 
-    for old_raw_name in (
+    for removed_resource_field in (
         "compiled_runtime_cache",
         "runtime_cache_mapping",
         "interrupts",
     ):
-        assert not hasattr(resources, old_raw_name), old_raw_name
+        assert not hasattr(resources, removed_resource_field), removed_resource_field
 
     for public_field in (
         "topology_maps",
