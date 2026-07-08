@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 from vercor.calendar import ModelDateTime
 from vercor.exchanges import Exchange
 from vercor.runtime.exchange_keys import exchange_regrid_key
+from vercor.output.adapters import SnapshotContext
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
-from vercor.state import RunState
-from vercor.state import ComponentState
+from vercor.state import ComponentState, RunState
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -174,11 +174,16 @@ def write_coupler_component_snapshots(
         writer = component.output.snapshot_writer
         if writer is None:
             continue
+        runtime_state = final_state._component_state(name)
         writer(
-            final_state._component_state(name),
-            output_dir / f"{name.lower()}.snapshot.nc",
-            output_time,
-            logger,
+            SnapshotContext(
+                component=component,
+                state=ComponentState._from_runtime(name, component.grid, runtime_state),
+                payload=runtime_state.runtime_payload,
+                output_path=output_dir / f"{name.lower()}.snapshot.nc",
+                time=output_time,
+                logger=logger,
+            )
         )
 
 

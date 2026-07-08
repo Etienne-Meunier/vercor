@@ -7,6 +7,7 @@ from typing import Any
 from vercor import (
     Component,
     DataComponent,
+    FieldSpec,
     HostComponent,
     RectilinearGrid,
     StepContext,
@@ -57,12 +58,14 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
         name="OCN",
         grid=grid,
         step=step,
-        inputs=("net_surface_heat_flux",),
-        outputs=("sea_surface_temperature",),
-        defaults={
-            "sea_surface_temperature": 288.15,
-            "net_surface_heat_flux": 0.0,
-        },
+        spec=FieldSpec(
+            inputs=("net_surface_heat_flux",),
+            outputs=("sea_surface_temperature",),
+            defaults={
+                "sea_surface_temperature": 288.15,
+                "net_surface_heat_flux": 0.0,
+            },
+        ),
     )
 
 
@@ -98,8 +101,10 @@ def make_host_model(grid: RectilinearGrid) -> HostComponent:
         grid=grid,
         step=step,
         payload=ToyHostModel(),
-        outputs=("temperature",),
-        defaults={"temperature": 283.15},
+        spec=FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": 283.15},
+        ),
     )
 
 

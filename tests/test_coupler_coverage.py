@@ -29,7 +29,6 @@ from tests._runtime_helpers import (
     runtime_state_from_coupler_components,
 )
 from tests.assertions import assert_allclose_compact
-from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
 from vercor.components.base import Component
 from vercor.components.host import HostComponent
@@ -51,12 +50,13 @@ from vercor._regridders.conservative import conservative
 from vercor.runtime.contracts import RuntimeComponentContract
 from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output.runtime import output_masks_for_component
-from vercor.output.adapters import ComponentOutput
+from vercor.output.adapters import OutputSpec, SnapshotContext
 from vercor.runtime.surface_masks import (
     apply_surface_exchange_masks,
     create_surface_exchange_masks,
     validate_land_mask_consistency,
 )
+from vercor.state import ComponentState
 from vercor.runtime.topology import build_exchange_topology
 from vercor.runtime.topology_state import (
     ExchangeTopologyState,
@@ -1327,17 +1327,12 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     skipped = DummyComponent(name="OCN", grid=make_test_grid(name="snapshot-ocn"))
     coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
-    calls: list[tuple[Any, Path, datetime | ModelDateTime, Any]] = []
+    calls: list[SnapshotContext] = []
 
-    def write_snapshot(
-        component_state: Any,
-        output: Path,
-        output_time: datetime | ModelDateTime,
-        logger: Any,
-    ) -> None:
-        calls.append((component_state, output, output_time, logger))
+    def write_snapshot(context: SnapshotContext) -> None:
+        calls.append(context)
 
-    component.output = ComponentOutput(snapshot_writer=write_snapshot)
+    component.output = OutputSpec(snapshot_writer=write_snapshot)
 
     output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
@@ -1346,14 +1341,13 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
         logger=coupler.logger,
     )
 
-    assert calls == [
-        (
-            state._component_state("ATM"),
-            Path("atm.snapshot.nc"),
-            datetime(2000, 1, 1, 0, 1),
-            coupler.logger,
-        )
-    ]
+    assert len(calls) == 1
+    assert calls[0].component is component
+    assert isinstance(calls[0].state, ComponentState)
+    assert calls[0].state.name == "ATM"
+    assert calls[0].output_path == Path("atm.snapshot.nc")
+    assert calls[0].time == datetime(2000, 1, 1, 0, 1)
+    assert calls[0].logger is coupler.logger
     assert not (tmp_path / "ocn.snapshot.nc").exists()
 
 

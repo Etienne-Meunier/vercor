@@ -29,6 +29,36 @@ class StepResult:
     payload: Any = KEEP_PAYLOAD
 
 
+@dataclass(frozen=True)
+class PrefillContext:
+    """Read-only public context supplied to component runtime-prefill hooks."""
+
+    data: Mapping[str, RuntimeArray]
+    incoming: Mapping[str, RuntimeArray]
+    outgoing: Mapping[str, RuntimeArray]
+    imports: tuple[str, ...] = ()
+    exports: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PrefillResult:
+    """Field updates returned by component runtime-prefill hooks."""
+
+    data: Mapping[str, RuntimeArray] = field(default_factory=dict)
+    incoming: Mapping[str, RuntimeArray] = field(default_factory=dict)
+    outgoing: Mapping[str, RuntimeArray] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ValidationContext:
+    """Public context supplied to component runtime-state validation hooks."""
+
+    state: Any
+    payload: Any | None = None
+    imports: tuple[str, ...] = ()
+    exports: tuple[str, ...] = ()
+
+
 ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
 ComponentStepCallable: TypeAlias = Callable[
     [Mapping[str, RuntimeArray], StepContext, Any | None],
@@ -39,17 +69,8 @@ FieldNames: TypeAlias = Iterable[str]
 AuthorFieldValues: TypeAlias = Mapping[str, object] | None
 ComponentInitializeHook = Callable[[Any, SetupContext], None]
 ComponentCreatePayloadHook = Callable[[Any], Any | None]
-ComponentPrefillHook = Callable[
-    [
-        Any,
-        dict[str, RuntimeArray],
-        dict[str, RuntimeArray],
-        dict[str, RuntimeArray],
-        Any,
-    ],
-    None,
-]
-ComponentValidateHook = Callable[[Any, Any, Any], None]
+ComponentPrefillHook = Callable[[Any, PrefillContext], PrefillResult | None]
+ComponentValidateHook = Callable[[Any, ValidationContext], None]
 
 
 @dataclass(frozen=True)
@@ -103,7 +124,10 @@ __all__ = [
     "FieldNames",
     "FieldSpec",
     "KEEP_PAYLOAD",
+    "PrefillContext",
+    "PrefillResult",
     "SetupContext",
     "StepContext",
     "StepResult",
+    "ValidationContext",
 ]

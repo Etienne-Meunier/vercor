@@ -9,6 +9,19 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local API review rewrite validation passed as of 2026-07-08 using the
+  direct `scipy` environment executable: focused API-boundary pytest, Black,
+  flake8, mypy, full fast pytest, full pytest, example `compileall`, coverage
+  pytest at 90% total, and `git diff --check`. The rewrite is the breaking
+  `0.6.0` cleanup: component constructors now take `spec=FieldSpec(...)`,
+  component snapshot output uses `OutputSpec` and public `SnapshotContext`,
+  runtime prefill/validation hooks use typed public contexts/results, external
+  setup factories accept `SpinupConfig` and `PeriodOutputConfig`, the root
+  facade exports the final public config/output types plus `setups`, and active
+  design/dependency docs describe the new boundary. Black emitted the recurring
+  Python 3.13/target-3.14 warning; full pytest/coverage emitted only the
+  existing JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 - Latest local expired VerCOR deprecation shim removal validation passed as of
   2026-07-08 using the direct `scipy` environment executable: focused cleanup
   pytest, Black, flake8, mypy, full fast pytest, full pytest, coverage pytest

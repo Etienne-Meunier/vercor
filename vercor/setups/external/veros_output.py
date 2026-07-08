@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
@@ -14,6 +13,7 @@ from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.host_arrays import array_to_host
 from vercor.jax_logging import LoggerLike
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
+from vercor.output.adapters import SnapshotContext
 from vercor.output.datasets import time_coordinate_variable, used_dimension_names
 from vercor.output.time import TIME_NAME
 from vercor.output.variables import OutputVariable
@@ -227,21 +227,17 @@ def record_veros_period_output(
 
 def write_veros_snapshot_output(
     state: Any,
-    component_state: Any,
-    output: Path,
-    output_time: datetime | ModelDateTime,
-    logger: LoggerLike | None = None,
+    context: SnapshotContext,
 ) -> None:
     """Write one final Veros native-state snapshot through the shared adapter."""
 
-    _ = component_state
     output_variables = getattr(state, "output_variables", ())
     if not output_variables:
         return
 
     state.output_adapter.record_snapshot(
         extract_veros_output_snapshot(state._veros_state, output_variables),
-        time=output_time,
+        time=context.time,
     )
 
     def build_coordinate_variables(
@@ -249,14 +245,14 @@ def write_veros_snapshot_output(
     ) -> dict[str, OutputVariable]:
         return veros_average_coordinate_variables(
             veros_state=state._veros_state,
-            output_time=output_time,
+            output_time=context.time,
             variables=snapshot_variables,
         )
 
     state.output_adapter.write_snapshot(
-        str(output),
+        str(context.output_path),
         build_coordinate_variables=build_coordinate_variables,
-        logger=logger,
+        logger=context.logger,
     )
 
 

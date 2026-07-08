@@ -12,7 +12,10 @@ from vercor.components.contracts import (
     ComponentValidateHook,
     FieldSpec,
     KEEP_PAYLOAD,
+    PrefillContext,
+    PrefillResult,
     StepResult,
+    ValidationContext,
 )
 from vercor.components.contexts import (
     SetupContext,
@@ -36,9 +39,13 @@ from vercor.exceptions import (
 from vercor.exchanges import Exchange
 from vercor.fields import VectorField, vector
 from vercor.grids import RectilinearGrid
+from vercor.dtypes import DTypePolicy
+from vercor.output import OutputSpec, OutputVariable, SnapshotContext, SnapshotWriter
 import vercor.recipes as recipes
 from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
 from vercor.settings import Settings
+from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+import vercor.setups as setups
 from vercor.state import ComponentState, RunState
 
 __all__ = [
@@ -56,16 +63,26 @@ __all__ = [
     "ComponentPrefillHook",
     "ComponentValidateHook",
     "DataComponent",
+    "DTypePolicy",
     "ExchangerError",
     "FieldSpec",
     "GridError",
     "HostComponent",
     "KEEP_PAYLOAD",
+    "OutputSpec",
+    "OutputVariable",
+    "PeriodOutputConfig",
+    "PrefillContext",
+    "PrefillResult",
     "RegridderError",
     "Settings",
     "SetupContext",
+    "SnapshotContext",
+    "SnapshotWriter",
+    "SpinupConfig",
     "StepContext",
     "StepResult",
+    "ValidationContext",
     "Clock",
     "DateTime360",
     "DateTime365",
@@ -76,6 +93,7 @@ __all__ = [
     "Exchange",
     "fluxes",
     "recipes",
+    "setups",
     "ModelDateTime",
     "VectorField",
     "vector",

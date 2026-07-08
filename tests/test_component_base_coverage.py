@@ -288,22 +288,21 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
 
     def prefill_runtime_state_fields(
         component: base_module.Component,
-        data: dict[str, RuntimeArray],
-        incoming: dict[str, RuntimeArray],
-        outgoing: dict[str, RuntimeArray],
-        contract: RuntimeComponentContract,
-    ) -> None:
-        _ = incoming, outgoing, contract
+        context: contracts_module.PrefillContext,
+    ) -> contracts_module.PrefillResult:
+        _ = context
         calls.append(f"prefill:{component.name}")
-        data["humidity"] = jnp.full(component.grid.shape, 0.5)
+        return contracts_module.PrefillResult(
+            data={"humidity": jnp.full(component.grid.shape, 0.5)}
+        )
 
     def validate_runtime_state(
         component: base_module.Component,
-        component_state: RuntimeComponentState,
-        contract: RuntimeComponentContract,
+        context: contracts_module.ValidationContext,
     ) -> None:
-        _ = contract
-        calls.append(f"validate:{component.name}:{'humidity' in component_state.data}")
+        calls.append(
+            f"validate:{component.name}:{'humidity' in context.state.fields()}"
+        )
 
     component = data_module.DataComponent.from_fields(
         name="OBS",
@@ -381,8 +380,10 @@ def test_from_fields_and_from_step_facade_expand_scalar_defaults() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        outputs=("temperature", "tendency"),
-        defaults={"temperature": 280.0, "forcing": 2.0},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature", "tendency"),
+            defaults={"temperature": 280.0, "forcing": 2.0},
+        ),
     )
     state = create_runtime_component_state(
         component,
@@ -476,23 +477,29 @@ def test_callable_facade_accepts_one_two_and_three_argument_steps() -> None:
             name="ONE",
             grid=grid,
             step=fields_only,
-            outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            spec=contracts_module.FieldSpec(
+                outputs=("temperature",),
+                defaults={"temperature": 280.0},
+            ),
         ),
         base_module.Component.from_step(
             name="TWO",
             grid=grid,
             step=fields_and_context,
-            outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            spec=contracts_module.FieldSpec(
+                outputs=("temperature",),
+                defaults={"temperature": 280.0},
+            ),
         ),
         base_module.Component.from_step(
             name="THREE",
             grid=grid,
             step=fields_context_payload,
             payload={"offset": 3.0},
-            outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            spec=contracts_module.FieldSpec(
+                outputs=("temperature",),
+                defaults={"temperature": 280.0},
+            ),
         ),
     )
 
@@ -721,23 +728,19 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
 
     def prefill(
         component: Any,
-        data: dict[str, RuntimeArray],
-        incoming: dict[str, RuntimeArray],
-        outgoing: dict[str, RuntimeArray],
-        contract: RuntimeComponentContract,
-    ) -> None:
-        _ = incoming, outgoing, contract
+        context: contracts_module.PrefillContext,
+    ) -> contracts_module.PrefillResult:
         events.append(f"prefill:{component.name}")
+        data = dict(context.data)
         prefill_runtime_fields(component, data, outputs=("temperature",))
+        return contracts_module.PrefillResult(data=data)
 
     def validate(
         component: Any,
-        state: RuntimeComponentState,
-        contract: RuntimeComponentContract,
+        context: contracts_module.ValidationContext,
     ) -> None:
-        _ = contract
         events.append(f"validate:{component.name}")
-        require_runtime_fields(component, state, "temperature")
+        assert context.state.field("temperature").shape == component.grid.shape
 
     factories = (
         data_module.DataComponent.from_fields(
@@ -940,9 +943,11 @@ def test_from_step_inputs_validate_missing_fields_without_zero_prefill() -> None
         name="ATM",
         grid=grid,
         step=step,
-        inputs=("forcing",),
-        outputs=("temperature",),
-        defaults={"temperature": 280.0},
+        spec=contracts_module.FieldSpec(
+            inputs=("forcing",),
+            outputs=("temperature",),
+            defaults={"temperature": 280.0},
+        ),
     )
     state = create_runtime_component_state(
         component,
@@ -973,8 +978,10 @@ def test_host_runtime_component_from_step_uses_author_friendly_names() -> None:
         name="HOST",
         grid=grid,
         step=step,
-        outputs=("temperature",),
-        defaults={"temperature": 1.0},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": 1.0},
+        ),
     )
     state = create_runtime_component_state(
         component,
@@ -1086,8 +1093,10 @@ def test_callable_component_prefills_and_validates_declared_fields() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        outputs=("temperature", "wind"),
-        defaults={"temperature": jnp.full(grid.shape, 280.0)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature", "wind"),
+            defaults={"temperature": jnp.full(grid.shape, 280.0)},
+        ),
     )
     assert not hasattr(component, "_required_fields")
     assert not hasattr(component, "_prefill_fields")
@@ -1129,7 +1138,7 @@ def test_callable_component_reports_missing_declared_inputs() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        inputs=("temperature",),
+        spec=contracts_module.FieldSpec(inputs=("temperature",)),
     )
     state = create_runtime_component_state(
         component,
@@ -1308,8 +1317,10 @@ def test_differentiable_component_applies_callable_field_updates() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape)},
+        ),
     )
     state = create_runtime_component_state(
         component,
@@ -1347,8 +1358,10 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
         grid=grid,
         payload={"offset": jnp.asarray(2.0)},
         step=preserve_payload,
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape)},
+        ),
     )
     preserve_state = create_runtime_component_state(
         preserve_component,
@@ -1384,8 +1397,10 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
         grid=grid,
         payload={"offset": jnp.asarray(2.0)},
         step=replace_payload,
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape)},
+        ),
     )
     replace_state = create_runtime_component_state(
         replace_component,
@@ -1420,8 +1435,10 @@ def test_callable_payload_default_can_be_overridden_by_lifecycle_hook() -> None:
         grid=grid,
         payload=payload,
         step=step,
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape)},
+        ),
     )
 
     assert component.create_runtime_payload() is payload
@@ -1434,8 +1451,10 @@ def test_callable_payload_default_can_be_overridden_by_lifecycle_hook() -> None:
         grid=grid,
         payload=payload,
         step=step,
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape)},
+        ),
         hooks=contracts_module.ComponentHooks(create_payload=create_runtime_payload),
     )
 
@@ -1458,8 +1477,10 @@ def test_host_component_runs_through_coupler_host_runtime() -> None:
         name="HOST",
         grid=grid,
         step=step,
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape)},
+        ),
     )
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=5.0, steps=1))
     coupler.add_component(component)
@@ -1489,7 +1510,7 @@ def test_callable_component_rejects_unseeded_field_updates() -> None:
         name="ATM",
         grid=grid,
         step=step,
-        defaults={"temperature": jnp.ones(grid.shape)},
+        spec=contracts_module.FieldSpec(defaults={"temperature": jnp.ones(grid.shape)}),
     )
     state = create_runtime_component_state(
         component,

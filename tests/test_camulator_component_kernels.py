@@ -30,6 +30,7 @@ from vercor.components.contexts import SetupContext, StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.variables import OutputVariable
+from vercor.setup_config import PeriodOutputConfig
 from vercor.setups.external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
 from vercor.grids import RectilinearGrid
@@ -997,7 +998,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     component = make_camulator_gcm(
         config_path="dummy.yaml",
         device="cpu",
-        output_frequency="month",
+        output=PeriodOutputConfig(frequency="month"),
     )
 
     assert isinstance(component.grid.longitude, jax.Array)

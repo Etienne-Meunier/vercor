@@ -6,6 +6,7 @@ import jax.numpy as jnp
 
 from vercor.components import (
     Component,
+    FieldSpec,
     StepContext,
 )
 from vercor.dtypes import as_jax_real_array
@@ -52,7 +53,9 @@ def make_slab_land(grid: RectilinearGrid, name: str = "LND") -> Component:
         name=name,
         grid=grid,
         step=step,
-        inputs=_LAND_INPUTS,
-        outputs=_LAND_OUTPUTS,
-        defaults=_LAND_DEFAULT_FIELDS,
+        spec=FieldSpec(
+            inputs=_LAND_INPUTS,
+            outputs=_LAND_OUTPUTS,
+            defaults=_LAND_DEFAULT_FIELDS,
+        ),
     )

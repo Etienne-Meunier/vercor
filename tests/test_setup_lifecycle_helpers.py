@@ -19,6 +19,7 @@ import vercor.setups.external.camulator_forcing as camulator_forcing_module
 from vercor.setups.external.camulator_forcing import initialize_camulator_forcing_cursor
 from tests._coverage_support import make_test_grid
 from vercor.components import DataComponent
+from vercor.setup_config import PeriodOutputConfig, SpinupConfig
 from vercor.settings import Settings
 
 
@@ -215,7 +216,7 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
         inputs=inputs,
-        do_spinup=False,
+        spinup=SpinupConfig(enabled=False),
     )
 
     assert result.land is land
@@ -231,9 +232,9 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         terrain,
         {
             "forcing_data": forcing,
-            "do_spinup": False,
+            "spinup": SpinupConfig(enabled=False),
             "jitted": True,
-            "output_frequency": "month",
+            "output": PeriodOutputConfig(frequency="month"),
         },
     )
 
@@ -348,9 +349,9 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
         custom_parameters={"surface_flux.vgust": 5.01},
-        do_spinup=False,
+        spinup=SpinupConfig(enabled=False),
         jitted=False,
-        output_frequency="year",
+        output=PeriodOutputConfig(frequency="year"),
     )
 
     assert result.land is land
@@ -368,9 +369,9 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         {
             "custom_parameters": {"surface_flux.vgust": 5.01},
             "forcing_data": forcing,
-            "do_spinup": False,
+            "spinup": SpinupConfig(enabled=False),
             "jitted": False,
-            "output_frequency": "year",
+            "output": PeriodOutputConfig(frequency="year"),
         },
     )
 

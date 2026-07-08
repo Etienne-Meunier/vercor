@@ -6,29 +6,40 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from vercor.calendar import ModelDateTime
 from vercor.jax_logging import LoggerLike
 
 if TYPE_CHECKING:
-    from vercor.runtime.state import RuntimeComponentState
-
-
-ComponentSnapshotWriter: TypeAlias = Callable[
-    ["RuntimeComponentState", Path, datetime | ModelDateTime, LoggerLike | None],
-    None,
-]
+    from vercor.components.base import Component
+    from vercor.state import ComponentState
 
 
 @dataclass(frozen=True)
-class ComponentOutput:
+class SnapshotContext:
+    """Public payload passed to component snapshot writers."""
+
+    component: "Component"
+    state: "ComponentState"
+    payload: Any | None
+    output_path: Path
+    time: datetime | ModelDateTime
+    logger: LoggerLike | None
+
+
+SnapshotWriter: TypeAlias = Callable[[SnapshotContext], None]
+
+
+@dataclass(frozen=True)
+class OutputSpec:
     """Public output extension specification for a component."""
 
-    snapshot_writer: ComponentSnapshotWriter | None = None
+    snapshot_writer: SnapshotWriter | None = None
 
 
 __all__ = [
-    "ComponentOutput",
-    "ComponentSnapshotWriter",
+    "OutputSpec",
+    "SnapshotContext",
+    "SnapshotWriter",
 ]

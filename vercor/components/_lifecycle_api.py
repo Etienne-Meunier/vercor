@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 import vercor.components._runtime_fields as _runtime_field_adapters
 import vercor.components._runtime_validation as _runtime_field_validation
+from vercor.components.contracts import (
+    PrefillContext,
+    PrefillResult,
+    ValidationContext,
+)
+from vercor.state import ComponentState
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -55,7 +62,17 @@ class ComponentLifecycleMixin:
         component = cast("Component", self)
         hook = component._lifecycle_hooks.prefill_runtime_state_fields
         if hook is not None:
-            hook(component, data, incoming, outgoing, contract)
+            result = hook(
+                component,
+                PrefillContext(
+                    data=MappingProxyType(data),
+                    incoming=MappingProxyType(incoming),
+                    outgoing=MappingProxyType(outgoing),
+                    imports=contract.imports,
+                    exports=contract.exports,
+                ),
+            )
+            _apply_prefill_result(result, data, incoming, outgoing)
             return
         _runtime_field_adapters.prefill_declared_runtime_fields(component, data)
         _ = incoming, outgoing, contract
@@ -70,13 +87,40 @@ class ComponentLifecycleMixin:
         component = cast("Component", self)
         hook = component._lifecycle_hooks.validate_runtime_state
         if hook is not None:
-            hook(component, component_state, contract)
+            hook(
+                component,
+                ValidationContext(
+                    state=ComponentState._from_runtime(
+                        component.name,
+                        component.grid,
+                        component_state,
+                    ),
+                    payload=component_state.runtime_payload,
+                    imports=contract.imports,
+                    exports=contract.exports,
+                ),
+            )
             return
         _ = contract
         _runtime_field_validation.validate_declared_runtime_fields(
             component,
             component_state,
         )
+
+
+def _apply_prefill_result(
+    result: PrefillResult | None,
+    data: dict[str, RuntimeArray],
+    incoming: dict[str, RuntimeArray],
+    outgoing: dict[str, RuntimeArray],
+) -> None:
+    """Apply field updates returned by a public prefill hook."""
+
+    if result is None:
+        return
+    data.update(result.data)
+    incoming.update(result.incoming)
+    outgoing.update(result.outgoing)
 
 
 __all__ = ["ComponentLifecycleMixin"]

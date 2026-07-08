@@ -16,6 +16,7 @@ import yaml
 
 from vercor.jax_logging import LoggerLike, get_default_logger
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
+from vercor.output.adapters import SnapshotContext
 from vercor.output.datasets import time_coordinate_variable, used_dimension_names
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
@@ -360,18 +361,14 @@ def record_camulator_snapshot(
 
 def write_camulator_snapshot_output(
     state: Any,
-    component_state: Any,
-    output: Path,
-    output_time: Any,
-    logger: LoggerLike | None = None,
+    context: SnapshotContext,
 ) -> None:
     """Write one final CAMulator prediction snapshot through the shared adapter."""
 
-    _ = component_state
     if state.output_adapter.snapshot_empty:
         return
 
-    snapshot_time = state.output_adapter.snapshot_time or output_time
+    snapshot_time = state.output_adapter.snapshot_time or context.time
     if not isinstance(snapshot_time, datetime):
         raise TypeError("CAMulator snapshot output requires a datetime timestamp.")
 
@@ -396,10 +393,10 @@ def write_camulator_snapshot_output(
         )
 
     state.output_adapter.write_snapshot(
-        str(output),
+        str(context.output_path),
         build_coordinate_variables=build_coordinate_variables,
         build_data_variables=build_data_variables,
-        logger=logger,
+        logger=context.logger,
     )
 
 

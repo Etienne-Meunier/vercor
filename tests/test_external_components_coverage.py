@@ -33,14 +33,17 @@ import vercor.setups.external.veros_state as veros_state_module
 from tests._coverage_support import capture_logger_output, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.calendar import DateTime360, DateTime365
+from vercor.components.contracts import PrefillContext
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
+from vercor.output.adapters import SnapshotContext
 from vercor.output.variables import OutputVariable
-from vercor.runtime.contracts import RuntimeComponentContract
+from vercor.setup_config import PeriodOutputConfig
 from vercor.runtime.state import RuntimeComponentState
 from vercor.runtime.stores import RuntimeFieldStore
 from vercor.settings import Settings
+from vercor.state import ComponentState
 
 
 class _RecordingLogger:
@@ -892,20 +895,23 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     runtime_data = dict(component.data)
     runtime_incoming: dict[str, Any] = {}
     runtime_outgoing: dict[str, Any] = {}
-    runtime_contract = RuntimeComponentContract()
     hook_component = DataComponent.from_fields(
         name="ATM",
         grid=component.grid,
         settings=component.settings,
     )
-    jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
+    prefill_result = jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
         component,
         cast(Any, hook_component),
-        runtime_data,
-        runtime_incoming,
-        runtime_outgoing,
-        runtime_contract,
+        PrefillContext(
+            data=runtime_data,
+            incoming=runtime_incoming,
+            outgoing=runtime_outgoing,
+        ),
     )
+    runtime_data.update(prefill_result.data)
+    runtime_incoming.update(prefill_result.incoming)
+    runtime_outgoing.update(prefill_result.outgoing)
     component_state = RuntimeComponentState(
         data=RuntimeFieldStore.from_mapping(runtime_data),
         incoming=RuntimeFieldStore.from_mapping(runtime_incoming),
@@ -1213,10 +1219,14 @@ def test_jax_gcm_snapshot_output_uses_final_runtime_payload_not_runtime_data(
 
     jax_gcm_output_module.write_jax_gcm_snapshot_output(
         setup_state,
-        component_state,
-        output,
-        datetime(2000, 1, 2),
-        logger=None,
+        SnapshotContext(
+            component=cast(Any, None),
+            state=ComponentState._from_runtime("ATM", None, component_state),
+            payload=component_state.runtime_payload,
+            output_path=output,
+            time=datetime(2000, 1, 2),
+            logger=None,
+        ),
     )
 
     with h5netcdf.File(output, "r") as actual:
@@ -1640,10 +1650,14 @@ def test_veros_snapshot_output_uses_native_state_variables(tmp_path: Path) -> No
 
     veros_output_module.write_veros_snapshot_output(
         setup_state,
-        component_state,
-        output,
-        datetime(2000, 1, 2),
-        logger=None,
+        SnapshotContext(
+            component=cast(Any, None),
+            state=ComponentState._from_runtime("OCN", None, component_state),
+            payload=component_state.runtime_payload,
+            output_path=output,
+            time=datetime(2000, 1, 2),
+            logger=None,
+        ),
     )
 
     with h5netcdf.File(output, "r") as actual:
@@ -1886,8 +1900,10 @@ def test_veros_constructor_builds_jax_backed_grid(
 
     component = veros_gcm_module.make_veros_gcm(
         custom_parameters={"dt_tracer": 600.0},
-        output_frequency="month",
-        output_variables=("temp", "surface_taux"),
+        output=PeriodOutputConfig(
+            frequency="month",
+            variables=("temp", "surface_taux"),
+        ),
         jitted=False,
     )
 

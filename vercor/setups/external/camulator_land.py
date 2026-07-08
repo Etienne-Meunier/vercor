@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from vercor.components import (
     ComponentHooks,
+    FieldSpec,
     HostComponent,
     SetupContext,
     StepContext,
@@ -119,7 +120,9 @@ def make_camulator_land(
         name=name,
         grid=grid,
         step=step,
-        outputs=_CAMULATOR_LAND_OUTPUTS,
-        defaults=_CAMULATOR_LAND_DEFAULT_FIELDS,
+        spec=FieldSpec(
+            outputs=_CAMULATOR_LAND_OUTPUTS,
+            defaults=_CAMULATOR_LAND_DEFAULT_FIELDS,
+        ),
         hooks=ComponentHooks(initialize=initialize),
     )

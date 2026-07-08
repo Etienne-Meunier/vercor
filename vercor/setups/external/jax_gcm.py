@@ -9,8 +9,9 @@ from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.model import ForcingData
 from jcm.physics_interface import TerrainData
 
-from vercor.components import Component, ComponentHooks
-from vercor.output.adapters import ComponentOutput
+from vercor.components import Component, ComponentHooks, FieldSpec
+from vercor.output.adapters import OutputSpec
+from vercor.setup_config import PeriodOutputConfig, SpinupConfig
 import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
 import vercor.setups.external.jax_gcm_output as _jax_gcm_output
 import vercor.setups.external.jax_gcm_runtime as _jax_gcm_runtime
@@ -32,14 +33,15 @@ def make_jax_gcm(
     custom_parameters: dict[str, float] | None = None,
     model_timestep: timedelta = timedelta(minutes=30),
     save_interval: timedelta = timedelta(days=1),
-    spinup_time: timedelta = timedelta(days=2),
     forcing_data: ForcingData | None = None,
-    output_frequency: str | None = None,
-    do_spinup: bool = False,
+    spinup: SpinupConfig | None = None,
+    output: PeriodOutputConfig | None = None,
     jitted: bool = True,
 ) -> Component:
     """Return a differentiable JAXGCM/JCM atmosphere component."""
 
+    spinup_config = SpinupConfig() if spinup is None else spinup
+    output_config = PeriodOutputConfig() if output is None else output
     state = JAXGCMSetupState(
         coords=coords,
         terrain=terrain,
@@ -47,25 +49,27 @@ def make_jax_gcm(
         custom_parameters=custom_parameters,
         model_timestep=model_timestep,
         save_interval=save_interval,
-        spinup_time=spinup_time,
+        spinup_time=spinup_config.duration,
         forcing_data=forcing_data,
-        output_frequency=output_frequency,
-        do_spinup=do_spinup,
+        output_frequency=output_config.frequency,
+        do_spinup=spinup_config.enabled,
         jitted=jitted,
     )
     component = Component.from_step(
         name=name,
         grid=state.grid,
         step=partial(_jax_gcm_runtime.step_jax_gcm_component, state),
-        inputs=("land_surface_temperature", "sea_surface_temperature"),
-        outputs=(
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-            *_jax_gcm_fields.JAXGCM_OUTPUT_GRID_FIELD_NAMES,
-            "pressure",
+        spec=FieldSpec(
+            inputs=("land_surface_temperature", "sea_surface_temperature"),
+            outputs=(
+                "land_surface_temperature",
+                "sea_surface_temperature",
+                "total_surface_temperature",
+                *_jax_gcm_fields.JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+                "pressure",
+            ),
+            defaults=_jax_gcm_runtime.jax_gcm_default_fields(),
         ),
-        defaults=_jax_gcm_runtime.jax_gcm_default_fields(),
         hooks=ComponentHooks(
             initialize=state.initialize,
             create_payload=partial(
@@ -81,7 +85,7 @@ def make_jax_gcm(
                 state,
             ),
         ),
-        output=ComponentOutput(
+        output=OutputSpec(
             snapshot_writer=partial(
                 _jax_gcm_output.write_jax_gcm_snapshot_output, state
             )

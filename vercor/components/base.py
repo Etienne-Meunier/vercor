@@ -6,12 +6,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
-    AuthorFieldValues as _AuthorFieldValues,
     AuthorStepCallable as _AuthorStepCallable,
     ComponentHooks as _ComponentHooks,
     ComponentStepReturn as _ComponentStepReturn,
     FieldSpec as _FieldSpec,
-    FieldNames as _FieldNames,
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
@@ -21,7 +19,7 @@ from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
 from vercor.grids import RectilinearGrid
-from vercor.output.adapters import ComponentOutput
+from vercor.output.adapters import OutputSpec
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -72,7 +70,7 @@ class Component(
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: Settings = field(default_factory=Settings)
-    output: ComponentOutput = field(default_factory=ComponentOutput)
+    output: OutputSpec = field(default_factory=OutputSpec)
     _setup_metadata: dict[str, Any] = field(default_factory=dict)
     _field_spec: _FieldSpec = field(
         default_factory=_FieldSpec,
@@ -91,7 +89,7 @@ class Component(
         grid: RectilinearGrid,
         *,
         settings: Settings | None = None,
-        output: ComponentOutput | None = None,
+        output: OutputSpec | None = None,
     ) -> None:
         """Create a component configuration shell for setup-time authoring."""
 
@@ -99,7 +97,7 @@ class Component(
         self.grid = grid
         self._data = {}
         self.settings = Settings() if settings is None else settings
-        self.output = ComponentOutput() if output is None else output
+        self.output = OutputSpec() if output is None else output
         self._setup_metadata = {}
         self._field_spec = _FieldSpec()
         self._lifecycle_hooks = ComponentLifecycleHooks()
@@ -111,26 +109,23 @@ class Component(
         grid: RectilinearGrid,
         step: _AuthorStepCallable,
         *,
-        inputs: _FieldNames = (),
-        outputs: _FieldNames = (),
-        defaults: _AuthorFieldValues = None,
+        spec: _FieldSpec | None = None,
         payload: Any | None = None,
         settings: Settings | None = None,
         hooks: _ComponentHooks | None = None,
-        output: ComponentOutput | None = None,
+        output: OutputSpec | None = None,
     ) -> "Component":
         """Create a differentiable component from a user step callable.
 
-        ``inputs`` declare fields the model reads, ``outputs`` declare fields
-        the model writes, and ``defaults`` declares concrete runtime defaults.
+        ``spec.inputs`` declares fields the model reads, ``spec.outputs``
+        declares fields the model writes, and ``spec.defaults`` declares
+        concrete runtime defaults.
         Scalar default values expand to this component's grid shape.
         """
 
         options = callable_component_options(
             step,
-            inputs=inputs,
-            outputs=outputs,
-            defaults=defaults,
+            spec=spec,
             payload=payload,
             hooks=hooks,
         )
@@ -217,7 +212,7 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         step: _AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
-        output: ComponentOutput | None,
+        output: OutputSpec | None,
         field_spec: _FieldSpec,
         lifecycle_hooks: ComponentLifecycleHooks,
     ) -> None:

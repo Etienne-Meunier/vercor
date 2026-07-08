@@ -4,7 +4,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from vercor.components import Component
+from vercor.components import Component, FieldSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 
@@ -35,7 +35,9 @@ def make_slab_seaice(grid: RectilinearGrid, name: str = "ICE") -> Component:
         name=name,
         grid=grid,
         step=step,
-        inputs=_SEAICE_INPUTS,
-        outputs=_SEAICE_OUTPUTS,
-        defaults=_SEAICE_DEFAULT_FIELDS,
+        spec=FieldSpec(
+            inputs=_SEAICE_INPUTS,
+            outputs=_SEAICE_OUTPUTS,
+            defaults=_SEAICE_DEFAULT_FIELDS,
+        ),
     )

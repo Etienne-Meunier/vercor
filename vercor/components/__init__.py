@@ -9,7 +9,10 @@ from vercor.components.contracts import (
     ComponentValidateHook,
     FieldSpec,
     KEEP_PAYLOAD,
+    PrefillContext,
+    PrefillResult,
     StepResult,
+    ValidationContext,
 )
 from vercor.components.contexts import (
     SetupContext,
@@ -33,7 +36,10 @@ __all__ = [
     "FieldSpec",
     "HostComponent",
     "KEEP_PAYLOAD",
+    "PrefillContext",
+    "PrefillResult",
     "SetupContext",
     "StepContext",
     "StepResult",
+    "ValidationContext",
 ]

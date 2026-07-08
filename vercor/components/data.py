@@ -7,7 +7,7 @@ from vercor.components.contracts import (
     AuthorFieldValues,
     ComponentHooks,
     ComponentStepReturn,
-    FieldNames,
+    FieldSpec,
 )
 from vercor.components._contracts import (
     merge_component_outputs,
@@ -16,7 +16,7 @@ from vercor.components._constructor_options import normalize_lifecycle_hooks
 from vercor.components.base import Component
 from vercor.dtypes import PrecisionPolicy
 from vercor.grids import RectilinearGrid
-from vercor.output.adapters import ComponentOutput
+from vercor.output.adapters import OutputSpec
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -39,12 +39,12 @@ class DataComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        *,
         fields: AuthorFieldValues = None,
+        *,
         settings: Settings | None = None,
-        outputs: FieldNames = (),
+        spec: FieldSpec | None = None,
         hooks: ComponentHooks | None = None,
-        output: ComponentOutput | None = None,
+        output: OutputSpec | None = None,
     ) -> "DataComponent":
         """Create a data-only component from user-provided grid fields.
 
@@ -57,13 +57,10 @@ class DataComponent(Component):
             component = cls(name=name, grid=grid, output=output)
         else:
             component = cls(name=name, grid=grid, settings=settings, output=output)
+        if spec is not None:
+            component._field_spec = spec
         if fields is not None:
             component.seed_fields(fields)
-        if tuple(outputs):
-            component._field_spec = merge_component_outputs(
-                component.field_spec,
-                outputs,
-            )
         component._lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
         return component
 

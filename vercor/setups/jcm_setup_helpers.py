@@ -8,6 +8,7 @@ from typing import Any
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
 from vercor.grids import RectilinearGrid
+from vercor.setup_config import PeriodOutputConfig, SpinupConfig
 
 
 @dataclass(frozen=True)
@@ -67,12 +68,14 @@ def make_jcm_land_atmosphere(
     *,
     inputs: JCMInputs | None = None,
     custom_parameters: Mapping[str, float] | None = None,
-    do_spinup: bool = True,
+    spinup: SpinupConfig | None = None,
     jitted: bool = True,
-    output_frequency: str | None = "month",
+    output: PeriodOutputConfig | None = None,
 ) -> JCMLandAtmosphereSetup:
     """Create paired JCM land and atmosphere setup components for an ocean grid."""
 
+    spinup_config = SpinupConfig(enabled=True) if spinup is None else spinup
+    output_config = PeriodOutputConfig(frequency="month") if output is None else output
     jcm_inputs = load_jcm_inputs() if inputs is None else inputs
     coords = jcm_inputs.coords
     terrain = jcm_inputs.terrain
@@ -86,9 +89,9 @@ def make_jcm_land_atmosphere(
 
     atmosphere_kwargs: dict[str, Any] = {
         "forcing_data": forcing,
-        "do_spinup": do_spinup,
+        "spinup": spinup_config,
         "jitted": jitted,
-        "output_frequency": output_frequency,
+        "output": output_config,
     }
     if custom_parameters is not None:
         atmosphere_kwargs["custom_parameters"] = dict(custom_parameters)

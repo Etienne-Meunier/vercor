@@ -154,20 +154,24 @@ immutable runtime containers used during traced integration.
   authoring constructors where possible: `DataComponent.from_fields()` for
   data-only fields, `Component.from_step()` for pure callable JAX models, and
   `HostComponent.from_step()` for Python host-side models. These constructors
-  use author-facing field names: `inputs` declare fields the model reads,
-  `outputs` declare fields the model writes, and `defaults` declare concrete
-  runtime defaults for fields the model reads or updates. Scalar default and
-  seeded values expand to grid-shaped constants. `SetupContext` and
-  `StepContext` are public setup and step context payloads passed to author
-  callbacks, with canonical ownership in `vercor.components.contexts`.
+  declare fields through `spec=FieldSpec(...)`: `inputs` declare fields the
+  model reads, `outputs` declare fields the model writes, and `defaults`
+  declare concrete runtime defaults for fields the model reads or updates.
+  Scalar default and seeded values expand to grid-shaped constants.
+  `SetupContext` and `StepContext` are public setup and step context payloads
+  passed to author callbacks, with canonical ownership in
+  `vercor.components.contexts`.
   `from_model()`, `default_fields`, `HostRuntimeComponent`, and
   component-prefixed context names have been removed from the public API.
   Component factory lifecycle customization uses a single
   `hooks=ComponentHooks(...)` object; individual hook keywords are not public
-  constructor inputs. Lifecycle hook type aliases (`ComponentInitializeHook`,
-  `ComponentCreatePayloadHook`, `ComponentPrefillHook`, and
-  `ComponentValidateHook`) remain public component-author type contracts and
-  are reexported from `vercor.components` and `vercor`.
+  constructor inputs. Runtime prefill and validation hooks receive typed
+  `PrefillContext`, `PrefillResult`, and `ValidationContext` objects instead
+  of mutable runtime-store dictionaries. Lifecycle hook type aliases
+  (`ComponentInitializeHook`, `ComponentCreatePayloadHook`,
+  `ComponentPrefillHook`, and `ComponentValidateHook`) remain public
+  component-author type contracts and are reexported from `vercor.components`
+  and `vercor`.
   `FieldSpec`, `field_spec`, and `declare_fields()` provide the same
   vocabulary and read-only introspection for subclasses. `field_names` exposes
   setup-time seeded field names in insertion order; direct `component.data`
@@ -176,8 +180,11 @@ immutable runtime containers used during traced integration.
   `update_settings(...)`, and `grid_field_defaults(...)` to build validated
   grid-shaped default-field mappings with scalar expansion and field-specific
   overrides. Components that write native snapshots receive a typed
-  `ComponentOutput(snapshot_writer=...)` spec; mutable period-output adapters
-  live under `vercor.output._adapters`.
+  `OutputSpec(snapshot_writer=...)` spec. Snapshot writers receive
+  `SnapshotContext`, which exposes the public `ComponentState`, component
+  payload, output path, time, and logger without exposing
+  `RuntimeComponentState`. Mutable period-output adapters live under
+  `vercor.output._adapters`.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
   components remain introspectable whether fields are declared up front or added
@@ -427,8 +434,9 @@ adapter record boundary. Final JAXGCM snapshots are registered by the external
 factory and are written from the final runtime payload's `JCMState`, not from
 runtime data fields or declared component outputs.
 Shared output extension primitives for adapter authors are exported from
-`vercor.output`: `OutputVariable`, `ComponentOutput`, and snapshot-writer
-type aliases. Shared cadence, calendar time metadata, dataset
+`vercor.output`: `OutputVariable`, `OutputSpec`, `SnapshotContext`, and
+`SnapshotWriter`. Snapshot writers receive only public component/result views
+and the component payload. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
 orchestration, and direct `h5netcdf` writing live in
 `vercor.output.time`, `vercor.output.datasets`,
@@ -475,13 +483,15 @@ mask/kernel construction and selected tensor mutation live in
 `vercor.setups.external.camulator_gcm_state` owns CAMulator atmosphere
 setup-time model resources, timestep alignment, field seeding, and lifecycle
 callbacks, while `vercor.setups.external.camulator` remains the thin public
-factory. CAMulator forecast-increment output remains the default when
-`output_frequency` is unset; when `output_frequency` is `day`, `month`, or
-`year`, `CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter`
-and `vercor.setups.external.camulator_runtime` streams native prediction
-tensors through the CAMulator output helper, which delegates average
-accumulation, cadence checks, and file writes to the shared adapter record
-boundary. CAMulator records the latest native prediction as a single snapshot
+factory. Public external setup factories group spinup and period-output options
+as `SpinupConfig` and `PeriodOutputConfig` instead of parallel keyword bundles.
+CAMulator forecast-increment output remains the default when
+`PeriodOutputConfig.frequency` is unset; when it is `day`, `month`, or `year`,
+`CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter` and
+`vercor.setups.external.camulator_runtime` streams native prediction tensors
+through the CAMulator output helper, which delegates average accumulation,
+cadence checks, and file writes to the shared adapter record boundary.
+CAMulator records the latest native prediction as a single snapshot
 record in both increment-output and period-output modes, and final snapshots
 reuse the same adapter/output builders without falling back to VerCOR runtime
 fields. CAMulator tensor reshaping, metadata handling, output filtering from

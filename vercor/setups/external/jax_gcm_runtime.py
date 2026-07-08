@@ -8,11 +8,18 @@ from typing import TYPE_CHECKING, Any
 import jax
 import jax.numpy as jnp
 
-from vercor.components import Component, StepContext, StepResult
+from vercor.components import (
+    Component,
+    PrefillContext,
+    PrefillResult,
+    StepContext,
+    StepResult,
+    ValidationContext,
+)
 from vercor.components._runtime_fields import prefill_runtime_fields
-from vercor.components._runtime_validation import require_runtime_fields
 from vercor.dtypes import as_jax_real_array, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
+from vercor.field_layout import validate_canonical_grid_field_shape
 from vercor.pytree import PyTreeNodeMixin
 from vercor.settings import Settings
 from vercor.setups.external._jax_gcm_pytree import (
@@ -22,11 +29,8 @@ from vercor.setups.external._jax_gcm_pytree import (
 )
 import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
 import vercor.setups.external.jax_gcm_output as _jax_gcm_output
-from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.runtime.contracts import RuntimeComponentContract
-    from vercor.runtime.state import RuntimeComponentState
     from vercor.setups.external.jax_gcm_state import JAXGCMSetupState
 
 JCM_REFERENCE_PRESSURE = 1.0e5
@@ -100,13 +104,11 @@ def create_jax_gcm_runtime_payload(
 def prefill_jax_gcm_runtime_fields(
     state: "JAXGCMSetupState",
     component: Component,
-    data: dict[str, RuntimeArray],
-    incoming: dict[str, RuntimeArray],
-    outgoing: dict[str, RuntimeArray],
-    contract: "RuntimeComponentContract",
-) -> None:
+    context: PrefillContext,
+) -> PrefillResult:
     """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
+    data = dict(context.data)
     prefill_runtime_fields(
         component,
         data,
@@ -126,36 +128,45 @@ def prefill_jax_gcm_runtime_fields(
         "pressure",
         jax_zeros((sigma_levels.shape[0], *component.grid.shape), component.settings),
     )
-    _ = incoming, outgoing, contract
+    return PrefillResult(data=data)
 
 
 def validate_jax_gcm_runtime_state(
     state: "JAXGCMSetupState",
     component: Component,
-    component_state: "RuntimeComponentState",
-    contract: "RuntimeComponentContract",
+    context: ValidationContext,
 ) -> None:
     """Validate JAXGCM runtime payload and pre-seeded output fields."""
 
-    _ = contract
-    if not isinstance(component_state.runtime_payload, JAXGCMRuntimePayload):
+    if not isinstance(context.payload, JAXGCMRuntimePayload):
         raise ComponentError(
             "JAXGCM runtime requires an initialized immutable runtime payload "
             f"for component '{component.name}'"
         )
 
-    require_runtime_fields(
-        component,
-        component_state,
-        *_jax_gcm_fields.JAXGCM_REQUIRED_GRID_FIELD_NAMES,
-    )
+    for field_name in _jax_gcm_fields.JAXGCM_REQUIRED_GRID_FIELD_NAMES:
+        if field_name not in context.state.fields():
+            raise CouplerError(
+                "Runtime missing required data field "
+                f"'{field_name}' for component '{component.name}'"
+            )
+        try:
+            validate_canonical_grid_field_shape(
+                field_name=field_name,
+                value=context.state.field(field_name, store="data"),
+                grid_shape=component.grid.shape,
+                owner_description="Runtime required data field",
+                owner_name=component.name,
+            )
+        except ValueError as exc:
+            raise CouplerError(str(exc)) from exc
 
-    if "pressure" not in component_state.data:
+    if "pressure" not in context.state.fields():
         raise CouplerError(
             "Runtime missing required data field "
             f"'pressure' for component '{component.name}'"
         )
-    pressure_shape = jnp.asarray(component_state.data.get("pressure")).shape
+    pressure_shape = jnp.asarray(context.state.field("pressure", store="data")).shape
     sigma_levels = jnp.asarray(state.sigma_levels)
     expected_pressure_shape = (sigma_levels.shape[0], *component.grid.shape)
     if pressure_shape != expected_pressure_shape:

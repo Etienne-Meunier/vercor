@@ -15,6 +15,7 @@ from vercor.components import (
     Component,
     ComponentHooks,
     DataComponent,
+    FieldSpec,
     HostComponent,
     SetupContext,
 )
@@ -250,20 +251,22 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
                 )
             )
         ),
-        inputs=("land_surface_temperature", "sea_surface_temperature"),
-        outputs=(
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-            *JAXGCM_OUTPUT_GRID_FIELD_NAMES,
-            "pressure",
+        spec=FieldSpec(
+            inputs=("land_surface_temperature", "sea_surface_temperature"),
+            outputs=(
+                "land_surface_temperature",
+                "sea_surface_temperature",
+                "total_surface_temperature",
+                *JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+                "pressure",
+            ),
+            defaults={
+                field_name: 0.0
+                for field_name in jax_gcm_runtime_module.jax_gcm_default_field_names(
+                    include_total_surface_temperature=True
+                )
+            },
         ),
-        defaults={
-            field_name: 0.0
-            for field_name in jax_gcm_runtime_module.jax_gcm_default_field_names(
-                include_total_surface_temperature=True
-            )
-        },
         hooks=ComponentHooks(
             create_payload=(
                 lambda component: jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
@@ -271,24 +274,20 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
                 )
             ),
             prefill=(
-                lambda component, data, incoming, outgoing, contract: (
+                lambda component, context: (
                     jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
                         state,
                         component,
-                        data,
-                        incoming,
-                        outgoing,
-                        contract,
+                        context,
                     )
                 )
             ),
             validate=(
-                lambda component, component_state, contract: (
+                lambda component, context: (
                     jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
                         state,
                         component,
-                        component_state,
-                        contract,
+                        context,
                     )
                 )
             ),
@@ -1860,8 +1859,15 @@ def test_scanned_runtime_rejects_camulator_land_runtime_boundary() -> None:
         name="LND",
         grid=grid,
         step=lambda fields, context, payload: {},
-        outputs=("land_surface_temperature",),
-        defaults={"land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64)},
+        spec=FieldSpec(
+            outputs=("land_surface_temperature",),
+            defaults={
+                "land_surface_temperature": jnp.zeros(
+                    grid.shape,
+                    dtype=jnp.float64,
+                )
+            },
+        ),
     )
     camulator_land.seed_declared_defaults()
     coupler = Coupler(
@@ -1883,8 +1889,10 @@ def test_scanned_runtime_rejects_camulator_gcm_runtime_boundary() -> None:
         name="ATM",
         grid=grid,
         step=lambda fields, context, payload: {},
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape, dtype=jnp.float64)},
+        spec=FieldSpec(
+            outputs=("temperature",),
+            defaults={"temperature": jnp.ones(grid.shape, dtype=jnp.float64)},
+        ),
     )
     camulator.seed_declared_defaults()
     coupler = Coupler(
@@ -1906,8 +1914,15 @@ def test_scanned_runtime_rejects_veros_runtime_boundary() -> None:
         name="OCN",
         grid=grid,
         step=lambda fields, context, payload: {},
-        outputs=("sea_surface_temperature",),
-        defaults={"sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64)},
+        spec=FieldSpec(
+            outputs=("sea_surface_temperature",),
+            defaults={
+                "sea_surface_temperature": jnp.zeros(
+                    grid.shape,
+                    dtype=jnp.float64,
+                )
+            },
+        ),
     )
     veros.seed_declared_defaults()
     coupler = Coupler(

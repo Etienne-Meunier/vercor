@@ -24,6 +24,7 @@ import vercor.components.setup_validation as setup_validation_module
 from tests._architecture_support import package_import_cycles
 from tests._coverage_support import make_test_grid
 from vercor.components.base import Component
+from vercor.components.contracts import FieldSpec
 from vercor.components.data import DataComponent
 from vercor.components.host import HostComponent
 from vercor.calendar import DateTime360
@@ -120,10 +121,10 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
     import vercor.regridding as regridding_module
     import vercor.state as state_module
     from vercor.output import (
-        ComponentOutput,
         OutputVariable,
+        OutputSpec,
     )
-    from vercor.output.adapters import ComponentOutput as OutputSpecOwner
+    from vercor.output.adapters import OutputSpec as OutputSpecOwner
     from vercor.output.variables import OutputVariable as VariableOwner
 
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
@@ -154,13 +155,16 @@ def test_staged_public_facades_hide_private_implementation_modules() -> None:
     ]
     assert state_module.__all__ == ["RunState", "ComponentState"]
     assert output_module.__all__ == [
-        "ComponentOutput",
+        "OutputSpec",
         "OutputVariable",
+        "SnapshotContext",
+        "SnapshotWriter",
     ]
     assert OutputVariable is VariableOwner
-    assert ComponentOutput is OutputSpecOwner
-    assert ComponentOutput.__module__ == "vercor.output.adapters"
+    assert OutputSpec is OutputSpecOwner
+    assert OutputSpec.__module__ == "vercor.output.adapters"
     assert not hasattr(output_module, "ComponentOutputAdapter")
+    assert not hasattr(output_module, "ComponentOutput")
     assert not hasattr(output_module, "register_component_snapshot_writer")
     assert not hasattr(output_module, "component_snapshot_writer")
 
@@ -325,8 +329,8 @@ def test_v3_data_component_and_grid_constructors_use_keyword_vocabulary() -> Non
             lon=(0.0, 90.0),  # type: ignore[call-arg]
             lat=(-45.0, 45.0),  # type: ignore[call-arg]
         )
-    with pytest.raises(TypeError):
-        DataComponent.from_fields("ATM", grid, {"temperature": 280.0})  # type: ignore[misc]
+    positional = DataComponent.from_fields("ATM", grid, {"humidity": 0.5})
+    assert positional.field_spec.outputs == ("humidity",)
 
 
 @pytest.mark.fast_always
@@ -479,7 +483,7 @@ def test_public_api_uses_canonical_breaking_names(
         "ATM",
         renamed_grid,
         fields={"temperature": 280.0},
-        outputs=("temperature", "humidity"),
+        spec=FieldSpec(outputs=("temperature", "humidity")),
     )
     assert component.field_spec.outputs == ("temperature", "humidity")
 
@@ -836,9 +840,12 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         "FieldSpec",
         "HostComponent",
         "KEEP_PAYLOAD",
+        "PrefillContext",
+        "PrefillResult",
         "SetupContext",
         "StepContext",
         "StepResult",
+        "ValidationContext",
     ]
     assert components_module.Component is Component
     assert (
@@ -1066,7 +1073,10 @@ def test_callable_author_api_does_not_expose_removed_field_seed_keyword() -> Non
         parameters = signature(callable_factory).parameters
         assert removed_keyword not in parameters
         assert "required_fields" not in parameters
-        assert "defaults" in parameters
+        assert "spec" in parameters
+        assert "inputs" not in parameters
+        assert "outputs" not in parameters
+        assert "defaults" not in parameters
         assert "default_fields" not in parameters
         assert parameters["payload"].kind is parameters["payload"].KEYWORD_ONLY
         assert parameters["settings"].kind is parameters["settings"].KEYWORD_ONLY
@@ -2203,7 +2213,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def write_period_average_netcdf(" in period_files_source
     assert "class _ComponentOutputAdapter" in output_adapters_source
     assert "class ComponentOutput" not in output_adapters_source
-    assert "class ComponentOutput" in output_public_adapters_source
+    assert "class OutputSpec" in output_public_adapters_source
     assert "class ComponentOutputAdapter" not in output_public_adapters_source
     assert "accumulate_output_variables(" not in output_adapters_source
     assert "self._accumulator.add_samples(" in output_adapters_source
@@ -2219,7 +2229,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "period_mean_output_variables(" not in jax_gcm_output_source
     assert "write_period_average_netcdf(" not in jax_gcm_output_source
     assert "def make_jax_gcm_output_adapter(" not in jax_gcm_output_source
-    assert "ComponentOutput(" in jax_gcm_source
+    assert "OutputSpec(" in jax_gcm_source
     assert "def record_jax_gcm_period_output(" in jax_gcm_output_source
     assert "def write_jax_gcm_snapshot_output(" in jax_gcm_output_source
     assert "time_coordinate_variable(" in jax_gcm_output_source
@@ -2227,13 +2237,13 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "period_mean_output_variables(" not in veros_output_source
     assert "write_period_average_netcdf(" not in veros_output_source
     assert "def make_veros_output_adapter(" not in veros_output_source
-    assert "ComponentOutput(" in veros_gcm_source
+    assert "OutputSpec(" in veros_gcm_source
     assert "def record_veros_period_output(" in veros_output_source
     assert "def write_veros_snapshot_output(" in veros_output_source
     assert "time_coordinate_variable(" in veros_output_source
     assert "used_dimension_names(" in veros_output_source
     assert "def make_camulator_output_adapter(" not in camulator_output_source
-    assert "ComponentOutput(" in camulator_source
+    assert "OutputSpec(" in camulator_source
     assert "def record_camulator_period_output(" in camulator_output_source
     assert "def write_camulator_snapshot_output(" in camulator_output_source
     assert "write_period_average_if_due(" not in jax_gcm_runtime_source
@@ -2242,9 +2252,9 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def __getattr__(" not in output_init_source
     assert "def __dir__(" not in output_init_source
     assert "_RUNTIME_EXPORTS" not in output_init_source
-    assert "ComponentOutput" in output_init_source
+    assert "OutputSpec" in output_init_source
     assert "from vercor.output.variables import OutputVariable" in output_init_source
-    assert '"ComponentOutput"' in output_init_source
+    assert '"OutputSpec"' in output_init_source
     assert '"ComponentOutputAdapter"' not in output_init_source
     assert '"OutputVariable"' in output_init_source
     assert "from vercor.output.runtime import (" not in output_init_source

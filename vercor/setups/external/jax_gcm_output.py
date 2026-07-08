@@ -17,6 +17,7 @@ from vercor.calendar import ModelDateTime
 from vercor.dtypes import as_jax_index_array, as_jax_real_array, jax_index_dtype
 from vercor.jax_logging import LoggerLike
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
+from vercor.output.adapters import SnapshotContext
 from vercor.output.datasets import time_coordinate_variable
 from vercor.output.time import TIME_NAME
 from vercor.output.variables import OutputVariable
@@ -419,14 +420,11 @@ def record_jax_gcm_period_output(
 
 def write_jax_gcm_snapshot_output(
     state: Any,
-    component_state: Any,
-    output: Path,
-    output_time: datetime | ModelDateTime,
-    logger: LoggerLike | None = None,
+    context: SnapshotContext,
 ) -> None:
     """Write one final JAXGCM state snapshot through the shared output adapter."""
 
-    payload = getattr(component_state, "runtime_payload", None)
+    payload = context.payload
     jcm_state = getattr(payload, "jcm_state", None)
     if jcm_state is None:
         jcm_state = getattr(state, "_state", None)
@@ -442,7 +440,7 @@ def write_jax_gcm_snapshot_output(
     state.output_adapter.record_snapshot(
         variables,
         summation_dim=JAX_GCM_TIME_DIM,
-        time=output_time,
+        time=context.time,
     )
     unit_metadata = jax_gcm_unit_metadata(physics_module)
 
@@ -452,7 +450,7 @@ def write_jax_gcm_snapshot_output(
         _ = snapshot_variables
         return jax_gcm_coordinate_variables(
             coords=state.model.coords,
-            output_time=output_time,
+            output_time=context.time,
         )
 
     def build_data_variables(
@@ -464,10 +462,10 @@ def write_jax_gcm_snapshot_output(
         )
 
     state.output_adapter.write_snapshot(
-        str(output),
+        str(context.output_path),
         build_coordinate_variables=build_coordinate_variables,
         build_data_variables=build_data_variables,
-        logger=logger,
+        logger=context.logger,
     )
 
 

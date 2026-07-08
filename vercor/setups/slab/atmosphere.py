@@ -4,7 +4,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from vercor.components import Component
+from vercor.components import Component, FieldSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 
@@ -91,7 +91,9 @@ def make_slab_atmosphere(grid: RectilinearGrid, name: str = "ATM") -> Component:
         name=name,
         grid=grid,
         step=step,
-        inputs=_ATMOSPHERE_INPUTS,
-        outputs=_ATMOSPHERE_OUTPUTS,
-        defaults=_ATMOSPHERE_DEFAULT_FIELDS,
+        spec=FieldSpec(
+            inputs=_ATMOSPHERE_INPUTS,
+            outputs=_ATMOSPHERE_OUTPUTS,
+            defaults=_ATMOSPHERE_DEFAULT_FIELDS,
+        ),
     )
