@@ -14,53 +14,51 @@ from vercor._runtime.stores import FieldStore
 class ComponentRuntimeState(PyTreeNodeMixin):
     """Immutable runtime state for one component."""
 
-    pytree_children = ("data", "incoming", "outgoing", "runtime_payload")
+    pytree_children = ("fields", "received", "sent", "payload")
 
-    data: FieldStore
-    incoming: FieldStore
-    outgoing: FieldStore
-    runtime_payload: Any | None = None
+    fields: FieldStore
+    received: FieldStore
+    sent: FieldStore
+    payload: Any | None = None
 
-    def with_data(self, data: FieldStore) -> "ComponentRuntimeState":
-        """Return this component state with replaced data."""
+    def with_fields(self, fields: FieldStore) -> "ComponentRuntimeState":
+        """Return this component state with replaced fields."""
 
         return ComponentRuntimeState(
-            data=data,
-            incoming=self.incoming,
-            outgoing=self.outgoing,
-            runtime_payload=self.runtime_payload,
+            fields=fields,
+            received=self.received,
+            sent=self.sent,
+            payload=self.payload,
         )
 
-    def with_incoming(self, incoming: FieldStore) -> "ComponentRuntimeState":
-        """Return this component state with replaced incoming fields."""
+    def with_received(self, received: FieldStore) -> "ComponentRuntimeState":
+        """Return this component state with replaced received fields."""
 
         return ComponentRuntimeState(
-            data=self.data,
-            incoming=incoming,
-            outgoing=self.outgoing,
-            runtime_payload=self.runtime_payload,
+            fields=self.fields,
+            received=received,
+            sent=self.sent,
+            payload=self.payload,
         )
 
-    def with_outgoing(self, outgoing: FieldStore) -> "ComponentRuntimeState":
-        """Return this component state with replaced outgoing fields."""
+    def with_sent(self, sent: FieldStore) -> "ComponentRuntimeState":
+        """Return this component state with replaced sent fields."""
 
         return ComponentRuntimeState(
-            data=self.data,
-            incoming=self.incoming,
-            outgoing=outgoing,
-            runtime_payload=self.runtime_payload,
+            fields=self.fields,
+            received=self.received,
+            sent=sent,
+            payload=self.payload,
         )
 
-    def with_runtime_payload(
-        self, runtime_payload: Any | None
-    ) -> "ComponentRuntimeState":
-        """Return this component state with replaced runtime payload."""
+    def with_payload(self, payload: Any | None) -> "ComponentRuntimeState":
+        """Return this component state with replaced payload."""
 
         return ComponentRuntimeState(
-            data=self.data,
-            incoming=self.incoming,
-            outgoing=self.outgoing,
-            runtime_payload=runtime_payload,
+            fields=self.fields,
+            received=self.received,
+            sent=self.sent,
+            payload=payload,
         )
 
 

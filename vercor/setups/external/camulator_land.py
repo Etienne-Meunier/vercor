@@ -123,6 +123,6 @@ def make_camulator_land(
         spec=ComponentSpec(
             outputs=_CAMULATOR_LAND_OUTPUTS,
             defaults=_CAMULATOR_LAND_DEFAULT_FIELDS,
-            hooks=LifecycleHooks(initialize=initialize),
+            lifecycle=LifecycleHooks(initialize=initialize),
         ),
     )

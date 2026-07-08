@@ -18,7 +18,6 @@ from vercor.components._callable_wrappers import (
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
 from vercor.grids import RectilinearGrid
-from vercor.output.adapters import OutputConfig
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -69,9 +68,8 @@ class Component(
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: Settings = field(default_factory=Settings)
-    output: OutputConfig = field(default_factory=OutputConfig)
     _setup_metadata: dict[str, Any] = field(default_factory=dict)
-    _field_spec: _ComponentSpec = field(
+    _spec: _ComponentSpec = field(
         default_factory=_ComponentSpec,
         init=False,
         repr=False,
@@ -88,7 +86,7 @@ class Component(
         grid: RectilinearGrid,
         *,
         settings: Settings | None = None,
-        output: OutputConfig | None = None,
+        spec: _ComponentSpec | None = None,
     ) -> None:
         """Create a component configuration shell for setup-time authoring."""
 
@@ -96,10 +94,15 @@ class Component(
         self.grid = grid
         self._data = {}
         self.settings = Settings() if settings is None else settings
-        self.output = OutputConfig() if output is None else output
         self._setup_metadata = {}
-        self._field_spec = _ComponentSpec()
-        self._lifecycle_hooks = LifecycleHooks()
+        self._spec = _ComponentSpec() if spec is None else spec
+        self._lifecycle_hooks = self._spec.lifecycle
+
+    @property
+    def output(self) -> Any:
+        """Return the output extension configuration from ``spec``."""
+
+        return self._spec.output
 
     @classmethod
     def from_step(
@@ -131,7 +134,7 @@ class Component(
             step=options.step,
             payload=options.payload,
             settings=settings,
-            field_spec=options.field_spec,
+            spec=options.spec,
             lifecycle_hooks=options.lifecycle_hooks,
         )
 
@@ -207,23 +210,23 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         step: _AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
-        field_spec: _ComponentSpec,
+        spec: _ComponentSpec,
         lifecycle_hooks: LifecycleHooks,
     ) -> None:
         if settings is None:
-            Component.__init__(self, name=name, grid=grid, output=field_spec.output)
+            Component.__init__(self, name=name, grid=grid, spec=spec)
         else:
             Component.__init__(
                 self,
                 name=name,
                 grid=grid,
                 settings=settings,
-                output=field_spec.output,
+                spec=spec,
             )
         self._initialize_callable_runtime(
             step=step,
             payload=payload,
-            field_spec=field_spec,
+            spec=spec,
             lifecycle_hooks=lifecycle_hooks,
         )
 

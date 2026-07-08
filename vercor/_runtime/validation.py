@@ -43,9 +43,9 @@ def validate_runtime_data_field_exists(
     component_state: ComponentRuntimeState,
     field_name: str,
 ) -> None:
-    """Validate that a named component data field exists in runtime state."""
+    """Validate that a named component field exists in runtime state."""
 
-    if field_name not in component_state.data:
+    if field_name not in component_state.fields:
         raise CouplerError(
             "Runtime missing required data field "
             f"'{field_name}' for component '{component.name}'"
@@ -57,12 +57,12 @@ def validate_runtime_grid_data_field(
     component_state: ComponentRuntimeState,
     field_name: str,
 ) -> None:
-    """Validate that a runtime data field exists and matches the component grid."""
+    """Validate that a runtime field exists and matches the component grid."""
 
     validate_runtime_data_field_exists(component, component_state, field_name)
     validate_runtime_store_field(
         component,
-        component_state.data,
+        component_state.fields,
         field_name,
         "required data",
     )
@@ -75,32 +75,32 @@ def validate_component_runtime_contract_fields(
 ) -> None:
     """Validate generic runtime contract fields before component-specific checks."""
 
-    for field_name in contract.imports:
+    for field_name in contract.receives:
         validate_runtime_store_field(
             component,
-            component_state.incoming,
+            component_state.received,
             field_name,
-            "imported incoming",
+            "received",
         )
         validate_runtime_grid_data_field(
             component,
             component_state,
             field_name,
         )
-    for field_name in contract.exports:
+    for field_name in contract.sends:
         validate_runtime_data_field_exists(component, component_state, field_name)
         validate_runtime_store_field(
             component,
-            component_state.outgoing,
+            component_state.sent,
             field_name,
-            "exported source",
+            "sent",
         )
-    for field_name in component_state.incoming.field_names:
+    for field_name in component_state.received.field_names:
         validate_runtime_store_field(
             component,
-            component_state.incoming,
+            component_state.received,
             field_name,
-            "incoming",
+            "received",
         )
 
 

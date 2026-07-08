@@ -9,21 +9,20 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
-- Latest local API redesign cleanup validation passed as of 2026-07-08 using
+- Latest local API vocabulary cleanup validation passed as of 2026-07-08 using
   the direct `scipy` environment executable: focused API/runtime-boundary
   pytest, full fast pytest, full pytest, coverage pytest at 90% total, Black,
   flake8, mypy, example `compileall`, and `git diff --check`. The breaking
   cleanup consolidates component authoring around
-  `ComponentSpec(..., hooks=LifecycleHooks(...), output=OutputConfig(...))`,
-  removes old public field/hook/output/spinup names, replaces runtime-store
-  public view terms with `scope="state|received|sent|any"`, moves runtime
-  internals under `vercor._runtime`, keeps `vercor.runtime` as an empty package
-  shell, renames runtime contracts/stores to `ExchangeContract`,
-  `ComponentRuntimeState`, and `FieldStore`, and moves bundled setup factories
-  to `JaxGCMConfig`, `VerosConfig`, and `CAMulatorConfig`. Black emitted the
-  recurring Python 3.13/target-3.14 warning; full pytest/coverage emitted only
-  the existing external JAX dtype-promotion `FutureWarning` and xarray merge
-  `FutureWarning` in JAXGCM coverage.
+  `ComponentSpec(..., lifecycle=LifecycleHooks(...), output=OutputConfig(...))`
+  exposed through `component.spec`, removes `component.field_spec`,
+  `ComponentSpec(hooks=...)`, constructor `output=...`, and
+  `RunState.replace_fields(scope=...)`, renames public hook/state vocabulary to
+  `fields` / `received` / `sent` and `receives` / `sends`, and keeps
+  runtime-store containers private behind `ComponentState` view methods. Black
+  emitted the recurring Python 3.13/target-3.14 warning; full pytest/coverage
+  emitted only the existing external JAX dtype-promotion `FutureWarning` and
+  xarray merge `FutureWarning` in JAXGCM coverage.
 - Latest local expired deprecation residue cleanup validation passed as of
   2026-07-08 using the direct `scipy` environment executable: focused cleanup
   pytest for API boundaries/public API contracts/runtime state/runtime facade,
@@ -661,7 +660,7 @@ historical commands, failure messages, or detailed validation notes.
   `Coupler.finalize(...)`, output-helper reexports from `vercor.output`, and
   top-level `CouplerState`/`ComponentView` exports.
 - Normalized component authoring to direct `inputs`/`outputs`/`defaults` field
-  declarations and `hooks=LifecycleHooks(...)` lifecycle installation.
+  declarations and `lifecycle=LifecycleHooks(...)` lifecycle installation.
 - Moved public regridding imports to `vercor.regridding`; concrete regridder
   classes remain implementation details under `vercor.regridders.*`.
 - Updated tests, examples, `DESIGN.md`, and `DEPENDENCIES.md` to the breaking
@@ -929,7 +928,7 @@ historical commands, failure messages, or detailed validation notes.
 - JAXGCM snapshots read the final runtime payload `JCMState`, Veros snapshots
   read `VerosGCMSetupState._veros_state`, and CAMulator records the latest
   prediction in both increment-output and period-output modes. Snapshot output
-  no longer uses runtime `data` values or `component.field_spec.outputs`.
+  no longer uses runtime `data` values or `component.spec.outputs`.
 - Focused red/green coverage added for adapter snapshots, provider-based
   finalize orchestration, native external snapshot contents, and API-boundary
   checks.

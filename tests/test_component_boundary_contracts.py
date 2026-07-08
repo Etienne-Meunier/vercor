@@ -108,7 +108,7 @@ def test_lifecycle_storage_uses_normalized_private_hook_assignment() -> None:
     assert "_lifecycle_hooks: Any" not in base_source
     assert "component._lifecycle_hooks = lifecycle_hooks" in callable_source
     assert "normalize_lifecycle_hooks" not in data_source
-    assert "component._lifecycle_hooks = field_spec.hooks" in data_source
+    assert "component._lifecycle_hooks = spec.lifecycle" in data_source
     assert "_lifecycle_hooks" not in protocol_source
 
 
@@ -123,8 +123,8 @@ def test_callable_wrapper_module_does_not_need_request_dataclass() -> None:
     assert "lifecycle_hooks: LifecycleHooks" in callable_source
     assert "def create_runtime_payload(" not in callable_source
     assert "component._lifecycle_hooks.create_runtime_payload" not in callable_source
-    assert "field_spec=_ComponentComponentSpec(" not in base_source
-    assert "field_spec=ComponentComponentSpec(" not in host_source
+    assert "spec=_ComponentComponentSpec(" not in base_source
+    assert "spec=ComponentComponentSpec(" not in host_source
 
 
 def test_components_package_has_no_top_level_import_cycles() -> None:

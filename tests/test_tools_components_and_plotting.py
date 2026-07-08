@@ -123,8 +123,8 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
         name="ATM",
         grid=grid,
         fields={"shared": jnp.asarray(1.0)},
-        incoming={"shared": jnp.asarray(2.0), "only_incoming": jnp.asarray(3.0)},
-        outgoing={"only_outgoing": jnp.asarray(4.0)},
+        received={"shared": jnp.asarray(2.0), "only_incoming": jnp.asarray(3.0)},
+        sent={"only_outgoing": jnp.asarray(4.0)},
     )
 
     assert [float(value) for value in view.field_candidates("shared")] == [1.0, 2.0]
@@ -254,7 +254,7 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         latitude=jnp.asarray([-1.0, 1.0]),
     )
     runtime_state = ComponentRuntimeState(
-        data=FieldStore.from_mapping(
+        fields=FieldStore.from_mapping(
             {
                 "total_surface_temperature": jnp.array(
                     [[280.0, 281.0, 282.0], [283.0, 284.0, 285.0]]
@@ -263,8 +263,8 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
                 "v_velocity": jnp.zeros((2, 3, 2)),
             }
         ),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.from_mapping(
+        received=FieldStore.empty(),
+        sent=FieldStore.from_mapping(
             {
                 "u_velocity": jnp.ones((2, 3)),
                 "v_velocity": jnp.zeros((2, 3)),
@@ -308,7 +308,7 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
             "u_velocity": jnp.ones(grid.shape),
             "v_velocity": jnp.zeros(grid.shape),
         },
-        incoming={
+        received={
             "land_surface_temperature": jnp.asarray(
                 [[jnp.nan, 270.0], [271.0, jnp.nan]]
             ),

@@ -48,20 +48,19 @@ class DataComponent(Component):
         the callable component constructors for setup and runtime customization.
         """
 
-        field_spec = ComponentSpec() if spec is None else spec
+        spec = ComponentSpec() if spec is None else spec
         if settings is None:
-            component = cls(name=name, grid=grid, output=field_spec.output)
+            component = cls(name=name, grid=grid, spec=spec)
         else:
             component = cls(
                 name=name,
                 grid=grid,
                 settings=settings,
-                output=field_spec.output,
+                spec=spec,
             )
-        component._field_spec = field_spec
         if fields is not None:
             component.seed_fields(fields)
-        component._lifecycle_hooks = field_spec.hooks
+        component._lifecycle_hooks = spec.lifecycle
         return component
 
     def seed_fields(
@@ -72,7 +71,7 @@ class DataComponent(Component):
         """Seed data fields and expose their names as declared outputs."""
 
         super().seed_fields(fields, policy=policy)
-        self._field_spec = merge_component_outputs(self.field_spec, fields.keys())
+        self._spec = merge_component_outputs(self.spec, fields.keys())
         return self
 
     def step(

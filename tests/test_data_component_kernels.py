@@ -117,7 +117,7 @@ def test_total_surface_temperature_diagnostic_uses_runtime_view_fields() -> None
     view = ComponentState(
         name="ATM",
         grid=None,  # type: ignore[arg-type]
-        incoming={
+        received={
             "land_surface_temperature": jnp.asarray(
                 [[jnp.nan, 270.0], [271.0, jnp.nan]]
             ),

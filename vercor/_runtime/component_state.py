@@ -17,18 +17,18 @@ if TYPE_CHECKING:
 def prefill_runtime_contract_fields(
     component: "Component",
     data: dict[str, RuntimeArray],
-    incoming: dict[str, RuntimeArray],
-    outgoing: dict[str, RuntimeArray],
+    received: dict[str, RuntimeArray],
+    sent: dict[str, RuntimeArray],
     contract: ExchangeContract,
 ) -> None:
     """Add generic import/export fields required for stable runtime execution."""
 
     zeros = jax_zeros(component.grid.shape, component.settings)
-    for field_name in contract.imports:
-        incoming.setdefault(field_name, zeros)
+    for field_name in contract.receives:
+        received.setdefault(field_name, zeros)
         data.setdefault(field_name, zeros)
-    for field_name in contract.exports:
-        outgoing.setdefault(field_name, data.get(field_name, zeros))
+    for field_name in contract.sends:
+        sent.setdefault(field_name, data.get(field_name, zeros))
         data.setdefault(field_name, zeros)
 
 
@@ -42,11 +42,11 @@ def create_runtime_component_state(
 
     validate_component_setup(component)
     data = dict(component._data)
-    incoming: dict[str, RuntimeArray] = {}
-    outgoing: dict[str, RuntimeArray] = {}
+    received: dict[str, RuntimeArray] = {}
+    sent: dict[str, RuntimeArray] = {}
     if prefill_missing:
-        component.prefill_runtime_state_fields(data, incoming, outgoing, contract)
-        prefill_runtime_contract_fields(component, data, incoming, outgoing, contract)
+        component.prefill_runtime_state_fields(data, received, sent, contract)
+        prefill_runtime_contract_fields(component, data, received, sent, contract)
 
     validate_component_data_layout(
         component_name=component.name,
@@ -55,8 +55,8 @@ def create_runtime_component_state(
     )
 
     return ComponentRuntimeState(
-        data=FieldStore.from_mapping(data),
-        incoming=FieldStore.from_mapping(incoming),
-        outgoing=FieldStore.from_mapping(outgoing),
-        runtime_payload=component.create_runtime_payload(),
+        fields=FieldStore.from_mapping(data),
+        received=FieldStore.from_mapping(received),
+        sent=FieldStore.from_mapping(sent),
+        payload=component.create_runtime_payload(),
     )

@@ -34,20 +34,20 @@ class StepResult:
 class PrefillContext:
     """Read-only public context supplied to component runtime-prefill hooks."""
 
-    data: Mapping[str, RuntimeArray]
-    incoming: Mapping[str, RuntimeArray]
-    outgoing: Mapping[str, RuntimeArray]
-    imports: tuple[str, ...] = ()
-    exports: tuple[str, ...] = ()
+    fields: Mapping[str, RuntimeArray]
+    received: Mapping[str, RuntimeArray]
+    sent: Mapping[str, RuntimeArray]
+    receives: tuple[str, ...] = ()
+    sends: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class PrefillResult:
     """Field updates returned by component runtime-prefill hooks."""
 
-    data: Mapping[str, RuntimeArray] = field(default_factory=dict)
-    incoming: Mapping[str, RuntimeArray] = field(default_factory=dict)
-    outgoing: Mapping[str, RuntimeArray] = field(default_factory=dict)
+    fields: Mapping[str, RuntimeArray] = field(default_factory=dict)
+    received: Mapping[str, RuntimeArray] = field(default_factory=dict)
+    sent: Mapping[str, RuntimeArray] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -56,8 +56,8 @@ class ValidationContext:
 
     state: Any
     payload: Any | None = None
-    imports: tuple[str, ...] = ()
-    exports: tuple[str, ...] = ()
+    receives: tuple[str, ...] = ()
+    sends: tuple[str, ...] = ()
 
 
 ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
@@ -98,7 +98,7 @@ class ComponentSpec:
     inputs: FieldNames = ()
     outputs: FieldNames = ()
     defaults: Mapping[str, object] = field(default_factory=dict)
-    hooks: LifecycleHooks = field(default_factory=LifecycleHooks)
+    lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)
     output: OutputConfig = field(default_factory=OutputConfig)
 
     def __init__(
@@ -107,7 +107,7 @@ class ComponentSpec:
         outputs: FieldNames = (),
         defaults: Mapping[str, object] | None = None,
         *,
-        hooks: LifecycleHooks | None = None,
+        lifecycle: LifecycleHooks | None = None,
         output: OutputConfig | None = None,
     ) -> None:
         """Create a field declaration."""
@@ -115,7 +115,11 @@ class ComponentSpec:
         object.__setattr__(self, "inputs", _unique_field_names(inputs))
         object.__setattr__(self, "outputs", _unique_field_names(outputs))
         object.__setattr__(self, "defaults", dict(defaults or {}))
-        object.__setattr__(self, "hooks", LifecycleHooks() if hooks is None else hooks)
+        object.__setattr__(
+            self,
+            "lifecycle",
+            LifecycleHooks() if lifecycle is None else lifecycle,
+        )
         object.__setattr__(
             self,
             "output",

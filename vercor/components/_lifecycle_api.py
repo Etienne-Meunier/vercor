@@ -53,8 +53,8 @@ class ComponentLifecycleMixin:
     def prefill_runtime_state_fields(
         self,
         data: dict[str, RuntimeArray],
-        incoming: dict[str, RuntimeArray],
-        outgoing: dict[str, RuntimeArray],
+        received: dict[str, RuntimeArray],
+        sent: dict[str, RuntimeArray],
         contract: "ExchangeContract",
     ) -> None:
         """Optionally pre-seed fields required by runtime execution."""
@@ -65,17 +65,17 @@ class ComponentLifecycleMixin:
             result = hook(
                 component,
                 PrefillContext(
-                    data=MappingProxyType(data),
-                    incoming=MappingProxyType(incoming),
-                    outgoing=MappingProxyType(outgoing),
-                    imports=contract.imports,
-                    exports=contract.exports,
+                    fields=MappingProxyType(data),
+                    received=MappingProxyType(received),
+                    sent=MappingProxyType(sent),
+                    receives=contract.receives,
+                    sends=contract.sends,
                 ),
             )
-            _apply_prefill_result(result, data, incoming, outgoing)
+            _apply_prefill_result(result, data, received, sent)
             return
         _runtime_field_adapters.prefill_declared_runtime_fields(component, data)
-        _ = incoming, outgoing, contract
+        _ = received, sent, contract
 
     def validate_runtime_state(
         self,
@@ -95,9 +95,9 @@ class ComponentLifecycleMixin:
                         component.grid,
                         component_state,
                     ),
-                    payload=component_state.runtime_payload,
-                    imports=contract.imports,
-                    exports=contract.exports,
+                    payload=component_state.payload,
+                    receives=contract.receives,
+                    sends=contract.sends,
                 ),
             )
             return
@@ -111,16 +111,16 @@ class ComponentLifecycleMixin:
 def _apply_prefill_result(
     result: PrefillResult | None,
     data: dict[str, RuntimeArray],
-    incoming: dict[str, RuntimeArray],
-    outgoing: dict[str, RuntimeArray],
+    received: dict[str, RuntimeArray],
+    sent: dict[str, RuntimeArray],
 ) -> None:
     """Apply field updates returned by a public prefill hook."""
 
     if result is None:
         return
-    data.update(result.data)
-    incoming.update(result.incoming)
-    outgoing.update(result.outgoing)
+    data.update(result.fields)
+    received.update(result.received)
+    sent.update(result.sent)
 
 
 __all__ = ["ComponentLifecycleMixin"]

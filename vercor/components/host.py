@@ -55,7 +55,7 @@ class HostComponent(Component):
             step=options.step,
             payload=options.payload,
             settings=settings,
-            field_spec=options.field_spec,
+            spec=options.spec,
             lifecycle_hooks=options.lifecycle_hooks,
         )
 
@@ -85,23 +85,23 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         step: AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
-        field_spec: ComponentSpec,
+        spec: ComponentSpec,
         lifecycle_hooks: LifecycleHooks,
     ) -> None:
         if settings is None:
-            Component.__init__(self, name=name, grid=grid, output=field_spec.output)
+            Component.__init__(self, name=name, grid=grid, spec=spec)
         else:
             Component.__init__(
                 self,
                 name=name,
                 grid=grid,
                 settings=settings,
-                output=field_spec.output,
+                spec=spec,
             )
         self._initialize_callable_runtime(
             step=step,
             payload=payload,
-            field_spec=field_spec,
+            spec=spec,
             lifecycle_hooks=lifecycle_hooks,
         )
 

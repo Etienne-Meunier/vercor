@@ -60,9 +60,9 @@ def _runtime_component_state(
 ) -> ComponentRuntimeState:
     _ = name
     return ComponentRuntimeState(
-        data=FieldStore.from_mapping(data or {}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.from_mapping(data or {}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
 
@@ -567,11 +567,11 @@ def test_jax_gcm_constructor_builds_jax_backed_grid(
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
-    assert component.field_spec.inputs == (
+    assert component.spec.inputs == (
         "land_surface_temperature",
         "sea_surface_temperature",
     )
-    assert component.field_spec.outputs == (
+    assert component.spec.outputs == (
         "land_surface_temperature",
         "sea_surface_temperature",
         "total_surface_temperature",
@@ -904,21 +904,19 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         component,
         cast(Any, hook_component),
         PrefillContext(
-            data=runtime_data,
-            incoming=runtime_incoming,
-            outgoing=runtime_outgoing,
+            fields=runtime_data,
+            received=runtime_incoming,
+            sent=runtime_outgoing,
         ),
     )
-    runtime_data.update(prefill_result.data)
-    runtime_incoming.update(prefill_result.incoming)
-    runtime_outgoing.update(prefill_result.outgoing)
+    runtime_data.update(prefill_result.fields)
+    runtime_incoming.update(prefill_result.received)
+    runtime_outgoing.update(prefill_result.sent)
     component_state = ComponentRuntimeState(
-        data=FieldStore.from_mapping(runtime_data),
-        incoming=FieldStore.from_mapping(runtime_incoming),
-        outgoing=FieldStore.from_mapping(runtime_outgoing),
-        runtime_payload=jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
-            component
-        ),
+        fields=FieldStore.from_mapping(runtime_data),
+        received=FieldStore.from_mapping(runtime_incoming),
+        sent=FieldStore.from_mapping(runtime_outgoing),
+        payload=jax_gcm_runtime_module.create_jax_gcm_runtime_payload(component),
     )
     step_context = StepContext(
         dt_seconds=timedelta(days=1).total_seconds(),
@@ -928,13 +926,13 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     step_result = jax_gcm_runtime_module.step_jax_gcm_component(
         component,
-        component_state.data.to_mapping(),
+        component_state.fields.to_mapping(),
         step_context,
-        component_state.runtime_payload,
+        component_state.payload,
     )
-    component_state = component_state.with_data(
-        component_state.data.set_many(step_result.fields)
-    ).with_runtime_payload(step_result.payload)
+    component_state = component_state.with_fields(
+        component_state.fields.set_many(step_result.fields)
+    ).with_payload(step_result.payload)
     forcing_call = component.forcing.copy_calls[-1]
     assert isinstance(forcing_call["stl_am"], jax.Array)
     assert isinstance(forcing_call["sea_surface_temperature"], jax.Array)
@@ -946,7 +944,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         forcing_call["sea_surface_temperature"],
         np.asarray([[288.15, 282.0], [281.0, 288.15]]),
     )
-    data = component_state.data
+    data = component_state.fields
     assert_allclose_compact(
         data.get("total_surface_temperature"),
         np.asarray([[270.0, 281.0], [282.0, 567.0]]),
@@ -1208,10 +1206,10 @@ def test_jax_gcm_snapshot_output_uses_final_runtime_payload_not_runtime_data(
         phydata={},
     )
     component_state = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"temperature": np.full((3, 2, 3), -999.0)}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
-        runtime_payload=SimpleNamespace(jcm_state=jcm_state),
+        fields=FieldStore.from_mapping({"temperature": np.full((3, 2, 3), -999.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+        payload=SimpleNamespace(jcm_state=jcm_state),
     )
     output = tmp_path / "ATM.snapshot.nc"
 
@@ -1220,7 +1218,7 @@ def test_jax_gcm_snapshot_output_uses_final_runtime_payload_not_runtime_data(
         SnapshotContext(
             component=cast(Any, None),
             state=ComponentState._from_runtime("ATM", None, component_state),
-            payload=component_state.runtime_payload,
+            payload=component_state.payload,
             output_path=output,
             time=datetime(2000, 1, 2),
             logger=None,
@@ -1651,7 +1649,7 @@ def test_veros_snapshot_output_uses_native_state_variables(tmp_path: Path) -> No
         SnapshotContext(
             component=cast(Any, None),
             state=ComponentState._from_runtime("OCN", None, component_state),
-            payload=component_state.runtime_payload,
+            payload=component_state.payload,
             output_path=output,
             time=datetime(2000, 1, 2),
             logger=None,
@@ -1912,7 +1910,7 @@ def test_veros_constructor_builds_jax_backed_grid(
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
-    assert component.field_spec.inputs == (
+    assert component.spec.inputs == (
         "model_level_height",
         "u_velocity",
         "v_velocity",
@@ -1923,7 +1921,7 @@ def test_veros_constructor_builds_jax_backed_grid(
         "net_shortwave_radiation_flux",
         "downward_longwave_radiation_flux",
     )
-    assert component.field_spec.outputs == ("sea_surface_temperature",)
+    assert component.spec.outputs == ("sea_surface_temperature",)
     assert component.grid.binary_mask.shape == (4, 4)
     assert callable(component.output.snapshot_writer)
     expected_mask = np.ones((4, 4))
@@ -1996,11 +1994,13 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     )
     updates = veros_runtime_module.step_veros_runtime(
         component,
-        component_state.data.to_mapping(),
+        component_state.fields.to_mapping(),
         step_context,
         None,
     )
-    component_state = component_state.with_data(component_state.data.set_many(updates))
+    component_state = component_state.with_fields(
+        component_state.fields.set_many(updates)
+    )
 
     expected_names = ["taux", "tauy", "qnet", "qnec"]
     assert [name for name, _ in set_calls] == expected_names
@@ -2009,10 +2009,10 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     )
     assert_allclose_compact(set_calls[3][1], expected_qnec)
     assert_allclose_compact(
-        component_state.data.get("sea_surface_temperature"),
+        component_state.fields.get("sea_surface_temperature"),
         np.full((4, 4), 288.15),
     )
-    assert isinstance(component_state.data.get("sea_surface_temperature"), jax.Array)
+    assert isinstance(component_state.fields.get("sea_surface_temperature"), jax.Array)
 
 
 def test_veros_step_records_selected_outputs_and_writes_on_gate(
@@ -2199,7 +2199,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     )
     _ = veros_runtime_module.step_veros_runtime(
         component,
-        component_state.data.to_mapping(),
+        component_state.fields.to_mapping(),
         step_context,
         None,
     )

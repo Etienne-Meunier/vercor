@@ -52,30 +52,30 @@ def normalize_author_field_values(
     return normalized
 
 
-def declared_runtime_field_names(field_spec: ComponentSpec) -> tuple[str, ...]:
+def declared_runtime_field_names(spec: ComponentSpec) -> tuple[str, ...]:
     """Return all fields that a declaration validates at runtime."""
 
     return unique_field_names(
         (
-            *field_spec.inputs,
-            *field_spec.outputs,
-            *tuple(field_spec.defaults),
+            *spec.inputs,
+            *spec.outputs,
+            *tuple(spec.defaults),
         )
     )
 
 
 def merge_component_outputs(
-    field_spec: ComponentSpec,
+    spec: ComponentSpec,
     output_names: Iterable[str],
 ) -> ComponentSpec:
-    """Return ``field_spec`` with additional output names merged in."""
+    """Return ``spec`` with additional output names merged in."""
 
     return ComponentSpec(
-        inputs=field_spec.inputs,
-        outputs=unique_field_names((*field_spec.outputs, *tuple(output_names))),
-        defaults=field_spec.defaults,
-        hooks=field_spec.hooks,
-        output=field_spec.output,
+        inputs=spec.inputs,
+        outputs=unique_field_names((*spec.outputs, *tuple(output_names))),
+        defaults=spec.defaults,
+        lifecycle=spec.lifecycle,
+        output=spec.output,
     )
 
 

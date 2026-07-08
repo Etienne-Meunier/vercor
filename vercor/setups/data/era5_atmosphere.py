@@ -199,7 +199,7 @@ def make_era5_atmosphere(
         fields=fields,
         outputs=_ERA5_ATMOSPHERE_FIELD_NAMES,
         data_files=data_files,
-        hooks=LifecycleHooks(initialize=initialize),
+        lifecycle=LifecycleHooks(initialize=initialize),
     )
     component._setup_metadata["hybrid_coefficients"] = {
         "hyai": hyai,

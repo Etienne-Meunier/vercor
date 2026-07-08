@@ -70,23 +70,23 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     atmosphere = make_slab_atmosphere(grid=grid)
-    assert atmosphere.field_spec.inputs == ("sea_surface_temperature",)
-    assert atmosphere.field_spec.outputs == (
+    assert atmosphere.spec.inputs == ("sea_surface_temperature",)
+    assert atmosphere.spec.outputs == (
         "temperature_2m",
         "sensible_heat_flux",
         "latent_heat_flux",
         "u_velocity_10m",
         "v_velocity_10m",
     )
-    assert set(atmosphere.field_spec.defaults) == set(atmosphere.field_spec.outputs)
+    assert set(atmosphere.spec.defaults) == set(atmosphere.spec.outputs)
     atmosphere.initialize(coupler.init_context())
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
-        atmosphere_state.data.get("sensible_heat_flux"),
+        atmosphere_state.fields.get("sensible_heat_flux"),
         np.zeros(grid.shape),
     )
     assert_allclose_compact(
-        atmosphere_state.data.get("latent_heat_flux"),
+        atmosphere_state.fields.get("latent_heat_flux"),
         np.zeros(grid.shape),
     )
 
@@ -95,7 +95,7 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
     initial_temperature_2m = np.asarray(atmosphere._data["temperature_2m"]).copy()
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
-    atmosphere_data = atmosphere_state.data
+    atmosphere_data = atmosphere_state.fields
     assert atmosphere_data.get("sensible_heat_flux").shape == grid.shape
     assert atmosphere_data.get("latent_heat_flux").shape == grid.shape
     assert atmosphere_data.get("u_velocity_10m").shape == grid.shape
@@ -109,14 +109,14 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     )
 
     ocean = make_slab_ocean(grid=grid)
-    assert ocean.field_spec.inputs == ("sensible_heat_flux", "latent_heat_flux")
-    assert ocean.field_spec.outputs == ("sea_surface_temperature",)
-    assert set(ocean.field_spec.defaults) == {"sea_surface_temperature"}
+    assert ocean.spec.inputs == ("sensible_heat_flux", "latent_heat_flux")
+    assert ocean.spec.outputs == ("sea_surface_temperature",)
+    assert set(ocean.spec.defaults) == {"sea_surface_temperature"}
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
     assert ocean._data == {}
-    assert ocean_state.data.field_names == ("sea_surface_temperature",)
+    assert ocean_state.fields.field_names == ("sea_surface_temperature",)
     assert_allclose_compact(
-        ocean_state.data.get("sea_surface_temperature"),
+        ocean_state.fields.get("sea_surface_temperature"),
         np.full(grid.shape, 288.15),
     )
 
@@ -125,39 +125,41 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     ocean._data["latent_heat_flux"] = np.full(grid.shape, 10.0)
     starting_sst = ocean._data["sea_surface_temperature"].copy()
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
-    ocean_sst = ocean_state.data.get("sea_surface_temperature")
+    ocean_sst = ocean_state.fields.get("sea_surface_temperature")
     assert ocean_sst.shape == grid.shape
     assert np.all(np.asarray(ocean_sst) > starting_sst)
 
     land = make_slab_land(grid=grid)
-    assert land.field_spec.inputs == ("latent_heat_flux",)
-    assert land.field_spec.outputs == ("soil_moisture", "land_surface_temperature")
-    assert set(land.field_spec.defaults) == {
+    assert land.spec.inputs == ("latent_heat_flux",)
+    assert land.spec.outputs == ("soil_moisture", "land_surface_temperature")
+    assert set(land.spec.defaults) == {
         "soil_moisture",
         "land_surface_temperature",
     }
     land.initialize(coupler.init_context())
     land._data["latent_heat_flux"] = np.full(grid.shape, 100.0)
     land_state = _step_component(land, timedelta(seconds=10.0), timestamp, coupler)
-    soil_moisture = land_state.data.get("soil_moisture")
+    soil_moisture = land_state.fields.get("soil_moisture")
     assert soil_moisture.shape == grid.shape
     assert np.all(np.asarray(soil_moisture) < 0.3)
 
     seaice = make_slab_seaice(grid=grid)
-    assert seaice.field_spec.inputs == ("sea_surface_temperature",)
-    assert seaice.field_spec.outputs == ("ice_fraction",)
-    assert set(seaice.field_spec.defaults) == {"ice_fraction"}
+    assert seaice.spec.inputs == ("sea_surface_temperature",)
+    assert seaice.spec.outputs == ("ice_fraction",)
+    assert set(seaice.spec.defaults) == {"ice_fraction"}
     seaice_state = _step_component(seaice, dt, timestamp, coupler)
     assert seaice._data == {}
-    assert seaice_state.data.field_names == ("ice_fraction",)
-    assert_allclose_compact(seaice_state.data.get("ice_fraction"), np.zeros(grid.shape))
+    assert seaice_state.fields.field_names == ("ice_fraction",)
+    assert_allclose_compact(
+        seaice_state.fields.get("ice_fraction"), np.zeros(grid.shape)
+    )
 
     seaice.initialize(coupler.init_context())
     seaice._data["sea_surface_temperature"] = np.asarray(
         [[270.0, 272.0], [274.0, 276.0]]
     )
     seaice_state = _step_component(seaice, dt, timestamp, coupler)
-    ice_fraction = seaice_state.data.get("ice_fraction")
+    ice_fraction = seaice_state.fields.get("ice_fraction")
     cold = ice_fraction[0, 0]
     warm = ice_fraction[1, 1]
     assert cold > warm
@@ -205,7 +207,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
 
     assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
     assert component.settings.apply_time_interpolation
-    assert component.field_spec.outputs == ("land_surface_temperature",)
+    assert component.spec.outputs == ("land_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component._data["land_surface_temperature"], jax.Array)
@@ -263,7 +265,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
 
     assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
     assert component.settings.apply_time_interpolation
-    assert component.field_spec.outputs == ("sea_surface_temperature",)
+    assert component.spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component._data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(component.grid.latitude, np.asarray([-10.0, 10.0]))
@@ -318,7 +320,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
 
     assert component._setup_metadata["DATA_FILES"] == {"model_level": str(fake_path)}
     assert component.settings.apply_time_interpolation
-    assert component.field_spec.outputs == ("sea_surface_temperature",)
+    assert component.spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component._data["sea_surface_temperature"], jax.Array)
     assert component.grid.shape == (46, 2)
@@ -487,7 +489,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         "surface": str(surface_path),
     }
     assert component.settings.apply_time_interpolation
-    assert component.field_spec.outputs == (
+    assert component.spec.outputs == (
         "surface_pressure",
         "specific_humidity_3d",
         "temperature_3d",
@@ -575,7 +577,7 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component.settings.apply_daily_time_selection
-    assert component.field_spec.outputs == (
+    assert component.spec.outputs == (
         "land_surface_temperature",
         "soil_moisture",
     )

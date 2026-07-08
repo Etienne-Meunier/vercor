@@ -171,7 +171,7 @@ def write_coupler_component_snapshots(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for name, component in components.items():
-        writer = component.output.snapshot_writer
+        writer = component.spec.output.snapshot_writer
         if writer is None:
             continue
         runtime_state = final_state._component_state(name)
@@ -179,7 +179,7 @@ def write_coupler_component_snapshots(
             SnapshotContext(
                 component=component,
                 state=ComponentState._from_runtime(name, component.grid, runtime_state),
-                payload=runtime_state.runtime_payload,
+                payload=runtime_state.payload,
                 output_path=output_dir / f"{name.lower()}.snapshot.nc",
                 time=output_time,
                 logger=logger,

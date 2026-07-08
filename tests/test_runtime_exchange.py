@@ -36,14 +36,14 @@ def _factory(*args: Any, **kwargs: Any) -> _ScalingRegridder:
 def _component(
     name: str,
     *,
-    outgoing: dict[str, jax.Array],
-    incoming: dict[str, jax.Array] | None = None,
+    sent: dict[str, jax.Array],
+    received: dict[str, jax.Array] | None = None,
 ) -> ComponentRuntimeState:
     _ = name
     return ComponentRuntimeState(
-        data=FieldStore.from_mapping({}),
-        incoming=FieldStore.from_mapping(incoming or {}),
-        outgoing=FieldStore.from_mapping(outgoing),
+        fields=FieldStore.from_mapping({}),
+        received=FieldStore.from_mapping(received or {}),
+        sent=FieldStore.from_mapping(sent),
     )
 
 
@@ -60,9 +60,9 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
         state = RunState._from_runtime(
             component_names=("OCN", "ATM"),
             components=(
-                _component("OCN", outgoing={"temperature": source}),
+                _component("OCN", sent={"temperature": source}),
                 _component(
-                    "ATM", outgoing={}, incoming={"temperature": jnp.zeros_like(source)}
+                    "ATM", sent={}, received={"temperature": jnp.zeros_like(source)}
                 ),
             ),
             fractional_masks=FieldStore.from_mapping({"OCN|ATM|_factory": mask}),
@@ -73,7 +73,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
             (exchange,),
             regridders,
         )
-        return jnp.sum(dispatched._component_state("ATM").incoming.get("temperature"))
+        return jnp.sum(dispatched._component_state("ATM").received.get("temperature"))
 
     source = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
     mask = jnp.asarray([[1.0, 0.5], [0.0, 1.0]])
@@ -104,12 +104,12 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
         components=(
             _component(
                 "OCN",
-                outgoing={"u_velocity": u_velocity, "v_velocity": v_velocity},
+                sent={"u_velocity": u_velocity, "v_velocity": v_velocity},
             ),
             _component(
                 "ATM",
-                outgoing={},
-                incoming={
+                sent={},
+                received={
                     "u_velocity": jnp.zeros((2, 2)),
                     "v_velocity": jnp.zeros((2, 2)),
                 },
@@ -124,10 +124,10 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
     destination = dispatched._component_state("ATM")
 
     assert_allclose_compact(
-        destination.incoming.get("u_velocity"), np.full((2, 2), 6.0)
+        destination.received.get("u_velocity"), np.full((2, 2), 6.0)
     )
     assert_allclose_compact(
-        destination.incoming.get("v_velocity"), np.full((2, 2), -3.0)
+        destination.received.get("v_velocity"), np.full((2, 2), -3.0)
     )
 
 

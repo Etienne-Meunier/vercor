@@ -11,7 +11,7 @@ from vercor.components.contracts import (
     FieldNames,
     StepResult,
 )
-from vercor.components._constructor_options import normalize_field_spec
+from vercor.components._constructor_options import normalize_component_spec
 from vercor.components._contracts import (
     normalize_author_field_values,
 )
@@ -30,7 +30,7 @@ def runtime_fields(
 ) -> dict[str, RuntimeArray]:
     """Return runtime data fields as a plain name-to-array mapping."""
 
-    return component_state.data.to_mapping()
+    return component_state.fields.to_mapping()
 
 
 def runtime_field(
@@ -41,7 +41,7 @@ def runtime_field(
     """Return one runtime data field with a component-oriented error."""
 
     try:
-        return component_state.data.get(name)
+        return component_state.fields.get(name)
     except KeyError as exc:
         raise ComponentError(
             f"Runtime data field '{name}' is missing for component '{component.name}'."
@@ -54,7 +54,7 @@ def has_runtime_field(
 ) -> bool:
     """Return whether one runtime data field exists."""
 
-    return name in component_state.data
+    return name in component_state.fields
 
 
 def runtime_field_or(
@@ -66,7 +66,7 @@ def runtime_field_or(
 ) -> RuntimeArray:
     """Return one runtime field or a grid-shaped/default array fallback."""
 
-    if name in component_state.data:
+    if name in component_state.fields:
         return runtime_field(component, component_state, name)
     normalized = normalize_author_field_values(
         component_name=component.name,
@@ -91,7 +91,7 @@ def runtime_field_or_zeros_like(
     """Return one runtime field or zeros matching another field/array."""
 
     try:
-        return component_state.data.get_or_zeros_like(name, like)
+        return component_state.fields.get_or_zeros_like(name, like)
     except KeyError as exc:
         missing_name = like if isinstance(like, str) else name
         raise ComponentError(
@@ -108,7 +108,11 @@ def with_runtime_fields(
     """Return ``component_state`` with existing runtime data fields updated."""
 
     missing_field = next(
-        (field_name for field_name in fields if field_name not in component_state.data),
+        (
+            field_name
+            for field_name in fields
+            if field_name not in component_state.fields
+        ),
         None,
     )
     if missing_field is not None:
@@ -120,7 +124,7 @@ def with_runtime_fields(
             "from_step()/declare_fields(), or declare it through an "
             "exchange before runtime execution."
         )
-    return component_state.with_data(component_state.data.replace_many(fields))
+    return component_state.with_fields(component_state.fields.replace_many(fields))
 
 
 def apply_step_result(
@@ -134,7 +138,7 @@ def apply_step_result(
         updated_state = with_runtime_fields(component, component_state, result.fields)
         if result.payload is KEEP_PAYLOAD:
             return updated_state
-        return updated_state.with_runtime_payload(result.payload)
+        return updated_state.with_payload(result.payload)
 
     return with_runtime_fields(component, component_state, result)
 
@@ -142,7 +146,7 @@ def apply_step_result(
 def prefill_runtime_fields(
     component: "Component",
     data: dict[str, RuntimeArray],
-    field_spec: ComponentSpec | None = None,
+    spec: ComponentSpec | None = None,
     *,
     outputs: FieldNames = (),
     defaults: AuthorFieldValues = None,
@@ -150,11 +154,11 @@ def prefill_runtime_fields(
 ) -> None:
     """Prefill a mutable runtime data mapping with declared fields."""
 
-    if field_spec is not None and (tuple(outputs) or defaults is not None):
+    if spec is not None and (tuple(outputs) or defaults is not None):
         raise TypeError(
-            "Use either field_spec=ComponentSpec(...) or outputs/defaults, not both"
+            "Use either spec=ComponentSpec(...) or outputs/defaults, not both"
         )
-    declared = field_spec or normalize_field_spec(
+    declared = spec or normalize_component_spec(
         outputs=outputs,
         defaults=defaults,
     )
@@ -181,4 +185,4 @@ def prefill_declared_runtime_fields(
 ) -> None:
     """Prefill component data from the component's declared runtime fields."""
 
-    prefill_runtime_fields(component, data, component.field_spec)
+    prefill_runtime_fields(component, data, component.spec)

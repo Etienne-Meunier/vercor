@@ -40,23 +40,23 @@ def _identity_factory(*args: Any, **kwargs: Any) -> _IdentityRegridder:
 def _component_state(
     name: str,
     data: dict[str, jax.Array],
-    imports: tuple[str, ...],
-    exports: tuple[str, ...],
+    receives: tuple[str, ...],
+    sends: tuple[str, ...],
 ) -> ComponentRuntimeState:
     _ = name
     zeros = jnp.zeros((2, 2), dtype=jnp.float64)
     return ComponentRuntimeState(
-        data=FieldStore.from_mapping(
+        fields=FieldStore.from_mapping(
             {
                 field: data.get(field, zeros)
-                for field in sorted(set(data) | set(imports) | set(exports))
+                for field in sorted(set(data) | set(receives) | set(sends))
             }
         ),
-        incoming=FieldStore.from_mapping(
-            {field: data.get(field, zeros) for field in imports}
+        received=FieldStore.from_mapping(
+            {field: data.get(field, zeros) for field in receives}
         ),
-        outgoing=FieldStore.from_mapping(
-            {field: data.get(field, zeros) for field in exports}
+        sent=FieldStore.from_mapping(
+            {field: data.get(field, zeros) for field in sends}
         ),
     )
 
@@ -137,8 +137,8 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
                 "v_velocity_10m": zeros,
                 "sea_surface_temperature": sea_surface_temperature,
             },
-            imports=("sea_surface_temperature",),
-            exports=(
+            receives=("sea_surface_temperature",),
+            sends=(
                 "temperature_2m",
                 "sensible_heat_flux",
                 "latent_heat_flux",
@@ -153,8 +153,8 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
                 "sensible_heat_flux": zeros,
                 "latent_heat_flux": zeros,
             },
-            imports=("sensible_heat_flux", "latent_heat_flux"),
-            exports=("sea_surface_temperature",),
+            receives=("sensible_heat_flux", "latent_heat_flux"),
+            sends=("sea_surface_temperature",),
         ),
         _component_state(
             "LND",
@@ -163,8 +163,8 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
                 "land_surface_temperature": temperature_2m,
                 "latent_heat_flux": zeros,
             },
-            imports=("latent_heat_flux",),
-            exports=("soil_moisture", "land_surface_temperature"),
+            receives=("latent_heat_flux",),
+            sends=("soil_moisture", "land_surface_temperature"),
         ),
         _component_state(
             "ICE",
@@ -172,8 +172,8 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
                 "ice_fraction": zeros,
                 "sea_surface_temperature": sea_surface_temperature,
             },
-            imports=("sea_surface_temperature",),
-            exports=("ice_fraction",),
+            receives=("sea_surface_temperature",),
+            sends=("ice_fraction",),
         ),
     )
     return RunState._from_runtime(
@@ -211,11 +211,15 @@ def test_run_executes_pure_scanned_runtime_for_same_shapes_and_metadata() -> Non
     first = _block_until_ready(coupler.run(_runtime_state_with_sst(288.15)))
     second = _block_until_ready(coupler.run(_runtime_state_with_sst(291.15)))
 
-    assert first._component_state("OCN").data.get("sea_surface_temperature").shape == (
+    assert first._component_state("OCN").fields.get(
+        "sea_surface_temperature"
+    ).shape == (
         2,
         2,
     )
-    assert second._component_state("OCN").data.get("sea_surface_temperature").shape == (
+    assert second._component_state("OCN").fields.get(
+        "sea_surface_temperature"
+    ).shape == (
         2,
         2,
     )
@@ -242,9 +246,9 @@ def test_run_preserves_runtime_treedef() -> None:
     assert first_final.component_names == first_state.component_names
 
     for before, after in zip(first_state._components, first_final._components):
-        assert after.data.field_names == before.data.field_names
-        assert after.incoming.field_names == before.incoming.field_names
-        assert after.outgoing.field_names == before.outgoing.field_names
+        assert after.fields.field_names == before.fields.field_names
+        assert after.received.field_names == before.received.field_names
+        assert after.sent.field_names == before.sent.field_names
 
 
 def test_runtime_profile_harness_exposes_cli_entrypoint() -> None:

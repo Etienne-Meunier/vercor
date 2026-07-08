@@ -77,9 +77,9 @@ def _runtime_component_state(
 ) -> ComponentRuntimeState:
     _ = name
     return ComponentRuntimeState(
-        data=FieldStore.from_mapping(data or {}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.from_mapping(data or {}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
 
@@ -1006,12 +1006,12 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
-    assert component.field_spec.inputs == (
+    assert component.spec.inputs == (
         "sea_surface_temperature",
         "land_surface_temperature",
     )
     assert (
-        component.field_spec.outputs
+        component.spec.outputs
         == camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
     )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
@@ -1236,8 +1236,8 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     component.initialize(_make_coupler(start))
-    assert component.field_spec.outputs == ("land_surface_temperature",)
-    assert set(component.field_spec.defaults) == {"land_surface_temperature"}
+    assert component.spec.outputs == ("land_surface_temperature",)
+    assert set(component.spec.defaults) == {"land_surface_temperature"}
     assert isinstance(component._data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(
         component._data["land_surface_temperature"], np.full((2, 2), 283.0)
@@ -1259,7 +1259,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
         ),
         allow_host_runtime=True,
     )
-    land_surface_temperature = component_state.data.get("land_surface_temperature")
+    land_surface_temperature = component_state.fields.get("land_surface_temperature")
     assert isinstance(land_surface_temperature, jax.Array)
     assert_allclose_compact(
         land_surface_temperature,
@@ -1424,11 +1424,13 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     )
     updates = camulator_runtime_module.step_camulator_runtime(
         component,
-        component_state.data.to_mapping(),
+        component_state.fields.to_mapping(),
         step_context,
         None,
     )
-    component_state = component_state.with_data(component_state.data.set_many(updates))
+    component_state = component_state.with_fields(
+        component_state.fields.set_many(updates)
+    )
 
     assert captured["dynamic_forcing"].shape == (1, 2, 1, 2, 2)
     assert_allclose_compact(
@@ -1441,13 +1443,15 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         ),
     )
     assert captured["sst"].shape == (1, 1, 1, 2, 2)
-    assert isinstance(component_state.data.get("total_surface_temperature"), jax.Array)
+    assert isinstance(
+        component_state.fields.get("total_surface_temperature"), jax.Array
+    )
     assert_allclose_compact(
-        component_state.data.get("total_surface_temperature"),
+        component_state.fields.get("total_surface_temperature"),
         np.asarray([[11.0, 283.0], [33.0, 44.0]]),
     )
     assert_allclose_compact(
-        component_state.data.get("temperature"), np.full((2, 2), 9.0)
+        component_state.fields.get("temperature"), np.full((2, 2), 9.0)
     )
     assert component.runtime_cursor.timestep_counter == 1
     assert output_calls["kwargs"]["state_transformer"] is component.state_transformer

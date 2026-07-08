@@ -47,7 +47,7 @@ def make_veros_gcm(
             inputs=_veros_gcm_state.VEROS_INPUT_FIELD_NAMES,
             outputs=("sea_surface_temperature",),
             defaults=_veros_gcm_state.veros_default_fields(),
-            hooks=LifecycleHooks(initialize=state.initialize),
+            lifecycle=LifecycleHooks(initialize=state.initialize),
             output=OutputConfig(
                 snapshot_writer=config.output.snapshot_writer
                 or partial(_veros_output.write_veros_snapshot_output, state),

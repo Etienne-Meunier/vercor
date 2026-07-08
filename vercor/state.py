@@ -124,21 +124,17 @@ class RunState(PyTreeNodeMixin):
         self,
         component: str,
         fields: Mapping[str, RuntimeArray],
-        *,
-        scope: Literal["state"] = "state",
     ) -> "RunState":
         """Return a new run state with existing component fields replaced."""
 
-        if scope != "state":
-            raise ValueError("RunState.replace_fields() only supports scope='state'")
         component_state = self._component_state(component)
-        runtime_store = component_state.data
+        runtime_store = component_state.fields
         missing = tuple(field for field in fields if field not in runtime_store)
         if missing:
             raise KeyError(f"Runtime field {missing[0]!r} not found")
 
         updated_store = runtime_store.replace_many(fields)
-        updated_component = component_state.with_data(updated_store)
+        updated_component = component_state.with_fields(updated_store)
         return self._with_component_state(component, updated_component)
 
     def _component_index(self, name: str) -> int:
@@ -185,9 +181,9 @@ class ComponentState:
 
     name: str
     grid: RectilinearGrid | None
-    _data: FieldStore = field(default_factory=FieldStore.empty)
-    _incoming: FieldStore = field(default_factory=FieldStore.empty)
-    _outgoing: FieldStore = field(default_factory=FieldStore.empty)
+    _fields: FieldStore = field(default_factory=FieldStore.empty)
+    _received: FieldStore = field(default_factory=FieldStore.empty)
+    _sent: FieldStore = field(default_factory=FieldStore.empty)
 
     def __init__(
         self,
@@ -195,21 +191,21 @@ class ComponentState:
         grid: RectilinearGrid | None,
         *,
         fields: Mapping[str, Any] | None = None,
-        incoming: Mapping[str, Any] | None = None,
-        outgoing: Mapping[str, Any] | None = None,
+        received: Mapping[str, Any] | None = None,
+        sent: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a public component-state view from plain field mappings."""
 
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "grid", grid)
-        object.__setattr__(self, "_data", _field_store_from_mapping(fields))
-        object.__setattr__(self, "_incoming", _field_store_from_mapping(incoming))
-        object.__setattr__(self, "_outgoing", _field_store_from_mapping(outgoing))
+        object.__setattr__(self, "_fields", _field_store_from_mapping(fields))
+        object.__setattr__(self, "_received", _field_store_from_mapping(received))
+        object.__setattr__(self, "_sent", _field_store_from_mapping(sent))
 
     def field_candidates(self, name: str) -> list[RuntimeArray]:
-        """Return all runtime fields named ``name`` in data, incoming, outgoing order."""
+        """Return all runtime fields named ``name`` in fields, received, sent order."""
 
-        return runtime_field_candidates(self, name)
+        return _field_candidates(self, name)
 
     def field(
         self,
@@ -222,7 +218,7 @@ class ComponentState:
         if scope != "any":
             return self._store(scope).get(name)
 
-        return runtime_field(self, name)
+        return _field(self, name)
 
     def fields(
         self,
@@ -261,16 +257,16 @@ class ComponentState:
         view = object.__new__(cls)
         object.__setattr__(view, "name", name)
         object.__setattr__(view, "grid", grid)
-        object.__setattr__(view, "_data", component_state.data)
-        object.__setattr__(view, "_incoming", component_state.incoming)
-        object.__setattr__(view, "_outgoing", component_state.outgoing)
+        object.__setattr__(view, "_fields", component_state.fields)
+        object.__setattr__(view, "_received", component_state.received)
+        object.__setattr__(view, "_sent", component_state.sent)
         return view
 
     def _stores(self) -> dict[FieldScope, FieldStore]:
         return {
-            "state": self._data,
-            "received": self._incoming,
-            "sent": self._outgoing,
+            "state": self._fields,
+            "received": self._received,
+            "sent": self._sent,
         }
 
     def _store(
@@ -297,34 +293,23 @@ def _field_store_from_mapping(
     return FieldStore.from_mapping(fields)
 
 
-if TYPE_CHECKING:
-    RuntimeFieldSource: TypeAlias = ComponentState | ComponentRuntimeState
-else:
-    RuntimeFieldSource: TypeAlias = Any
-
-
-def runtime_field_candidates(
-    source: RuntimeFieldSource,
+def _field_candidates(
+    source: ComponentState,
     name: str,
 ) -> list[RuntimeArray]:
-    """Return all runtime fields named ``name`` in data, incoming, outgoing order."""
+    """Return all runtime fields named ``name`` in fields, received, sent order."""
 
     candidates: list[RuntimeArray] = []
-    stores = (
-        (source._data, source._incoming, source._outgoing)
-        if isinstance(source, ComponentState)
-        else (source.data, source.incoming, source.outgoing)
-    )
-    for store in stores:
+    for store in (source._fields, source._received, source._sent):
         if name in store:
             candidates.append(store.get(name))
     return candidates
 
 
-def runtime_field(source: RuntimeFieldSource, name: str) -> RuntimeArray:
+def _field(source: ComponentState, name: str) -> RuntimeArray:
     """Return the first runtime field named ``name`` from a view or state."""
 
-    candidates = runtime_field_candidates(source, name)
+    candidates = _field_candidates(source, name)
     if candidates:
         return candidates[0]
     raise KeyError(f"Field {name!r} not found")

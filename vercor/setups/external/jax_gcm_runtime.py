@@ -108,7 +108,7 @@ def prefill_jax_gcm_runtime_fields(
 ) -> PrefillResult:
     """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
-    data = dict(context.data)
+    data = dict(context.fields)
     prefill_runtime_fields(
         component,
         data,
@@ -128,7 +128,7 @@ def prefill_jax_gcm_runtime_fields(
         "pressure",
         jax_zeros((sigma_levels.shape[0], *component.grid.shape), component.settings),
     )
-    return PrefillResult(data=data)
+    return PrefillResult(fields=data)
 
 
 def validate_jax_gcm_runtime_state(

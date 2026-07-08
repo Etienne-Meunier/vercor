@@ -7,7 +7,7 @@ from vercor.components.contracts import (
 )
 
 
-def normalize_field_spec(
+def normalize_component_spec(
     *,
     inputs: FieldNames = (),
     outputs: FieldNames = (),
@@ -22,4 +22,4 @@ def normalize_field_spec(
     )
 
 
-__all__ = ["normalize_field_spec"]
+__all__ = ["normalize_component_spec"]

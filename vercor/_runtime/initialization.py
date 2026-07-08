@@ -47,12 +47,12 @@ def apply_run_precision_to_component(
         field_name: as_jax_real_array(field_value, settings)
         for field_name, field_value in component._data.items()
     }
-    field_spec = component.field_spec
-    if field_spec.defaults:
+    spec = component.spec
+    if spec.defaults:
         component.declare_fields(
-            inputs=field_spec.inputs,
-            outputs=field_spec.outputs,
-            defaults=field_spec.defaults,
+            inputs=spec.inputs,
+            outputs=spec.outputs,
+            defaults=spec.defaults,
         )
 
 

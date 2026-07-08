@@ -27,7 +27,7 @@ class CallableComponentOptions:
 
     step: AuthorStepCallable
     payload: Any | None
-    field_spec: ComponentSpec
+    spec: ComponentSpec
     lifecycle_hooks: LifecycleHooks
 
 
@@ -39,12 +39,12 @@ def callable_component_options(
 ) -> CallableComponentOptions:
     """Normalize shared public callable component constructor options."""
 
-    field_spec = ComponentSpec() if spec is None else spec
+    spec = ComponentSpec() if spec is None else spec
     return CallableComponentOptions(
         step=step,
         payload=payload,
-        field_spec=field_spec,
-        lifecycle_hooks=field_spec.hooks,
+        spec=spec,
+        lifecycle_hooks=spec.lifecycle,
     )
 
 
@@ -160,13 +160,13 @@ class _CallableRuntimeMixin:
         *,
         step: AuthorStepCallable,
         payload: Any | None,
-        field_spec: ComponentSpec,
+        spec: ComponentSpec,
         lifecycle_hooks: LifecycleHooks,
     ) -> None:
         component = cast("Component", self)
         self._step = normalize_component_step_callable(step)
         self._payload = payload
-        component._field_spec = field_spec
+        component._spec = spec
         component._lifecycle_hooks = lifecycle_hooks
 
     def _default_runtime_payload(self) -> Any | None:
@@ -188,6 +188,6 @@ class _CallableRuntimeMixin:
             self._step(
                 runtime_fields(component_state),
                 context,
-                component_state.runtime_payload,
+                component_state.payload,
             ),
         )

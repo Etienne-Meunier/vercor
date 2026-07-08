@@ -154,9 +154,9 @@ def test_component_constructors_accept_component_spec_only() -> None:
         spec=vercor.ComponentSpec(outputs=("temperature",)),
     )
 
-    assert component.field_spec.inputs == ("temperature",)
-    assert component.field_spec.outputs == ("sea_surface_temperature",)
-    assert forcing.field_spec.outputs == ("temperature",)
+    assert component.spec.inputs == ("temperature",)
+    assert component.spec.outputs == ("sea_surface_temperature",)
+    assert forcing.spec.outputs == ("temperature",)
 
     with pytest.raises(TypeError, match="inputs"):
         vercor.Component.from_step(  # type: ignore[call-arg]
@@ -183,9 +183,9 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
         component: vercor.Component,
         context: vercor.PrefillContext,
     ) -> vercor.PrefillResult:
-        events.append(f"prefill:{component.name}:{context.imports}:{context.exports}")
+        events.append(f"prefill:{component.name}:{context.receives}:{context.sends}")
         return vercor.PrefillResult(
-            data={"humidity": jnp.full(component.grid.shape, 0.5)}
+            fields={"humidity": jnp.full(component.grid.shape, 0.5)}
         )
 
     def writer(context: vercor.SnapshotContext) -> None:
@@ -195,7 +195,7 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
         inputs=("temperature", "temperature"),
         outputs=("sea_surface_temperature",),
         defaults={"temperature": 280.0, "sea_surface_temperature": 281.0},
-        hooks=vercor.LifecycleHooks(prefill=prefill),
+        lifecycle=vercor.LifecycleHooks(prefill=prefill),
         output=vercor.OutputConfig(snapshot_writer=writer),
     )
     component = vercor.Component.from_step(
@@ -205,11 +205,11 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
         spec=spec,
     )
 
-    assert component.field_spec is spec
-    assert component.output.snapshot_writer is writer
+    assert component.spec is spec
+    assert component.spec.output.snapshot_writer is writer
     assert spec.inputs == ("temperature",)
     assert spec.outputs == ("sea_surface_temperature",)
-    assert spec.hooks.prefill is prefill
+    assert spec.lifecycle.prefill is prefill
     assert "ComponentSpec" in vercor.__all__
     assert "LifecycleHooks" in vercor.__all__
     assert "OutputConfig" in vercor.__all__
@@ -219,6 +219,10 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     assert not hasattr(vercor, "FieldSpec")
     assert not hasattr(vercor, "ComponentHooks")
     assert not hasattr(vercor, "OutputSpec")
+    assert not hasattr(component, "field_spec")
+
+    with pytest.raises(TypeError, match="hooks"):
+        vercor.ComponentSpec(hooks=vercor.LifecycleHooks())  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -249,6 +253,12 @@ def test_state_views_use_domain_scopes_not_runtime_store_names() -> None:
     )
     with pytest.raises(TypeError, match="store"):
         view.field("temperature", store="data")  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="scope"):
+        state.replace_fields(
+            "ATM",
+            {"temperature": jnp.full(component.grid.shape, 282.0)},
+            scope="state",  # type: ignore[call-arg]
+        )
     assert not hasattr(state, "with_fields")
 
 
@@ -324,9 +334,9 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
         component: vercor.Component,
         context: vercor.PrefillContext,
     ) -> vercor.PrefillResult:
-        events.append(f"prefill:{component.name}:{context.imports}:{context.exports}")
+        events.append(f"prefill:{component.name}:{context.receives}:{context.sends}")
         return vercor.PrefillResult(
-            data={"humidity": jnp.full(component.grid.shape, 0.5)}
+            fields={"humidity": jnp.full(component.grid.shape, 0.5)}
         )
 
     def validate(
@@ -341,7 +351,7 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
         "OBS",
         grid,
         spec=vercor.ComponentSpec(
-            hooks=vercor.LifecycleHooks(prefill=prefill, validate=validate),
+            lifecycle=vercor.LifecycleHooks(prefill=prefill, validate=validate),
         ),
     )
     coupler = Coupler(

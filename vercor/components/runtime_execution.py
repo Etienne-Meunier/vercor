@@ -52,6 +52,6 @@ def step_component_runtime_state(
         step(
             runtime_fields(component_state),
             context,
-            component_state.runtime_payload,
+            component_state.payload,
         ),
     )

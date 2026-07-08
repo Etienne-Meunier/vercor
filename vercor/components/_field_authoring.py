@@ -8,7 +8,7 @@ from vercor.components.contracts import (
     ComponentSpec as _ComponentSpec,
     FieldNames as _FieldNames,
 )
-from vercor.components._constructor_options import normalize_field_spec
+from vercor.components._constructor_options import normalize_component_spec
 from vercor.components._contracts import (
     normalize_author_field_values as _normalize_author_field_values,
 )
@@ -27,23 +27,29 @@ class ComponentFieldAuthoringMixin:
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray]
     settings: Settings
-    _field_spec: _ComponentSpec
+    _spec: _ComponentSpec
+
+    def configure(self: Self, spec: _ComponentSpec) -> Self:
+        """Replace this component's public runtime field contract."""
+
+        self._spec = spec
+        return self
 
     def declare_fields(
-        self,
+        self: Self,
         *,
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         defaults: _AuthorFieldValues = None,
-    ) -> _ComponentSpec:
+    ) -> Self:
         """Declare runtime data fields for subclasses using author-facing names."""
 
-        declared = normalize_field_spec(
+        declared = normalize_component_spec(
             inputs=inputs,
             outputs=outputs,
             defaults=defaults,
         )
-        self._field_spec = _ComponentSpec(
+        self._spec = _ComponentSpec(
             inputs=declared.inputs,
             outputs=declared.outputs,
             defaults=_normalize_author_field_values(
@@ -53,14 +59,16 @@ class ComponentFieldAuthoringMixin:
                 policy=self.settings,
             )
             or {},
+            lifecycle=self._spec.lifecycle,
+            output=self._spec.output,
         )
-        return self._field_spec
+        return self
 
     @property
-    def field_spec(self) -> _ComponentSpec:
+    def spec(self) -> _ComponentSpec:
         """Return this component's declared author-facing runtime field contract."""
 
-        return self._field_spec
+        return self._spec
 
     @property
     def field_names(self) -> tuple[str, ...]:
@@ -136,7 +144,7 @@ class ComponentFieldAuthoringMixin:
     ) -> Self:
         """Seed this component's declared default fields and return itself."""
 
-        defaults = self._field_spec.defaults
+        defaults = self._spec.defaults
         if defaults:
             self.seed_fields(defaults, policy=policy)
         return self

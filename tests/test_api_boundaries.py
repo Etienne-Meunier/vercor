@@ -233,6 +233,24 @@ def test_runtime_internals_live_under_private_runtime_package() -> None:
 
 
 @pytest.mark.fast_always
+def test_runtime_private_state_uses_public_domain_vocabulary() -> None:
+    state_parameters = signature(ComponentRuntimeState).parameters
+    contract_parameters = signature(
+        importlib.import_module("vercor._runtime.contracts").ExchangeContract
+    ).parameters
+    component_state_parameters = signature(vercor.ComponentState).parameters
+
+    assert tuple(state_parameters) == ("fields", "received", "sent", "payload")
+    assert tuple(contract_parameters) == ("receives", "sends")
+    assert "received" in component_state_parameters
+    assert "sent" in component_state_parameters
+    assert "incoming" not in component_state_parameters
+    assert "outgoing" not in component_state_parameters
+    assert not hasattr(vercor.state, "runtime_field")
+    assert not hasattr(vercor.state, "runtime_field_candidates")
+
+
+@pytest.mark.fast_always
 def test_field_name_deduplication_has_one_private_owner() -> None:
     assert not Path("vercor/components/_field_names.py").exists()
     assert Path("vercor/_field_names.py").exists()
@@ -341,7 +359,7 @@ def test_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
     )
 
     assert grid.binary_mask is not None
-    assert component.field_spec.outputs == ("temperature",)
+    assert component.spec.outputs == ("temperature",)
     with pytest.raises(TypeError, match="lon"):
         vercor.RectilinearGrid.uniform(
             "old-grid",
@@ -351,7 +369,7 @@ def test_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
             lat=(-45.0, 45.0),  # type: ignore[call-arg]
         )
     positional = DataComponent.from_fields("ATM", grid, {"humidity": 0.5})
-    assert positional.field_spec.outputs == ("humidity",)
+    assert positional.spec.outputs == ("humidity",)
 
 
 @pytest.mark.fast_always
@@ -506,7 +524,7 @@ def test_public_api_uses_canonical_breaking_names(
         fields={"temperature": 280.0},
         spec=ComponentSpec(outputs=("temperature", "humidity")),
     )
-    assert component.field_spec.outputs == ("temperature", "humidity")
+    assert component.spec.outputs == ("temperature", "humidity")
 
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -599,10 +617,10 @@ def test_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> 
     )
     payload = {"model": "state"}
     runtime_state = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"temperature": jnp.asarray(280.0)}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
-        runtime_payload=payload,
+        fields=FieldStore.from_mapping({"temperature": jnp.asarray(280.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+        payload=payload,
     )
 
     preserved = apply_step_result(
@@ -616,8 +634,8 @@ def test_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> 
         vercor.StepResult(fields={"temperature": jnp.asarray(282.0)}, payload=None),
     )
 
-    assert preserved.runtime_payload is payload
-    assert cleared.runtime_payload is None
+    assert preserved.payload is payload
+    assert cleared.payload is None
 
 
 @pytest.mark.fast_always
@@ -1159,10 +1177,10 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "HostRuntimeComponent = HostComponent" not in host_source
     assert "class DataComponent" not in base_source
     assert "class HostRuntimeComponent" not in base_source
-    assert "def normalize_field_spec(" in constructor_options_source
+    assert "def normalize_component_spec(" in constructor_options_source
     assert "def normalize_lifecycle_hooks(" not in constructor_options_source
-    assert "normalize_field_spec(" not in base_source
-    assert "normalize_field_spec(" not in host_source
+    assert "normalize_component_spec(" not in base_source
+    assert "normalize_component_spec(" not in host_source
     assert "def callable_component_options(" in callable_source
     assert "callable_component_options(" in base_source
     assert "callable_component_options(" in host_source
@@ -1216,7 +1234,7 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "def host_component(" not in base_source
     assert not Path("vercor/components/_lifecycle.py").exists()
     assert "component._lifecycle_hooks = lifecycle_hooks" in callable_source
-    assert "component._lifecycle_hooks = field_spec.hooks" in data_source
+    assert "component._lifecycle_hooks = spec.lifecycle" in data_source
     assert "from vercor.components import _runtime_fields" not in base_source
     assert "from vercor.components.factories import _install_lifecycle_hooks" not in (
         callable_source
@@ -1253,8 +1271,8 @@ def test_component_base_internals_are_private_modules() -> None:
         "def make_data_component",
         "def make_differentiable_component",
         "def make_host_component",
-        "component_state.data.to_mapping()",
-        "component_state.data.replace_many(fields)",
+        "component_state.fields.to_mapping()",
+        "component_state.fields.replace_many(fields)",
         "validate_runtime_component_data_field",
         "from vercor._runtime.validation import",
         "_initialize_hook",
@@ -1554,7 +1572,7 @@ def test_slab_driver_uses_runtime_views_for_ice_diagnostics() -> None:
 
     assert 'final_state.components(("ATM", "OCN", "LND", "ICE"))' in slab_source
     assert 'views["ICE"].field("ice_fraction")' in slab_source
-    assert 'get_component_state("ICE").data.get("ice_fraction")' not in slab_source
+    assert 'get_component_state("ICE").fields.get("ice_fraction")' not in slab_source
 
 
 @pytest.mark.fast_always
@@ -1565,9 +1583,9 @@ def test_runtime_state_is_separate_from_public_component_objects() -> None:
         grid=make_test_grid(name="api-boundary"),
     )
     runtime_state = ComponentRuntimeState(
-        data=FieldStore.empty(),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.empty(),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
     assert not isinstance(runtime_state, Component)
@@ -2211,9 +2229,9 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
         "def write_coupler_component_snapshots(",
         1,
     )[1]
-    assert "component.output.snapshot_writer" in snapshot_output_source
-    assert "field_spec.outputs" not in snapshot_output_source
-    assert ".data.get(" not in snapshot_output_source
+    assert "component.spec.output.snapshot_writer" in snapshot_output_source
+    assert "spec.outputs" not in snapshot_output_source
+    assert ".fields.get(" not in snapshot_output_source
     assert "ComponentRuntimeState.from_component_state" not in snapshot_output_source
     assert "import numpy" not in period_averages_source
     assert "import numpy" not in period_files_source
@@ -2511,11 +2529,12 @@ def test_assets_and_diagnostics_have_focused_ownership_boundaries() -> None:
     diagnostics_fields_source = Path("vercor/diagnostics/fields.py").read_text(
         encoding="utf-8"
     )
-    assert ".data.get(" not in diagnostics_fields_source
+    assert ".fields.get(" not in diagnostics_fields_source
     assert "getattr(" not in diagnostics_fields_source
     assert "def view_field_candidates(" not in diagnostics_fields_source
     assert "def view_field(" not in diagnostics_fields_source
-    assert "runtime_field(" in diagnostics_fields_source
+    assert "component_state.field(" in diagnostics_fields_source
+    assert "component.field(" in diagnostics_fields_source
 
 
 @pytest.mark.fast_always

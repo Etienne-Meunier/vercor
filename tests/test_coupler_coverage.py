@@ -31,6 +31,7 @@ from tests._runtime_helpers import (
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 from vercor.components.base import Component
+from vercor.components.contracts import ComponentSpec
 from vercor.components.host import HostComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
@@ -688,13 +689,13 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         jax.Array,
     )
     assert coupler._runtime_resources.runtime_contracts["ATM"] == ExchangeContract(
-        imports=(
+        receives=(
             "temperature",
             "specific_humidity",
             "soil_moisture",
             "ice_fraction",
         ),
-        exports=(
+        sends=(
             "downward_longwave_radiation_flux",
             "temperature_2m",
             "sensible_heat_flux",
@@ -1084,16 +1085,16 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     destination_state = runtime_state._component_state("ATM")
 
     assert_allclose_compact(
-        destination_state.incoming.get("temperature"),
+        destination_state.received.get("temperature"),
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
-    assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
+    assert isinstance(destination_state.received.get("temperature"), jax.Array)
     assert_allclose_compact(
-        destination_state.incoming.get("u_velocity"),
+        destination_state.received.get("u_velocity"),
         np.full((2, 2), 9.0),
     )
     assert_allclose_compact(
-        destination_state.incoming.get("v_velocity"),
+        destination_state.received.get("v_velocity"),
         np.full((2, 2), -9.0),
     )
 
@@ -1136,9 +1137,9 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     )
     destination_state = runtime_state._component_state("ATM")
 
-    assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
+    assert isinstance(destination_state.received.get("temperature"), jax.Array)
     assert_allclose_compact(
-        destination_state.incoming.get("temperature"),
+        destination_state.received.get("temperature"),
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
 
@@ -1330,7 +1331,15 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     def write_snapshot(context: SnapshotContext) -> None:
         calls.append(context)
 
-    component.output = OutputConfig(snapshot_writer=write_snapshot)
+    component.configure(
+        ComponentSpec(
+            inputs=component.spec.inputs,
+            outputs=component.spec.outputs,
+            defaults=component.spec.defaults,
+            lifecycle=component.spec.lifecycle,
+            output=OutputConfig(snapshot_writer=write_snapshot),
+        )
+    )
 
     output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
@@ -1448,9 +1457,9 @@ def test_host_runtime_components_use_explicit_host_contract() -> None:
     final_component = final_state._component_state("ATM")
 
     assert isinstance(host_component, HostComponent)
-    assert "host_time_seen" in final_component.data.field_names
+    assert "host_time_seen" in final_component.fields.field_names
     assert_allclose_compact(
-        final_component.data.get("temperature"),
+        final_component.fields.get("temperature"),
         np.full((2, 2), 61.0),
     )
 

@@ -157,9 +157,9 @@ def test_component_runtime_execution_policy_steps_selected_runtime_path() -> Non
     grid = make_test_grid()
     context = StepContext(dt_seconds=1.0, settings=Settings())
     state = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"marker": jnp.asarray(0.0)}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.from_mapping({"marker": jnp.asarray(0.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
     pure_state = runtime_execution.step_component_runtime_state(
@@ -175,8 +175,8 @@ def test_component_runtime_execution_policy_steps_selected_runtime_path() -> Non
         allow_host_runtime=True,
     )
 
-    assert_allclose_compact(pure_state.data.get("marker"), np.asarray(1.0))
-    assert_allclose_compact(host_state.data.get("marker"), np.asarray(2.0))
+    assert_allclose_compact(pure_state.fields.get("marker"), np.asarray(1.0))
+    assert_allclose_compact(host_state.fields.get("marker"), np.asarray(2.0))
     with pytest.raises(ComponentError, match="host-backed"):
         runtime_execution.step_component_runtime_state(
             HostMarkerComponent(name="LND", grid=grid),
@@ -193,9 +193,9 @@ def test_active_component_requires_explicit_runtime_step() -> None:
 
     component = MissingRuntimeStep(name="ATM", grid=make_test_grid())
     state = ComponentRuntimeState(
-        data=FieldStore.empty(),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.empty(),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
     with pytest.raises(NotImplementedError, match="step"):
@@ -213,9 +213,9 @@ def test_host_runtime_component_requires_explicit_host_step() -> None:
 
     component = MissingHostStep(name="ATM", grid=make_test_grid())
     state = ComponentRuntimeState(
-        data=FieldStore.empty(),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.empty(),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
     with pytest.raises(ComponentError, match="must implement step"):
@@ -235,7 +235,7 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
     grid = make_test_grid(name="data")
     component = StaticForcingComponent(name="OCN", grid=grid)
     component._data["sea_surface_temperature"] = jnp.full(grid.shape, 280.0)
-    contract = ExchangeContract(exports=("sea_surface_temperature",))
+    contract = ExchangeContract(sends=("sea_surface_temperature",))
     state = create_runtime_component_state(
         component,
         prefill_missing=True,
@@ -248,10 +248,10 @@ def test_data_component_uses_explicit_noop_runtime_step() -> None:
         StepContext(dt_seconds=60.0, settings=Settings()),
     )
 
-    assert stepped.data is state.data
+    assert stepped.fields is state.fields
     sent = send_runtime_fields(component, stepped, contract=contract)
     assert_allclose_compact(
-        sent.outgoing.get("sea_surface_temperature"),
+        sent.sent.get("sea_surface_temperature"),
         np.full(grid.shape, 280.0),
     )
 
@@ -292,7 +292,7 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
         _ = context
         calls.append(f"prefill:{component.name}")
         return contracts_module.PrefillResult(
-            data={"humidity": jnp.full(component.grid.shape, 0.5)}
+            fields={"humidity": jnp.full(component.grid.shape, 0.5)}
         )
 
     def validate_runtime_state(
@@ -307,7 +307,7 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
         name="OBS",
         grid=grid,
         spec=contracts_module.ComponentSpec(
-            hooks=contracts_module.LifecycleHooks(
+            lifecycle=contracts_module.LifecycleHooks(
                 initialize=initialize,
                 create_payload=create_runtime_payload,
                 prefill=prefill_runtime_state_fields,
@@ -337,8 +337,8 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
         "validate:OBS:True",
     ]
     assert_allclose_compact(component._data["temperature"], np.full(grid.shape, 280.0))
-    assert_allclose_compact(state.data.get("humidity"), np.full(grid.shape, 0.5))
-    assert state.runtime_payload == {"component": "OBS"}
+    assert_allclose_compact(state.fields.get("humidity"), np.full(grid.shape, 0.5))
+    assert state.payload == {"component": "OBS"}
 
 
 @pytest.mark.fast_always
@@ -393,9 +393,9 @@ def test_from_fields_and_from_step_facade_expand_scalar_defaults() -> None:
     )
 
     component.validate_runtime_state(state, ExchangeContract())
-    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
-    assert_allclose_compact(state.data.get("forcing"), np.full(grid.shape, 2.0))
-    assert_allclose_compact(state.data.get("tendency"), np.zeros(grid.shape))
+    assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.fields.get("forcing"), np.full(grid.shape, 2.0))
+    assert_allclose_compact(state.fields.get("tendency"), np.zeros(grid.shape))
 
     stepped = _step_runtime_state(
         component,
@@ -403,11 +403,11 @@ def test_from_fields_and_from_step_facade_expand_scalar_defaults() -> None:
         StepContext(dt_seconds=3.0, settings=Settings()),
     )
     assert_allclose_compact(
-        stepped.data.get("temperature"),
+        stepped.fields.get("temperature"),
         np.full(grid.shape, 282.0),
     )
     assert_allclose_compact(
-        stepped.data.get("tendency"),
+        stepped.fields.get("tendency"),
         np.full(grid.shape, 3.0),
     )
 
@@ -441,7 +441,7 @@ def test_data_component_from_fields_normalizes_author_fields_once(
     )
 
     assert call_count == 1
-    assert component.field_spec.outputs == ("temperature",)
+    assert component.spec.outputs == ("temperature",)
     assert_allclose_compact(
         component._data["temperature"],
         np.full(grid.shape, 281.0),
@@ -520,7 +520,7 @@ def test_callable_facade_accepts_one_two_and_three_argument_steps() -> None:
             StepContext(dt_seconds=2.0, settings=Settings()),
         )
         assert_allclose_compact(
-            stepped.data.get("temperature"),
+            stepped.fields.get("temperature"),
             np.full(grid.shape, expected_temperature),
         )
 
@@ -658,8 +658,10 @@ def test_apply_step_result_updates_fields_and_payload() -> None:
         ),
     )
 
-    assert_allclose_compact(updated.data.get("temperature"), np.full(grid.shape, 281.0))
-    assert updated.runtime_payload == {"counter": 1}
+    assert_allclose_compact(
+        updated.fields.get("temperature"), np.full(grid.shape, 281.0)
+    )
+    assert updated.payload == {"counter": 1}
 
 
 @pytest.mark.fast_always
@@ -674,22 +676,22 @@ def test_data_component_seeding_updates_declared_outputs() -> None:
     component.seed_field("humidity", 0.5)
     component.seed_fields({"pressure": 101325.0})
 
-    assert component.field_spec.outputs == ("temperature", "humidity", "pressure")
+    assert component.spec.outputs == ("temperature", "humidity", "pressure")
     assert component.field_names == ("temperature", "humidity", "pressure")
 
 
 @pytest.mark.fast_always
 def test_merge_component_outputs_is_pure_and_preserves_contract_details() -> None:
-    field_spec = contracts_module.ComponentSpec(
+    component_spec = contracts_module.ComponentSpec(
         inputs=("forcing",),
         outputs=("temperature",),
         defaults={"temperature": 280.0},
     )
 
-    merged = merge_component_outputs(field_spec, ("humidity", "temperature"))
+    merged = merge_component_outputs(component_spec, ("humidity", "temperature"))
 
-    assert merged is not field_spec
-    assert field_spec.outputs == ("temperature",)
+    assert merged is not component_spec
+    assert component_spec.outputs == ("temperature",)
     assert merged.inputs == ("forcing",)
     assert merged.outputs == ("temperature", "humidity")
     assert merged.defaults == {"temperature": 280.0}
@@ -706,9 +708,9 @@ def test_data_component_seeding_preserves_inputs_and_defaults() -> None:
 
     component.seed_fields({"humidity": 0.5})
 
-    assert component.field_spec.inputs == ("forcing",)
-    assert component.field_spec.outputs == ("humidity",)
-    assert "temperature" in component.field_spec.defaults
+    assert component.spec.inputs == ("forcing",)
+    assert component.spec.outputs == ("humidity",)
+    assert "temperature" in component.spec.defaults
 
 
 @pytest.mark.fast_always
@@ -732,9 +734,9 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
         context: contracts_module.PrefillContext,
     ) -> contracts_module.PrefillResult:
         events.append(f"prefill:{component.name}")
-        data = dict(context.data)
+        data = dict(context.fields)
         prefill_runtime_fields(component, data, outputs=("temperature",))
-        return contracts_module.PrefillResult(data=data)
+        return contracts_module.PrefillResult(fields=data)
 
     def validate(
         component: Any,
@@ -748,7 +750,7 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
             name="DATA",
             grid=grid,
             spec=contracts_module.ComponentSpec(
-                hooks=contracts_module.LifecycleHooks(
+                lifecycle=contracts_module.LifecycleHooks(
                     initialize=initialize,
                     create_payload=create_runtime_payload,
                     prefill=prefill,
@@ -761,7 +763,7 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
             grid=grid,
             step=step,
             spec=contracts_module.ComponentSpec(
-                hooks=contracts_module.LifecycleHooks(
+                lifecycle=contracts_module.LifecycleHooks(
                     initialize=initialize,
                     create_payload=create_runtime_payload,
                     prefill=prefill,
@@ -774,7 +776,7 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
             grid=grid,
             step=step,
             spec=contracts_module.ComponentSpec(
-                hooks=contracts_module.LifecycleHooks(
+                lifecycle=contracts_module.LifecycleHooks(
                     initialize=initialize,
                     create_payload=create_runtime_payload,
                     prefill=prefill,
@@ -787,7 +789,7 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
             grid=grid,
             step=step,
             spec=contracts_module.ComponentSpec(
-                hooks=contracts_module.LifecycleHooks(
+                lifecycle=contracts_module.LifecycleHooks(
                     initialize=initialize,
                     create_payload=create_runtime_payload,
                     prefill=prefill,
@@ -800,7 +802,7 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
             grid=grid,
             step=step,
             spec=contracts_module.ComponentSpec(
-                hooks=contracts_module.LifecycleHooks(
+                lifecycle=contracts_module.LifecycleHooks(
                     initialize=initialize,
                     create_payload=create_runtime_payload,
                     prefill=prefill,
@@ -855,22 +857,22 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
 
 
 @pytest.mark.fast_always
-def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> None:
+def test_seed_helpers_accept_scalar_author_values_and_expose_spec() -> None:
     grid = make_test_grid(name="scalar-seed")
     component = _RuntimeOnlyComponent(name="ATM", grid=grid)
 
-    returned_spec = component.declare_fields(
+    returned_component = component.declare_fields(
         inputs=("forcing",),
         outputs=("temperature",),
         defaults={"pressure": 101325.0},
     )
-    assert component.field_spec == returned_spec
-    assert component.field_spec.inputs == ("forcing",)
-    assert component.field_spec.outputs == ("temperature",)
-    assert not hasattr(component.field_spec, "required_fields")
-    assert "pressure" in component.field_spec.defaults
+    assert returned_component is component
+    assert component.spec.inputs == ("forcing",)
+    assert component.spec.outputs == ("temperature",)
+    assert not hasattr(component.spec, "required_fields")
+    assert "pressure" in component.spec.defaults
     with pytest.raises(AttributeError):
-        component.field_spec = contracts_module.ComponentSpec()  # type: ignore[misc]
+        component.spec = contracts_module.ComponentSpec()  # type: ignore[misc]
 
     component.seed_field("temperature", 280.0)
     component.seed_fields({"humidity": 0.5, "forcing": jnp.ones(grid.shape)})
@@ -880,10 +882,10 @@ def test_seed_helpers_accept_scalar_author_values_and_expose_field_spec() -> Non
         contract=ExchangeContract(),
     )
 
-    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
-    assert_allclose_compact(state.data.get("humidity"), np.full(grid.shape, 0.5))
-    assert_allclose_compact(state.data.get("forcing"), np.ones(grid.shape))
-    assert_allclose_compact(state.data.get("pressure"), np.full(grid.shape, 101325.0))
+    assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.fields.get("humidity"), np.full(grid.shape, 0.5))
+    assert_allclose_compact(state.fields.get("forcing"), np.ones(grid.shape))
+    assert_allclose_compact(state.fields.get("pressure"), np.full(grid.shape, 101325.0))
 
 
 @pytest.mark.fast_always
@@ -1007,7 +1009,7 @@ def test_host_runtime_component_from_step_uses_author_friendly_names() -> None:
         allow_host_runtime=True,
     )
     assert_allclose_compact(
-        stepped.data.get("temperature"),
+        stepped.fields.get("temperature"),
         np.full(grid.shape, 6.0),
     )
 
@@ -1046,15 +1048,15 @@ def test_subclasses_can_declare_fields_with_author_spec() -> None:
     ):
         component.validate_runtime_state(missing_input_state, ExchangeContract())
 
-    contract = ExchangeContract(imports=("forcing",))
+    contract = ExchangeContract(receives=("forcing",))
     state = create_runtime_component_state(
         component,
         prefill_missing=True,
         contract=contract,
     )
     component.validate_runtime_state(state, contract)
-    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
-    assert_allclose_compact(state.data.get("forcing"), np.zeros(grid.shape))
+    assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.fields.get("forcing"), np.zeros(grid.shape))
 
 
 @pytest.mark.fast_always
@@ -1117,8 +1119,8 @@ def test_callable_component_prefills_and_validates_declared_fields() -> None:
     )
 
     component.validate_runtime_state(state, ExchangeContract())
-    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 280.0))
-    assert_allclose_compact(state.data.get("wind"), np.zeros(grid.shape))
+    assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
+    assert_allclose_compact(state.fields.get("wind"), np.zeros(grid.shape))
 
     stepped = _step_runtime_state(
         component,
@@ -1126,7 +1128,7 @@ def test_callable_component_prefills_and_validates_declared_fields() -> None:
         StepContext(dt_seconds=2.0, settings=Settings()),
     )
     assert_allclose_compact(
-        stepped.data.get("temperature"),
+        stepped.fields.get("temperature"),
         np.full(grid.shape, 282.0),
     )
 
@@ -1183,10 +1185,10 @@ def test_component_seed_fields_and_required_field_validator() -> None:
         "v_velocity",
         "humidity",
     )
-    assert_allclose_compact(state.data.get("temperature"), np.zeros(grid.shape))
-    assert_allclose_compact(state.data.get("u_velocity"), np.zeros(grid.shape))
-    assert_allclose_compact(state.data.get("v_velocity"), np.zeros(grid.shape))
-    assert_allclose_compact(state.data.get("humidity"), np.full(grid.shape, 0.5))
+    assert_allclose_compact(state.fields.get("temperature"), np.zeros(grid.shape))
+    assert_allclose_compact(state.fields.get("u_velocity"), np.zeros(grid.shape))
+    assert_allclose_compact(state.fields.get("v_velocity"), np.zeros(grid.shape))
+    assert_allclose_compact(state.fields.get("humidity"), np.full(grid.shape, 0.5))
 
     with pytest.raises(
         CouplerError,
@@ -1201,19 +1203,19 @@ def test_required_field_validator_accepts_time_dependent_canonical_data() -> Non
     component = _RuntimeOnlyComponent(name="OCN", grid=grid)
     monthly_sst = jnp.zeros((12, *grid.shape), dtype=jnp.float64)
     state = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"sea_surface_temperature": monthly_sst}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.from_mapping({"sea_surface_temperature": monthly_sst}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
     require_runtime_fields(component, state, "sea_surface_temperature")
 
     bad_state = ComponentRuntimeState(
-        data=FieldStore.from_mapping(
+        fields=FieldStore.from_mapping(
             {"bad_metadata": jnp.zeros((3,), dtype=jnp.float64)}
         ),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
     with pytest.raises(
         CouplerError,
@@ -1262,11 +1264,11 @@ def test_component_helpers_seed_and_update_runtime_fields() -> None:
     )
 
     assert_allclose_compact(
-        updated.data.get("temperature"),
+        updated.fields.get("temperature"),
         np.full(grid.shape, 284.0),
     )
     assert_allclose_compact(
-        updated.data.get("humidity"),
+        updated.fields.get("humidity"),
         np.full(grid.shape, 0.5),
     )
 
@@ -1274,11 +1276,11 @@ def test_component_helpers_seed_and_update_runtime_fields() -> None:
     runtime_fields_source = Path("vercor/components/_runtime_fields.py").read_text(
         encoding="utf-8"
     )
-    assert "component_state.data.to_mapping()" not in base_source
-    assert "component_state.data.replace_many(fields)" not in base_source
+    assert "component_state.fields.to_mapping()" not in base_source
+    assert "component_state.fields.replace_many(fields)" not in base_source
     assert "validate_runtime_component_data_field" not in base_source
-    assert "component_state.data.to_mapping()" in runtime_fields_source
-    assert "component_state.data.replace_many(fields)" in runtime_fields_source
+    assert "component_state.fields.to_mapping()" in runtime_fields_source
+    assert "component_state.fields.replace_many(fields)" in runtime_fields_source
     assert "from vercor._runtime.validation import" not in runtime_fields_source
 
 
@@ -1305,7 +1307,7 @@ def test_public_runtime_field_mapping_and_membership_helpers_are_stable() -> Non
 
     fields["temperature"] = jnp.zeros(grid.shape)
     assert_allclose_compact(
-        state.data.get("temperature"),
+        state.fields.get("temperature"),
         np.full(grid.shape, 280.0),
     )
 
@@ -1344,7 +1346,7 @@ def test_differentiable_component_applies_callable_field_updates() -> None:
     )
 
     assert_allclose_compact(
-        stepped.data.get("temperature"),
+        stepped.fields.get("temperature"),
         np.full(grid.shape, 4.0),
     )
 
@@ -1383,9 +1385,9 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
         StepContext(dt_seconds=1.0, settings=Settings()),
     )
 
-    assert preserved.runtime_payload is preserve_state.runtime_payload
+    assert preserved.payload is preserve_state.payload
     assert_allclose_compact(
-        preserved.data.get("temperature"),
+        preserved.fields.get("temperature"),
         np.full(grid.shape, 3.0),
     )
 
@@ -1422,13 +1424,13 @@ def test_callable_component_preserves_and_replaces_payload() -> None:
         StepContext(dt_seconds=1.0, settings=Settings()),
     )
 
-    assert replaced.runtime_payload is not replace_state.runtime_payload
+    assert replaced.payload is not replace_state.payload
     assert_allclose_compact(
-        replaced.data.get("temperature"),
+        replaced.fields.get("temperature"),
         np.full(grid.shape, 2.0),
     )
-    assert isinstance(replaced.runtime_payload, Mapping)
-    assert_allclose_compact(replaced.runtime_payload["offset"], np.asarray(3.0))
+    assert isinstance(replaced.payload, Mapping)
+    assert_allclose_compact(replaced.payload["offset"], np.asarray(3.0))
 
 
 @pytest.mark.fast_always
@@ -1463,7 +1465,7 @@ def test_callable_payload_default_can_be_overridden_by_lifecycle_hook() -> None:
         spec=contracts_module.ComponentSpec(
             outputs=("temperature",),
             defaults={"temperature": jnp.ones(grid.shape)},
-            hooks=contracts_module.LifecycleHooks(
+            lifecycle=contracts_module.LifecycleHooks(
                 create_payload=create_runtime_payload
             ),
         ),
@@ -1500,7 +1502,7 @@ def test_host_component_runs_through_coupler_host_runtime() -> None:
     final_state = coupler.run()
 
     assert_allclose_compact(
-        final_state._component_state("HOST").data.get("temperature"),
+        final_state._component_state("HOST").fields.get("temperature"),
         np.full(grid.shape, 6.0),
     )
 
@@ -1552,7 +1554,7 @@ def test_era5_atmosphere_uses_data_component_runtime_contract() -> None:
 @pytest.mark.fast_always
 def test_component_setup_validation_reports_missing_required_attributes() -> None:
     component = _MissingSetupComponent()
-    contract = ExchangeContract(exports=("temperature",))
+    contract = ExchangeContract(sends=("temperature",))
 
     with pytest.raises(
         ComponentError,
@@ -1603,10 +1605,10 @@ def test_component_data_layout_validation_accepts_canonical_grid_fields() -> Non
 
     state = create_runtime_component_state(component, contract=ExchangeContract())
 
-    assert state.data.get("snapshot_2d").shape == grid.shape
-    assert state.data.get("time_surface_3d").shape == (12, *grid.shape)
-    assert state.data.get("level_snapshot_3d").shape == (4, *grid.shape)
-    assert state.data.get("time_level_4d").shape == (12, 4, *grid.shape)
+    assert state.fields.get("snapshot_2d").shape == grid.shape
+    assert state.fields.get("time_surface_3d").shape == (12, *grid.shape)
+    assert state.fields.get("level_snapshot_3d").shape == (4, *grid.shape)
+    assert state.fields.get("time_level_4d").shape == (12, 4, *grid.shape)
 
 
 @pytest.mark.fast_always
@@ -1699,8 +1701,8 @@ def test_runtime_state_creation_receive_and_send() -> None:
     grid = make_test_grid(name="atm")
     component = _RuntimeOnlyComponent(name="ATM", grid=grid)
     contract = ExchangeContract(
-        imports=("temperature",),
-        exports=("sensible_heat_flux",),
+        receives=("temperature",),
+        sends=("sensible_heat_flux",),
     )
     component._data["sensible_heat_flux"] = jnp.full(grid.shape, 2.0)
 
@@ -1709,16 +1711,16 @@ def test_runtime_state_creation_receive_and_send() -> None:
         prefill_missing=True,
         contract=contract,
     )
-    assert set(state.incoming.field_names) == {"temperature"}
-    assert set(state.outgoing.field_names) == {"sensible_heat_flux"}
-    assert isinstance(state.incoming.get("temperature"), jax.Array)
+    assert set(state.received.field_names) == {"temperature"}
+    assert set(state.sent.field_names) == {"sensible_heat_flux"}
+    assert isinstance(state.received.get("temperature"), jax.Array)
 
-    incoming = state.incoming.set("temperature", jnp.full(grid.shape, 5.0))
+    incoming = state.received.set("temperature", jnp.full(grid.shape, 5.0))
     state = receive_runtime_fields(
-        state.with_incoming(incoming),
+        state.with_received(incoming),
         contract,
     )
-    assert_allclose_compact(state.data.get("temperature"), np.full(grid.shape, 5.0))
+    assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 5.0))
 
     stepped = _step_runtime_state(
         component,
@@ -1728,11 +1730,11 @@ def test_runtime_state_creation_receive_and_send() -> None:
             settings=Settings(),
         ),
     )
-    assert_allclose_compact(stepped.data.get("temperature"), np.full(grid.shape, 8.0))
+    assert_allclose_compact(stepped.fields.get("temperature"), np.full(grid.shape, 8.0))
 
     sent = send_runtime_fields(component, stepped, contract=contract)
     assert_allclose_compact(
-        sent.outgoing.get("sensible_heat_flux"),
+        sent.sent.get("sensible_heat_flux"),
         np.full(grid.shape, 2.0),
     )
 
@@ -1743,38 +1745,38 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
     with pytest.raises(ComponentError, match="no runtime fields defined"):
         check_not_empty_import_export_lists(component, ExchangeContract())
 
-    import_only = ExchangeContract(imports=("temperature",))
+    import_only = ExchangeContract(receives=("temperature",))
     check_not_empty_import_export_lists(component, import_only)
 
     overlapping = ExchangeContract(
-        imports=("temperature",),
-        exports=("temperature",),
+        receives=("temperature",),
+        sends=("temperature",),
     )
     with pytest.raises(ComponentError, match="overlapping fields"):
         check_not_empty_import_export_lists(component, overlapping)
 
     invalid = ExchangeContract(
-        imports=("temperature",),
-        exports=("not_supported",),
+        receives=("temperature",),
+        sends=("not_supported",),
     )
     with pytest.raises(ComponentError, match="not a recognized exchange variable"):
         check_valid_exchange_field_names(component, invalid)
 
     contract = ExchangeContract(
-        imports=("temperature",),
-        exports=("sensible_heat_flux",),
+        receives=("temperature",),
+        sends=("sensible_heat_flux",),
     )
     state = create_runtime_component_state(
         component,
         prefill_missing=True,
         contract=contract,
     )
-    state = state.with_incoming(
-        state.incoming.set("temperature", np.ones(component.grid.shape))
+    state = state.with_received(
+        state.received.set("temperature", np.ones(component.grid.shape))
     )
     received = receive_runtime_fields(state, contract)
     assert_allclose_compact(
-        received.data.get("temperature"), np.ones(component.grid.shape)
+        received.fields.get("temperature"), np.ones(component.grid.shape)
     )
 
 
@@ -1786,24 +1788,24 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
     )
     component = DummyComponent(name="ATM", grid=grid)
     contract = ExchangeContract(
-        imports=("temperature",),
-        exports=("sensible_heat_flux",),
+        receives=("temperature",),
+        sends=("sensible_heat_flux",),
     )
     valid_state = ComponentRuntimeState(
-        data=FieldStore.from_mapping(
+        fields=FieldStore.from_mapping(
             {
                 "temperature": jnp.ones(grid.shape),
                 "sensible_heat_flux": jnp.zeros(grid.shape),
             }
         ),
-        incoming=FieldStore.from_mapping({"temperature": jnp.ones(grid.shape)}),
-        outgoing=FieldStore.from_mapping({"sensible_heat_flux": jnp.zeros(grid.shape)}),
+        received=FieldStore.from_mapping({"temperature": jnp.ones(grid.shape)}),
+        sent=FieldStore.from_mapping({"sensible_heat_flux": jnp.zeros(grid.shape)}),
     )
 
     validate_component_runtime_contract_fields(component, valid_state, contract)
     component.validate_runtime_state(valid_state, contract)
 
-    bad_state = valid_state.with_incoming(
+    bad_state = valid_state.with_received(
         FieldStore.from_mapping({"temperature": jnp.ones((1, 3))})
     )
     with pytest.raises(
@@ -1817,7 +1819,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     grid = make_test_grid()
     component = DummyComponent(name="ATM", grid=grid)
     timestamp = datetime(2000, 1, 1)
-    contract = ExchangeContract(exports=("temperature",))
+    contract = ExchangeContract(sends=("temperature",))
     component._data["temperature"] = jnp.full(grid.shape, 1.0)
 
     component_state = send_runtime_fields(
@@ -1826,10 +1828,10 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
         contract=contract,
     )
     assert_allclose_compact(
-        component_state.outgoing.get("temperature"),
+        component_state.sent.get("temperature"),
         np.full(grid.shape, 1.0),
     )
-    assert isinstance(component_state.outgoing.get("temperature"), jax.Array)
+    assert isinstance(component_state.sent.get("temperature"), jax.Array)
 
     runtime_coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
@@ -1848,7 +1850,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
         contract=contract,
     )
     assert_allclose_compact(
-        component_state.outgoing.get("temperature"),
+        component_state.sent.get("temperature"),
         np.asarray(monthly[0]),
     )
 
@@ -1870,7 +1872,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
         contract=contract,
     )
     assert_allclose_compact(
-        component_state.outgoing.get("temperature"),
+        component_state.sent.get("temperature"),
         np.asarray(daily[2]),
     )
 
@@ -1912,11 +1914,11 @@ def test_read_forcing_and_runtime_write_round_trip(
         read_forcing({"broken": str(broken)}, "foo", "broken")
 
     state = ComponentRuntimeState(
-        data=FieldStore.empty(),
-        incoming=FieldStore.from_mapping(
+        fields=FieldStore.empty(),
+        received=FieldStore.from_mapping(
             {"temperature": jnp.asarray([[10.0, 11.0], [12.0, 13.0]])}
         ),
-        outgoing=FieldStore.from_mapping(
+        sent=FieldStore.from_mapping(
             {"humidity": jnp.asarray([[0.1, 0.2], [0.3, 0.4]])}
         ),
     )
@@ -1931,11 +1933,11 @@ def test_read_forcing_and_runtime_write_round_trip(
     with h5netcdf.File(output, "r") as dataset:
         assert_allclose_compact(
             np.asarray(dataset.variables["received_temperature"]),
-            state.incoming.get("temperature"),
+            state.received.get("temperature"),
         )
         assert_allclose_compact(
             np.asarray(dataset.variables["sent_humidity"]),
-            state.outgoing.get("humidity"),
+            state.sent.get("humidity"),
         )
         assert_allclose_compact(
             np.asarray(dataset.variables["latitude"]),

@@ -63,7 +63,7 @@ def make_jax_gcm(
                 "pressure",
             ),
             defaults=_jax_gcm_runtime.jax_gcm_default_fields(),
-            hooks=LifecycleHooks(
+            lifecycle=LifecycleHooks(
                 initialize=state.initialize,
                 create_payload=partial(
                     _jax_gcm_runtime.create_jax_gcm_runtime_payload,

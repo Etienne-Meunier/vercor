@@ -49,13 +49,13 @@ def test_runtime_contract_prefill_uses_component_float32_policy() -> None:
     state = create_runtime_component_state(
         component,
         prefill_missing=True,
-        contract=ExchangeContract(imports=("in_field",), exports=("out_field",)),
+        contract=ExchangeContract(receives=("in_field",), sends=("out_field",)),
     )
 
-    assert state.data.get("in_field").dtype == jnp.float32
-    assert state.incoming.get("in_field").dtype == jnp.float32
-    assert state.data.get("out_field").dtype == jnp.float32
-    assert state.outgoing.get("out_field").dtype == jnp.float32
+    assert state.fields.get("in_field").dtype == jnp.float32
+    assert state.received.get("in_field").dtype == jnp.float32
+    assert state.fields.get("out_field").dtype == jnp.float32
+    assert state.sent.get("out_field").dtype == jnp.float32
 
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
@@ -429,8 +429,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "_runtime_contracts.get(" not in coupler_source
     assert "def subset(" not in runtime_source
     assert "def to_mapping(" in runtime_stores_source
-    assert "component_state.data.to_mapping()" not in base_source
-    assert "component_state.data.to_mapping()" in runtime_fields_source
+    assert "component_state.fields.to_mapping()" not in base_source
+    assert "component_state.fields.to_mapping()" in runtime_fields_source
     assert "def merge(" not in runtime_source
     assert "_runtime_resources" in coupler_source
     for field_marker in (
@@ -508,7 +508,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "ComponentState" in diagnostics_source
     assert 'hasattr(store, "field_names")' not in diagnostics_source
     assert "elif field_name in store" not in diagnostics_source
-    assert ".data.get(" not in diagnostics_source
+    assert ".fields.get(" not in diagnostics_source
     assert "getattr(" not in diagnostics_source
     assert "def make_jax_gcm" in jax_gcm_source
     assert "def make_veros_gcm" in veros_source
@@ -548,7 +548,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def step_runtime_state" not in veros_source
     assert "def step_runtime_state" not in camulator_source
     assert "def step_runtime_state" not in camulator_land_source
-    assert "component_state.data.to_mapping()" not in camulator_land_source
+    assert "component_state.fields.to_mapping()" not in camulator_land_source
     camulator_imports_source = Path(
         "vercor/setups/external/camulator_imports.py"
     ).read_text(encoding="utf-8")
@@ -597,9 +597,7 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
     )
 
     runtime_state_from_coupler_components(coupler, prefill_missing=True)
-    assert coupler._runtime_resources.runtime_contracts["ATM"].exports == (
-        "temperature",
-    )
+    assert coupler._runtime_resources.runtime_contracts["ATM"].sends == ("temperature",)
 
     coupler.add_exchange(
         Exchange(
@@ -611,7 +609,7 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
     )
     runtime_state_from_coupler_components(coupler, prefill_missing=True)
 
-    assert coupler._runtime_resources.runtime_contracts["ATM"].exports == (
+    assert coupler._runtime_resources.runtime_contracts["ATM"].sends == (
         "temperature",
         "humidity",
     )
@@ -626,7 +624,7 @@ def test_coupler_runtime_resources_store_runtime_state() -> None:
     regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
     binary_masks = cast(Any, {("ATM", "OCN", "bilinear"): jnp.ones((2, 2))})
     fractional_masks = cast(Any, {("ATM", "OCN", "bilinear"): jnp.full((2, 2), 0.5)})
-    contracts = {"ATM": ExchangeContract(imports=("x",), exports=("y",))}
+    contracts = {"ATM": ExchangeContract(receives=("x",), sends=("y",))}
     topology_maps = RuntimeTopologyMaps(
         regridders=regridders,
         binary_masks=binary_masks,
@@ -655,7 +653,7 @@ def test_runtime_resources_use_public_fields_directly() -> None:
     from vercor._runtime.resources import CouplerRuntimeResources
 
     resources = CouplerRuntimeResources()
-    contracts = {"ATM": ExchangeContract(imports=("x",), exports=("y",))}
+    contracts = {"ATM": ExchangeContract(receives=("x",), sends=("y",))}
     regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
     binary_masks: dict[tuple[str, str, str], RuntimeArray] = {
         ("ATM", "OCN", "bilinear"): jnp.ones((2, 2))
@@ -951,11 +949,11 @@ def test_runtime_field_store_new_helpers_are_jit_compatible() -> None:
 
 def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     component = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
-        incoming=FieldStore.from_mapping(
+        fields=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        received=FieldStore.from_mapping(
             {"sea_surface_temperature": jnp.zeros((2, 2))}
         ),
-        outgoing=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        sent=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
     )
     assert not hasattr(component, "name")
     assert not hasattr(component, "fields_to_import")
@@ -970,8 +968,8 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
 
     def update(value: RunState) -> RunState:
         atm = value._component_state("ATM")
-        atm = atm.with_data(
-            atm.data.set("temperature", atm.data.get("temperature") + 2.0)
+        atm = atm.with_fields(
+            atm.fields.set("temperature", atm.fields.get("temperature") + 2.0)
         )
         return value._with_component_state("ATM", atm)
 
@@ -981,7 +979,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     assert updated.component_indices == {"ATM": 0}
     assert updated.component_names == ("ATM",)
     assert_allclose_compact(
-        updated._component_state("ATM").data.get("temperature"),
+        updated._component_state("ATM").fields.get("temperature"),
         np.full((2, 2), 3.0),
     )
 
@@ -990,9 +988,9 @@ def test_runtime_coupler_state_restores_component_index_cache_after_pytree_round
     None
 ):
     component = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
     state = RunState._from_runtime(
         component_names=("ATM", "OCN"),
@@ -1012,16 +1010,16 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
         forcing={"surface_temperature": jnp.asarray([[2.0, 3.0]])},
     )
     component = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"temperature": jnp.ones((1, 2))}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
-        runtime_payload=payload,
+        fields=FieldStore.from_mapping({"temperature": jnp.ones((1, 2))}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+        payload=payload,
     )
 
     def update(value: ComponentRuntimeState) -> ComponentRuntimeState:
-        runtime_payload = value.runtime_payload
+        runtime_payload = value.payload
         assert isinstance(runtime_payload, JAXGCMRuntimePayload)
-        return value.with_runtime_payload(
+        return value.with_payload(
             JAXGCMRuntimePayload(
                 jcm_state={"metadata": runtime_payload.jcm_state["metadata"] + 1.0},
                 forcing=runtime_payload.forcing,
@@ -1030,16 +1028,16 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
     updated = jax.jit(update)(component)
 
-    assert isinstance(updated.runtime_payload, JAXGCMRuntimePayload)
+    assert isinstance(updated.payload, JAXGCMRuntimePayload)
     assert_allclose_compact(
-        updated.runtime_payload.jcm_state["metadata"],
+        updated.payload.jcm_state["metadata"],
         np.asarray(2.0),
     )
 
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(Settings(apply_time_interpolation=True))
-    contract = ExchangeContract(exports=("temperature",))
+    contract = ExchangeContract(sends=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [0.75], [0.25], [0]),
@@ -1050,26 +1048,26 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
     def send_loss(field: jax.Array) -> jax.Array:
         state = ComponentRuntimeState(
-            data=FieldStore.from_mapping({"temperature": field}),
-            incoming=FieldStore.empty(),
-            outgoing=FieldStore.empty(),
+            fields=FieldStore.from_mapping({"temperature": field}),
+            received=FieldStore.empty(),
+            sent=FieldStore.empty(),
         )
         sent = send_runtime_fields(component, state, step_info, contract=contract)
-        return jnp.sum(sent.outgoing.get("temperature"))
+        return jnp.sum(sent.sent.get("temperature"))
 
     sent_state = jax.jit(
         lambda field: send_runtime_fields(
             component,
             ComponentRuntimeState(
-                data=FieldStore.from_mapping({"temperature": field}),
-                incoming=FieldStore.empty(),
-                outgoing=FieldStore.empty(),
+                fields=FieldStore.from_mapping({"temperature": field}),
+                received=FieldStore.empty(),
+                sent=FieldStore.empty(),
             ),
             step_info,
             contract=contract,
         )
     )(forcing)
-    out = sent_state.outgoing.get("temperature")
+    out = sent_state.sent.get("temperature")
     gradient = jax.grad(send_loss)(forcing)
 
     assert out.shape == (2, 3)
@@ -1081,7 +1079,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(Settings(apply_daily_time_selection=True))
-    contract = ExchangeContract(exports=("temperature",))
+    contract = ExchangeContract(sends=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [1.0], [0.0], [2]),
@@ -1090,17 +1088,17 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
 
     def send_loss(field: jax.Array) -> jax.Array:
         state = ComponentRuntimeState(
-            data=FieldStore.from_mapping({"temperature": field}),
-            incoming=FieldStore.empty(),
-            outgoing=FieldStore.empty(),
+            fields=FieldStore.from_mapping({"temperature": field}),
+            received=FieldStore.empty(),
+            sent=FieldStore.empty(),
         )
         sent = send_runtime_fields(component, state, step_info, contract=contract)
-        return jnp.sum(sent.outgoing.get("temperature"))
+        return jnp.sum(sent.sent.get("temperature"))
 
     state = ComponentRuntimeState(
-        data=FieldStore.from_mapping({"temperature": forcing}),
-        incoming=FieldStore.empty(),
-        outgoing=FieldStore.empty(),
+        fields=FieldStore.from_mapping({"temperature": forcing}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
     sent_state = jax.jit(
         lambda value: send_runtime_fields(
@@ -1112,9 +1110,7 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
     )(state)
     gradient = jax.grad(send_loss)(forcing)
 
-    assert_allclose_compact(
-        sent_state.outgoing.get("temperature"), np.asarray(forcing[2])
-    )
+    assert_allclose_compact(sent_state.sent.get("temperature"), np.asarray(forcing[2]))
     assert_allclose_compact(gradient[2], np.ones((2, 2)))
     assert_allclose_compact(gradient[:2], np.zeros((2, 2, 2)))
     assert_allclose_compact(gradient[3:], np.zeros((2, 2, 2)))

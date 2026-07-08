@@ -43,7 +43,7 @@ def make_camulator_gcm(
             inputs=("sea_surface_temperature", "land_surface_temperature"),
             outputs=_camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
             defaults=_camulator_contracts.camulator_runtime_field_defaults(),
-            hooks=LifecycleHooks(initialize=state.initialize),
+            lifecycle=LifecycleHooks(initialize=state.initialize),
             output=OutputConfig(
                 snapshot_writer=config.output.snapshot_writer
                 or partial(_camulator_output.write_camulator_snapshot_output, state),

@@ -13,7 +13,7 @@ def time_interpolated_data_component(
     fields: Mapping[str, object],
     outputs: tuple[str, ...],
     data_files: Mapping[str, str],
-    hooks: LifecycleHooks | None = None,
+    lifecycle: LifecycleHooks | None = None,
 ) -> DataComponent:
     """Create a data component with the standard time-interpolation metadata."""
 
@@ -21,7 +21,7 @@ def time_interpolated_data_component(
         name=name,
         grid=grid,
         fields=fields,
-        spec=ComponentSpec(outputs=outputs, hooks=hooks),
+        spec=ComponentSpec(outputs=outputs, lifecycle=lifecycle),
     )
     component.update_settings(apply_time_interpolation=True)
     component._setup_metadata["DATA_FILES"] = dict(data_files)

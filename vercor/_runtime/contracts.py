@@ -12,14 +12,14 @@ from vercor.fields import ExchangeField, flatten_field_items
 class ExchangeContract:
     """Coupler-owned runtime import/export metadata for one component."""
 
-    imports: tuple[str, ...] = ()
-    exports: tuple[str, ...] = ()
+    receives: tuple[str, ...] = ()
+    sends: tuple[str, ...] = ()
 
     @property
     def all_fields(self) -> tuple[str, ...]:
         """Return all import/export fields while preserving contract order."""
 
-        return (*self.imports, *self.exports)
+        return (*self.receives, *self.sends)
 
 
 def flatten_exchange_fields(field_names: Sequence[ExchangeField]) -> list[str]:
@@ -73,18 +73,18 @@ def build_exchange_contracts(
         source_contract = contracts[exchange.source]
         destination_contract = contracts[exchange.target]
         contracts[exchange.source] = ExchangeContract(
-            imports=source_contract.imports,
-            exports=_extend_contract_fields(
-                source_contract.exports,
+            receives=source_contract.receives,
+            sends=_extend_contract_fields(
+                source_contract.sends,
                 flattened_fields,
             ),
         )
         contracts[exchange.target] = ExchangeContract(
-            imports=_extend_contract_fields(
-                destination_contract.imports,
+            receives=_extend_contract_fields(
+                destination_contract.receives,
                 flattened_fields,
             ),
-            exports=destination_contract.exports,
+            sends=destination_contract.sends,
         )
     return contracts
 

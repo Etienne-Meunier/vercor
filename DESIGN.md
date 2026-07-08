@@ -164,7 +164,7 @@ immutable runtime containers used during traced integration.
   `from_model()`, `default_fields`, `HostRuntimeComponent`, and
   component-prefixed context names have been removed from the public API.
   Component factory lifecycle customization is nested in
-  `spec=ComponentSpec(..., hooks=LifecycleHooks(...),
+  `spec=ComponentSpec(..., lifecycle=LifecycleHooks(...),
   output=OutputConfig(...))`; individual hook and output keywords are not
   public constructor inputs. Runtime prefill and validation hooks receive typed
   `PrefillContext`, `PrefillResult`, and `ValidationContext` objects instead
@@ -173,7 +173,7 @@ immutable runtime containers used during traced integration.
   `ComponentPrefillHook`, and `ComponentValidateHook`) remain public
   component-author type contracts and are reexported from `vercor.components`
   and `vercor`.
-  `ComponentSpec`, `field_spec`, and `declare_fields()` provide the same
+  `ComponentSpec`, `component.spec`, and `declare_fields()` provide the same
   vocabulary and read-only introspection for subclasses. `field_names` exposes
   setup-time seeded field names in insertion order; direct `component.data`
   and `component.setup_metadata` mutation is not public API. Subclass
@@ -294,7 +294,7 @@ immutable runtime containers used during traced integration.
   differentiability and stable scan carry structure. Runtime
   field stores live in `vercor._runtime.stores` and own name membership, mapping
   roundtrips, fallback reads, and replacement of existing fields while
-  preserving established dtypes. Import/export contract construction lives in
+  preserving established dtypes. Receive/send contract construction lives in
   `vercor._runtime.contracts`, exchange dispatch lives in
   `vercor._runtime.exchange_dispatch`, static dispatch context construction
   lives in `vercor._runtime.dispatch_context`, which stores exchanges grouped by
@@ -321,7 +321,7 @@ immutable runtime containers used during traced integration.
   precision synchronization, initialization context construction, component
   setup validation, runtime contract validation, and topology handoff live in
   `vercor._runtime.initialization`. Runtime state preparation, contract refresh
-  for created or validated states, validation, and initial outgoing-store
+  for created or validated states, validation, and initial sent-store
   priming live in `vercor._runtime.preparation`; it returns
   `RunState` directly while refreshed contracts stay on
   `CouplerRuntimeResources`. `vercor._runtime.facade` exposes only the
@@ -347,12 +347,13 @@ immutable runtime containers used during traced integration.
   runtime views, and final output delegation enter through this module instead
   of direct `Coupler` imports of runtime implementation helpers.
   Runtime component metadata and read-only field resolution for
-  diagnostics/output live in `vercor.state`. `ComponentState`,
-  `runtime_field_candidates(...)`, and `runtime_field(...)` own
-  data/incoming/outgoing lookup for explicit views and compatible runtime
-  states. `Coupler` exposes `initial_state()` and `run()` for runtime-state
-  creation. `RunState.component(...)` and `RunState.components(...)` are the
-  only public component-view factories.
+  diagnostics/output live in `vercor.state`. `ComponentState.field(...)`,
+  `ComponentState.fields(...)`, and `ComponentState.field_candidates(...)` own
+  state/received/sent lookup for explicit views while private helpers keep
+  runtime containers out of public diagnostics/output APIs. `Coupler` exposes
+  `initial_state()` and `run()` for runtime-state creation.
+  `RunState.component(...)` and `RunState.components(...)` are the only public
+  component-view factories.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output.runtime` helpers, with
   `vercor._runtime.facade` validating and delegating output writes for
