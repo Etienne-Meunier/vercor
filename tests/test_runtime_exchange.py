@@ -10,11 +10,11 @@ import numpy as np
 from tests.assertions import assert_allclose_compact
 from vercor.exchanges import Exchange
 from vercor.fields import vector
-from vercor.runtime.dispatch_context import RuntimeDispatchContext
-from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
-from vercor.runtime.state import RuntimeComponentState
+from vercor._runtime.dispatch_context import RuntimeDispatchContext
+from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
+from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.stores import FieldStore
 
 
 class _ScalingRegridder:
@@ -38,12 +38,12 @@ def _component(
     *,
     outgoing: dict[str, jax.Array],
     incoming: dict[str, jax.Array] | None = None,
-) -> RuntimeComponentState:
+) -> ComponentRuntimeState:
     _ = name
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({}),
-        incoming=RuntimeFieldStore.from_mapping(incoming or {}),
-        outgoing=RuntimeFieldStore.from_mapping(outgoing),
+    return ComponentRuntimeState(
+        data=FieldStore.from_mapping({}),
+        incoming=FieldStore.from_mapping(incoming or {}),
+        outgoing=FieldStore.from_mapping(outgoing),
     )
 
 
@@ -65,7 +65,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
                     "ATM", outgoing={}, incoming={"temperature": jnp.zeros_like(source)}
                 ),
             ),
-            fractional_masks=RuntimeFieldStore.from_mapping({"OCN|ATM|_factory": mask}),
+            fractional_masks=FieldStore.from_mapping({"OCN|ATM|_factory": mask}),
         )
         dispatched = dispatch_component_exchanges(
             state,
@@ -115,7 +115,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
                 },
             ),
         ),
-        fractional_masks=RuntimeFieldStore.from_mapping(
+        fractional_masks=FieldStore.from_mapping(
             {"OCN|ATM|_factory": jnp.full((2, 2), 0.25)}
         ),
     )
@@ -162,7 +162,7 @@ def test_runtime_dispatch_context_groups_exchanges_by_destination() -> None:
 
 
 def test_exchange_dispatch_uses_scalar_and_vector_primitives() -> None:
-    source = Path("vercor/runtime/exchange_dispatch.py").read_text(encoding="utf-8")
+    source = Path("vercor/_runtime/exchange_dispatch.py").read_text(encoding="utf-8")
 
     assert "def _dispatch_scalar_exchange_field(" in source
     assert "def _dispatch_vector_exchange_field(" in source

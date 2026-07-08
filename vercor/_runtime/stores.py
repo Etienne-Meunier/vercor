@@ -12,7 +12,7 @@ from vercor.types import RuntimeArray
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RuntimeFieldStore(PyTreeNodeMixin):
+class FieldStore(PyTreeNodeMixin):
     """Immutable named array store used by the runtime."""
 
     pytree_children = ("values",)
@@ -37,13 +37,13 @@ class RuntimeFieldStore(PyTreeNodeMixin):
         self.__post_init__()
 
     @classmethod
-    def empty(cls) -> "RuntimeFieldStore":
+    def empty(cls) -> "FieldStore":
         """Create an empty field store."""
 
         return cls(field_names=(), values=())
 
     @classmethod
-    def from_mapping(cls, fields: Mapping[str, RuntimeArray]) -> "RuntimeFieldStore":
+    def from_mapping(cls, fields: Mapping[str, RuntimeArray]) -> "FieldStore":
         """Create a field store from a mapping while preserving insertion order."""
 
         return cls(
@@ -82,19 +82,19 @@ class RuntimeFieldStore(PyTreeNodeMixin):
         reference = self.get(like) if isinstance(like, str) else like
         return jnp.zeros_like(jnp.asarray(reference))
 
-    def set(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
+    def set(self, name: str, value: RuntimeArray) -> "FieldStore":
         """Return a new store with ``name`` replaced or appended."""
 
         if name not in self:
             value_array = jnp.array(value, copy=True)
-            return RuntimeFieldStore(
+            return FieldStore(
                 field_names=(*self.field_names, name),
                 values=(*self.values, value_array),
             )
 
         return self.replace(name, value)
 
-    def set_many(self, fields: Mapping[str, RuntimeArray]) -> "RuntimeFieldStore":
+    def set_many(self, fields: Mapping[str, RuntimeArray]) -> "FieldStore":
         """Return a new store with multiple fields replaced or appended."""
 
         if not fields:
@@ -116,12 +116,12 @@ class RuntimeFieldStore(PyTreeNodeMixin):
                 appended_names.append(field_name)
                 appended_values.append(jnp.array(field_value, copy=True))
 
-        return RuntimeFieldStore(
+        return FieldStore(
             field_names=(*self.field_names, *appended_names),
             values=(*values, *appended_values),
         )
 
-    def replace(self, name: str, value: RuntimeArray) -> "RuntimeFieldStore":
+    def replace(self, name: str, value: RuntimeArray) -> "FieldStore":
         """Return a new store with an existing field replaced."""
 
         if name not in self:
@@ -135,12 +135,12 @@ class RuntimeFieldStore(PyTreeNodeMixin):
             )
             for field_name, current in zip(self.field_names, self.values)
         )
-        return RuntimeFieldStore(field_names=self.field_names, values=values)
+        return FieldStore(field_names=self.field_names, values=values)
 
     def replace_many(
         self,
         fields: Mapping[str, RuntimeArray],
-    ) -> "RuntimeFieldStore":
+    ) -> "FieldStore":
         """Return a new store with multiple existing fields replaced."""
 
         for field_name in fields:

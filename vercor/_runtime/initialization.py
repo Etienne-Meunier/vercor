@@ -10,14 +10,14 @@ from vercor.components.contexts import SetupContext
 from vercor.dtypes import as_jax_real_array
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
-from vercor.runtime.component_topology import validate_component_topology_names
-from vercor.runtime.contracts import RuntimeComponentContract, build_runtime_contracts
-from vercor.runtime.topology import build_exchange_topology
-from vercor.runtime.topology_state import (
+from vercor._runtime.component_topology import validate_component_topology_names
+from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
+from vercor._runtime.topology import build_exchange_topology
+from vercor._runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
 )
-from vercor.runtime.validation import (
+from vercor._runtime.validation import (
     check_not_empty_import_export_lists,
     check_valid_exchange_field_names,
 )
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 class RuntimeInitializationState:
     """Validated setup-time state required by the runtime facade."""
 
-    runtime_contracts: dict[str, RuntimeComponentContract]
+    runtime_contracts: dict[str, ExchangeContract]
     topology: ExchangeTopologyState
 
 
@@ -99,7 +99,7 @@ def initialize_coupler_runtime(
         validate_component_topology_names({name: component})
         logger.info(f" Initialized {name}")
 
-    runtime_contracts = build_runtime_contracts(
+    runtime_contracts = build_exchange_contracts(
         tuple(components),
         exchanges,
         validate_endpoints=True,

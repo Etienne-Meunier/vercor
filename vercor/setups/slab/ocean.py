@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from vercor.components import (
     Component,
-    FieldSpec,
+    ComponentSpec,
     StepContext,
 )
 from vercor.dtypes import as_jax_real_array
@@ -83,7 +83,7 @@ def make_slab_ocean(
         name=name,
         grid=grid,
         step=step,
-        spec=FieldSpec(
+        spec=ComponentSpec(
             inputs=_OCEAN_INPUTS,
             outputs=_OCEAN_OUTPUTS,
             defaults=_OCEAN_DEFAULT_FIELDS,

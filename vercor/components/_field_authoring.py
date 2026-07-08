@@ -5,7 +5,7 @@ from typing import Self
 
 from vercor.components.contracts import (
     AuthorFieldValues as _AuthorFieldValues,
-    FieldSpec as _FieldSpec,
+    ComponentSpec as _ComponentSpec,
     FieldNames as _FieldNames,
 )
 from vercor.components._constructor_options import normalize_field_spec
@@ -27,7 +27,7 @@ class ComponentFieldAuthoringMixin:
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray]
     settings: Settings
-    _field_spec: _FieldSpec
+    _field_spec: _ComponentSpec
 
     def declare_fields(
         self,
@@ -35,7 +35,7 @@ class ComponentFieldAuthoringMixin:
         inputs: _FieldNames = (),
         outputs: _FieldNames = (),
         defaults: _AuthorFieldValues = None,
-    ) -> _FieldSpec:
+    ) -> _ComponentSpec:
         """Declare runtime data fields for subclasses using author-facing names."""
 
         declared = normalize_field_spec(
@@ -43,7 +43,7 @@ class ComponentFieldAuthoringMixin:
             outputs=outputs,
             defaults=defaults,
         )
-        self._field_spec = _FieldSpec(
+        self._field_spec = _ComponentSpec(
             inputs=declared.inputs,
             outputs=declared.outputs,
             defaults=_normalize_author_field_values(
@@ -57,7 +57,7 @@ class ComponentFieldAuthoringMixin:
         return self._field_spec
 
     @property
-    def field_spec(self) -> _FieldSpec:
+    def field_spec(self) -> _ComponentSpec:
         """Return this component's declared author-facing runtime field contract."""
 
         return self._field_spec

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from vercor.calendar import ModelDateTime
 from vercor.exchanges import Exchange
-from vercor.runtime.exchange_keys import exchange_regrid_key
+from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.output.adapters import SnapshotContext
 from vercor.output.netcdf import write_netcdf_dataset
 from vercor.output.variables import OutputVariable
@@ -80,11 +80,11 @@ def _runtime_data_variables(
     masks: Mapping[str, RuntimeArray],
 ) -> dict[str, OutputVariable]:
     data_variables: dict[str, OutputVariable] = {}
-    for store_name, name, value in view.iter_fields("incoming", "outgoing"):
-        data_variables[f"{store_name}_{name}"] = _runtime_output_variable(
+    for scope, name, value in view.iter_fields("received", "sent"):
+        data_variables[f"{scope}_{name}"] = _runtime_output_variable(
             view,
             value,
-            runtime_store=store_name,
+            runtime_store=scope,
             field_name=name,
         )
 

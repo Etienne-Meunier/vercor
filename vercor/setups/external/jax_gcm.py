@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from functools import partial
 
 from dinosaur.coordinate_systems import CoordinateSystem
-from jcm.model import ForcingData
 from jcm.physics_interface import TerrainData
 
-from vercor.components import Component, ComponentHooks, FieldSpec
-from vercor.output.adapters import OutputSpec
-from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+from vercor.components import Component, LifecycleHooks, ComponentSpec
+from vercor.output.adapters import OutputConfig
+from vercor.setup_config import JaxGCMConfig, PeriodOutput
 import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
 import vercor.setups.external.jax_gcm_output as _jax_gcm_output
 import vercor.setups.external.jax_gcm_runtime as _jax_gcm_runtime
@@ -29,37 +27,33 @@ except ImportError:
 def make_jax_gcm(
     coords: CoordinateSystem,
     terrain: TerrainData,
-    name: str = "ATM",
-    custom_parameters: dict[str, float] | None = None,
-    model_timestep: timedelta = timedelta(minutes=30),
-    save_interval: timedelta = timedelta(days=1),
-    forcing_data: ForcingData | None = None,
-    spinup: SpinupConfig | None = None,
-    output: PeriodOutputConfig | None = None,
-    jitted: bool = True,
+    *,
+    config: JaxGCMConfig | None = None,
 ) -> Component:
     """Return a differentiable JAXGCM/JCM atmosphere component."""
 
-    spinup_config = SpinupConfig() if spinup is None else spinup
-    output_config = PeriodOutputConfig() if output is None else output
+    config = JaxGCMConfig() if config is None else config
+    period_output = (
+        PeriodOutput() if config.output.period is None else config.output.period
+    )
     state = JAXGCMSetupState(
         coords=coords,
         terrain=terrain,
-        name=name,
-        custom_parameters=custom_parameters,
-        model_timestep=model_timestep,
-        save_interval=save_interval,
-        spinup_time=spinup_config.duration,
-        forcing_data=forcing_data,
-        output_frequency=output_config.frequency,
-        do_spinup=spinup_config.enabled,
-        jitted=jitted,
+        name=config.name,
+        custom_parameters=config.custom_parameters,
+        model_timestep=config.model_timestep,
+        save_interval=config.save_interval,
+        spinup_time=config.spinup.duration,
+        forcing_data=config.forcing_data,
+        output_frequency=period_output.frequency,
+        do_spinup=config.spinup.enabled,
+        jitted=config.jitted,
     )
     component = Component.from_step(
-        name=name,
+        name=config.name,
         grid=state.grid,
         step=partial(_jax_gcm_runtime.step_jax_gcm_component, state),
-        spec=FieldSpec(
+        spec=ComponentSpec(
             inputs=("land_surface_temperature", "sea_surface_temperature"),
             outputs=(
                 "land_surface_temperature",
@@ -69,26 +63,26 @@ def make_jax_gcm(
                 "pressure",
             ),
             defaults=_jax_gcm_runtime.jax_gcm_default_fields(),
-        ),
-        hooks=ComponentHooks(
-            initialize=state.initialize,
-            create_payload=partial(
-                _jax_gcm_runtime.create_jax_gcm_runtime_payload,
-                state,
+            hooks=LifecycleHooks(
+                initialize=state.initialize,
+                create_payload=partial(
+                    _jax_gcm_runtime.create_jax_gcm_runtime_payload,
+                    state,
+                ),
+                prefill=partial(
+                    _jax_gcm_runtime.prefill_jax_gcm_runtime_fields,
+                    state,
+                ),
+                validate=partial(
+                    _jax_gcm_runtime.validate_jax_gcm_runtime_state,
+                    state,
+                ),
             ),
-            prefill=partial(
-                _jax_gcm_runtime.prefill_jax_gcm_runtime_fields,
-                state,
+            output=OutputConfig(
+                snapshot_writer=config.output.snapshot_writer
+                or partial(_jax_gcm_output.write_jax_gcm_snapshot_output, state),
+                period=config.output.period,
             ),
-            validate=partial(
-                _jax_gcm_runtime.validate_jax_gcm_runtime_state,
-                state,
-            ),
-        ),
-        output=OutputSpec(
-            snapshot_writer=partial(
-                _jax_gcm_output.write_jax_gcm_snapshot_output, state
-            )
         ),
     )
     return component

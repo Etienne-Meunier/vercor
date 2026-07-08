@@ -4,14 +4,14 @@ from typing import Any, Mapping, Sequence
 
 from vercor.exceptions import ExchangerError
 from vercor.exchanges import Exchange
-from vercor.runtime.exchange_keys import exchange_regrid_key
+from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.fields import VectorField
 from vercor.state import RunState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.stores import FieldStore
 
 
 def _dispatch_vector_exchange_field(
-    source_fields: RuntimeFieldStore,
+    source_fields: FieldStore,
     incoming_updates: dict[str, Any],
     field_name: VectorField,
     regrid: Any,
@@ -31,7 +31,7 @@ def _dispatch_vector_exchange_field(
 
 
 def _dispatch_scalar_exchange_field(
-    source_fields: RuntimeFieldStore,
+    source_fields: FieldStore,
     incoming_updates: dict[str, Any],
     field_name: str,
     regrid: Any,

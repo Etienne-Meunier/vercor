@@ -153,7 +153,7 @@ def validate_jax_gcm_runtime_state(
         try:
             validate_canonical_grid_field_shape(
                 field_name=field_name,
-                value=context.state.field(field_name, store="data"),
+                value=context.state.field(field_name, scope="state"),
                 grid_shape=component.grid.shape,
                 owner_description="Runtime required data field",
                 owner_name=component.name,
@@ -166,7 +166,7 @@ def validate_jax_gcm_runtime_state(
             "Runtime missing required data field "
             f"'pressure' for component '{component.name}'"
         )
-    pressure_shape = jnp.asarray(context.state.field("pressure", store="data")).shape
+    pressure_shape = jnp.asarray(context.state.field("pressure", scope="state")).shape
     sigma_levels = jnp.asarray(state.sigma_levels)
     expected_pressure_shape = (sigma_levels.shape[0], *component.grid.shape)
     if pressure_shape != expected_pressure_shape:

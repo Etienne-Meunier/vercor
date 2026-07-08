@@ -5,19 +5,17 @@ from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     AuthorStepCallable,
-    ComponentHooks,
+    LifecycleHooks,
     ComponentStepReturn,
-    FieldSpec,
+    ComponentSpec,
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
     callable_component_options,
 )
 from vercor.components.base import Component
-from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.exceptions import ComponentError
 from vercor.grids import RectilinearGrid
-from vercor.output.adapters import OutputSpec
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -40,11 +38,9 @@ class HostComponent(Component):
         grid: RectilinearGrid,
         step: AuthorStepCallable,
         *,
-        spec: FieldSpec | None = None,
+        spec: ComponentSpec | None = None,
         payload: Any | None = None,
         settings: Settings | None = None,
-        hooks: ComponentHooks | None = None,
-        output: OutputSpec | None = None,
     ) -> "HostComponent":
         """Create a host-runtime component from a Python step callable."""
 
@@ -52,7 +48,6 @@ class HostComponent(Component):
             step,
             spec=spec,
             payload=payload,
-            hooks=hooks,
         )
         return _CallableHostRuntimeComponent(
             name=name,
@@ -60,7 +55,6 @@ class HostComponent(Component):
             step=options.step,
             payload=options.payload,
             settings=settings,
-            output=output,
             field_spec=options.field_spec,
             lifecycle_hooks=options.lifecycle_hooks,
         )
@@ -91,19 +85,18 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         step: AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
-        output: OutputSpec | None,
-        field_spec: FieldSpec,
-        lifecycle_hooks: ComponentLifecycleHooks,
+        field_spec: ComponentSpec,
+        lifecycle_hooks: LifecycleHooks,
     ) -> None:
         if settings is None:
-            Component.__init__(self, name=name, grid=grid, output=output)
+            Component.__init__(self, name=name, grid=grid, output=field_spec.output)
         else:
             Component.__init__(
                 self,
                 name=name,
                 grid=grid,
                 settings=settings,
-                output=output,
+                output=field_spec.output,
             )
         self._initialize_callable_runtime(
             step=step,

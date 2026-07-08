@@ -1,6 +1,15 @@
 from datetime import datetime, timedelta
 
-from vercor import Clock, Coupler, Exchange, PeriodOutputConfig, SpinupConfig
+from vercor import (
+    CAMulatorConfig,
+    Clock,
+    Coupler,
+    Exchange,
+    OutputConfig,
+    PeriodOutput,
+    Spinup,
+    VerosConfig,
+)
 from vercor.setups import make_camulator_gcm
 from vercor.setups import make_camulator_land
 from vercor.setups import make_veros_gcm
@@ -15,28 +24,34 @@ from vercor.regridding import bilinear
 
 if __name__ == "__main__":
     ocn = make_veros_gcm(
-        spinup=SpinupConfig(enabled=True),
-        output=PeriodOutputConfig(
-            frequency="month",
-            variables=(
-                "temp",
-                "salt",
-                "u",
-                "v",
-                "w",
-                "surface_taux",
-                "surface_tauy",
-                "psi",
+        config=VerosConfig(
+            spinup=Spinup(enabled=True),
+            output=OutputConfig(
+                period=PeriodOutput(
+                    frequency="month",
+                    variables=(
+                        "temp",
+                        "salt",
+                        "u",
+                        "v",
+                        "w",
+                        "surface_taux",
+                        "surface_tauy",
+                        "psi",
+                    ),
+                ),
             ),
+            custom_parameters={"dt_tracer": timedelta(hours=6).total_seconds()},
         ),
-        custom_parameters={"dt_tracer": timedelta(hours=6).total_seconds()},
     )
 
     atm = make_camulator_gcm(
-        config_path="/glade/u/home/rnuterman/veros_coupling/climate/camulator_config.yml",
-        model_weights_path="/glade/u/home/rnuterman/veros_coupling/climate/checkpoint.pt00091.pt",
-        output_subfolder_name="camulator_veros_v2_00091",
-        output=PeriodOutputConfig(frequency="month"),
+        config=CAMulatorConfig(
+            config_path="/glade/u/home/rnuterman/veros_coupling/climate/camulator_config.yml",
+            model_weights_path="/glade/u/home/rnuterman/veros_coupling/climate/checkpoint.pt00091.pt",
+            output_subfolder_name="camulator_veros_v2_00091",
+            output=OutputConfig(period=PeriodOutput(frequency="month")),
+        ),
     )
 
     lnd = make_camulator_land(

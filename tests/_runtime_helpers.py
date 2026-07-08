@@ -4,17 +4,18 @@ from collections.abc import Mapping
 from typing import Any
 
 from vercor.types import RuntimeArray
-import vercor.runtime.facade as runtime_facade
+import vercor._runtime.facade as runtime_facade
+import vercor._runtime.preparation as runtime_preparation
 from vercor.coupler import Coupler
-from vercor.runtime.runner import run_scanned_runtime
+from vercor._runtime.runner import run_scanned_runtime
 from vercor.state import RunState
-from vercor.runtime.topology_state import RuntimeTopologyMaps
+from vercor._runtime.topology_state import RuntimeTopologyMaps
 
 
-def runtime_facade_inputs(coupler: Coupler) -> runtime_facade.RuntimeFacadeInputs:
+def runtime_facade_inputs(coupler: Coupler) -> runtime_facade.RuntimeInputs:
     """Return the runtime facade inputs for focused runtime tests."""
 
-    return runtime_facade.RuntimeFacadeInputs(
+    return runtime_facade.RuntimeInputs(
         coupler.components,
         coupler.exchanges,
         coupler._runtime_resources,
@@ -73,7 +74,7 @@ def runtime_state_from_coupler_components(
 ) -> RunState:
     """Build runtime state from a Coupler's components for focused tests."""
 
-    return runtime_facade.runtime_state_from_components(
+    return runtime_preparation.runtime_state_from_components(
         inputs=runtime_facade_inputs(coupler),
         prefill_missing=prefill_missing,
     )

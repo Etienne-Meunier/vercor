@@ -7,11 +7,11 @@ from vercor.calendar import ModelDateTime
 from vercor.components.contexts import StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.jax_logging import LoggerLike
-from vercor.runtime.dispatch_context import RuntimeDispatchContext
-from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
-from vercor.runtime.field_transfer import receive_runtime_fields, send_runtime_fields
+from vercor._runtime.dispatch_context import RuntimeDispatchContext
+from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
+from vercor._runtime.field_transfer import receive_runtime_fields, send_runtime_fields
 from vercor.state import RunState
-from vercor.runtime.time import RuntimeStepInfo
+from vercor._runtime.time import RuntimeStepInfo
 
 
 def step_runtime_component(

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, PeriodOutputConfig
+from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput, VerosConfig
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import make_veros_gcm
@@ -15,18 +15,22 @@ from vercor.regridding import bilinear
 if __name__ == "__main__":
     atm = make_era5_atmosphere()
     ocn = make_veros_gcm(
-        restore_to_climatology=True,
-        output=PeriodOutputConfig(
-            frequency="month",
-            variables=(
-                "temp",
-                "salt",
-                "u",
-                "v",
-                "w",
-                "surface_taux",
-                "surface_tauy",
-                "psi",
+        config=VerosConfig(
+            restore_to_climatology=True,
+            output=OutputConfig(
+                period=PeriodOutput(
+                    frequency="month",
+                    variables=(
+                        "temp",
+                        "salt",
+                        "u",
+                        "v",
+                        "w",
+                        "surface_taux",
+                        "surface_tauy",
+                        "psi",
+                    ),
+                ),
             ),
         ),
     )

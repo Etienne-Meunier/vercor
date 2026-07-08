@@ -18,8 +18,7 @@ from vercor.jax_logging import (
     setup_logger as _setup_logger,
 )
 from vercor._run_order import normalize_run_order
-import vercor.runtime.facade as _runtime_facade
-from vercor.runtime.resources import CouplerRuntimeResources
+import vercor._runtime.facade as _runtime_facade
 from vercor.settings import Settings
 from vercor.state import RunState
 
@@ -74,7 +73,7 @@ class Coupler:
         )
         self._exchanges: tuple[Exchange, ...] = ()
         self._run_order: tuple[str, ...] = ()
-        self._runtime_resources = CouplerRuntimeResources()
+        self._runtime_resources = _runtime_facade.create_runtime_resources()
         self._runtime_initialized = False
         configured_run_order = normalize_run_order(run_order)
 
@@ -99,7 +98,7 @@ class Coupler:
     def _invalidate_runtime_resources(self) -> None:
         """Clear cached runtime topology and contracts after setup changes."""
 
-        self._runtime_resources = CouplerRuntimeResources()
+        self._runtime_resources = _runtime_facade.create_runtime_resources()
         self._runtime_initialized = False
 
     @property
@@ -178,10 +177,10 @@ class Coupler:
         )
         return self
 
-    def _runtime_inputs(self) -> _runtime_facade.RuntimeFacadeInputs:
+    def _runtime_inputs(self) -> _runtime_facade.RuntimeInputs:
         """Return the repeated runtime facade input bundle for this coupler."""
 
-        return _runtime_facade.RuntimeFacadeInputs(
+        return _runtime_facade.RuntimeInputs(
             self.components,
             self.exchanges,
             self._runtime_resources,

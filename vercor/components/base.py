@@ -7,19 +7,18 @@ from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     AuthorStepCallable as _AuthorStepCallable,
-    ComponentHooks as _ComponentHooks,
+    LifecycleHooks,
     ComponentStepReturn as _ComponentStepReturn,
-    FieldSpec as _FieldSpec,
+    ComponentSpec as _ComponentSpec,
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
     callable_component_options,
 )
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
-from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
 from vercor.grids import RectilinearGrid
-from vercor.output.adapters import OutputSpec
+from vercor.output.adapters import OutputConfig
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -70,15 +69,15 @@ class Component(
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: Settings = field(default_factory=Settings)
-    output: OutputSpec = field(default_factory=OutputSpec)
+    output: OutputConfig = field(default_factory=OutputConfig)
     _setup_metadata: dict[str, Any] = field(default_factory=dict)
-    _field_spec: _FieldSpec = field(
-        default_factory=_FieldSpec,
+    _field_spec: _ComponentSpec = field(
+        default_factory=_ComponentSpec,
         init=False,
         repr=False,
     )
-    _lifecycle_hooks: ComponentLifecycleHooks = field(
-        default_factory=ComponentLifecycleHooks,
+    _lifecycle_hooks: LifecycleHooks = field(
+        default_factory=LifecycleHooks,
         init=False,
         repr=False,
     )
@@ -89,7 +88,7 @@ class Component(
         grid: RectilinearGrid,
         *,
         settings: Settings | None = None,
-        output: OutputSpec | None = None,
+        output: OutputConfig | None = None,
     ) -> None:
         """Create a component configuration shell for setup-time authoring."""
 
@@ -97,10 +96,10 @@ class Component(
         self.grid = grid
         self._data = {}
         self.settings = Settings() if settings is None else settings
-        self.output = OutputSpec() if output is None else output
+        self.output = OutputConfig() if output is None else output
         self._setup_metadata = {}
-        self._field_spec = _FieldSpec()
-        self._lifecycle_hooks = ComponentLifecycleHooks()
+        self._field_spec = _ComponentSpec()
+        self._lifecycle_hooks = LifecycleHooks()
 
     @classmethod
     def from_step(
@@ -109,11 +108,9 @@ class Component(
         grid: RectilinearGrid,
         step: _AuthorStepCallable,
         *,
-        spec: _FieldSpec | None = None,
+        spec: _ComponentSpec | None = None,
         payload: Any | None = None,
         settings: Settings | None = None,
-        hooks: _ComponentHooks | None = None,
-        output: OutputSpec | None = None,
     ) -> "Component":
         """Create a differentiable component from a user step callable.
 
@@ -127,7 +124,6 @@ class Component(
             step,
             spec=spec,
             payload=payload,
-            hooks=hooks,
         )
         return _CallableComponent(
             name=name,
@@ -135,7 +131,6 @@ class Component(
             step=options.step,
             payload=options.payload,
             settings=settings,
-            output=output,
             field_spec=options.field_spec,
             lifecycle_hooks=options.lifecycle_hooks,
         )
@@ -212,19 +207,18 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         step: _AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
-        output: OutputSpec | None,
-        field_spec: _FieldSpec,
-        lifecycle_hooks: ComponentLifecycleHooks,
+        field_spec: _ComponentSpec,
+        lifecycle_hooks: LifecycleHooks,
     ) -> None:
         if settings is None:
-            Component.__init__(self, name=name, grid=grid, output=output)
+            Component.__init__(self, name=name, grid=grid, output=field_spec.output)
         else:
             Component.__init__(
                 self,
                 name=name,
                 grid=grid,
                 settings=settings,
-                output=output,
+                output=field_spec.output,
             )
         self._initialize_callable_runtime(
             step=step,

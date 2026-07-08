@@ -1,6 +1,7 @@
-"""Internal runtime package.
+"""Compatibility-empty runtime namespace.
 
-Runtime containers and helpers are imported from their focused owner modules.
+Runtime implementation details live in :mod:`vercor._runtime` and are not
+public API.
 """
 
 __all__: list[str] = []

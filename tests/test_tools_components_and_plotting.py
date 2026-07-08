@@ -16,17 +16,17 @@ import tests.conftest as conftest_module
 from tests._tools_support import DummyComponentA, DummyComponentB
 from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
-import vercor.runtime.component_topology as component_topology_module
+import vercor._runtime.component_topology as component_topology_module
 from vercor.components.base import Component
 from vercor.exceptions import CouplerError
 from vercor.fields import vector
 from vercor.grids import RectilinearGrid
-from vercor.runtime.contracts import (
+from vercor._runtime.contracts import (
     append_unique_runtime_fields,
     flatten_exchange_fields,
 )
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 from vercor.state import ComponentState
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
@@ -132,13 +132,13 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
     assert [
         (store_name, field_name, float(value))
         for store_name, field_name, value in view.iter_fields(
-            "incoming",
-            "outgoing",
+            "received",
+            "sent",
         )
     ] == [
-        ("incoming", "shared", 2.0),
-        ("incoming", "only_incoming", 3.0),
-        ("outgoing", "only_outgoing", 4.0),
+        ("received", "shared", 2.0),
+        ("received", "only_incoming", 3.0),
+        ("sent", "only_outgoing", 4.0),
     ]
     with pytest.raises(KeyError, match="Field 'missing' not found"):
         view.field("missing")
@@ -253,8 +253,8 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         longitude=jnp.asarray([0.0, 1.0, 2.0]),
         latitude=jnp.asarray([-1.0, 1.0]),
     )
-    runtime_state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
+    runtime_state = ComponentRuntimeState(
+        data=FieldStore.from_mapping(
             {
                 "total_surface_temperature": jnp.array(
                     [[280.0, 281.0, 282.0], [283.0, 284.0, 285.0]]
@@ -263,8 +263,8 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
                 "v_velocity": jnp.zeros((2, 3, 2)),
             }
         ),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.from_mapping(
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.from_mapping(
             {
                 "u_velocity": jnp.ones((2, 3)),
                 "v_velocity": jnp.zeros((2, 3)),

@@ -8,12 +8,12 @@ from vercor.field_layout import validate_canonical_grid_field_shape
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor._runtime.state import ComponentRuntimeState
 
 
 def require_runtime_fields(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     *names: str,
 ) -> None:
     """Validate that named runtime data fields use canonical grid layout."""
@@ -38,7 +38,7 @@ def require_runtime_fields(
 
 def validate_declared_runtime_fields(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
 ) -> None:
     """Validate fields required by the component's declared field contract."""
 

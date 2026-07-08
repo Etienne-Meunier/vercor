@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Any
-
-from vercor.components import ComponentHooks, FieldSpec, HostComponent
-from vercor.output.adapters import OutputSpec
-from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
+from vercor.output.adapters import OutputConfig
+from vercor.setup_config import PeriodOutput, VerosConfig
 import vercor.setups.external.veros_gcm_state as _veros_gcm_state
 import vercor.setups.external.veros_output as _veros_output
 import vercor.setups.external.veros_runtime as _veros_runtime
@@ -22,39 +20,39 @@ except ImportError:
 
 
 def make_veros_gcm(
-    name: str = "OCN",
-    custom_parameters: dict[str, Any] | None = None,
-    restore_to_climatology: bool = False,
-    spinup: SpinupConfig | None = None,
-    output: PeriodOutputConfig | None = None,
-    jitted: bool = False,
+    *,
+    config: VerosConfig | None = None,
 ) -> HostComponent:
     """Return a host-backed Veros GCM component."""
 
-    spinup_config = SpinupConfig() if spinup is None else spinup
-    output_config = PeriodOutputConfig() if output is None else output
+    config = VerosConfig() if config is None else config
+    period_output = (
+        PeriodOutput() if config.output.period is None else config.output.period
+    )
     state = VerosGCMSetupState(
-        name=name,
-        spinup_time=spinup_config.duration,
-        custom_parameters=custom_parameters,
-        restore_to_climatology=restore_to_climatology,
-        do_spinup=spinup_config.enabled,
-        output_frequency=output_config.frequency,
-        output_variables=output_config.variables,
-        jitted=jitted,
+        name=config.name,
+        spinup_time=config.spinup.duration,
+        custom_parameters=config.custom_parameters,
+        restore_to_climatology=config.restore_to_climatology,
+        do_spinup=config.spinup.enabled,
+        output_frequency=period_output.frequency,
+        output_variables=period_output.variables,
+        jitted=config.jitted,
     )
     component = HostComponent.from_step(
-        name=name,
+        name=config.name,
         grid=state.grid,
         step=partial(_veros_runtime.step_veros_runtime, state),
-        spec=FieldSpec(
+        spec=ComponentSpec(
             inputs=_veros_gcm_state.VEROS_INPUT_FIELD_NAMES,
             outputs=("sea_surface_temperature",),
             defaults=_veros_gcm_state.veros_default_fields(),
-        ),
-        hooks=ComponentHooks(initialize=state.initialize),
-        output=OutputSpec(
-            snapshot_writer=partial(_veros_output.write_veros_snapshot_output, state)
+            hooks=LifecycleHooks(initialize=state.initialize),
+            output=OutputConfig(
+                snapshot_writer=config.output.snapshot_writer
+                or partial(_veros_output.write_veros_snapshot_output, state),
+                period=config.output.period,
+            ),
         ),
     )
     return component

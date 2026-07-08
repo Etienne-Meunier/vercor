@@ -11,7 +11,7 @@ import pytest
 import vercor
 import vercor.output
 from tests._coverage_support import make_test_grid
-from vercor import Clock, Coupler, DataComponent, FieldSpec, RectilinearGrid
+from vercor import Clock, Coupler, DataComponent, RectilinearGrid
 from vercor.output import OutputVariable
 from vercor.regridding import bilinear
 
@@ -57,7 +57,7 @@ def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
 
     assert isinstance(view, vercor.ComponentState)
     assert view.field("temperature").shape == component.grid.shape
-    assert view.field("temperature", store="data").shape == component.grid.shape
+    assert view.field("temperature", scope="state").shape == component.grid.shape
     assert tuple(view.fields()) == ("temperature",)
     assert isinstance(state.components()["ATM"], vercor.ComponentState)
     assert not hasattr(state, "get_component_state")
@@ -118,12 +118,12 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     def writer(context: vercor.SnapshotContext) -> None:
         calls.append((context.state, context.output_path, context.time, context.logger))
 
-    assert hasattr(vercor.output, "OutputSpec")
-    output = vercor.output.OutputSpec(snapshot_writer=writer)
+    assert hasattr(vercor.output, "OutputConfig")
+    output = vercor.output.OutputConfig(snapshot_writer=writer)
 
     assert output.snapshot_writer is writer
     assert OutputVariable(dims=("time",), values=jnp.asarray([1.0])).dims == ("time",)
-    assert "OutputSpec" in vercor.output.__all__
+    assert "OutputConfig" in vercor.output.__all__
     assert "SnapshotContext" in vercor.output.__all__
     assert "ComponentOutput" not in vercor.output.__all__
     assert "ComponentOutputAdapter" not in vercor.output.__all__
@@ -134,14 +134,14 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
 
 
 @pytest.mark.fast_always
-def test_component_constructors_accept_field_spec_only() -> None:
+def test_component_constructors_accept_component_spec_only() -> None:
     grid = make_test_grid(name="v1-spec-only")
 
     component = vercor.Component.from_step(
         "OCN",
         grid,
         lambda fields: {"sea_surface_temperature": fields["temperature"]},
-        spec=FieldSpec(
+        spec=vercor.ComponentSpec(
             inputs=("temperature",),
             outputs=("sea_surface_temperature",),
             defaults={"temperature": 280.0, "sea_surface_temperature": 280.0},
@@ -151,7 +151,7 @@ def test_component_constructors_accept_field_spec_only() -> None:
         "ATM",
         grid,
         {"temperature": 280.0},
-        spec=FieldSpec(outputs=("temperature",)),
+        spec=vercor.ComponentSpec(outputs=("temperature",)),
     )
 
     assert component.field_spec.inputs == ("temperature",)
@@ -175,6 +175,106 @@ def test_component_constructors_accept_field_spec_only() -> None:
 
 
 @pytest.mark.fast_always
+def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
+    grid = make_test_grid(name="component-spec-redesign")
+    events: list[str] = []
+
+    def prefill(
+        component: vercor.Component,
+        context: vercor.PrefillContext,
+    ) -> vercor.PrefillResult:
+        events.append(f"prefill:{component.name}:{context.imports}:{context.exports}")
+        return vercor.PrefillResult(
+            data={"humidity": jnp.full(component.grid.shape, 0.5)}
+        )
+
+    def writer(context: vercor.SnapshotContext) -> None:
+        events.append(f"snapshot:{context.component.name}:{context.output_path.name}")
+
+    spec = vercor.ComponentSpec(
+        inputs=("temperature", "temperature"),
+        outputs=("sea_surface_temperature",),
+        defaults={"temperature": 280.0, "sea_surface_temperature": 281.0},
+        hooks=vercor.LifecycleHooks(prefill=prefill),
+        output=vercor.OutputConfig(snapshot_writer=writer),
+    )
+    component = vercor.Component.from_step(
+        "OCN",
+        grid,
+        lambda fields: {"sea_surface_temperature": fields["temperature"]},
+        spec=spec,
+    )
+
+    assert component.field_spec is spec
+    assert component.output.snapshot_writer is writer
+    assert spec.inputs == ("temperature",)
+    assert spec.outputs == ("sea_surface_temperature",)
+    assert spec.hooks.prefill is prefill
+    assert "ComponentSpec" in vercor.__all__
+    assert "LifecycleHooks" in vercor.__all__
+    assert "OutputConfig" in vercor.__all__
+    assert "FieldSpec" not in vercor.__all__
+    assert "ComponentHooks" not in vercor.__all__
+    assert "OutputSpec" not in vercor.__all__
+    assert not hasattr(vercor, "FieldSpec")
+    assert not hasattr(vercor, "ComponentHooks")
+    assert not hasattr(vercor, "OutputSpec")
+
+
+@pytest.mark.fast_always
+def test_state_views_use_domain_scopes_not_runtime_store_names() -> None:
+    component = DataComponent.from_fields(
+        "ATM",
+        make_test_grid(name="scope-state"),
+        fields={"temperature": 280.0},
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+
+    state = coupler.initial_state()
+    view = state.component("ATM")
+    updated = state.replace_fields(
+        "ATM", {"temperature": jnp.full(component.grid.shape, 281.0)}
+    )
+
+    assert view.field("temperature", scope="state").shape == component.grid.shape
+    assert view.field("temperature", scope="any").shape == component.grid.shape
+    assert tuple(view.fields(scope="state")) == ("temperature",)
+    assert (
+        float(jnp.mean(updated.component("ATM").field("temperature", scope="state")))
+        == 281.0
+    )
+    with pytest.raises(TypeError, match="store"):
+        view.field("temperature", store="data")  # type: ignore[call-arg]
+    assert not hasattr(state, "with_fields")
+
+
+@pytest.mark.fast_always
+def test_output_and_setup_configs_use_final_names() -> None:
+    period = vercor.PeriodOutput(frequency="month", variables=("temp",))
+    output = vercor.OutputConfig(period=period)
+    spinup = vercor.Spinup(enabled=True)
+    veros = vercor.VerosConfig(spinup=spinup, output=output)
+    jax_gcm = vercor.JaxGCMConfig(spinup=spinup, output=output)
+    camulator = vercor.CAMulatorConfig(
+        config_path="config.yml", spinup=spinup, output=output
+    )
+
+    assert output.period is period
+    assert spinup.duration.days == 2
+    assert veros.output.period is period
+    assert period.frequency == "month"
+    assert jax_gcm.jitted is True
+    assert camulator.device == "cuda"
+    for removed_name in ("SpinupConfig", "PeriodOutputConfig"):
+        assert removed_name not in vercor.__all__
+        assert not hasattr(vercor, removed_name)
+
+
+@pytest.mark.fast_always
 def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     grid = make_test_grid(name="v1-snapshot-context")
     contexts: list[vercor.SnapshotContext] = []
@@ -189,13 +289,13 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
             fields={"temperature": fields["temperature"]},
             payload=payload,
         ),
-        spec=FieldSpec(
+        spec=vercor.ComponentSpec(
             inputs=("temperature",),
             outputs=("temperature",),
             defaults={"temperature": 280.0},
+            output=vercor.OutputConfig(snapshot_writer=writer),
         ),
         payload=jnp.asarray(7.0),
-        output=vercor.OutputSpec(snapshot_writer=writer),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -240,7 +340,9 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
     component = DataComponent.from_fields(
         "OBS",
         grid,
-        hooks=vercor.ComponentHooks(prefill=prefill, validate=validate),
+        spec=vercor.ComponentSpec(
+            hooks=vercor.LifecycleHooks(prefill=prefill, validate=validate),
+        ),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -256,17 +358,17 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
 
 @pytest.mark.fast_always
 def test_setup_and_dtype_config_objects_are_public() -> None:
-    output = vercor.PeriodOutputConfig(frequency="month", variables=("temp", "salt"))
-    spinup = vercor.SpinupConfig(enabled=True)
+    output = vercor.PeriodOutput(frequency="month", variables=("temp", "salt"))
+    spinup = vercor.Spinup(enabled=True)
 
     assert output.frequency == "month"
     assert output.variables == ("temp", "salt")
     assert spinup.duration.days == 2
     assert vercor.DTypePolicy(enable_x64=True).enable_x64
-    assert "PeriodOutputConfig" in vercor.__all__
-    assert "SpinupConfig" in vercor.__all__
+    assert "PeriodOutput" in vercor.__all__
+    assert "Spinup" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__
-    assert "OutputSpec" in vercor.__all__
+    assert "OutputConfig" in vercor.__all__
     assert "setups" in vercor.__all__
     assert "ComponentOutput" not in vercor.__all__
 

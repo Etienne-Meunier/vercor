@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-import vercor.runtime.surface_masks as surface_masks_module
+import vercor._runtime.surface_masks as surface_masks_module
 import vercor.coupler as coupler_module
 import vercor.output.runtime as output_runtime_module
 from tests._coverage_support import (
@@ -47,18 +47,18 @@ from vercor.jax_logging import (
 )
 from vercor._regridders.bilinear import bilinear
 from vercor._regridders.conservative import conservative
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output.runtime import output_masks_for_component
-from vercor.output.adapters import OutputSpec, SnapshotContext
-from vercor.runtime.surface_masks import (
+from vercor.output.adapters import OutputConfig, SnapshotContext
+from vercor._runtime.surface_masks import (
     apply_surface_exchange_masks,
     create_surface_exchange_masks,
     validate_land_mask_consistency,
 )
 from vercor.state import ComponentState
-from vercor.runtime.topology import build_exchange_topology
-from vercor.runtime.topology_state import (
+from vercor._runtime.topology import build_exchange_topology
+from vercor._runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
     SurfaceExchangeMasks,
@@ -687,9 +687,7 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         topology_maps.fractional_masks[("ATM", "OCN", "conservative")],
         jax.Array,
     )
-    assert coupler._runtime_resources.runtime_contracts[
-        "ATM"
-    ] == RuntimeComponentContract(
+    assert coupler._runtime_resources.runtime_contracts["ATM"] == ExchangeContract(
         imports=(
             "temperature",
             "specific_humidity",
@@ -1332,7 +1330,7 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     def write_snapshot(context: SnapshotContext) -> None:
         calls.append(context)
 
-    component.output = OutputSpec(snapshot_writer=write_snapshot)
+    component.output = OutputConfig(snapshot_writer=write_snapshot)
 
     output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
@@ -1418,10 +1416,10 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         return component_state
 
     monkeypatch.setattr(
-        "vercor.runtime.driver.dispatch_component_exchanges", fake_dispatch
+        "vercor._runtime.driver.dispatch_component_exchanges", fake_dispatch
     )
-    monkeypatch.setattr("vercor.runtime.driver.receive_runtime_fields", fake_receive)
-    monkeypatch.setattr("vercor.runtime.driver.send_runtime_fields", fake_send)
+    monkeypatch.setattr("vercor._runtime.driver.receive_runtime_fields", fake_receive)
+    monkeypatch.setattr("vercor._runtime.driver.send_runtime_fields", fake_send)
 
     coupler.run()
 
@@ -1508,7 +1506,7 @@ def test_host_and_scanned_run_use_runtime_component_helper(
         return state
 
     monkeypatch.setattr(
-        "vercor.runtime.runner.step_runtime_component", fake_runtime_step
+        "vercor._runtime.runner.step_runtime_component", fake_runtime_step
     )
 
     host_coupler = Coupler(

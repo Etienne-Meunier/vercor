@@ -6,45 +6,45 @@ from typing import Any
 import jax
 
 from vercor.pytree import PyTreeNodeMixin
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.stores import FieldStore
 
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class RuntimeComponentState(PyTreeNodeMixin):
+class ComponentRuntimeState(PyTreeNodeMixin):
     """Immutable runtime state for one component."""
 
     pytree_children = ("data", "incoming", "outgoing", "runtime_payload")
 
-    data: RuntimeFieldStore
-    incoming: RuntimeFieldStore
-    outgoing: RuntimeFieldStore
+    data: FieldStore
+    incoming: FieldStore
+    outgoing: FieldStore
     runtime_payload: Any | None = None
 
-    def with_data(self, data: RuntimeFieldStore) -> "RuntimeComponentState":
+    def with_data(self, data: FieldStore) -> "ComponentRuntimeState":
         """Return this component state with replaced data."""
 
-        return RuntimeComponentState(
+        return ComponentRuntimeState(
             data=data,
             incoming=self.incoming,
             outgoing=self.outgoing,
             runtime_payload=self.runtime_payload,
         )
 
-    def with_incoming(self, incoming: RuntimeFieldStore) -> "RuntimeComponentState":
+    def with_incoming(self, incoming: FieldStore) -> "ComponentRuntimeState":
         """Return this component state with replaced incoming fields."""
 
-        return RuntimeComponentState(
+        return ComponentRuntimeState(
             data=self.data,
             incoming=incoming,
             outgoing=self.outgoing,
             runtime_payload=self.runtime_payload,
         )
 
-    def with_outgoing(self, outgoing: RuntimeFieldStore) -> "RuntimeComponentState":
+    def with_outgoing(self, outgoing: FieldStore) -> "ComponentRuntimeState":
         """Return this component state with replaced outgoing fields."""
 
-        return RuntimeComponentState(
+        return ComponentRuntimeState(
             data=self.data,
             incoming=self.incoming,
             outgoing=outgoing,
@@ -53,10 +53,10 @@ class RuntimeComponentState(PyTreeNodeMixin):
 
     def with_runtime_payload(
         self, runtime_payload: Any | None
-    ) -> "RuntimeComponentState":
+    ) -> "ComponentRuntimeState":
         """Return this component state with replaced runtime payload."""
 
-        return RuntimeComponentState(
+        return ComponentRuntimeState(
             data=self.data,
             incoming=self.incoming,
             outgoing=self.outgoing,
@@ -64,4 +64,4 @@ class RuntimeComponentState(PyTreeNodeMixin):
         )
 
 
-__all__ = ["RuntimeComponentState"]
+__all__ = ["ComponentRuntimeState"]

@@ -12,8 +12,8 @@ from vercor.grids import RectilinearGrid
 from vercor.host_arrays import transposed_host_array
 from tests.assertions import assert_allclose_compact
 from vercor.host_arrays import runtime_array_to_host
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 from vercor.state import ComponentState
 
 
@@ -45,15 +45,15 @@ def test_transposed_host_array_uses_canonical_host_transfer(
 
 
 def test_component_vector_speed_uses_jax_arrays() -> None:
-    state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
+    state = ComponentRuntimeState(
+        data=FieldStore.from_mapping(
             {
                 "u": jnp.asarray([[3.0, 0.0], [4.0, 0.0]]),
                 "v": jnp.asarray([[4.0, 0.0], [3.0, 0.0]]),
             }
         ),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
     )
     speed = component_vector_speed(state, "u", "v")
 

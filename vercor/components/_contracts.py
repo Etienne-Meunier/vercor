@@ -7,7 +7,7 @@ from vercor.components.contracts import (
     AuthorStepCallable,
     ComponentStepCallable,
     ComponentStepReturn,
-    FieldSpec,
+    ComponentSpec,
     FieldNames,
     StepResult,
 )
@@ -52,7 +52,7 @@ def normalize_author_field_values(
     return normalized
 
 
-def declared_runtime_field_names(field_spec: FieldSpec) -> tuple[str, ...]:
+def declared_runtime_field_names(field_spec: ComponentSpec) -> tuple[str, ...]:
     """Return all fields that a declaration validates at runtime."""
 
     return unique_field_names(
@@ -65,15 +65,17 @@ def declared_runtime_field_names(field_spec: FieldSpec) -> tuple[str, ...]:
 
 
 def merge_component_outputs(
-    field_spec: FieldSpec,
+    field_spec: ComponentSpec,
     output_names: Iterable[str],
-) -> FieldSpec:
+) -> ComponentSpec:
     """Return ``field_spec`` with additional output names merged in."""
 
-    return FieldSpec(
+    return ComponentSpec(
         inputs=field_spec.inputs,
         outputs=unique_field_names((*field_spec.outputs, *tuple(output_names))),
         defaults=field_spec.defaults,
+        hooks=field_spec.hooks,
+        output=field_spec.output,
     )
 
 
@@ -82,7 +84,7 @@ __all__ = [
     "AuthorStepCallable",
     "ComponentStepCallable",
     "ComponentStepReturn",
-    "FieldSpec",
+    "ComponentSpec",
     "FieldNames",
     "StepResult",
     "declared_runtime_field_names",

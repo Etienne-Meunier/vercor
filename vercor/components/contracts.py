@@ -9,6 +9,7 @@ from vercor.components.contexts import (
     StepContext,
 )
 from vercor._field_names import unique_field_names as _unique_field_names
+from vercor.output.adapters import OutputConfig
 from vercor.types import RuntimeArray
 
 KEEP_PAYLOAD: Final = object()
@@ -74,7 +75,7 @@ ComponentValidateHook = Callable[[Any, ValidationContext], None]
 
 
 @dataclass(frozen=True)
-class ComponentHooks:
+class LifecycleHooks:
     """Optional lifecycle hooks for component setup and runtime customization."""
 
     initialize: ComponentInitializeHook | None = None
@@ -84,7 +85,7 @@ class ComponentHooks:
 
 
 @dataclass(frozen=True, init=False)
-class FieldSpec:
+class ComponentSpec:
     """Author-facing declaration of a component's runtime data-field contract.
 
     Attributes:
@@ -97,32 +98,43 @@ class FieldSpec:
     inputs: FieldNames = ()
     outputs: FieldNames = ()
     defaults: Mapping[str, object] = field(default_factory=dict)
+    hooks: LifecycleHooks = field(default_factory=LifecycleHooks)
+    output: OutputConfig = field(default_factory=OutputConfig)
 
     def __init__(
         self,
         inputs: FieldNames = (),
         outputs: FieldNames = (),
         defaults: Mapping[str, object] | None = None,
+        *,
+        hooks: LifecycleHooks | None = None,
+        output: OutputConfig | None = None,
     ) -> None:
         """Create a field declaration."""
 
         object.__setattr__(self, "inputs", _unique_field_names(inputs))
         object.__setattr__(self, "outputs", _unique_field_names(outputs))
         object.__setattr__(self, "defaults", dict(defaults or {}))
+        object.__setattr__(self, "hooks", LifecycleHooks() if hooks is None else hooks)
+        object.__setattr__(
+            self,
+            "output",
+            OutputConfig() if output is None else output,
+        )
 
 
 __all__ = [
     "AuthorFieldValues",
     "AuthorStepCallable",
     "ComponentCreatePayloadHook",
-    "ComponentHooks",
+    "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",
     "ComponentStepCallable",
     "ComponentStepReturn",
     "ComponentValidateHook",
     "FieldNames",
-    "FieldSpec",
+    "ComponentSpec",
     "KEEP_PAYLOAD",
     "PrefillContext",
     "PrefillResult",

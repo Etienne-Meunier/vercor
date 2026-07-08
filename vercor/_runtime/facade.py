@@ -12,35 +12,32 @@ from vercor.clock import Clock
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor._run_order import normalize_run_order
-from vercor.runtime.dispatch_context import (
+from vercor._runtime.dispatch_context import (
     RuntimeDispatchContext,
     build_runtime_dispatch_context,
 )
-from vercor.runtime.initialization import (
+from vercor._runtime.initialization import (
     RuntimeInitializationState,
     initialize_coupler_runtime as _initialize_coupler_runtime,
 )
-from vercor.runtime.preparation import (
+from vercor._runtime.preparation import (
     create_runtime_state,
     prepare_runtime_state,
-    runtime_state_from_components,
-    validate_runtime_state,
 )
-from vercor.runtime.resources import CouplerRuntimeResources
-from vercor.runtime.run_context import RuntimeRunContext
-from vercor.runtime.runner import (
+from vercor._runtime.resources import CouplerRuntimeResources
+from vercor._runtime.run_context import RuntimeRunContext
+from vercor._runtime.runner import (
     run_coupler_runtime,
 )
 from vercor.state import RunState
 from vercor.settings import Settings
-from vercor.state import ComponentState
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
 
 
 @dataclass(frozen=True)
-class RuntimeFacadeInputs:
+class RuntimeInputs:
     """Repeated static coupler inputs consumed by runtime facade helpers."""
 
     components: Mapping[str, "Component"]
@@ -51,9 +48,15 @@ class RuntimeFacadeInputs:
     settings: Settings
 
 
+def create_runtime_resources() -> CouplerRuntimeResources:
+    """Return a fresh mutable runtime resource holder for a coupler."""
+
+    return CouplerRuntimeResources()
+
+
 def initialize_coupler_runtime(
     *,
-    inputs: RuntimeFacadeInputs,
+    inputs: RuntimeInputs,
     logger: LoggerLike,
 ) -> RuntimeInitializationState:
     """Initialize components, runtime contracts, and exchange topology."""
@@ -74,7 +77,7 @@ def initialize_coupler_runtime(
 
 def runtime_dispatch_context(
     *,
-    inputs: RuntimeFacadeInputs,
+    inputs: RuntimeInputs,
 ) -> RuntimeDispatchContext:
     """Return static runtime dispatch plumbing for a configured coupler."""
 
@@ -90,7 +93,7 @@ def runtime_dispatch_context(
 
 def runtime_run_context(
     *,
-    inputs: RuntimeFacadeInputs,
+    inputs: RuntimeInputs,
     logger: LoggerLike,
 ) -> RuntimeRunContext:
     """Return static runtime inputs bundled for execution."""
@@ -109,7 +112,7 @@ def runtime_run_context(
 def run(
     runtime_state: RunState,
     *,
-    inputs: RuntimeFacadeInputs,
+    inputs: RuntimeInputs,
     logger: LoggerLike,
 ) -> RunState:
     """Run a validated runtime state through the selected runtime path."""
@@ -123,44 +126,10 @@ def run(
     )
 
 
-def runtime_component_view(
-    *,
-    components: Mapping[str, "Component"],
-    runtime_state: RunState,
-    name: str,
-) -> ComponentState:
-    """Return a single object containing component metadata and runtime fields."""
-
-    return ComponentState._from_runtime(
-        name,
-        components[name].grid,
-        runtime_state._component_state(name),
-    )
-
-
-def runtime_component_views(
-    *,
-    components: Mapping[str, "Component"],
-    runtime_state: RunState,
-    names: Sequence[str] | None = None,
-) -> dict[str, ComponentState]:
-    """Return named runtime component views in component or requested order."""
-
-    selected_names = tuple(components) if names is None else tuple(names)
-    return {
-        name: runtime_component_view(
-            components=components,
-            runtime_state=runtime_state,
-            name=name,
-        )
-        for name in selected_names
-    }
-
-
 def finalize(
     *,
     final_state: RunState,
-    inputs: RuntimeFacadeInputs,
+    inputs: RuntimeInputs,
     output_file_mask: Path | None = None,
     output_dir: Path = Path("."),
     filename_template: str = "{component}.runtime_fields.nc",
@@ -201,16 +170,11 @@ def _final_snapshot_time(clock: Clock) -> datetime | ModelDateTime:
 
 
 __all__ = [
-    "RuntimeFacadeInputs",
+    "RuntimeInputs",
+    "create_runtime_resources",
     "create_runtime_state",
     "finalize",
     "initialize_coupler_runtime",
-    "prepare_runtime_state",
     "run",
-    "runtime_component_view",
-    "runtime_component_views",
-    "runtime_dispatch_context",
-    "runtime_run_context",
-    "runtime_state_from_components",
-    "validate_runtime_state",
+    "prepare_runtime_state",
 ]

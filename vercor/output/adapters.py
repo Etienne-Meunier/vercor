@@ -13,6 +13,7 @@ from vercor.jax_logging import LoggerLike
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
+    from vercor.setup_config import PeriodOutput
     from vercor.state import ComponentState
 
 
@@ -32,14 +33,15 @@ SnapshotWriter: TypeAlias = Callable[[SnapshotContext], None]
 
 
 @dataclass(frozen=True)
-class OutputSpec:
+class OutputConfig:
     """Public output extension specification for a component."""
 
     snapshot_writer: SnapshotWriter | None = None
+    period: "PeriodOutput | None" = None
 
 
 __all__ = [
-    "OutputSpec",
+    "OutputConfig",
     "SnapshotContext",
     "SnapshotWriter",
 ]

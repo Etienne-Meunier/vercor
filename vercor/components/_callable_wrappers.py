@@ -6,15 +6,11 @@ from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from vercor.components.contracts import (
     AuthorStepCallable,
-    ComponentHooks,
+    LifecycleHooks,
     ComponentStepCallable,
     ComponentStepReturn,
-    FieldSpec,
+    ComponentSpec,
 )
-from vercor.components._constructor_options import (
-    normalize_lifecycle_hooks,
-)
-from vercor.components._lifecycle import ComponentLifecycleHooks
 from vercor.components._runtime_fields import apply_step_result, runtime_fields
 from vercor.exceptions import ComponentError
 from vercor.types import RuntimeArray
@@ -22,7 +18,7 @@ from vercor.types import RuntimeArray
 if TYPE_CHECKING:
     from vercor.components.base import Component
     from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor._runtime.state import ComponentRuntimeState
 
 
 @dataclass(frozen=True)
@@ -31,24 +27,24 @@ class CallableComponentOptions:
 
     step: AuthorStepCallable
     payload: Any | None
-    field_spec: FieldSpec
-    lifecycle_hooks: ComponentLifecycleHooks
+    field_spec: ComponentSpec
+    lifecycle_hooks: LifecycleHooks
 
 
 def callable_component_options(
     step: AuthorStepCallable,
     *,
-    spec: FieldSpec | None = None,
+    spec: ComponentSpec | None = None,
     payload: Any | None = None,
-    hooks: ComponentHooks | None = None,
 ) -> CallableComponentOptions:
     """Normalize shared public callable component constructor options."""
 
+    field_spec = ComponentSpec() if spec is None else spec
     return CallableComponentOptions(
         step=step,
         payload=payload,
-        field_spec=FieldSpec() if spec is None else spec,
-        lifecycle_hooks=normalize_lifecycle_hooks(hooks=hooks),
+        field_spec=field_spec,
+        lifecycle_hooks=field_spec.hooks,
     )
 
 
@@ -164,8 +160,8 @@ class _CallableRuntimeMixin:
         *,
         step: AuthorStepCallable,
         payload: Any | None,
-        field_spec: FieldSpec,
-        lifecycle_hooks: ComponentLifecycleHooks,
+        field_spec: ComponentSpec,
+        lifecycle_hooks: LifecycleHooks,
     ) -> None:
         component = cast("Component", self)
         self._step = normalize_component_step_callable(step)
@@ -180,9 +176,9 @@ class _CallableRuntimeMixin:
 
     def _step_callable_runtime_state(
         self,
-        component_state: "RuntimeComponentState",
+        component_state: "ComponentRuntimeState",
         context: StepContext,
-    ) -> "RuntimeComponentState":
+    ) -> "ComponentRuntimeState":
         """Advance callable-backed runtime state using the normalized step."""
 
         component = cast("Component", self)

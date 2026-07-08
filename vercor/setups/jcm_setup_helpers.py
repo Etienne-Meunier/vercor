@@ -8,7 +8,8 @@ from typing import Any
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
 from vercor.grids import RectilinearGrid
-from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+from vercor.output import OutputConfig
+from vercor.setup_config import JaxGCMConfig, PeriodOutput, Spinup
 
 
 @dataclass(frozen=True)
@@ -68,14 +69,18 @@ def make_jcm_land_atmosphere(
     *,
     inputs: JCMInputs | None = None,
     custom_parameters: Mapping[str, float] | None = None,
-    spinup: SpinupConfig | None = None,
+    spinup: Spinup | None = None,
     jitted: bool = True,
-    output: PeriodOutputConfig | None = None,
+    output: OutputConfig | None = None,
 ) -> JCMLandAtmosphereSetup:
     """Create paired JCM land and atmosphere setup components for an ocean grid."""
 
-    spinup_config = SpinupConfig(enabled=True) if spinup is None else spinup
-    output_config = PeriodOutputConfig(frequency="month") if output is None else output
+    spinup_config = Spinup(enabled=True) if spinup is None else spinup
+    output_config = (
+        OutputConfig(period=PeriodOutput(frequency="month"))
+        if output is None
+        else output
+    )
     jcm_inputs = load_jcm_inputs() if inputs is None else inputs
     coords = jcm_inputs.coords
     terrain = jcm_inputs.terrain
@@ -87,16 +92,19 @@ def make_jcm_land_atmosphere(
         raise ValueError("JCM land grid requires a binary mask for terrain patching")
     terrain.fmask = transposed_host_array(land.grid.binary_mask)
 
-    atmosphere_kwargs: dict[str, Any] = {
-        "forcing_data": forcing,
-        "spinup": spinup_config,
-        "jitted": jitted,
-        "output": output_config,
-    }
-    if custom_parameters is not None:
-        atmosphere_kwargs["custom_parameters"] = dict(custom_parameters)
-
-    atmosphere = make_jax_gcm(coords, terrain, **atmosphere_kwargs)
+    atmosphere = make_jax_gcm(
+        coords,
+        terrain,
+        config=JaxGCMConfig(
+            custom_parameters=(
+                None if custom_parameters is None else dict(custom_parameters)
+            ),
+            forcing_data=forcing,
+            spinup=spinup_config,
+            output=output_config,
+            jitted=jitted,
+        ),
+    )
     return JCMLandAtmosphereSetup(
         land=land,
         atmosphere=atmosphere,

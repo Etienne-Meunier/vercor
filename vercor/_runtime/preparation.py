@@ -2,31 +2,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from vercor.runtime.contracts import RuntimeComponentContract, build_runtime_contracts
-from vercor.runtime.coupler_state import (
+from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
+from vercor._runtime.coupler_state import (
     runtime_state_from_components as _runtime_state_from_components,
 )
-from vercor.runtime.dispatch_context import build_runtime_dispatch_context
-from vercor.runtime.driver import prime_runtime_outgoing
+from vercor._runtime.dispatch_context import build_runtime_dispatch_context
+from vercor._runtime.driver import prime_runtime_outgoing
 from vercor._run_order import normalize_run_order
-from vercor.runtime.state_validation import (
+from vercor._runtime.state_validation import (
     validate_runtime_state as _validate_runtime_state,
 )
 from vercor.state import RunState
-from vercor.runtime.time import initial_runtime_step_info
+from vercor._runtime.time import initial_runtime_step_info
 
 if TYPE_CHECKING:
-    from vercor.runtime.facade import RuntimeFacadeInputs
+    from vercor._runtime.facade import RuntimeInputs
 
 
 def runtime_state_from_components(
     *,
-    inputs: "RuntimeFacadeInputs",
+    inputs: "RuntimeInputs",
     prefill_missing: bool,
 ) -> RunState:
     """Build immutable runtime state from setup components and exchanges."""
 
-    runtime_contracts = build_runtime_contracts(
+    runtime_contracts = build_exchange_contracts(
         tuple(inputs.components),
         inputs.exchanges,
         validate_endpoints=False,
@@ -46,11 +46,11 @@ def runtime_state_from_components(
 def validate_runtime_state(
     runtime_state: RunState,
     *,
-    inputs: "RuntimeFacadeInputs",
-) -> dict[str, RuntimeComponentContract]:
+    inputs: "RuntimeInputs",
+) -> dict[str, ExchangeContract]:
     """Validate runtime state and return the contracts used for validation."""
 
-    runtime_contracts = build_runtime_contracts(
+    runtime_contracts = build_exchange_contracts(
         tuple(inputs.components),
         inputs.exchanges,
         validate_endpoints=False,
@@ -69,7 +69,7 @@ def validate_runtime_state(
 
 def create_runtime_state(
     *,
-    inputs: "RuntimeFacadeInputs",
+    inputs: "RuntimeInputs",
     prefill_missing: bool,
 ) -> RunState:
     """Create, prime, and validate immutable runtime state."""
@@ -104,7 +104,7 @@ def create_runtime_state(
 def prepare_runtime_state(
     initial_state: RunState | None,
     *,
-    inputs: "RuntimeFacadeInputs",
+    inputs: "RuntimeInputs",
     validate_state: bool = True,
 ) -> RunState:
     """Return a runtime state ready for execution."""

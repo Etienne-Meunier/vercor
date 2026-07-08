@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 from vercor.clock import Clock
 from vercor.jax_logging import LoggerLike
-from vercor.runtime.dispatch_context import RuntimeDispatchContext
-from vercor.runtime.interrupts import RuntimeInterruptController
+from vercor._runtime.dispatch_context import RuntimeDispatchContext
+from vercor._runtime.interrupts import RuntimeInterruptController
 
 
 @dataclass(frozen=True)

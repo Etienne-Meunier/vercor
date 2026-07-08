@@ -19,9 +19,9 @@ from vercor.setups.slab.ocean import make_slab_ocean
 from vercor.setups.slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
-from vercor.runtime.state import RuntimeComponentState
+from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.stores import FieldStore
 
 
 class _IdentityRegridder:
@@ -42,20 +42,20 @@ def _component_state(
     data: dict[str, jax.Array],
     imports: tuple[str, ...],
     exports: tuple[str, ...],
-) -> RuntimeComponentState:
+) -> ComponentRuntimeState:
     _ = name
     zeros = jnp.zeros((2, 2), dtype=jnp.float64)
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
+    return ComponentRuntimeState(
+        data=FieldStore.from_mapping(
             {
                 field: data.get(field, zeros)
                 for field in sorted(set(data) | set(imports) | set(exports))
             }
         ),
-        incoming=RuntimeFieldStore.from_mapping(
+        incoming=FieldStore.from_mapping(
             {field: data.get(field, zeros) for field in imports}
         ),
-        outgoing=RuntimeFieldStore.from_mapping(
+        outgoing=FieldStore.from_mapping(
             {field: data.get(field, zeros) for field in exports}
         ),
     )
@@ -179,7 +179,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
     return RunState._from_runtime(
         component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
-        fractional_masks=RuntimeFieldStore.from_mapping(
+        fractional_masks=FieldStore.from_mapping(
             {
                 "OCN|ATM|_identity_factory": jnp.ones_like(sea_surface_temperature),
                 "ATM|OCN|_identity_factory": jnp.ones_like(sea_surface_temperature),

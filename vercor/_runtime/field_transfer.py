@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.time import RuntimeStepInfo
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.time import RuntimeStepInfo
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 
 def receive_runtime_fields(
-    component_state: RuntimeComponentState,
-    contract: RuntimeComponentContract,
-) -> RuntimeComponentState:
+    component_state: ComponentRuntimeState,
+    contract: ExchangeContract,
+) -> ComponentRuntimeState:
     """Move imported incoming runtime fields into component data."""
 
     return component_state.with_data(
@@ -31,7 +31,7 @@ def receive_runtime_fields(
 
 def _select_runtime_field_for_send(
     component: "Component",
-    component_state: RuntimeComponentState,
+    component_state: ComponentRuntimeState,
     field_name: str,
     step_info: RuntimeStepInfo | None,
 ) -> RuntimeArray:
@@ -56,11 +56,11 @@ def _select_runtime_field_for_send(
 
 def send_runtime_fields(
     component: "Component",
-    component_state: RuntimeComponentState,
+    component_state: ComponentRuntimeState,
     step_info: RuntimeStepInfo | None = None,
     *,
-    contract: RuntimeComponentContract,
-) -> RuntimeComponentState:
+    contract: ExchangeContract,
+) -> ComponentRuntimeState:
     """Move exported component data into outgoing runtime fields."""
 
     return component_state.with_outgoing(

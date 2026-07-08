@@ -9,6 +9,21 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local API redesign cleanup validation passed as of 2026-07-08 using
+  the direct `scipy` environment executable: focused API/runtime-boundary
+  pytest, full fast pytest, full pytest, coverage pytest at 90% total, Black,
+  flake8, mypy, example `compileall`, and `git diff --check`. The breaking
+  cleanup consolidates component authoring around
+  `ComponentSpec(..., hooks=LifecycleHooks(...), output=OutputConfig(...))`,
+  removes old public field/hook/output/spinup names, replaces runtime-store
+  public view terms with `scope="state|received|sent|any"`, moves runtime
+  internals under `vercor._runtime`, keeps `vercor.runtime` as an empty package
+  shell, renames runtime contracts/stores to `ExchangeContract`,
+  `ComponentRuntimeState`, and `FieldStore`, and moves bundled setup factories
+  to `JaxGCMConfig`, `VerosConfig`, and `CAMulatorConfig`. Black emitted the
+  recurring Python 3.13/target-3.14 warning; full pytest/coverage emitted only
+  the existing external JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 - Latest local expired deprecation residue cleanup validation passed as of
   2026-07-08 using the direct `scipy` environment executable: focused cleanup
   pytest for API boundaries/public API contracts/runtime state/runtime facade,
@@ -27,10 +42,10 @@ historical commands, failure messages, or detailed validation notes.
   direct `scipy` environment executable: focused API-boundary pytest, Black,
   flake8, mypy, full fast pytest, full pytest, example `compileall`, coverage
   pytest at 90% total, and `git diff --check`. The rewrite is the breaking
-  `0.6.0` cleanup: component constructors now take `spec=FieldSpec(...)`,
-  component snapshot output uses `OutputSpec` and public `SnapshotContext`,
+  `0.6.0` cleanup: component constructors now take `spec=ComponentSpec(...)`,
+  component snapshot output uses `OutputConfig` and public `SnapshotContext`,
   runtime prefill/validation hooks use typed public contexts/results, external
-  setup factories accept `SpinupConfig` and `PeriodOutputConfig`, the root
+  setup factories accept `Spinup` and `PeriodOutput`, the root
   facade exports the final public config/output types plus `setups`, and active
   design/dependency docs describe the new boundary. Black emitted the recurring
   Python 3.13/target-3.14 warning; full pytest/coverage emitted only the
@@ -545,7 +560,7 @@ historical commands, failure messages, or detailed validation notes.
   `vercor.recipes`, `load_jcm_inputs(...)`, and
   `load_jcm_coords_terrain_forcing(...)`.
 - Deleted obsolete shim modules `vercor/field_names.py`,
-  `vercor/runtime/views.py`, and `vercor/_fields.py`; refreshed API-boundary
+  `vercor/_runtime/views.py`, and `vercor/_fields.py`; refreshed API-boundary
   tests so removed modules and symbols stay absent without warning tests.
 - Updated `DESIGN.md` and `DEPENDENCIES.md` to describe only the supported
   public API.
@@ -646,7 +661,7 @@ historical commands, failure messages, or detailed validation notes.
   `Coupler.finalize(...)`, output-helper reexports from `vercor.output`, and
   top-level `CouplerState`/`ComponentView` exports.
 - Normalized component authoring to direct `inputs`/`outputs`/`defaults` field
-  declarations and `hooks=ComponentHooks(...)` lifecycle installation.
+  declarations and `hooks=LifecycleHooks(...)` lifecycle installation.
 - Moved public regridding imports to `vercor.regridding`; concrete regridder
   classes remain implementation details under `vercor.regridders.*`.
 - Updated tests, examples, `DESIGN.md`, and `DEPENDENCIES.md` to the breaking
@@ -703,7 +718,7 @@ historical commands, failure messages, or detailed validation notes.
   names, short exchange recipe aliases, regridder short aliases, long coupler
   method wrappers, setup orchestration helpers, and the shared deprecation
   helper module.
-- Kept supported behavior on canonical APIs: `FieldSpec(defaults=...)`,
+- Kept supported behavior on canonical APIs: `ComponentSpec(defaults=...)`,
   `Component.from_step(...)`, `HostComponent.from_step(...)`,
   `Exchange(source, target, fields, regrid=...)`, `Coupler.state/view/views`,
   `Coupler.run(state=...)`, `Coupler.finalize(output=...)`, and
@@ -720,13 +735,13 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-07-03: API Redesign Implementation
 
 - Made short component names canonical in `vercor` and `vercor.components`;
-  legacy names such as `HostRuntimeComponent`, `ComponentFieldSpec`, and
+  legacy names such as `HostRuntimeComponent`, `ComponentComponentSpec`, and
   component-prefixed contexts now resolve through deprecating `__getattr__`
   aliases outside `__all__`.
 - Added shared `_deprecation` and `components._constructor_options` helpers,
   centralized `defaults`/`default_fields` and lifecycle-hook normalization,
   and moved setup/adapters/examples/tests to `from_step`, `HostComponent`,
-  `FieldSpec`, `StepResult`, `SetupContext`, and `StepContext`.
+  `ComponentSpec`, `StepResult`, `SetupContext`, and `StepContext`.
 - Canonicalized exchange and coupler workflows around `target`/`fields`/`regrid`
   plus `Coupler.state/view/views`, leaving old setup helpers and long coupler
   methods as warning wrappers for the deprecation window.
@@ -743,7 +758,7 @@ historical commands, failure messages, or detailed validation notes.
   regrid, name=None)`, added a stable derived `label`, and kept
   `ExchangeSpec`, `destination`, `field_names`, and `regridder_factory` as
   migration aliases.
-- Added the component-author facade names `FieldSpec`, `StepContext`,
+- Added the component-author facade names `ComponentSpec`, `StepContext`,
   `SetupContext`, `StepResult`, `KEEP_PAYLOAD`, `Component.from_step(...)`,
   `DataComponent.from_fields(...)`, and `HostComponent.from_step(...)`, with
   old component/runtime names left as compatibility aliases.
@@ -800,7 +815,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-07-02: Runtime and CAMulator Helper Simplification
 
-- Removed the redundant `RuntimeFieldStore.get_or(...)` default helper;
+- Removed the redundant `FieldStore.get_or(...)` default helper;
   `runtime_field_or(...)` now returns normalized component defaults directly,
   while zero-like fallback behavior stays on the runtime store.
 - Replaced value-scanning `get_component(...)` with keyed
@@ -853,7 +868,7 @@ historical commands, failure messages, or detailed validation notes.
   only production owner that needed them.
 - Simplified component lifecycle hook setup by deleting the private owner
   protocol, hook merge method, and installer helper. Constructors now build one
-  `ComponentLifecycleHooks` value, and callable/data wrappers assign it
+  `LifecycleHooks` value, and callable/data wrappers assign it
   directly to the component's private lifecycle field.
 - Relaxed architecture-locking tests around those old helper layers while
   keeping public API and removed-module guards.
@@ -866,7 +881,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-07-02: Runtime Cache and Donation API Removal
 
-- Removed `vercor.runtime.cache`, `CompiledRuntimeCache`, runtime cache keys,
+- Removed `vercor._runtime.cache`, `CompiledRuntimeCache`, runtime cache keys,
   public cache inspection/clearing facades, and the `donate_state` run option.
 - Simplified runtime resources to topology maps, runtime contracts, and the
   interrupt controller. `RuntimeRunContext` now carries only static execution
@@ -1058,7 +1073,7 @@ historical commands, failure messages, or detailed validation notes.
   the private component-contract reexport layer. Boundary tests now assert that
   the alias stays absent from both surfaces.
 - Removed the `RuntimeRegridder` concrete union from
-  `vercor.runtime.topology_state`; grouped runtime topology maps now avoid
+  `vercor._runtime.topology_state`; grouped runtime topology maps now avoid
   importing bilinear/conservative regridder implementations and type the
   regridder map as an internal object container.
 - Updated `DEPENDENCIES.md` so runtime topology state no longer lists direct
@@ -1215,7 +1230,7 @@ historical commands, failure messages, or detailed validation notes.
 - Removed the unused `runtime.facade.run_scanned()` shortcut and the thin
   `refresh_runtime_contracts()` wrapper. Focused test helpers now call the
   scanned runtime owner directly, and runtime preparation calls
-  `build_runtime_contracts()` at the point of use.
+  `build_exchange_contracts()` at the point of use.
 - Made `RuntimeTopologyMaps` a mutable slotted dataclass, matching its actual
   setup-time mutation model while leaving the surrounding topology-state
   containers frozen.
@@ -1363,8 +1378,8 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-06-11: Runtime and Component Over-Engineering Sweep
 
-- Inlined compiled-runtime aliases into `vercor.runtime.cache` and removed the
-  alias-only `vercor.runtime.compilation` module.
+- Inlined compiled-runtime aliases into `vercor._runtime.cache` and removed the
+  alias-only `vercor._runtime.compilation` module.
 - Simplified `CouplerRuntimeResources` to public dataclass fields and moved
   cache clearing/counting call sites to the cache owner.
 - Removed the private runtime-preparation input protocol, the time-selection
@@ -1985,7 +2000,7 @@ historical commands, failure messages, or detailed validation notes.
 - Kept `vercor.calendar` focused on calendar constants, model-calendar datetime
   values, leap-year logic, and month/day conversion while preserving the
   historic forcing-index imports through thin compatibility delegates.
-- Updated `vercor.time_selection` and `vercor.runtime.time` to import forcing
+- Updated `vercor.time_selection` and `vercor._runtime.time` to import forcing
   policy from `vercor.forcing_index`, removing the local 360-day wrapper from
   time selection.
 - Added boundary and behavior coverage for forcing-index ownership, runtime
@@ -2146,7 +2161,7 @@ historical commands, failure messages, or detailed validation notes.
   `vercor.components._lifecycle` and narrowed component authoring protocols so
   lifecycle storage is no longer exposed as `Any`.
 - Grouped callable factory lifecycle callbacks into one
-  `ComponentLifecycleHooks` container inside callable construction metadata.
+  `LifecycleHooks` container inside callable construction metadata.
 - Centralized runtime-payload hook precedence in
   `ComponentLifecycleMixin`; callable wrappers now provide only the default
   callable payload fallback when no custom payload hook is installed.
@@ -2202,7 +2217,7 @@ historical commands, failure messages, or detailed validation notes.
 
 - Added `vercor.components.contexts` as the canonical owner for
   `ComponentSetupContext` and `ComponentStepContext`.
-- Removed the internal `vercor.runtime.contexts` module and replaced production
+- Removed the internal `vercor._runtime.contexts` module and replaced production
   and test imports of `ComponentInitContext` / `RuntimeStepContext` with the
   public component-author context names.
 - Updated component contracts and package facades so context dataclasses are
@@ -2230,13 +2245,13 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-06-01: Runtime Topology Policy Boundary Refactor
 
-- Added `vercor.runtime.topology_state` as the neutral owner for grouped
+- Added `vercor._runtime.topology_state` as the neutral owner for grouped
   `RuntimeTopologyMaps`, `SurfaceExchangeMasks`, and `ExchangeTopologyState`.
 - Split generic exchange regridder/identity-mask map construction into
-  `vercor.runtime.exchange_topology`, and moved ATM/OCN/LND surface-mask
+  `vercor._runtime.exchange_topology`, and moved ATM/OCN/LND surface-mask
   creation, validation, and bilinear mask patching into
-  `vercor.runtime.surface_masks`.
-- Reduced `vercor.runtime.topology` to orchestration: it composes generic
+  `vercor._runtime.surface_masks`.
+- Reduced `vercor._runtime.topology` to orchestration: it composes generic
   exchange topology maps with surface masks and returns one explicit topology
   state. Runtime resources and initialization now import topology state
   contracts from the neutral state module, and `Coupler.initialize()` reads
@@ -2258,14 +2273,14 @@ historical commands, failure messages, or detailed validation notes.
   `conda run -n scipy pytest tests/ -q --tb=short`. The existing Black Python
   3.13/target-3.14 warning and JAX dtype-promotion warning remain.
 - Failed approaches recorded: the first focused green run exposed a stale
-  boundary assertion that still expected `vercor.runtime.topology` to import
+  boundary assertion that still expected `vercor._runtime.topology` to import
   component-topology lookup helpers; it now checks the new surface-mask owner.
   The first flake8 pass reported one stale unused test local left by the import
   move; it was removed before rerunning flake8.
 
 ### 2026-06-01: Runtime Compilation Cache Boundary Refactor
 
-- Added `vercor.runtime.compilation` as the neutral owner for
+- Added `vercor._runtime.compilation` as the neutral owner for
   `CompiledRuntime` and `RuntimeCompilationKey`.
 - Moved context-derived compiled-runtime cache-key construction onto frozen
   `RuntimeRunContext`, leaving `CompiledRuntimeCache` focused on compiled
@@ -2274,7 +2289,7 @@ historical commands, failure messages, or detailed validation notes.
   `context.compiled_runtime_cache_key(...)` into `get_or_compile(...)`, and
   updated runtime resources to type compiled cache values through the neutral
   compilation module instead of importing the alias from `run_context`.
-- Strengthened boundary coverage so `vercor.runtime.cache` cannot drift back to
+- Strengthened boundary coverage so `vercor._runtime.cache` cannot drift back to
   importing or mentioning `RuntimeRunContext`, context-aware cache helpers, or
   context-derived key construction.
 - Updated `DESIGN.md` and `DEPENDENCIES.md` for the compilation alias,
@@ -2298,7 +2313,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-06-01: Compiled Runtime Cache Boundary Refactor
 
-- Added `vercor.runtime.cache.CompiledRuntimeCache` as the owner for compiled
+- Added `vercor._runtime.cache.CompiledRuntimeCache` as the owner for compiled
   scanned-runtime cache storage, JIT wrapping, context-derived cache-key lookup,
   clearing, count, and value inspection.
 - Changed `RuntimeRunContext` to carry the cache owner instead of a mutable
@@ -2331,9 +2346,9 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-06-01: Runtime Resource and Topology Boundary Refactor
 
-- Added `vercor.runtime.component_topology` as the owner for default
+- Added `vercor._runtime.component_topology` as the owner for default
   topology component-name validation and component lookup, leaving
-  `vercor.runtime.topology` focused on exchange regridder/mask setup.
+  `vercor._runtime.topology` focused on exchange regridder/mask setup.
 - Added grouped `RuntimeTopologyMaps` and changed `ExchangeTopologyState` to
   carry topology maps as one boundary object instead of exposing three parallel
   map fields.
@@ -2344,7 +2359,7 @@ historical commands, failure messages, or detailed validation notes.
 - Made `RuntimeRunContext` frozen to document that run-context identity is a
   static execution input bundle.
 - Updated focused boundary coverage plus runtime/topology/output tests so the
-  new ownership cannot drift back into `vercor.runtime.topology` or raw
+  new ownership cannot drift back into `vercor._runtime.topology` or raw
   resource attributes.
 - Updated `DESIGN.md` and `DEPENDENCIES.md` for component-topology ownership,
   grouped topology maps, private runtime resources, and the frozen run context.
@@ -2362,20 +2377,20 @@ historical commands, failure messages, or detailed validation notes.
   `RuntimeTopologyMaps` at module import time and failed during collection
   instead of as an assertion; it now imports dynamically inside the test. The
   first full fast suite exposed one stale API-boundary assertion that still
-  expected topology-name validation in `vercor.runtime.topology`; it now checks
-  `vercor.runtime.component_topology`.
+  expected topology-name validation in `vercor._runtime.topology`; it now checks
+  `vercor._runtime.component_topology`.
 
 ### 2026-06-01: Runtime State Validation Boundary Refactor
 
 - Moved configured runtime-state/topology validation from
-  `vercor.runtime.coupler_state` into `vercor.runtime.state_validation`, leaving
+  `vercor._runtime.coupler_state` into `vercor._runtime.state_validation`, leaving
   coupler-state ownership focused on immutable runtime state assembly and
   runtime-contract refresh.
-- Updated `vercor.runtime.preparation` to call the new validation owner while
+- Updated `vercor._runtime.preparation` to call the new validation owner while
   preserving its preparation-facing validation wrapper and public runtime
   behavior.
 - Strengthened boundary coverage so validation ownership cannot drift back into
-  `vercor.runtime.coupler_state` or the public `Coupler`/runtime-facade
+  `vercor._runtime.coupler_state` or the public `Coupler`/runtime-facade
   boundary.
 - Updated `DESIGN.md` and `DEPENDENCIES.md` for the new validation ownership.
 - Validation run for this change:
@@ -2391,10 +2406,10 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-06-01: Runtime Output Boundary Refactor
 
-- Moved output mask selection and naming from `vercor.runtime.coupler_state`
+- Moved output mask selection and naming from `vercor._runtime.coupler_state`
   into `vercor.output`, leaving runtime coupler-state ownership focused on
   immutable state assembly, contract refresh, and validation.
-- Removed `vercor.output`'s dependency on `vercor.runtime.coupler_state`; final
+- Removed `vercor.output`'s dependency on `vercor._runtime.coupler_state`; final
   output iteration now owns its view construction, file naming, and mask lookup
   in one output boundary.
 - Strengthened boundary coverage so `output_masks_for_component(...)` stays in
@@ -2421,7 +2436,7 @@ historical commands, failure messages, or detailed validation notes.
   `vercor.components._callable_wrappers` so differentiable and host
   `from_model()` paths share field-spec, payload, settings, and lifecycle-hook
   normalization.
-- Split `vercor.runtime.runner.run_coupler_runtime()` into smaller helpers for
+- Split `vercor._runtime.runner.run_coupler_runtime()` into smaller helpers for
   compiled scanned execution and host-runtime donation rejection while
   preserving public runtime behavior.
 - Strengthened boundary and lifecycle coverage for public hook ownership,
@@ -2443,14 +2458,14 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-05-28: Runtime Preparation Boundary Refactor
 
-- Added `vercor.runtime.preparation` as the focused owner for prepared runtime
+- Added `vercor._runtime.preparation` as the focused owner for prepared runtime
   state construction, contract refresh for prepared states, runtime-state
   validation, and initial outgoing-store priming.
-- Kept `vercor.runtime.facade` as the coupler-facing orchestration boundary by
+- Kept `vercor._runtime.facade` as the coupler-facing orchestration boundary by
   reexporting preparation helpers while leaving dispatch/run context
   construction, execution delegation, runtime views, and final output delegation
   in the facade.
-- Centralized `CompiledRuntime` in `vercor.runtime.run_context` and exchange
+- Centralized `CompiledRuntime` in `vercor._runtime.run_context` and exchange
   field/factory aliases in `vercor.exchange`, removing duplicate alias
   ownership from runtime resources and setup helper modules.
 - Strengthened boundary tests for runtime preparation ownership, facade
@@ -2467,7 +2482,7 @@ historical commands, failure messages, or detailed validation notes.
   `conda run -n scipy pytest tests/ -q --tb=short`. The existing Black Python
   3.13/target-3.14 warning and JAX dtype-promotion warning remain.
 - Failed approaches recorded: the first `RuntimePreparationInputs` protocol used
-  mutable attributes, which mypy rejected for frozen `RuntimeFacadeInputs`; the
+  mutable attributes, which mypy rejected for frozen `RuntimeInputs`; the
   protocol now uses read-only properties. The first full pytest run exposed a
   stale architecture assertion that still expected preparation logic in
   `runtime.facade`; the assertion now checks `runtime.preparation` as the owner.
@@ -2502,7 +2517,7 @@ historical commands, failure messages, or detailed validation notes.
 - Narrowed private component helper protocols so runtime helpers no longer
   require setup data storage, and added focused boundary tests for protocol
   ownership.
-- Added `vercor.runtime.facade.RuntimeFacadeInputs` so `Coupler` passes one
+- Added `vercor._runtime.facade.RuntimeInputs` so `Coupler` passes one
   grouped internal runtime input bundle into facade helpers instead of repeated
   component/exchange/resource parameter clumps.
 - Added lightweight CAMulator runtime field contract ownership in
@@ -2575,7 +2590,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-05-28: Obsolete Compatibility API Cleanup
 
-- Removed compatibility-only runtime reexports from `vercor.runtime`; code,
+- Removed compatibility-only runtime reexports from `vercor._runtime`; code,
   examples, and tests now import runtime contracts, state containers, stores,
   step metadata, and exchange dispatch from their focused owner modules.
 - Removed obsolete compatibility aliases and methods:
@@ -2599,7 +2614,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-05-28: Runtime Resource Holder Boundary Refactor
 
-- Added `vercor.runtime.resources.CouplerRuntimeResources` as the owner for
+- Added `vercor._runtime.resources.CouplerRuntimeResources` as the owner for
   per-coupler runtime topology maps, refreshed runtime contracts, compiled
   runtime cache, and interrupt controller.
 - Updated `Coupler` to store one runtime resource holder while keeping
@@ -2621,7 +2636,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-05-27: Runtime Facade and CAMulator Tensor Index Refactor
 
-- Added `vercor.runtime.facade` as the high-level orchestration boundary used by
+- Added `vercor._runtime.facade` as the high-level orchestration boundary used by
   `Coupler` for runtime-state creation, validation, dispatch/run context
   construction, execution, runtime views, and final output delegation.
 - Slimmed `vercor.coupler` so it delegates runtime internals through the facade
@@ -2755,7 +2770,7 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-05-27: Diagnostics Runtime View Boundary Refactor
 
 - Added runtime-owned `runtime_field_candidates(...)` and `runtime_field(...)`
-  helpers in `vercor.runtime.views`, and routed `RuntimeComponentView` read
+  helpers in `vercor._runtime.views`, and routed `RuntimeComponentView` read
   helpers through them.
 - Updated diagnostics to use the runtime-view field lookup boundary instead of
   reaching into runtime stores with `.data.get(...)` or `getattr(...)`, while
@@ -2801,12 +2816,12 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-05-27: Runtime Run Boundary Refactor
 
 - Moved `RuntimeRunContext` and the compiled-runtime type alias into
-  `vercor.runtime.run_context`, leaving static topology on
+  `vercor._runtime.run_context`, leaving static topology on
   `RuntimeDispatchContext` instead of duplicating it in the run context.
 - Moved compiled-runtime cache-key and JIT wrapping policy into
-  `vercor.runtime.cache`, and moved host/scanned progress formatting plus JAX
-  callback logging helpers into `vercor.runtime.progress`.
-- Slimmed `vercor.runtime.runner` to run-mode selection, host/scanned loops,
+  `vercor._runtime.cache`, and moved host/scanned progress formatting plus JAX
+  callback logging helpers into `vercor._runtime.progress`.
+- Slimmed `vercor._runtime.runner` to run-mode selection, host/scanned loops,
   donation checks, and interrupt translation while preserving `Coupler.run()`
   behavior and runtime PyTree shapes.
 - Updated boundary tests, `DESIGN.md`, and `DEPENDENCIES.md` for the new
@@ -2823,11 +2838,11 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-05-27: Runtime Dispatch Boundary Refactor
 
 - Moved static runtime dispatch context construction into
-  `vercor.runtime.dispatch_context`, leaving `vercor.runtime.coupler_state`
+  `vercor._runtime.dispatch_context`, leaving `vercor._runtime.coupler_state`
   focused on runtime state assembly, contract refresh, validation, and output
   masks.
 - Added private `vercor.components._runtime_execution` for host-component
-  detection and host/scanned component step selection, so `vercor.runtime.driver`
+  detection and host/scanned component step selection, so `vercor._runtime.driver`
   no longer owns `HostRuntimeComponent` classification.
 - Updated `Coupler`, runtime runner/driver imports, boundary tests, and the
   architecture ownership docs for the new dispatch and component-execution
@@ -2844,7 +2859,7 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-05-27: Cohesion and Boundary Refactor Implementation
 
 - Made component contract output merging pure, stored factory lifecycle hooks in
-  a single private `ComponentLifecycleHooks` container, and moved
+  a single private `LifecycleHooks` container, and moved
   component-facing runtime required-field validation into
   `vercor.components._runtime_validation`.
 - Added runtime-owned contract refresh, bundled runner execution inputs in
@@ -2873,7 +2888,7 @@ historical commands, failure messages, or detailed validation notes.
 
 - Moved component-facing required runtime field validation into
   `vercor.components._runtime_fields`, removing its hidden dependency on
-  `vercor.runtime.validation` while preserving the existing `CouplerError`
+  `vercor._runtime.validation` while preserving the existing `CouplerError`
   messages for missing and non-canonical fields.
 - Converted annotation-only `Component` imports in the public coupler facade and
   setup/runtime helper modules to `TYPE_CHECKING` imports, keeping runtime
@@ -2892,7 +2907,7 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-05-27: Runtime Facade Cohesion Refactor
 
-- Added `vercor.runtime.initialization` as the setup-time boundary for run
+- Added `vercor._runtime.initialization` as the setup-time boundary for run
   precision synchronization, component initialization contexts, component setup
   validation, runtime contract validation, and exchange-topology handoff.
 - Added explicit `ExchangeTopologyState` and `build_exchange_topology(...)` so
@@ -2935,7 +2950,7 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-05-27: Deprecated Compatibility Import Facade Removal
 
 - Removed obsolete one-hop compatibility modules:
-  `vercor.runtime.components`, `vercor.setups.data.camulator_land`,
+  `vercor._runtime.components`, `vercor.setups.data.camulator_land`,
   `vercor.setups.data.forcing`, `vercor.setups.external.camulator_state`,
   `vercor.setups.external.windpp`, and `vercor.setups.jax_array_helpers`.
 - Routed remaining imports to canonical owners: runtime component-state,
@@ -2966,7 +2981,7 @@ historical commands, failure messages, or detailed validation notes.
 - Replaced concrete interpolator imports in `vercor.regridders.base` with a
   small scalar/vector interpolation protocol.
 - Moved default topology component-name validation into
-  `vercor.runtime.topology` so `Coupler` delegates topology policy.
+  `vercor._runtime.topology` so `Coupler` delegates topology policy.
 - Split broad external adapters:
   `jax_gcm_fields.py` owns JCM field mapping and surface-temperature helpers,
   `camulator_fields.py`/`camulator_tensors.py`/`camulator_init.py`/
@@ -3027,7 +3042,7 @@ historical commands, failure messages, or detailed validation notes.
   generic sigma-coordinate helpers, generic PyTree transforms, setup data asset
   registries, and diagnostics fields/tables/plotting.
 - Moved mask math into `vercor.grid_masks` and component topology lookup into
-  `vercor.runtime.topology`.
+  `vercor._runtime.topology`.
 - Split CAMulator optional imports, forcing cursors, tensor accessors, stepping,
   and initialization into focused modules before later cleanup removed the
   `camulator_state.py` facade.
@@ -3198,7 +3213,7 @@ historical commands, failure messages, or detailed validation notes.
 - Source-boundary assertions should be precise. Several earlier failures came
   from over-broad substring checks that matched intentional helper names.
 - Tests that patch host-backed external components should call
-  `step_runtime_state()` with explicit `RuntimeComponentState` objects when
+  `step_runtime_state()` with explicit `ComponentRuntimeState` objects when
   they are exercising runtime behavior.
 - Setup-only metadata belongs in `Component.setup_metadata`, not ad-hoc
   attributes that enter public component/runtime contracts.

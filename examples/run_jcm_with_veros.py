@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, PeriodOutputConfig, SpinupConfig
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    OutputConfig,
+    PeriodOutput,
+    Spinup,
+    VerosConfig,
+)
 from vercor.setups import make_veros_gcm
 from vercor.setups.external.jax_gcm_tools import (
     get_default_parameter_values,
@@ -33,18 +41,22 @@ if __name__ == "__main__":
     # custom_jcm_parameters['surface_flux.vgust'] = 5.01
 
     ocn = make_veros_gcm(
-        spinup=SpinupConfig(enabled=True),
-        output=PeriodOutputConfig(
-            frequency="month",
-            variables=(
-                "temp",
-                "salt",
-                "u",
-                "v",
-                "w",
-                "surface_taux",
-                "surface_tauy",
-                "psi",
+        config=VerosConfig(
+            spinup=Spinup(enabled=True),
+            output=OutputConfig(
+                period=PeriodOutput(
+                    frequency="month",
+                    variables=(
+                        "temp",
+                        "salt",
+                        "u",
+                        "v",
+                        "w",
+                        "surface_taux",
+                        "surface_tauy",
+                        "psi",
+                    ),
+                ),
             ),
         ),
     )
@@ -52,9 +64,9 @@ if __name__ == "__main__":
     jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
         custom_parameters=custom_jcm_parameters,
-        spinup=SpinupConfig(enabled=True),
+        spinup=Spinup(enabled=True),
         jitted=True,
-        output=PeriodOutputConfig(frequency="month"),
+        output=OutputConfig(period=PeriodOutput(frequency="month")),
     )
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere

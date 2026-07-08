@@ -14,8 +14,8 @@ from vercor.grid_masks import (
 from vercor.grid_geometry import grids_identical
 from vercor.jax_logging import LoggerLike
 from vercor._regridders.conservative import ConservativeRectilinearRegridder
-from vercor.runtime.component_topology import require_component
-from vercor.runtime.topology_state import RuntimeTopologyMaps, SurfaceExchangeMasks
+from vercor._runtime.component_topology import require_component
+from vercor._runtime.topology_state import RuntimeTopologyMaps, SurfaceExchangeMasks
 
 if TYPE_CHECKING:
     from vercor.components.base import Component

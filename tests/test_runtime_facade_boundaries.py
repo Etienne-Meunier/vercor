@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 
 from tests._architecture_support import package_import_cycles, source_for
-from vercor.runtime.facade import RuntimeFacadeInputs
-from vercor.runtime.resources import CouplerRuntimeResources
+from vercor._runtime.facade import RuntimeInputs
+from vercor._runtime.resources import CouplerRuntimeResources
 
 
 def test_runtime_facade_inputs_bundle_owns_repeated_coupler_runtime_inputs() -> None:
-    assert is_dataclass(RuntimeFacadeInputs)
-    assert [field.name for field in fields(RuntimeFacadeInputs)] == [
+    assert is_dataclass(RuntimeInputs)
+    assert [field.name for field in fields(RuntimeInputs)] == [
         "components",
         "exchanges",
         "runtime_resources",
@@ -26,14 +26,14 @@ def test_runtime_facade_inputs_bundle_owns_repeated_coupler_runtime_inputs() -> 
 def test_coupler_passes_facade_inputs_instead_of_parameter_clumps() -> None:
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
 
-    assert "_runtime_facade.RuntimeFacadeInputs(" in coupler_source
+    assert "_runtime_facade.RuntimeInputs(" in coupler_source
     assert "components=self.components,\n            exchanges=self.exchanges," not in (
         coupler_source
     )
 
 
 def test_runtime_preparation_module_owns_runtime_state_preparation() -> None:
-    preparation_path = Path("vercor/runtime/preparation.py")
+    preparation_path = Path("vercor/_runtime/preparation.py")
     assert preparation_path.exists()
 
     preparation_source = preparation_path.read_text(encoding="utf-8")
@@ -48,10 +48,10 @@ def test_runtime_preparation_module_owns_runtime_state_preparation() -> None:
 
 @pytest.mark.fast_always
 def test_component_topology_module_owns_component_name_validation() -> None:
-    component_topology_source = source_for("vercor/runtime/component_topology.py")
-    topology_source = source_for("vercor/runtime/topology.py")
-    surface_masks_source = source_for("vercor/runtime/surface_masks.py")
-    initialization_source = source_for("vercor/runtime/initialization.py")
+    component_topology_source = source_for("vercor/_runtime/component_topology.py")
+    topology_source = source_for("vercor/_runtime/topology.py")
+    surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
+    initialization_source = source_for("vercor/_runtime/initialization.py")
 
     assert "VALID_TOPOLOGY_COMPONENT_NAMES" in component_topology_source
     assert "def validate_component_topology_names(" in component_topology_source
@@ -61,17 +61,17 @@ def test_component_topology_module_owns_component_name_validation() -> None:
     assert "def validate_component_topology_names(" not in topology_source
     assert "def get_component(" not in topology_source
     assert "def require_component(" not in topology_source
-    assert "from vercor.runtime.component_topology import" not in topology_source
-    assert "from vercor.runtime.component_topology import" in surface_masks_source
-    assert "from vercor.runtime.component_topology import" in initialization_source
+    assert "from vercor._runtime.component_topology import" not in topology_source
+    assert "from vercor._runtime.component_topology import" in surface_masks_source
+    assert "from vercor._runtime.component_topology import" in initialization_source
 
 
 @pytest.mark.fast_always
 def test_runtime_topology_state_groups_mutable_maps() -> None:
-    topology_state_module = importlib.import_module("vercor.runtime.topology_state")
-    topology_state_source = source_for("vercor/runtime/topology_state.py")
-    topology_source = source_for("vercor/runtime/topology.py")
-    resources_source = source_for("vercor/runtime/resources.py")
+    topology_state_module = importlib.import_module("vercor._runtime.topology_state")
+    topology_state_source = source_for("vercor/_runtime/topology_state.py")
+    topology_source = source_for("vercor/_runtime/topology.py")
+    resources_source = source_for("vercor/_runtime/resources.py")
 
     assert hasattr(topology_state_module, "RuntimeTopologyMaps")
     RuntimeTopologyMaps = topology_state_module.RuntimeTopologyMaps
@@ -92,12 +92,12 @@ def test_runtime_topology_state_groups_mutable_maps() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_topology_policy_boundaries_are_focused() -> None:
-    topology_state_module = importlib.import_module("vercor.runtime.topology_state")
-    topology_state_source = source_for("vercor/runtime/topology_state.py")
-    exchange_topology_source = source_for("vercor/runtime/exchange_topology.py")
-    surface_masks_source = source_for("vercor/runtime/surface_masks.py")
-    topology_source = source_for("vercor/runtime/topology.py")
-    resources_source = source_for("vercor/runtime/resources.py")
+    topology_state_module = importlib.import_module("vercor._runtime.topology_state")
+    topology_state_source = source_for("vercor/_runtime/topology_state.py")
+    exchange_topology_source = source_for("vercor/_runtime/exchange_topology.py")
+    surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
+    topology_source = source_for("vercor/_runtime/topology.py")
+    resources_source = source_for("vercor/_runtime/resources.py")
 
     assert hasattr(topology_state_module, "SurfaceExchangeMasks")
     SurfaceExchangeMasks = topology_state_module.SurfaceExchangeMasks
@@ -135,19 +135,19 @@ def test_runtime_topology_policy_boundaries_are_focused() -> None:
     ):
         assert marker not in topology_source
 
-    assert "import vercor.runtime.exchange_topology as" in topology_source
-    assert "import vercor.runtime.surface_masks as" in topology_source
-    assert "from vercor.runtime.topology_state import" in topology_source
-    assert "from vercor.runtime.topology_state import" in resources_source
+    assert "import vercor._runtime.exchange_topology as" in topology_source
+    assert "import vercor._runtime.surface_masks as" in topology_source
+    assert "from vercor._runtime.topology_state import" in topology_source
+    assert "from vercor._runtime.topology_state import" in resources_source
 
 
 @pytest.mark.fast_always
 def test_runtime_resources_expose_simple_public_resource_fields() -> None:
     resources = CouplerRuntimeResources()
-    resources_source = source_for("vercor/runtime/resources.py")
-    facade_source = source_for("vercor/runtime/facade.py")
-    preparation_source = source_for("vercor/runtime/preparation.py")
-    run_context_source = source_for("vercor/runtime/run_context.py")
+    resources_source = source_for("vercor/_runtime/resources.py")
+    facade_source = source_for("vercor/_runtime/facade.py")
+    preparation_source = source_for("vercor/_runtime/preparation.py")
+    run_context_source = source_for("vercor/_runtime/run_context.py")
 
     for removed_resource_field in (
         "compiled_runtime_cache",
@@ -190,18 +190,18 @@ def test_runtime_resources_expose_simple_public_resource_fields() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_compilation_cache_is_removed() -> None:
-    compilation_path = Path("vercor/runtime/compilation.py")
-    cache_path = Path("vercor/runtime/cache.py")
+    compilation_path = Path("vercor/_runtime/compilation.py")
+    cache_path = Path("vercor/_runtime/cache.py")
     assert not compilation_path.exists()
     assert not cache_path.exists()
 
-    run_context_source = source_for("vercor/runtime/run_context.py")
-    resources_source = source_for("vercor/runtime/resources.py")
+    run_context_source = source_for("vercor/_runtime/run_context.py")
+    resources_source = source_for("vercor/_runtime/resources.py")
 
-    assert "from vercor.runtime.compilation import" not in run_context_source
-    assert "from vercor.runtime.compilation import" not in resources_source
-    assert "from vercor.runtime.cache import" not in run_context_source
-    assert "from vercor.runtime.cache import" not in resources_source
+    assert "from vercor._runtime.compilation import" not in run_context_source
+    assert "from vercor._runtime.compilation import" not in resources_source
+    assert "from vercor._runtime.cache import" not in run_context_source
+    assert "from vercor._runtime.cache import" not in resources_source
     assert "CompiledRuntime" not in run_context_source
     assert "CompiledRuntimeCache" not in resources_source
     assert "compiled_runtime_cache_key(" not in run_context_source
@@ -209,32 +209,32 @@ def test_runtime_compilation_cache_is_removed() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_state_validation_module_owns_runtime_topology_validation() -> None:
-    state_validation_path = Path("vercor/runtime/state_validation.py")
-    coupler_state_source = source_for("vercor/runtime/coupler_state.py")
-    preparation_source = source_for("vercor/runtime/preparation.py")
-    facade_source = source_for("vercor/runtime/facade.py")
+    state_validation_path = Path("vercor/_runtime/state_validation.py")
+    coupler_state_source = source_for("vercor/_runtime/coupler_state.py")
+    preparation_source = source_for("vercor/_runtime/preparation.py")
+    facade_source = source_for("vercor/_runtime/facade.py")
     coupler_source = source_for("vercor/coupler.py")
 
     assert state_validation_path.exists()
     state_validation_source = state_validation_path.read_text(encoding="utf-8")
     assert "def validate_runtime_state(" in state_validation_source
     assert "def validate_runtime_state(" not in coupler_state_source
-    assert "from vercor.runtime.state_validation import" in preparation_source
-    assert "from vercor.runtime.state_validation import" not in facade_source
-    assert "from vercor.runtime.state_validation import" not in coupler_source
+    assert "from vercor._runtime.state_validation import" in preparation_source
+    assert "from vercor._runtime.state_validation import" not in facade_source
+    assert "from vercor._runtime.state_validation import" not in coupler_source
 
 
 def test_runtime_facade_reexports_preparation_without_owning_it() -> None:
-    facade_source = source_for("vercor/runtime/facade.py")
-    preparation_source = source_for("vercor/runtime/preparation.py")
+    facade_source = source_for("vercor/_runtime/facade.py")
+    preparation_source = source_for("vercor/_runtime/preparation.py")
 
-    assert "from vercor.runtime.preparation import" in facade_source
+    assert "from vercor._runtime.preparation import" in facade_source
     assert "PreparedRuntimeState" not in facade_source
     assert "PreparedRuntimeState" not in preparation_source
     assert "Protocol" not in preparation_source
     assert "RuntimePreparationInputs" not in preparation_source
     assert "if TYPE_CHECKING:" in preparation_source
-    assert "from vercor.runtime.facade import RuntimeFacadeInputs" in preparation_source
+    assert "from vercor._runtime.facade import RuntimeInputs" in preparation_source
     assert "def runtime_state_from_components(" not in facade_source
     assert "def validate_runtime_state(" not in facade_source
     assert "def create_runtime_state(" not in facade_source
@@ -243,7 +243,7 @@ def test_runtime_facade_reexports_preparation_without_owning_it() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_runner_splits_path_selection_helpers() -> None:
-    runner_source = source_for("vercor/runtime/runner.py")
+    runner_source = source_for("vercor/_runtime/runner.py")
     run_coupler_body = runner_source.split("def run_coupler_runtime(", 1)[1].split(
         "\ndef _run_compiled_scanned_runtime(",
         1,
@@ -263,4 +263,4 @@ def test_runtime_runner_splits_path_selection_helpers() -> None:
 
 
 def test_runtime_package_has_no_top_level_import_cycles() -> None:
-    assert package_import_cycles("vercor/runtime", "vercor.runtime") == []
+    assert package_import_cycles("vercor/_runtime", "vercor._runtime") == []

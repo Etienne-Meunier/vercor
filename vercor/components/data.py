@@ -5,18 +5,15 @@ from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     AuthorFieldValues,
-    ComponentHooks,
     ComponentStepReturn,
-    FieldSpec,
+    ComponentSpec,
 )
 from vercor.components._contracts import (
     merge_component_outputs,
 )
-from vercor.components._constructor_options import normalize_lifecycle_hooks
 from vercor.components.base import Component
 from vercor.dtypes import PrecisionPolicy
 from vercor.grids import RectilinearGrid
-from vercor.output.adapters import OutputSpec
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -42,9 +39,7 @@ class DataComponent(Component):
         fields: AuthorFieldValues = None,
         *,
         settings: Settings | None = None,
-        spec: FieldSpec | None = None,
-        hooks: ComponentHooks | None = None,
-        output: OutputSpec | None = None,
+        spec: ComponentSpec | None = None,
     ) -> "DataComponent":
         """Create a data-only component from user-provided grid fields.
 
@@ -53,15 +48,20 @@ class DataComponent(Component):
         the callable component constructors for setup and runtime customization.
         """
 
+        field_spec = ComponentSpec() if spec is None else spec
         if settings is None:
-            component = cls(name=name, grid=grid, output=output)
+            component = cls(name=name, grid=grid, output=field_spec.output)
         else:
-            component = cls(name=name, grid=grid, settings=settings, output=output)
-        if spec is not None:
-            component._field_spec = spec
+            component = cls(
+                name=name,
+                grid=grid,
+                settings=settings,
+                output=field_spec.output,
+            )
+        component._field_spec = field_spec
         if fields is not None:
             component.seed_fields(fields)
-        component._lifecycle_hooks = normalize_lifecycle_hooks(hooks=hooks)
+        component._lifecycle_hooks = field_spec.hooks
         return component
 
     def seed_fields(

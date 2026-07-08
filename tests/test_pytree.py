@@ -11,18 +11,18 @@ from vercor.interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.pytree import PyTreeNodeMixin
-from vercor.runtime.state import RuntimeComponentState
+from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.time import RuntimeStepInfo
+from vercor._runtime.stores import FieldStore
+from vercor._runtime.time import RuntimeStepInfo
 from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
 
 
 def test_registered_pytree_classes_inherit_shared_flatten_methods() -> None:
     registered_classes = (
         RuntimeStepInfo,
-        RuntimeFieldStore,
-        RuntimeComponentState,
+        FieldStore,
+        ComponentRuntimeState,
         RunState,
         RectilinearGrid,
         BilinearRectilinearInterpolator,
@@ -63,7 +63,7 @@ def test_static_pytree_metadata_round_trip_uses_declared_aux_fields() -> None:
         latitude=np.asarray([-45.0, 45.0]),
         binary_mask=np.asarray([[1, 0], [0, 1]]),
     )
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "temperature": jnp.asarray([280.0, 281.0]),
             "humidity": jnp.asarray([0.001, 0.002]),

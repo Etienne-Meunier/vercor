@@ -20,13 +20,13 @@ from vercor.exchanges import Exchange
 from vercor.components.contexts import SetupContext
 from vercor.settings import Settings
 from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.component_state import create_runtime_component_state
-from vercor.runtime.field_transfer import send_runtime_fields
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.time import RuntimeStepInfo
-from vercor.runtime.topology_state import RuntimeTopologyMaps
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.component_state import create_runtime_component_state
+from vercor._runtime.field_transfer import send_runtime_fields
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
+from vercor._runtime.time import RuntimeStepInfo
+from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor.state import RunState
 from vercor.types import RuntimeArray
 
@@ -49,9 +49,7 @@ def test_runtime_contract_prefill_uses_component_float32_policy() -> None:
     state = create_runtime_component_state(
         component,
         prefill_missing=True,
-        contract=RuntimeComponentContract(
-            imports=("in_field",), exports=("out_field",)
-        ),
+        contract=ExchangeContract(imports=("in_field",), exports=("out_field",)),
     )
 
     assert state.data.get("in_field").dtype == jnp.float32
@@ -61,11 +59,13 @@ def test_runtime_contract_prefill_uses_component_float32_policy() -> None:
 
 
 def test_runtime_module_does_not_own_component_specific_steps() -> None:
-    runtime_source = Path("vercor/runtime/state.py").read_text(encoding="utf-8")
-    runtime_driver_source = Path("vercor/runtime/driver.py").read_text(encoding="utf-8")
-    runtime_time_source = Path("vercor/runtime/time.py").read_text(encoding="utf-8")
-    runtime_coupler_state_path = Path("vercor/runtime/coupler_state.py")
-    runtime_runner_path = Path("vercor/runtime/runner.py")
+    runtime_source = Path("vercor/_runtime/state.py").read_text(encoding="utf-8")
+    runtime_driver_source = Path("vercor/_runtime/driver.py").read_text(
+        encoding="utf-8"
+    )
+    runtime_time_source = Path("vercor/_runtime/time.py").read_text(encoding="utf-8")
+    runtime_coupler_state_path = Path("vercor/_runtime/coupler_state.py")
+    runtime_runner_path = Path("vercor/_runtime/runner.py")
     assert runtime_coupler_state_path.exists()
     assert runtime_runner_path.exists()
     runtime_coupler_state_source = runtime_coupler_state_path.read_text(
@@ -73,28 +73,28 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     runtime_runner_source = runtime_runner_path.read_text(encoding="utf-8")
     component_contexts_path = Path("vercor/components/contexts.py")
-    runtime_contexts_path = Path("vercor/runtime/contexts.py")
+    runtime_contexts_path = Path("vercor/_runtime/contexts.py")
     assert component_contexts_path.exists()
     assert not runtime_contexts_path.exists()
     component_contexts_source = component_contexts_path.read_text(encoding="utf-8")
-    runtime_contracts_path = Path("vercor/runtime/contracts.py")
-    runtime_stores_path = Path("vercor/runtime/stores.py")
-    runtime_exchange_dispatch_path = Path("vercor/runtime/exchange_dispatch.py")
-    runtime_dispatch_context_path = Path("vercor/runtime/dispatch_context.py")
-    runtime_run_context_path = Path("vercor/runtime/run_context.py")
-    runtime_resources_path = Path("vercor/runtime/resources.py")
-    runtime_compilation_path = Path("vercor/runtime/compilation.py")
-    runtime_cache_path = Path("vercor/runtime/cache.py")
-    runtime_progress_path = Path("vercor/runtime/progress.py")
-    runtime_component_state_path = Path("vercor/runtime/component_state.py")
-    runtime_field_transfer_path = Path("vercor/runtime/field_transfer.py")
-    runtime_validation_path = Path("vercor/runtime/validation.py")
-    runtime_state_validation_path = Path("vercor/runtime/state_validation.py")
-    runtime_topology_path = Path("vercor/runtime/topology.py")
-    runtime_component_topology_path = Path("vercor/runtime/component_topology.py")
-    runtime_initialization_path = Path("vercor/runtime/initialization.py")
-    runtime_preparation_path = Path("vercor/runtime/preparation.py")
-    runtime_facade_path = Path("vercor/runtime/facade.py")
+    runtime_contracts_path = Path("vercor/_runtime/contracts.py")
+    runtime_stores_path = Path("vercor/_runtime/stores.py")
+    runtime_exchange_dispatch_path = Path("vercor/_runtime/exchange_dispatch.py")
+    runtime_dispatch_context_path = Path("vercor/_runtime/dispatch_context.py")
+    runtime_run_context_path = Path("vercor/_runtime/run_context.py")
+    runtime_resources_path = Path("vercor/_runtime/resources.py")
+    runtime_compilation_path = Path("vercor/_runtime/compilation.py")
+    runtime_cache_path = Path("vercor/_runtime/cache.py")
+    runtime_progress_path = Path("vercor/_runtime/progress.py")
+    runtime_component_state_path = Path("vercor/_runtime/component_state.py")
+    runtime_field_transfer_path = Path("vercor/_runtime/field_transfer.py")
+    runtime_validation_path = Path("vercor/_runtime/validation.py")
+    runtime_state_validation_path = Path("vercor/_runtime/state_validation.py")
+    runtime_topology_path = Path("vercor/_runtime/topology.py")
+    runtime_component_topology_path = Path("vercor/_runtime/component_topology.py")
+    runtime_initialization_path = Path("vercor/_runtime/initialization.py")
+    runtime_preparation_path = Path("vercor/_runtime/preparation.py")
+    runtime_facade_path = Path("vercor/_runtime/facade.py")
     assert runtime_contracts_path.exists()
     assert runtime_stores_path.exists()
     assert runtime_exchange_dispatch_path.exists()
@@ -236,17 +236,17 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def _step_runtime_component" not in coupler_source
     assert "def _runtime_step_info_from_times" not in coupler_source
     assert "def _runtime_daily_index" not in coupler_source
-    assert "def _build_runtime_contracts" not in coupler_source
-    assert "class RuntimeComponentContract" in runtime_contracts_source
+    assert "def _build_exchange_contracts" not in coupler_source
+    assert "class ExchangeContract" in runtime_contracts_source
     assert "def flatten_exchange_fields" in runtime_contracts_source
     assert "def append_unique_runtime_fields" in runtime_contracts_source
-    assert "def build_runtime_contracts" in runtime_contracts_source
-    assert "def exchange_key_name" in runtime_contracts_source
-    assert "class RuntimeComponentContract" not in runtime_source
-    assert "def build_runtime_contracts" not in runtime_source
-    assert "class RuntimeFieldStore" in runtime_stores_source
-    assert "class RuntimeFieldStore" not in runtime_source
-    assert "class RuntimeComponentState" in runtime_source
+    assert "def build_exchange_contracts" in runtime_contracts_source
+    assert "def exchange_key" in runtime_contracts_source
+    assert "class ExchangeContract" not in runtime_source
+    assert "def build_exchange_contracts" not in runtime_source
+    assert "class FieldStore" in runtime_stores_source
+    assert "class FieldStore" not in runtime_source
+    assert "class ComponentRuntimeState" in runtime_source
     assert "class RunState" not in runtime_source
     assert "from vercor.state import RunState" not in runtime_source
     assert "CouplerState" not in runtime_source
@@ -259,14 +259,14 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def build_runtime_dispatch_context(" in runtime_dispatch_context_source
     assert "class RuntimeDispatchContext" not in runtime_driver_source
     assert "class RuntimeDispatchContext" not in runtime_coupler_state_source
-    assert not Path("vercor/runtime_contracts.py").exists()
-    assert not Path("vercor/runtime.py").exists()
-    assert not Path("vercor/runtime_components.py").exists()
-    assert not Path("vercor/runtime_contexts.py").exists()
-    assert not Path("vercor/runtime_driver.py").exists()
-    assert not Path("vercor/runtime_time.py").exists()
-    assert not Path("vercor/runtime_views.py").exists()
-    assert not Path("vercor/runtime/components.py").exists()
+    assert not Path("vercor/_runtime_contracts.py").exists()
+    assert not Path("vercor/_runtime.py").exists()
+    assert not Path("vercor/_runtime_components.py").exists()
+    assert not Path("vercor/_runtime_contexts.py").exists()
+    assert not Path("vercor/_runtime_driver.py").exists()
+    assert not Path("vercor/_runtime_time.py").exists()
+    assert not Path("vercor/_runtime_views.py").exists()
+    assert not Path("vercor/_runtime/components.py").exists()
     assert "def runtime_step_info_from_times" in runtime_time_source
     assert "def step_runtime_component(" in runtime_driver_source
     assert "allow_host_runtime: bool" in runtime_driver_source
@@ -277,21 +277,21 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def validate_runtime_state(" not in runtime_coupler_state_source
     assert "def validate_runtime_state(" in runtime_state_validation_source
     assert "def runtime_dispatch_context(" not in runtime_coupler_state_source
-    assert "from vercor.runtime.state_validation import" not in coupler_source
-    assert "from vercor.runtime.state_validation import" not in runtime_facade_source
-    assert "from vercor.runtime.state_validation import" in runtime_preparation_source
-    assert "import vercor.runtime.facade as _runtime_facade" in coupler_source
+    assert "from vercor._runtime.state_validation import" not in coupler_source
+    assert "from vercor._runtime.state_validation import" not in runtime_facade_source
+    assert "from vercor._runtime.state_validation import" in runtime_preparation_source
+    assert "import vercor._runtime.facade as _runtime_facade" in coupler_source
     assert "build_runtime_dispatch_context(" not in coupler_source
     assert "build_runtime_dispatch_context(" in runtime_facade_source
     assert "def output_masks_for_component(" not in runtime_coupler_state_source
     assert "def output_masks_for_component(" in output_source
-    assert "from vercor.runtime.coupler_state import" not in output_source
+    assert "from vercor._runtime.coupler_state import" not in output_source
     assert "def refresh_runtime_contracts(" not in runtime_coupler_state_source
     assert "refresh_runtime_contracts(" not in coupler_source
     assert "refresh_runtime_contracts(" not in runtime_preparation_source
     assert "refresh_runtime_contracts(" not in runtime_facade_source
-    assert "build_runtime_contracts(" not in coupler_source
-    assert "build_runtime_contracts(" in runtime_preparation_source
+    assert "build_exchange_contracts(" not in coupler_source
+    assert "build_exchange_contracts(" in runtime_preparation_source
     assert "def prime_runtime_state(" not in runtime_coupler_state_source
     assert "prime_runtime_state(" not in coupler_source
     assert "prime_runtime_outgoing(" not in coupler_source
@@ -303,8 +303,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class RuntimeRunContext" not in runtime_runner_source
     assert "class RuntimeRunContext" in runtime_run_context_source
     assert "class CouplerRuntimeResources" in runtime_resources_source
-    assert not Path("vercor/runtime/compilation.py").exists()
-    assert not Path("vercor/runtime/cache.py").exists()
+    assert not Path("vercor/_runtime/compilation.py").exists()
+    assert not Path("vercor/_runtime/cache.py").exists()
     assert "components:" not in runtime_run_context_source
     assert "exchanges:" not in runtime_run_context_source
     assert "regridders:" not in runtime_run_context_source
@@ -314,22 +314,23 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "compiled_runtime_cache:" not in runtime_run_context_source
     assert "runtime_cache:" not in runtime_run_context_source
     assert "CompiledRuntimeCache" not in runtime_run_context_source
-    assert "from vercor.runtime.compilation import" not in runtime_run_context_source
-    assert "from vercor.runtime.compilation import" not in runtime_resources_source
-    assert "from vercor.runtime.cache import" not in runtime_run_context_source
-    assert "from vercor.runtime.cache import" not in runtime_resources_source
+    assert "from vercor._runtime.compilation import" not in runtime_run_context_source
+    assert "from vercor._runtime.compilation import" not in runtime_resources_source
+    assert "from vercor._runtime.cache import" not in runtime_run_context_source
+    assert "from vercor._runtime.cache import" not in runtime_resources_source
     assert "context: RuntimeRunContext" in runtime_runner_source
-    assert "from vercor.runtime.run_context import" not in coupler_source
-    assert "from vercor.runtime.run_context import" in runtime_facade_source
-    assert "from vercor.runtime.run_context import" in runtime_runner_source
-    assert "from vercor.runtime.resources import CouplerRuntimeResources" in (
+    assert "from vercor._runtime.run_context import" not in coupler_source
+    assert "from vercor._runtime.run_context import" in runtime_facade_source
+    assert "from vercor._runtime.run_context import" in runtime_runner_source
+    assert "from vercor._runtime.resources import CouplerRuntimeResources" not in (
         coupler_source
     )
+    assert "create_runtime_resources()" in coupler_source
     assert "runtime_resources: CouplerRuntimeResources" in runtime_facade_source
     assert "def compiled_scanned_runtime(" not in runtime_runner_source
     assert "def compiled_runtime_cache_key(" not in runtime_runner_source
     assert "compiled_runtime_cache_key(" not in runtime_run_context_source
-    assert "from vercor.runtime.cache import" not in runtime_runner_source
+    assert "from vercor._runtime.cache import" not in runtime_runner_source
     assert "get_or_compile_for_context(" not in runtime_runner_source
     assert "context.compiled_runtime_cache_key(" not in runtime_runner_source
     assert "donate_state" not in coupler_source
@@ -354,7 +355,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "jax.debug.callback" not in coupler_source
     assert "jax.debug.callback" not in runtime_runner_source
     assert "jax.debug.callback" in runtime_progress_source
-    assert "RuntimeFieldStore.from_mapping" not in coupler_source
+    assert "FieldStore.from_mapping" not in coupler_source
     assert "_runtime_step_progress_message" not in coupler_source
     assert "_runtime_component_progress_message" not in coupler_source
     assert "def runtime_step_progress_message(" not in runtime_runner_source
@@ -396,8 +397,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         "from vercor.components.setup_validation import validate_component_setup"
         in (runtime_initialization_source)
     )
-    assert "from vercor.runtime.initialization import" not in coupler_source
-    assert "from vercor.runtime.initialization import" in runtime_facade_source
+    assert "from vercor._runtime.initialization import" not in coupler_source
+    assert "from vercor._runtime.initialization import" in runtime_facade_source
     assert "def _apply_run_precision_to_component(" not in coupler_source
     assert "from vercor.components._validation import" not in coupler_source
     for source in (
@@ -413,15 +414,15 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor.components.setup_validation import" in (
         runtime_component_state_source
     )
-    assert "from vercor.runtime._components import" not in coupler_source
-    assert "from vercor.runtime._components import" not in runtime_coupler_state_source
-    assert "from vercor.runtime._components import" not in runtime_driver_source
-    assert "from vercor.runtime._components import" not in runtime_fields_source
-    assert 'def empty(cls) -> "RuntimeComponentContract"' not in runtime_source
-    assert "RuntimeComponentContract.empty" not in coupler_source
-    assert "RuntimeComponentContract.empty" not in runtime_driver_source
-    assert "def build_runtime_contracts_for_components" not in runtime_source
-    assert "build_runtime_contracts_for_components" not in coupler_source
+    assert "from vercor._runtime._components import" not in coupler_source
+    assert "from vercor._runtime._components import" not in runtime_coupler_state_source
+    assert "from vercor._runtime._components import" not in runtime_driver_source
+    assert "from vercor._runtime._components import" not in runtime_fields_source
+    assert 'def empty(cls) -> "ExchangeContract"' not in runtime_source
+    assert "ExchangeContract.empty" not in coupler_source
+    assert "ExchangeContract.empty" not in runtime_driver_source
+    assert "def build_exchange_contracts_for_components" not in runtime_source
+    assert "build_exchange_contracts_for_components" not in coupler_source
     assert "RuntimeDispatchContext" in runtime_dispatch_context_source
     assert "dispatch_context: RuntimeDispatchContext" in runtime_driver_source
     assert "contracts.get(" not in runtime_driver_source
@@ -441,13 +442,13 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         "    _runtime_interrupts:",
     ):
         assert field_marker not in coupler_source
-    runtime_topology_state_source = Path("vercor/runtime/topology_state.py").read_text(
+    runtime_topology_state_source = Path("vercor/_runtime/topology_state.py").read_text(
         encoding="utf-8"
     )
     runtime_exchange_topology_source = Path(
-        "vercor/runtime/exchange_topology.py"
+        "vercor/_runtime/exchange_topology.py"
     ).read_text(encoding="utf-8")
-    runtime_surface_masks_source = Path("vercor/runtime/surface_masks.py").read_text(
+    runtime_surface_masks_source = Path("vercor/_runtime/surface_masks.py").read_text(
         encoding="utf-8"
     )
 
@@ -470,8 +471,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def require_component(" in runtime_component_topology_source
     assert "def get_component(" not in runtime_component_topology_source
     assert ".values()" not in runtime_component_topology_source
-    assert "from vercor.runtime.topology import" not in coupler_source
-    assert "from vercor.runtime.topology_state import" in runtime_resources_source
+    assert "from vercor._runtime.topology import" not in coupler_source
+    assert "from vercor._runtime.topology_state import" in runtime_resources_source
     assert "ExchangeTopologyState" not in runtime_resources_source
     assert "RuntimeTopologyMaps" in runtime_resources_source
     assert "def _create_exchange_masks(" not in coupler_source
@@ -483,7 +484,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class SetupContext" not in base_source
     assert "class StepContext" not in base_source
     assert "from vercor.components.contexts import StepContext" in base_source
-    assert "from vercor.runtime.contexts import" not in base_source
+    assert "from vercor._runtime.contexts import" not in base_source
     assert "class SetupContext" in component_contexts_source
     assert "class StepContext" in component_contexts_source
     assert "ComponentSetupContext = SetupContext" not in component_contexts_source
@@ -501,9 +502,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def write_runtime_component_view_to_netcdf" in output_source
     assert "def write_coupler_runtime_outputs" in output_source
     assert not Path("vercor/tools.py").exists()
-    assert "class RuntimeComponentState" not in diagnostics_source
-    assert "RuntimeComponentState =" not in diagnostics_source
-    assert "RuntimeComponentState" not in diagnostics_source
+    assert "class ComponentRuntimeState" not in diagnostics_source
+    assert "ComponentRuntimeState =" not in diagnostics_source
+    assert "ComponentRuntimeState" not in diagnostics_source
     assert "ComponentState" in diagnostics_source
     assert 'hasattr(store, "field_names")' not in diagnostics_source
     assert "elif field_name in store" not in diagnostics_source
@@ -617,7 +618,7 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
 
 
 def test_coupler_runtime_resources_store_runtime_state() -> None:
-    from vercor.runtime.resources import CouplerRuntimeResources
+    from vercor._runtime.resources import CouplerRuntimeResources
 
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
 
@@ -625,7 +626,7 @@ def test_coupler_runtime_resources_store_runtime_state() -> None:
     regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
     binary_masks = cast(Any, {("ATM", "OCN", "bilinear"): jnp.ones((2, 2))})
     fractional_masks = cast(Any, {("ATM", "OCN", "bilinear"): jnp.full((2, 2), 0.5)})
-    contracts = {"ATM": RuntimeComponentContract(imports=("x",), exports=("y",))}
+    contracts = {"ATM": ExchangeContract(imports=("x",), exports=("y",))}
     topology_maps = RuntimeTopologyMaps(
         regridders=regridders,
         binary_masks=binary_masks,
@@ -646,15 +647,15 @@ def test_coupler_does_not_expose_runtime_cache_facade() -> None:
     assert not hasattr(coupler, "clear_runtime_cache")
     assert not hasattr(coupler, "runtime_cache_entry_count")
     assert not hasattr(coupler._runtime_resources, "runtime_cache")
-    assert importlib.util.find_spec("vercor.runtime.cache") is None
+    assert importlib.util.find_spec("vercor._runtime.cache") is None
 
 
 @pytest.mark.fast_always
 def test_runtime_resources_use_public_fields_directly() -> None:
-    from vercor.runtime.resources import CouplerRuntimeResources
+    from vercor._runtime.resources import CouplerRuntimeResources
 
     resources = CouplerRuntimeResources()
-    contracts = {"ATM": RuntimeComponentContract(imports=("x",), exports=("y",))}
+    contracts = {"ATM": ExchangeContract(imports=("x",), exports=("y",))}
     regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
     binary_masks: dict[tuple[str, str, str], RuntimeArray] = {
         ("ATM", "OCN", "bilinear"): jnp.ones((2, 2))
@@ -694,12 +695,14 @@ def test_runtime_resources_use_public_fields_directly() -> None:
 
     assert resources.topology_maps is replacement_topology_maps
 
-    resources_source = Path("vercor/runtime/resources.py").read_text(encoding="utf-8")
+    resources_source = Path("vercor/_runtime/resources.py").read_text(encoding="utf-8")
     assert "def replace_contracts(" not in resources_source
     assert "def replace_topology_maps(" not in resources_source
     assert "def replace_topology(" not in resources_source
 
-    runtime_facade_source = Path("vercor/runtime/facade.py").read_text(encoding="utf-8")
+    runtime_facade_source = Path("vercor/_runtime/facade.py").read_text(
+        encoding="utf-8"
+    )
     assert ".replace_topology(" not in runtime_facade_source
     for direct_assignment in (
         "runtime_resources.compiled_runtime_cache =",
@@ -715,10 +718,10 @@ def test_runtime_resources_use_public_fields_directly() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_topology_maps_copying_stays_at_exchange_topology_boundary() -> None:
-    topology_state_source = Path("vercor/runtime/topology_state.py").read_text(
+    topology_state_source = Path("vercor/_runtime/topology_state.py").read_text(
         encoding="utf-8"
     )
-    exchange_topology_source = Path("vercor/runtime/exchange_topology.py").read_text(
+    exchange_topology_source = Path("vercor/_runtime/exchange_topology.py").read_text(
         encoding="utf-8"
     )
 
@@ -754,15 +757,15 @@ def test_runtime_topology_maps_copying_stays_at_exchange_topology_boundary() -> 
 
 
 def test_runtime_package_does_not_reexport_focused_module_symbols() -> None:
-    runtime_module = importlib.import_module("vercor.runtime")
-    component_state_module = importlib.import_module("vercor.runtime.component_state")
+    runtime_module = importlib.import_module("vercor._runtime")
+    component_state_module = importlib.import_module("vercor._runtime.component_state")
 
     assert runtime_module.__all__ == []
-    assert not hasattr(runtime_module, "RuntimeComponentContract")
-    assert not hasattr(runtime_module, "RuntimeFieldStore")
+    assert not hasattr(runtime_module, "ExchangeContract")
+    assert not hasattr(runtime_module, "FieldStore")
     assert not hasattr(runtime_module, "RuntimeStepInfo")
     assert not hasattr(runtime_module, "dispatch_component_exchanges")
-    assert not Path("vercor/runtime/components.py").exists()
+    assert not Path("vercor/_runtime/components.py").exists()
     assert callable(component_state_module.create_runtime_component_state)
 
 
@@ -772,7 +775,7 @@ def test_examples_use_coupler_runtime_component_view_factory() -> None:
     jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
 
     for source in (slab_driver_source, data_driver_source, jcm_slab_source):
-        assert "RuntimeComponentState.from_coupler_state" not in source
+        assert "ComponentRuntimeState.from_coupler_state" not in source
         assert "final_state.components(" in source
 
 
@@ -783,7 +786,7 @@ def test_examples_import_concrete_components_directly() -> None:
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {"temperature": jnp.asarray([[1.0, 2.0], [3.0, 4.0]])}
     )
 
@@ -800,20 +803,20 @@ def test_runtime_field_store_is_immutable_pytree() -> None:
     leaves, treedef = jax.tree_util.tree_flatten(updated)
     restored = jax.tree_util.tree_unflatten(treedef, leaves)
 
-    assert isinstance(restored, RuntimeFieldStore)
+    assert isinstance(restored, FieldStore)
     assert restored.field_names == ("temperature",)
     assert_allclose_compact(restored.get("temperature"), updated.get("temperature"))
 
 
 def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> None:
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "a": jnp.asarray([1.0, 2.0]),
             "b": jnp.asarray([3.0, 4.0]),
         }
     )
 
-    def update(value: RuntimeFieldStore) -> RuntimeFieldStore:
+    def update(value: FieldStore) -> FieldStore:
         return value.set("a", value.get("a") * 2.0).set("b", value.get("b") + 1.0)
 
     updated = jax.jit(update)(store)
@@ -824,7 +827,7 @@ def test_runtime_field_store_supports_jit_updates_and_mapping_roundtrip() -> Non
 
 
 def test_runtime_field_store_uses_index_cache_for_bulk_set_and_pytree_restore() -> None:
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "temperature": jnp.zeros((2, 2), dtype=jnp.float32),
             "humidity": jnp.ones((2, 2), dtype=jnp.float32),
@@ -855,7 +858,7 @@ def test_runtime_field_store_uses_index_cache_for_bulk_set_and_pytree_restore() 
 
 
 def test_runtime_field_store_replacement_preserves_existing_dtype() -> None:
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {"temperature": jnp.zeros((2, 2), dtype=jnp.float32)}
     )
 
@@ -871,7 +874,7 @@ def test_runtime_field_store_replacement_preserves_existing_dtype() -> None:
 def test_runtime_field_store_exposes_mapping_membership_without_default_fallbacks() -> (
     None
 ):
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "temperature": jnp.full((2, 2), 280.0, dtype=jnp.float32),
             "humidity": jnp.full((2, 2), 0.5, dtype=jnp.float32),
@@ -900,7 +903,7 @@ def test_runtime_field_store_exposes_mapping_membership_without_default_fallback
 def test_runtime_field_store_replace_helpers_preserve_dtype_and_reject_missing() -> (
     None
 ):
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "temperature": jnp.zeros((2, 2), dtype=jnp.float32),
             "humidity": jnp.ones((2, 2), dtype=jnp.float32),
@@ -925,14 +928,14 @@ def test_runtime_field_store_replace_helpers_preserve_dtype_and_reject_missing()
 
 
 def test_runtime_field_store_new_helpers_are_jit_compatible() -> None:
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "temperature": jnp.ones((2, 2), dtype=jnp.float32),
             "humidity": jnp.ones((2, 2), dtype=jnp.float32),
         }
     )
 
-    def update(value: RuntimeFieldStore) -> RuntimeFieldStore:
+    def update(value: FieldStore) -> FieldStore:
         return value.replace_many(
             {
                 "temperature": value.get("temperature") + 2.0,
@@ -947,12 +950,12 @@ def test_runtime_field_store_new_helpers_are_jit_compatible() -> None:
 
 
 def test_runtime_component_and_coupler_state_are_pytrees() -> None:
-    component = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
-        incoming=RuntimeFieldStore.from_mapping(
+    component = ComponentRuntimeState(
+        data=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        incoming=FieldStore.from_mapping(
             {"sea_surface_temperature": jnp.zeros((2, 2))}
         ),
-        outgoing=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        outgoing=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
     )
     assert not hasattr(component, "name")
     assert not hasattr(component, "fields_to_import")
@@ -960,7 +963,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     state = RunState._from_runtime(
         component_names=("ATM",),
         components=(component,),
-        fractional_masks=RuntimeFieldStore.from_mapping(
+        fractional_masks=FieldStore.from_mapping(
             {"OCN|ATM|bilinear": jnp.ones((2, 2))}
         ),
     )
@@ -986,15 +989,15 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
 def test_runtime_coupler_state_restores_component_index_cache_after_pytree_roundtrip() -> (
     None
 ):
-    component = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    component = ComponentRuntimeState(
+        data=FieldStore.from_mapping({"temperature": jnp.ones((2, 2))}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
     )
     state = RunState._from_runtime(
         component_names=("ATM", "OCN"),
         components=(component, component),
-        fractional_masks=RuntimeFieldStore.empty(),
+        fractional_masks=FieldStore.empty(),
     )
     leaves, treedef = jax.tree_util.tree_flatten(state)
     restored = jax.tree_util.tree_unflatten(treedef, leaves)
@@ -1008,14 +1011,14 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
         jcm_state={"metadata": jnp.asarray(1.0)},
         forcing={"surface_temperature": jnp.asarray([[2.0, 3.0]])},
     )
-    component = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({"temperature": jnp.ones((1, 2))}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    component = ComponentRuntimeState(
+        data=FieldStore.from_mapping({"temperature": jnp.ones((1, 2))}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
         runtime_payload=payload,
     )
 
-    def update(value: RuntimeComponentState) -> RuntimeComponentState:
+    def update(value: ComponentRuntimeState) -> ComponentRuntimeState:
         runtime_payload = value.runtime_payload
         assert isinstance(runtime_payload, JAXGCMRuntimePayload)
         return value.with_runtime_payload(
@@ -1036,7 +1039,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(Settings(apply_time_interpolation=True))
-    contract = RuntimeComponentContract(exports=("temperature",))
+    contract = ExchangeContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [0.75], [0.25], [0]),
@@ -1046,10 +1049,10 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
     forcing = forcing.at[1].set(8.0)
 
     def send_loss(field: jax.Array) -> jax.Array:
-        state = RuntimeComponentState(
-            data=RuntimeFieldStore.from_mapping({"temperature": field}),
-            incoming=RuntimeFieldStore.empty(),
-            outgoing=RuntimeFieldStore.empty(),
+        state = ComponentRuntimeState(
+            data=FieldStore.from_mapping({"temperature": field}),
+            incoming=FieldStore.empty(),
+            outgoing=FieldStore.empty(),
         )
         sent = send_runtime_fields(component, state, step_info, contract=contract)
         return jnp.sum(sent.outgoing.get("temperature"))
@@ -1057,10 +1060,10 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
     sent_state = jax.jit(
         lambda field: send_runtime_fields(
             component,
-            RuntimeComponentState(
-                data=RuntimeFieldStore.from_mapping({"temperature": field}),
-                incoming=RuntimeFieldStore.empty(),
-                outgoing=RuntimeFieldStore.empty(),
+            ComponentRuntimeState(
+                data=FieldStore.from_mapping({"temperature": field}),
+                incoming=FieldStore.empty(),
+                outgoing=FieldStore.empty(),
             ),
             step_info,
             contract=contract,
@@ -1078,7 +1081,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
     component = _RuntimeSendComponent(Settings(apply_daily_time_selection=True))
-    contract = RuntimeComponentContract(exports=("temperature",))
+    contract = ExchangeContract(exports=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
         RuntimeStepInfo.from_sequences([0], [1], [1.0], [0.0], [2]),
@@ -1086,18 +1089,18 @@ def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
     forcing = jnp.arange(5 * 2 * 2, dtype=jnp.float64).reshape((5, 2, 2))
 
     def send_loss(field: jax.Array) -> jax.Array:
-        state = RuntimeComponentState(
-            data=RuntimeFieldStore.from_mapping({"temperature": field}),
-            incoming=RuntimeFieldStore.empty(),
-            outgoing=RuntimeFieldStore.empty(),
+        state = ComponentRuntimeState(
+            data=FieldStore.from_mapping({"temperature": field}),
+            incoming=FieldStore.empty(),
+            outgoing=FieldStore.empty(),
         )
         sent = send_runtime_fields(component, state, step_info, contract=contract)
         return jnp.sum(sent.outgoing.get("temperature"))
 
-    state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({"temperature": forcing}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    state = ComponentRuntimeState(
+        data=FieldStore.from_mapping({"temperature": forcing}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
     )
     sent_state = jax.jit(
         lambda value: send_runtime_fields(

@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 
 from vercor.dtypes import jax_ones
 from vercor.exchanges import Exchange
-from vercor.runtime.exchange_keys import exchange_regrid_key
+from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.jax_logging import LoggerLike
-from vercor.runtime.topology_state import RuntimeTopologyMaps
+from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor.settings import Settings
 
 if TYPE_CHECKING:

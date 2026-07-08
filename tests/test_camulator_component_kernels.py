@@ -30,14 +30,14 @@ from vercor.components.contexts import SetupContext, StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.variables import OutputVariable
-from vercor.setup_config import PeriodOutputConfig
+from vercor.setup_config import CAMulatorConfig, OutputConfig, PeriodOutput
 from vercor.setups.external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
 from vercor.grids import RectilinearGrid
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.component_state import create_runtime_component_state
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.component_state import create_runtime_component_state
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 from vercor.settings import Settings
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
@@ -74,12 +74,12 @@ class _RecordingLogger:
 def _runtime_component_state(
     name: str,
     data: dict[str, Any] | None = None,
-) -> RuntimeComponentState:
+) -> ComponentRuntimeState:
     _ = name
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(data or {}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    return ComponentRuntimeState(
+        data=FieldStore.from_mapping(data or {}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
     )
 
 
@@ -996,9 +996,11 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     )
 
     component = make_camulator_gcm(
-        config_path="dummy.yaml",
-        device="cpu",
-        output=PeriodOutputConfig(frequency="month"),
+        config=CAMulatorConfig(
+            config_path="dummy.yaml",
+            device="cpu",
+            output=OutputConfig(period=PeriodOutput(frequency="month")),
+        ),
     )
 
     assert isinstance(component.grid.longitude, jax.Array)
@@ -1047,9 +1049,11 @@ def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None
     )
     with capture_logger_output(DEFAULT_LOGGER_NAME) as stream:
         make_camulator_gcm(
-            config_path="dummy.yaml",
-            device="cpu",
-            output_subfolder_name="member-001",
+            config=CAMulatorConfig(
+                config_path="dummy.yaml",
+                device="cpu",
+                output_subfolder_name="member-001",
+            ),
         )
 
     assert "Saving outputs to: /tmp/camulator-output/member-001" in stream.getvalue()
@@ -1245,7 +1249,7 @@ def test_camulator_land_stores_jax_runtime_arrays(
         create_runtime_component_state(
             component,
             prefill_missing=True,
-            contract=RuntimeComponentContract(),
+            contract=ExchangeContract(),
         ),
         StepContext(
             dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),

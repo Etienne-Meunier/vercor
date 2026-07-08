@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from vercor.exchanges import Exchange
-from vercor.runtime.contracts import RuntimeComponentContract
+from vercor._runtime.contracts import ExchangeContract
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ class RuntimeDispatchContext:
     components: Mapping[str, Component]
     exchanges_by_destination: Mapping[str, tuple[Exchange, ...]]
     regridders: Mapping[tuple[str, str, str], Any]
-    contracts: Mapping[str, RuntimeComponentContract]
+    contracts: Mapping[str, ExchangeContract]
     dt_seconds: float
     settings: Settings
 
@@ -33,7 +33,7 @@ def build_runtime_dispatch_context(
     components: Mapping[str, Component],
     exchanges: Sequence[Exchange],
     regridders: Mapping[tuple[str, str, str], Any],
-    contracts: Mapping[str, RuntimeComponentContract],
+    contracts: Mapping[str, ExchangeContract],
     *,
     dt_seconds: float,
     settings: Settings,

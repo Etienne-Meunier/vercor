@@ -5,12 +5,12 @@ from vercor.components.base import (
     Component,
 )
 from vercor.components.contracts import (
-    ComponentHooks,
+    LifecycleHooks,
     ComponentCreatePayloadHook,
     ComponentInitializeHook,
     ComponentPrefillHook,
     ComponentValidateHook,
-    FieldSpec,
+    ComponentSpec,
     KEEP_PAYLOAD,
     PrefillContext,
     PrefillResult,
@@ -40,17 +40,24 @@ from vercor.exchanges import Exchange
 from vercor.fields import VectorField, vector
 from vercor.grids import RectilinearGrid
 from vercor.dtypes import DTypePolicy
-from vercor.output import OutputSpec, OutputVariable, SnapshotContext, SnapshotWriter
+from vercor.output import OutputConfig, OutputVariable, SnapshotContext, SnapshotWriter
 import vercor.recipes as recipes
 from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
 from vercor.settings import Settings
-from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+from vercor.setup_config import (
+    CAMulatorConfig,
+    JaxGCMConfig,
+    PeriodOutput,
+    Spinup,
+    VerosConfig,
+)
 import vercor.setups as setups
 from vercor.state import ComponentState, RunState
 
 __all__ = [
     "AssetError",
     "bilinear",
+    "CAMulatorConfig",
     "Coupler",
     "CouplerError",
     "RunState",
@@ -58,20 +65,21 @@ __all__ = [
     "ComponentError",
     "ComponentCreatePayloadHook",
     "ComponentState",
-    "ComponentHooks",
+    "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",
     "ComponentValidateHook",
     "DataComponent",
     "DTypePolicy",
     "ExchangerError",
-    "FieldSpec",
+    "ComponentSpec",
     "GridError",
     "HostComponent",
+    "JaxGCMConfig",
     "KEEP_PAYLOAD",
-    "OutputSpec",
+    "OutputConfig",
     "OutputVariable",
-    "PeriodOutputConfig",
+    "PeriodOutput",
     "PrefillContext",
     "PrefillResult",
     "RegridderError",
@@ -79,7 +87,7 @@ __all__ = [
     "SetupContext",
     "SnapshotContext",
     "SnapshotWriter",
-    "SpinupConfig",
+    "Spinup",
     "StepContext",
     "StepResult",
     "ValidationContext",
@@ -97,4 +105,5 @@ __all__ = [
     "ModelDateTime",
     "VectorField",
     "vector",
+    "VerosConfig",
 ]

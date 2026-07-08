@@ -9,7 +9,7 @@ from vercor.fields import ExchangeField, flatten_field_items
 
 
 @dataclass(frozen=True)
-class RuntimeComponentContract:
+class ExchangeContract:
     """Coupler-owned runtime import/export metadata for one component."""
 
     imports: tuple[str, ...] = ()
@@ -45,16 +45,16 @@ def _extend_contract_fields(
     return tuple(updated)
 
 
-def build_runtime_contracts(
+def build_exchange_contracts(
     component_names: Sequence[str],
     exchanges: Sequence[Exchange],
     *,
     validate_endpoints: bool,
-) -> dict[str, RuntimeComponentContract]:
+) -> dict[str, ExchangeContract]:
     """Build coupler-owned import/export contracts from exchange declarations."""
 
     known_components = set(component_names)
-    contracts = {name: RuntimeComponentContract() for name in component_names}
+    contracts = {name: ExchangeContract() for name in component_names}
     for exchange in exchanges:
         if exchange.source not in known_components:
             if validate_endpoints:
@@ -72,14 +72,14 @@ def build_runtime_contracts(
         flattened_fields = flatten_exchange_fields(exchange.fields)
         source_contract = contracts[exchange.source]
         destination_contract = contracts[exchange.target]
-        contracts[exchange.source] = RuntimeComponentContract(
+        contracts[exchange.source] = ExchangeContract(
             imports=source_contract.imports,
             exports=_extend_contract_fields(
                 source_contract.exports,
                 flattened_fields,
             ),
         )
-        contracts[exchange.target] = RuntimeComponentContract(
+        contracts[exchange.target] = ExchangeContract(
             imports=_extend_contract_fields(
                 destination_contract.imports,
                 flattened_fields,
@@ -89,7 +89,7 @@ def build_runtime_contracts(
     return contracts
 
 
-def exchange_key_name(source: str, destination: str, regrid_key: str) -> str:
+def exchange_key(source: str, destination: str, regrid_key: str) -> str:
     """Return a stable field-store key for exchange metadata arrays."""
 
     return f"{source}|{destination}|{regrid_key}"

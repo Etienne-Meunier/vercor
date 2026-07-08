@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
-import vercor.runtime.exchange_topology as _exchange_topology
-import vercor.runtime.surface_masks as _surface_masks
+import vercor._runtime.exchange_topology as _exchange_topology
+import vercor._runtime.surface_masks as _surface_masks
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
-from vercor.runtime.topology_state import (
+from vercor._runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
 )

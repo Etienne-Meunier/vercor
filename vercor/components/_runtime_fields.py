@@ -7,7 +7,7 @@ from vercor.components.contracts import (
     AuthorFieldValues,
     KEEP_PAYLOAD,
     ComponentStepReturn,
-    FieldSpec,
+    ComponentSpec,
     FieldNames,
     StepResult,
 )
@@ -22,11 +22,11 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor._runtime.state import ComponentRuntimeState
 
 
 def runtime_fields(
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
 ) -> dict[str, RuntimeArray]:
     """Return runtime data fields as a plain name-to-array mapping."""
 
@@ -35,7 +35,7 @@ def runtime_fields(
 
 def runtime_field(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     name: str,
 ) -> RuntimeArray:
     """Return one runtime data field with a component-oriented error."""
@@ -49,7 +49,7 @@ def runtime_field(
 
 
 def has_runtime_field(
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     name: str,
 ) -> bool:
     """Return whether one runtime data field exists."""
@@ -59,7 +59,7 @@ def has_runtime_field(
 
 def runtime_field_or(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     name: str,
     default: object,
     policy: PrecisionPolicy = None,
@@ -84,7 +84,7 @@ def runtime_field_or(
 
 def runtime_field_or_zeros_like(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     name: str,
     like: str | RuntimeArray,
 ) -> RuntimeArray:
@@ -102,9 +102,9 @@ def runtime_field_or_zeros_like(
 
 def with_runtime_fields(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     fields: Mapping[str, RuntimeArray],
-) -> "RuntimeComponentState":
+) -> "ComponentRuntimeState":
     """Return ``component_state`` with existing runtime data fields updated."""
 
     missing_field = next(
@@ -125,9 +125,9 @@ def with_runtime_fields(
 
 def apply_step_result(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     result: ComponentStepReturn,
-) -> "RuntimeComponentState":
+) -> "ComponentRuntimeState":
     """Apply a field mapping or ``StepResult`` to runtime state."""
 
     if isinstance(result, StepResult):
@@ -142,7 +142,7 @@ def apply_step_result(
 def prefill_runtime_fields(
     component: "Component",
     data: dict[str, RuntimeArray],
-    field_spec: FieldSpec | None = None,
+    field_spec: ComponentSpec | None = None,
     *,
     outputs: FieldNames = (),
     defaults: AuthorFieldValues = None,
@@ -152,7 +152,7 @@ def prefill_runtime_fields(
 
     if field_spec is not None and (tuple(outputs) or defaults is not None):
         raise TypeError(
-            "Use either field_spec=FieldSpec(...) or outputs/defaults, not both"
+            "Use either field_spec=ComponentSpec(...) or outputs/defaults, not both"
         )
     declared = field_spec or normalize_field_spec(
         outputs=outputs,

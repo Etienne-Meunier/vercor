@@ -7,10 +7,10 @@ import jax.numpy as jnp
 
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
-from vercor.runtime.exchange_keys import exchange_regrid_key
-from vercor.runtime.contracts import RuntimeComponentContract, exchange_key_name
+from vercor._runtime.exchange_keys import exchange_regrid_key
+from vercor._runtime.contracts import ExchangeContract, exchange_key
 from vercor.state import RunState
-from vercor.runtime.validation import validate_component_runtime_contract_fields
+from vercor._runtime.validation import validate_component_runtime_contract_fields
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -22,7 +22,7 @@ def validate_runtime_state(
     components: Mapping[str, Component],
     exchanges: Sequence[Exchange],
     regridders: Mapping[tuple[str, str, str], Any],
-    contracts: Mapping[str, RuntimeComponentContract],
+    contracts: Mapping[str, ExchangeContract],
     run_order: Sequence[str] | None,
 ) -> None:
     """Validate that runtime state matches the configured coupler topology."""
@@ -74,7 +74,7 @@ def validate_runtime_state(
                 f"{exchange.label}"
             )
 
-        mask_name = exchange_key_name(*key)
+        mask_name = exchange_key(*key)
         if mask_name not in runtime_state._fractional_masks.field_names:
             raise CouplerError(
                 "Runtime requires an initialized fractional mask for exchange "

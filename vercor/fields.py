@@ -26,8 +26,7 @@ class VectorField:
         return iter((self.u, self.v))
 
 
-FieldItem: TypeAlias = str | VectorField
-ExchangeField: TypeAlias = FieldItem
+ExchangeField: TypeAlias = str | VectorField
 
 
 VALID_FIELD_NAMES: tuple[str, ...] = (
@@ -60,10 +59,10 @@ def vector(u: str, v: str) -> VectorField:
     return VectorField(u, v)
 
 
-def normalize_field_items(fields: Sequence[FieldItem]) -> tuple[FieldItem, ...]:
+def normalize_field_items(fields: Sequence[ExchangeField]) -> tuple[ExchangeField, ...]:
     """Validate and freeze exchange field declarations."""
 
-    normalized: list[FieldItem] = []
+    normalized: list[ExchangeField] = []
     for field in fields:
         if isinstance(field, VectorField):
             normalized.append(field)
@@ -85,7 +84,7 @@ def normalize_field_items(fields: Sequence[FieldItem]) -> tuple[FieldItem, ...]:
     return tuple(normalized)
 
 
-def flatten_field_items(fields: Sequence[FieldItem]) -> list[str]:
+def flatten_field_items(fields: Sequence[ExchangeField]) -> list[str]:
     """Return scalar field names from scalar and vector field declarations."""
 
     flattened: list[str] = []
@@ -99,7 +98,6 @@ def flatten_field_items(fields: Sequence[FieldItem]) -> list[str]:
 
 __all__ = [
     "ExchangeField",
-    "FieldItem",
     "VALID_FIELD_NAMES",
     "VectorField",
     "vector",

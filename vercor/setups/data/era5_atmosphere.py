@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components import ComponentHooks, DataComponent
+from vercor.components import LifecycleHooks, DataComponent
 from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import (
     canonicalize_time_last_level_field,
@@ -199,7 +199,7 @@ def make_era5_atmosphere(
         fields=fields,
         outputs=_ERA5_ATMOSPHERE_FIELD_NAMES,
         data_files=data_files,
-        hooks=ComponentHooks(initialize=initialize),
+        hooks=LifecycleHooks(initialize=initialize),
     )
     component._setup_metadata["hybrid_coefficients"] = {
         "hyai": hyai,

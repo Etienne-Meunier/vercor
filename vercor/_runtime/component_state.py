@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 from vercor.components.setup_validation import validate_component_setup
 from vercor.dtypes import jax_zeros
 from vercor.field_layout import validate_component_data_layout
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ def prefill_runtime_contract_fields(
     data: dict[str, RuntimeArray],
     incoming: dict[str, RuntimeArray],
     outgoing: dict[str, RuntimeArray],
-    contract: RuntimeComponentContract,
+    contract: ExchangeContract,
 ) -> None:
     """Add generic import/export fields required for stable runtime execution."""
 
@@ -36,8 +36,8 @@ def create_runtime_component_state(
     component: "Component",
     *,
     prefill_missing: bool = False,
-    contract: RuntimeComponentContract,
-) -> RuntimeComponentState:
+    contract: ExchangeContract,
+) -> ComponentRuntimeState:
     """Create immutable runtime state from a component's seed data."""
 
     validate_component_setup(component)
@@ -54,9 +54,9 @@ def create_runtime_component_state(
         data=data,
     )
 
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(data),
-        incoming=RuntimeFieldStore.from_mapping(incoming),
-        outgoing=RuntimeFieldStore.from_mapping(outgoing),
+    return ComponentRuntimeState(
+        data=FieldStore.from_mapping(data),
+        incoming=FieldStore.from_mapping(incoming),
+        outgoing=FieldStore.from_mapping(outgoing),
         runtime_payload=component.create_runtime_payload(),
     )

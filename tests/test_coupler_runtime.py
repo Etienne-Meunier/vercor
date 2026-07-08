@@ -13,9 +13,9 @@ from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock, forcing_year_type_for_calendar
 from vercor.components import (
     Component,
-    ComponentHooks,
+    LifecycleHooks,
     DataComponent,
-    FieldSpec,
+    ComponentSpec,
     HostComponent,
     SetupContext,
 )
@@ -41,9 +41,9 @@ from vercor.fields import flatten_field_items
 from vercor.forcing_index import daily_forcing_index
 from vercor.grids import RectilinearGrid
 from vercor.regridding import bilinear, conservative
-from vercor.runtime.state import RuntimeComponentState
+from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.stores import FieldStore
 from vercor.settings import Settings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
@@ -251,7 +251,7 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
                 )
             )
         ),
-        spec=FieldSpec(
+        spec=ComponentSpec(
             inputs=("land_surface_temperature", "sea_surface_temperature"),
             outputs=(
                 "land_surface_temperature",
@@ -266,30 +266,30 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
                     include_total_surface_temperature=True
                 )
             },
-        ),
-        hooks=ComponentHooks(
-            create_payload=(
-                lambda component: jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
-                    state
-                )
-            ),
-            prefill=(
-                lambda component, context: (
-                    jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
-                        state,
-                        component,
-                        context,
+            hooks=LifecycleHooks(
+                create_payload=(
+                    lambda component: (
+                        jax_gcm_runtime_module.create_jax_gcm_runtime_payload(state)
                     )
-                )
-            ),
-            validate=(
-                lambda component, context: (
-                    jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
-                        state,
-                        component,
-                        context,
+                ),
+                prefill=(
+                    lambda component, context: (
+                        jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
+                            state,
+                            component,
+                            context,
+                        )
                     )
-                )
+                ),
+                validate=(
+                    lambda component, context: (
+                        jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
+                            state,
+                            component,
+                            context,
+                        )
+                    )
+                ),
             ),
         ),
     )
@@ -306,20 +306,20 @@ def _component_state(
     data: dict[str, jax.Array],
     imports: tuple[str, ...],
     exports: tuple[str, ...],
-) -> RuntimeComponentState:
+) -> ComponentRuntimeState:
     _ = name
     zeros = jnp.zeros((2, 2), dtype=jnp.float64)
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
+    return ComponentRuntimeState(
+        data=FieldStore.from_mapping(
             {
                 field: data.get(field, zeros)
                 for field in sorted(set(data) | set(imports) | set(exports))
             }
         ),
-        incoming=RuntimeFieldStore.from_mapping(
+        incoming=FieldStore.from_mapping(
             {field: data.get(field, zeros) for field in imports}
         ),
-        outgoing=RuntimeFieldStore.from_mapping(
+        outgoing=FieldStore.from_mapping(
             {field: data.get(field, zeros) for field in exports}
         ),
     )
@@ -661,7 +661,7 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
     return RunState._from_runtime(
         component_names=("ATM", "OCN", "LND", "ICE"),
         components=components,
-        fractional_masks=RuntimeFieldStore.from_mapping(
+        fractional_masks=FieldStore.from_mapping(
             {
                 "OCN|ATM|_identity_factory": jnp.ones_like(sea_surface_temperature),
                 "ATM|OCN|_identity_factory": jnp.ones_like(sea_surface_temperature),
@@ -683,10 +683,8 @@ def _with_ocean_sst(state: RunState, sea_surface_temperature: jax.Array) -> RunS
     return state._with_component_state("OCN", ocean)
 
 
-def _without_store_field(
-    store: RuntimeFieldStore, field_name: str
-) -> RuntimeFieldStore:
-    return RuntimeFieldStore.from_mapping(
+def _without_store_field(store: FieldStore, field_name: str) -> FieldStore:
+    return FieldStore.from_mapping(
         {
             name: value
             for name, value in zip(store.field_names, store.values)
@@ -891,18 +889,18 @@ def test_scanned_runtime_state_uses_runtime_field_stores() -> None:
     initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
 
     assert all(
-        isinstance(component_state.data, RuntimeFieldStore)
-        and isinstance(component_state.incoming, RuntimeFieldStore)
-        and isinstance(component_state.outgoing, RuntimeFieldStore)
+        isinstance(component_state.data, FieldStore)
+        and isinstance(component_state.incoming, FieldStore)
+        and isinstance(component_state.outgoing, FieldStore)
         for component_state in initial_state._components
     )
 
     final_state = run_scanned_coupler(coupler, initial_state)
 
     assert all(
-        isinstance(component_state.data, RuntimeFieldStore)
-        and isinstance(component_state.incoming, RuntimeFieldStore)
-        and isinstance(component_state.outgoing, RuntimeFieldStore)
+        isinstance(component_state.data, FieldStore)
+        and isinstance(component_state.incoming, FieldStore)
+        and isinstance(component_state.outgoing, FieldStore)
         for component_state in final_state._components
     )
 
@@ -1701,13 +1699,16 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
         pytest.skip("Real JCM payload structure regression runs outside --fast")
 
     from vercor.setups import load_jcm_inputs, make_jax_gcm
+    from vercor.setup_config import JaxGCMConfig
 
     inputs = load_jcm_inputs()
     component = make_jax_gcm(
         inputs.coords,
         inputs.terrain,
-        forcing_data=inputs.forcing,
-        jitted=True,
+        config=JaxGCMConfig(
+            forcing_data=inputs.forcing,
+            jitted=True,
+        ),
     )
     settings = Settings()
     component.initialize(
@@ -1719,7 +1720,7 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
             logger=cast(Any, None),
         )
     )
-    setup_state = component._lifecycle_hooks.create_runtime_payload.args[0]
+    setup_state = component._lifecycle_hooks.create_payload.args[0]
 
     payload = component.create_runtime_payload()
     assert payload.jcm_state.phydata.speedy_coords is not None
@@ -1859,7 +1860,7 @@ def test_scanned_runtime_rejects_camulator_land_runtime_boundary() -> None:
         name="LND",
         grid=grid,
         step=lambda fields, context, payload: {},
-        spec=FieldSpec(
+        spec=ComponentSpec(
             outputs=("land_surface_temperature",),
             defaults={
                 "land_surface_temperature": jnp.zeros(
@@ -1889,7 +1890,7 @@ def test_scanned_runtime_rejects_camulator_gcm_runtime_boundary() -> None:
         name="ATM",
         grid=grid,
         step=lambda fields, context, payload: {},
-        spec=FieldSpec(
+        spec=ComponentSpec(
             outputs=("temperature",),
             defaults={"temperature": jnp.ones(grid.shape, dtype=jnp.float64)},
         ),
@@ -1914,7 +1915,7 @@ def test_scanned_runtime_rejects_veros_runtime_boundary() -> None:
         name="OCN",
         grid=grid,
         step=lambda fields, context, payload: {},
-        spec=FieldSpec(
+        spec=ComponentSpec(
             outputs=("sea_surface_temperature",),
             defaults={
                 "sea_surface_temperature": jnp.zeros(
@@ -1950,7 +1951,7 @@ def test_run_validates_regridders_and_fractional_masks() -> None:
     state = RunState._from_runtime(
         component_names=state.component_names,
         components=state._components,
-        fractional_masks=RuntimeFieldStore.empty(),
+        fractional_masks=FieldStore.empty(),
     )
 
     with pytest.raises(CouplerError, match="fractional mask"):
@@ -1960,7 +1961,7 @@ def test_run_validates_regridders_and_fractional_masks() -> None:
 def test_run_validates_missing_source_fields_before_scan() -> None:
     coupler = _make_coupler(steps=1)
     state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    ocean = state._component_state("OCN").with_outgoing(RuntimeFieldStore.empty())
+    ocean = state._component_state("OCN").with_outgoing(FieldStore.empty())
     state = state._with_component_state("OCN", ocean)
 
     with pytest.raises(CouplerError, match="source field"):
@@ -2031,7 +2032,7 @@ def test_run_validates_fractional_mask_shape_before_scan() -> None:
     state = RunState._from_runtime(
         component_names=state.component_names,
         components=state._components,
-        fractional_masks=RuntimeFieldStore.from_mapping(
+        fractional_masks=FieldStore.from_mapping(
             {
                 "OCN|ATM|_identity_factory": jnp.ones((1, 1), dtype=jnp.float64),
                 "ATM|OCN|_identity_factory": jnp.ones((2, 2), dtype=jnp.float64),

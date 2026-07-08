@@ -10,19 +10,19 @@ from vercor.clock import Clock
 from vercor.components.runtime_execution import host_component_names
 from vercor.jax_logging import LoggerLike
 from vercor.dtypes import as_jax_index_array
-from vercor.runtime.dispatch_context import RuntimeDispatchContext
-from vercor.runtime.driver import step_runtime_component
-from vercor.runtime.interrupts import RuntimeInterruptController
-from vercor.runtime.progress import (
+from vercor._runtime.dispatch_context import RuntimeDispatchContext
+from vercor._runtime.driver import step_runtime_component
+from vercor._runtime.interrupts import RuntimeInterruptController
+from vercor._runtime.progress import (
     log_scanned_component_progress,
     log_scanned_step_progress,
     runtime_component_progress_message,
     runtime_step_progress_message,
     runtime_step_progress_messages,
 )
-from vercor.runtime.run_context import RuntimeRunContext
+from vercor._runtime.run_context import RuntimeRunContext
 from vercor.state import RunState
-from vercor.runtime.time import build_runtime_step_info, scalar_runtime_step_info
+from vercor._runtime.time import build_runtime_step_info, scalar_runtime_step_info
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 

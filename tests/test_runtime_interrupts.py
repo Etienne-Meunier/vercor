@@ -17,7 +17,7 @@ from vercor.components.base import Component
 from vercor.components.host import HostComponent
 from vercor.coupler import Coupler
 from vercor.components.contexts import StepContext
-from vercor.runtime.interrupts import (
+from vercor._runtime.interrupts import (
     RuntimeInterruptController,
     RuntimeInterrupted,
     default_runtime_interrupt_signals,

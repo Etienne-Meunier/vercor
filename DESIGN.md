@@ -154,7 +154,7 @@ immutable runtime containers used during traced integration.
   authoring constructors where possible: `DataComponent.from_fields()` for
   data-only fields, `Component.from_step()` for pure callable JAX models, and
   `HostComponent.from_step()` for Python host-side models. These constructors
-  declare fields through `spec=FieldSpec(...)`: `inputs` declare fields the
+  declare fields through `spec=ComponentSpec(...)`: `inputs` declare fields the
   model reads, `outputs` declare fields the model writes, and `defaults`
   declare concrete runtime defaults for fields the model reads or updates.
   Scalar default and seeded values expand to grid-shaped constants.
@@ -163,16 +163,17 @@ immutable runtime containers used during traced integration.
   `vercor.components.contexts`.
   `from_model()`, `default_fields`, `HostRuntimeComponent`, and
   component-prefixed context names have been removed from the public API.
-  Component factory lifecycle customization uses a single
-  `hooks=ComponentHooks(...)` object; individual hook keywords are not public
-  constructor inputs. Runtime prefill and validation hooks receive typed
+  Component factory lifecycle customization is nested in
+  `spec=ComponentSpec(..., hooks=LifecycleHooks(...),
+  output=OutputConfig(...))`; individual hook and output keywords are not
+  public constructor inputs. Runtime prefill and validation hooks receive typed
   `PrefillContext`, `PrefillResult`, and `ValidationContext` objects instead
   of mutable runtime-store dictionaries. Lifecycle hook type aliases
   (`ComponentInitializeHook`, `ComponentCreatePayloadHook`,
   `ComponentPrefillHook`, and `ComponentValidateHook`) remain public
   component-author type contracts and are reexported from `vercor.components`
   and `vercor`.
-  `FieldSpec`, `field_spec`, and `declare_fields()` provide the same
+  `ComponentSpec`, `field_spec`, and `declare_fields()` provide the same
   vocabulary and read-only introspection for subclasses. `field_names` exposes
   setup-time seeded field names in insertion order; direct `component.data`
   and `component.setup_metadata` mutation is not public API. Subclass
@@ -180,10 +181,10 @@ immutable runtime containers used during traced integration.
   `update_settings(...)`, and `grid_field_defaults(...)` to build validated
   grid-shaped default-field mappings with scalar expansion and field-specific
   overrides. Components that write native snapshots receive a typed
-  `OutputSpec(snapshot_writer=...)` spec. Snapshot writers receive
+  `OutputConfig(snapshot_writer=...)` spec. Snapshot writers receive
   `SnapshotContext`, which exposes the public `ComponentState`, component
   payload, output path, time, and logger without exposing
-  `RuntimeComponentState`. Mutable period-output adapters live under
+  `ComponentRuntimeState`. Mutable period-output adapters live under
   `vercor.output._adapters`.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
@@ -202,10 +203,9 @@ immutable runtime containers used during traced integration.
   Field-name de-duplication lives in private `vercor._field_names`, and
   component authoring methods for field declarations, setup seeding, and
   settings updates live in private `vercor.components._field_authoring`.
-  Lifecycle hook storage lives on the
-  private `_lifecycle_hooks` component field; constructors build one
-  `ComponentLifecycleHooks` container and callable/data wrappers assign it
-  directly. Default lifecycle dispatch lives in private
+  Lifecycle hook storage lives on the private `_lifecycle_hooks` component
+  field; constructors use one public `LifecycleHooks` value and callable/data
+  wrappers assign it directly. Default lifecycle dispatch lives in private
   `vercor.components._lifecycle_api`, and constructor-installed hooks are
   stored in one private container rather than as ad-hoc component attributes.
   Author-value normalization lives in private
@@ -246,7 +246,7 @@ immutable runtime containers used during traced integration.
   field-update mapping or `StepResult(fields, payload)` when the runtime payload
   must be replaced. Private runtime adapters in
   `vercor.components.runtime_execution` translate between those public mappings
-  and `RuntimeFieldStore` membership, zero-like fallback, and existing-field
+  and `FieldStore` membership, zero-like fallback, and existing-field
   replacement mechanics owned by the runtime.
   `seed_declared_defaults()` seeds fields from a component's declared
   defaults, and the base `initialize()` hook now does this automatically when
@@ -278,7 +278,7 @@ immutable runtime containers used during traced integration.
   they forward, while
   `Component.from_step()` and `HostComponent.from_step()` construct their own
   private runtime-kind wrappers directly. Both declare their runtime contract
-  with the same `FieldSpec` path used by subclasses, and apply step results
+  with the same `ComponentSpec` path used by subclasses, and apply step results
   through the runtime-owned field replacement helpers.
   Runtime prefill and validation depend only on `inputs`, `outputs`, and
   `defaults`.
@@ -286,33 +286,33 @@ immutable runtime containers used during traced integration.
   contract: updated fields must already exist through seeded data, declared
   outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
   stable shapes and dtypes.
-- Internal runtime API: the `vercor.runtime` package owns
-  `RuntimeFieldStore`, `RuntimeComponentState`, runtime contexts, dispatch
+- Internal runtime API: the `vercor._runtime` package owns
+  `FieldStore`, `ComponentRuntimeState`, runtime contexts, dispatch
   contexts, and runtime helper functions. Public `RunState` is owned by
   `vercor.state` while carrying immutable runtime component states and static
   metadata through JAX tracing. These containers are required for
   differentiability and stable scan carry structure. Runtime
-  field stores live in `vercor.runtime.stores` and own name membership, mapping
+  field stores live in `vercor._runtime.stores` and own name membership, mapping
   roundtrips, fallback reads, and replacement of existing fields while
   preserving established dtypes. Import/export contract construction lives in
-  `vercor.runtime.contracts`, exchange dispatch lives in
-  `vercor.runtime.exchange_dispatch`, static dispatch context construction
-  lives in `vercor.runtime.dispatch_context`, which stores exchanges grouped by
+  `vercor._runtime.contracts`, exchange dispatch lives in
+  `vercor._runtime.exchange_dispatch`, static dispatch context construction
+  lives in `vercor._runtime.dispatch_context`, which stores exchanges grouped by
   destination so per-component dispatch receives destination-specific work,
-  runtime step metadata lives in `vercor.runtime.time`, component state
-  creation lives in `vercor.runtime.component_state`, field receive/send mechanics live in
-  `vercor.runtime.field_transfer`, component/store runtime validation lives in
-  `vercor.runtime.validation`, and configured runtime-state/topology validation
-  lives in `vercor.runtime.state_validation`. Runtime coupler-state assembly
-  and runtime-contract refresh live in `vercor.runtime.coupler_state`; exchange
+  runtime step metadata lives in `vercor._runtime.time`, component state
+  creation lives in `vercor._runtime.component_state`, field receive/send mechanics live in
+  `vercor._runtime.field_transfer`, component/store runtime validation lives in
+  `vercor._runtime.validation`, and configured runtime-state/topology validation
+  lives in `vercor._runtime.state_validation`. Runtime coupler-state assembly
+  and runtime-contract refresh live in `vercor._runtime.coupler_state`; exchange
   component-name validation and component lookup live in
-  `vercor.runtime.component_topology`; runtime topology data contracts live in
-  `vercor.runtime.topology_state`, including grouped `RuntimeTopologyMaps`,
+  `vercor._runtime.component_topology`; runtime topology data contracts live in
+  `vercor._runtime.topology_state`, including grouped `RuntimeTopologyMaps`,
   `SurfaceExchangeMasks`, and `ExchangeTopologyState`. Generic exchange
   regridder/identity-mask map construction lives in
-  `vercor.runtime.exchange_topology`, while ATM/OCN/LND surface-mask creation,
+  `vercor._runtime.exchange_topology`, while ATM/OCN/LND surface-mask creation,
   validation, and bilinear exchange patching live in
-  `vercor.runtime.surface_masks`. `vercor.runtime.topology` remains the
+  `vercor._runtime.surface_masks`. `vercor._runtime.topology` remains the
   orchestration boundary that composes those owners and returns the explicit
   topology state for the runtime facade to store. Public `RunState` carries
   component states and fractional masks through `jax.lax.scan`; binary masks
@@ -320,28 +320,29 @@ immutable runtime containers used during traced integration.
   Setup-time component
   precision synchronization, initialization context construction, component
   setup validation, runtime contract validation, and topology handoff live in
-  `vercor.runtime.initialization`. Runtime state preparation, contract refresh
+  `vercor._runtime.initialization`. Runtime state preparation, contract refresh
   for created or validated states, validation, and initial outgoing-store
-  priming live in `vercor.runtime.preparation`; it returns
+  priming live in `vercor._runtime.preparation`; it returns
   `RunState` directly while refreshed contracts stay on
-  `CouplerRuntimeResources`. `vercor.runtime.facade` reexports these helpers for
-  the coupler-facing runtime boundary but does not own their implementation.
+  `CouplerRuntimeResources`. `vercor._runtime.facade` exposes only the
+  coupler-facing orchestration boundary for runtime resource construction,
+  initialization, state creation/preparation, execution, and final output.
   Frozen `RuntimeRunContext` execution inputs live in
-  `vercor.runtime.run_context`; it carries only static execution metadata and
+  `vercor._runtime.run_context`; it carries only static execution metadata and
   shared runtime controllers, not compiled-runtime cache state.
   Shared host/scanned progress messages plus traced callbacks live in
-  `vercor.runtime.progress`, and the interrupt controller lives in
-  `vercor.runtime.interrupts`. Mutable per-coupler runtime resources live in
-  `vercor.runtime.resources.CouplerRuntimeResources`, a small public-field
+  `vercor._runtime.progress`, and the interrupt controller lives in
+  `vercor._runtime.interrupts`. Mutable per-coupler runtime resources live in
+  `vercor._runtime.resources.CouplerRuntimeResources`, a small public-field
   dataclass holding exchange topology maps, refreshed runtime contracts, and
   the interrupt controller. Runtime facade and preparation code update those
   grouped resources directly. `Coupler` passes repeated runtime inputs through
-  the internal `vercor.runtime.facade.RuntimeFacadeInputs` bundle; there are no
+  the internal `vercor._runtime.facade.RuntimeInputs` bundle; there are no
   per-map private aliases for individual runtime maps.
   Host/scanned runtime loops, run-mode
   selection, one-shot compiled scanned dispatch, and interrupt translation live
-  in `vercor.runtime.runner`. High-level runtime orchestration
-  for the public `Coupler` facade lives in `vercor.runtime.facade`: runtime-state
+  in `vercor._runtime.runner`. High-level runtime orchestration
+  for the public `Coupler` facade lives in `vercor._runtime.facade`: runtime-state
   preparation, dispatch/run context construction, host/scanned execution,
   runtime views, and final output delegation enter through this module instead
   of direct `Coupler` imports of runtime implementation helpers.
@@ -354,13 +355,13 @@ immutable runtime containers used during traced integration.
   only public component-view factories.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output.runtime` helpers, with
-  `vercor.runtime.facade` validating and delegating output writes for
+  `vercor._runtime.facade` validating and delegating output writes for
   `Coupler.write_outputs()`. `Coupler.finalize()` has been removed; users write
   outputs through `Coupler.write_outputs()`. `Coupler` delegates to the runtime
   facade and remains
   the public setup/output facade rather than the owner of runtime adapter
   mechanics.
-  The `vercor.runtime` package initializer does not reexport runtime containers
+  The `vercor._runtime` package initializer does not reexport runtime containers
   or helper functions; internal code should import from the focused owner
   modules listed above.
   payload pytrees carried through `jax.lax.scan` must preserve every leaf's
@@ -404,7 +405,7 @@ The canonical exchange field vocabulary lives in `vercor.fields` as
 Rectilinear grid construction, center-to-edge geometry, and grid identity checks
 live in `vercor.grid_geometry`; mask math lives in `vercor.grid_masks`, while
 default component-topology name validation and lookup are private to
-`vercor.runtime.component_topology`. Generic hybrid/sigma-coordinate pressure
+`vercor._runtime.component_topology`. Generic hybrid/sigma-coordinate pressure
 and altitude helpers live in `vercor.fluxes.vertical_coordinates`, and generic
 JAXGCM PyTree transforms live beside that adapter in private
 `vercor.setups.external._jax_gcm_pytree`. Flux helper modules keep local JAX
@@ -434,7 +435,7 @@ adapter record boundary. Final JAXGCM snapshots are registered by the external
 factory and are written from the final runtime payload's `JCMState`, not from
 runtime data fields or declared component outputs.
 Shared output extension primitives for adapter authors are exported from
-`vercor.output`: `OutputVariable`, `OutputSpec`, `SnapshotContext`, and
+`vercor.output`: `OutputVariable`, `OutputConfig`, `SnapshotContext`, and
 `SnapshotWriter`. Snapshot writers receive only public component/result views
 and the component payload. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
@@ -484,9 +485,9 @@ mask/kernel construction and selected tensor mutation live in
 setup-time model resources, timestep alignment, field seeding, and lifecycle
 callbacks, while `vercor.setups.external.camulator` remains the thin public
 factory. Public external setup factories group spinup and period-output options
-as `SpinupConfig` and `PeriodOutputConfig` instead of parallel keyword bundles.
+as `Spinup` and `PeriodOutput` instead of parallel keyword bundles.
 CAMulator forecast-increment output remains the default when
-`PeriodOutputConfig.frequency` is unset; when it is `day`, `month`, or `year`,
+`PeriodOutput.frequency` is unset; when it is `day`, `month`, or `year`,
 `CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter` and
 `vercor.setups.external.camulator_runtime` streams native prediction tensors
 through the CAMulator output helper, which delegates average accumulation,
@@ -611,7 +612,7 @@ coupler context use the default `VerCOR` Python logger from
 component runtime contexts receive the coupler logger explicitly instead of
 writing directly to stdout.
 The host and scanned coupler runtime paths share progress formatting and traced
-callback helpers in `vercor.runtime.progress`. The scanned path precomputes
+callback helpers in `vercor._runtime.progress`. The scanned path precomputes
 datetime and timestep labels on the host, then selects the per-step label inside
 ordered callbacks so progress logging remains traceable without putting Python
 datetime objects in the scan carry.
@@ -623,7 +624,7 @@ the full coupled loop is not differentiable.
 ### Runtime interruption across host and scanned integrations
 
 `Coupler.run()` provides an internal runtime interrupt controller to
-`vercor.runtime.runner`, which owns host and scanned runtime cancellation
+`vercor._runtime.runner`, which owns host and scanned runtime cancellation
 checkpoints. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request graceful
 runtime cancellation and are restored to their previous handlers when the run
 exits. The host runtime checks the controller at step and component boundaries.

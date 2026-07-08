@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from vercor.components import ComponentHooks, DataComponent
+from vercor.components import ComponentSpec, LifecycleHooks, DataComponent
 from vercor.grids import RectilinearGrid
 
 
@@ -13,7 +13,7 @@ def time_interpolated_data_component(
     fields: Mapping[str, object],
     outputs: tuple[str, ...],
     data_files: Mapping[str, str],
-    hooks: ComponentHooks | None = None,
+    hooks: LifecycleHooks | None = None,
 ) -> DataComponent:
     """Create a data component with the standard time-interpolation metadata."""
 
@@ -21,9 +21,8 @@ def time_interpolated_data_component(
         name=name,
         grid=grid,
         fields=fields,
-        hooks=hooks,
+        spec=ComponentSpec(outputs=outputs, hooks=hooks),
     )
-    component.declare_fields(outputs=outputs)
     component.update_settings(apply_time_interpolation=True)
     component._setup_metadata["DATA_FILES"] = dict(data_files)
     return component

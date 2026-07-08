@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from vercor.output.adapters import (
-    OutputSpec,
+    OutputConfig,
     SnapshotContext,
     SnapshotWriter,
 )
 from vercor.output.variables import OutputVariable
 
 __all__ = [
-    "OutputSpec",
+    "OutputConfig",
     "OutputVariable",
     "SnapshotContext",
     "SnapshotWriter",

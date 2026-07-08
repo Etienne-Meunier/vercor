@@ -6,9 +6,9 @@ import jax.numpy as jnp
 
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.fields import VALID_FIELD_NAMES
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 def validate_runtime_store_field(
     component: "Component",
-    store: RuntimeFieldStore,
+    store: FieldStore,
     field_name: str,
     store_description: str,
 ) -> None:
@@ -40,7 +40,7 @@ def validate_runtime_store_field(
 
 def validate_runtime_data_field_exists(
     component: "Component",
-    component_state: RuntimeComponentState,
+    component_state: ComponentRuntimeState,
     field_name: str,
 ) -> None:
     """Validate that a named component data field exists in runtime state."""
@@ -54,7 +54,7 @@ def validate_runtime_data_field_exists(
 
 def validate_runtime_grid_data_field(
     component: "Component",
-    component_state: RuntimeComponentState,
+    component_state: ComponentRuntimeState,
     field_name: str,
 ) -> None:
     """Validate that a runtime data field exists and matches the component grid."""
@@ -70,8 +70,8 @@ def validate_runtime_grid_data_field(
 
 def validate_component_runtime_contract_fields(
     component: "Component",
-    component_state: RuntimeComponentState,
-    contract: RuntimeComponentContract,
+    component_state: ComponentRuntimeState,
+    contract: ExchangeContract,
 ) -> None:
     """Validate generic runtime contract fields before component-specific checks."""
 
@@ -106,7 +106,7 @@ def validate_component_runtime_contract_fields(
 
 def check_not_empty_import_export_lists(
     component: "Component",
-    contract: RuntimeComponentContract,
+    contract: ExchangeContract,
 ) -> None:
     """Check that a component's runtime contract has valid field ownership."""
 
@@ -124,7 +124,7 @@ def check_not_empty_import_export_lists(
 
 def check_valid_exchange_field_names(
     component: "Component",
-    contract: RuntimeComponentContract,
+    contract: ExchangeContract,
 ) -> None:
     """Check that a component's runtime contract uses supported exchange fields."""
 

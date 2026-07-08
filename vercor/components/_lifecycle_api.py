@@ -16,8 +16,8 @@ from vercor.types import RuntimeArray
 if TYPE_CHECKING:
     from vercor.components.base import Component
     from vercor.components.contexts import SetupContext
-    from vercor.runtime.contracts import RuntimeComponentContract
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor._runtime.contracts import ExchangeContract
+    from vercor._runtime.state import ComponentRuntimeState
 
 
 class ComponentLifecycleMixin:
@@ -40,7 +40,7 @@ class ComponentLifecycleMixin:
         """Return optional immutable payload carried by runtime component state."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.create_runtime_payload
+        hook = component._lifecycle_hooks.create_payload
         if hook is not None:
             return hook(component)
         return self._default_runtime_payload()
@@ -55,12 +55,12 @@ class ComponentLifecycleMixin:
         data: dict[str, RuntimeArray],
         incoming: dict[str, RuntimeArray],
         outgoing: dict[str, RuntimeArray],
-        contract: "RuntimeComponentContract",
+        contract: "ExchangeContract",
     ) -> None:
         """Optionally pre-seed fields required by runtime execution."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.prefill_runtime_state_fields
+        hook = component._lifecycle_hooks.prefill
         if hook is not None:
             result = hook(
                 component,
@@ -79,13 +79,13 @@ class ComponentLifecycleMixin:
 
     def validate_runtime_state(
         self,
-        component_state: "RuntimeComponentState",
-        contract: "RuntimeComponentContract",
+        component_state: "ComponentRuntimeState",
+        contract: "ExchangeContract",
     ) -> None:
         """Optionally validate component-specific runtime fields before execution."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.validate_runtime_state
+        hook = component._lifecycle_hooks.validate
         if hook is not None:
             hook(
                 component,

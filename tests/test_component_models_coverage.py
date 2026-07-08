@@ -28,8 +28,8 @@ from vercor.setups.slab.atmosphere import make_slab_atmosphere
 from vercor.setups.slab.land import make_slab_land
 from vercor.setups.slab.ocean import make_slab_ocean
 from vercor.setups.slab.seaice import make_slab_seaice
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.component_state import create_runtime_component_state
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.component_state import create_runtime_component_state
 from vercor.types import RuntimeArray
 
 
@@ -46,7 +46,7 @@ def _step_component(
         create_runtime_component_state(
             component,
             prefill_missing=True,
-            contract=RuntimeComponentContract(),
+            contract=ExchangeContract(),
         ),
         StepContext(
             dt_seconds=dt.total_seconds(),

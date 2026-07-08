@@ -11,7 +11,7 @@ from vercor.exceptions import ComponentError
 if TYPE_CHECKING:
     from vercor.components.base import Component
     from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
+    from vercor._runtime.state import ComponentRuntimeState
 
 
 def host_component_names(
@@ -29,11 +29,11 @@ def host_component_names(
 
 def step_component_runtime_state(
     component: "Component",
-    component_state: "RuntimeComponentState",
+    component_state: "ComponentRuntimeState",
     context: "StepContext",
     *,
     allow_host_runtime: bool,
-) -> "RuntimeComponentState":
+) -> "ComponentRuntimeState":
     """Advance ``component_state`` through the component's selected runtime path."""
 
     if isinstance(component, HostRuntimeExecutionProtocol):

@@ -19,7 +19,7 @@ import vercor.setups.external.camulator_forcing as camulator_forcing_module
 from vercor.setups.external.camulator_forcing import initialize_camulator_forcing_cursor
 from tests._coverage_support import make_test_grid
 from vercor.components import DataComponent
-from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+from vercor.setup_config import JaxGCMConfig, OutputConfig, PeriodOutput, Spinup
 from vercor.settings import Settings
 
 
@@ -216,7 +216,7 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
         inputs=inputs,
-        spinup=SpinupConfig(enabled=False),
+        spinup=Spinup(enabled=False),
     )
 
     assert result.land is land
@@ -231,10 +231,12 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         coords,
         terrain,
         {
-            "forcing_data": forcing,
-            "spinup": SpinupConfig(enabled=False),
-            "jitted": True,
-            "output": PeriodOutputConfig(frequency="month"),
+            "config": JaxGCMConfig(
+                forcing_data=forcing,
+                spinup=Spinup(enabled=False),
+                output=OutputConfig(period=PeriodOutput(frequency="month")),
+                jitted=True,
+            ),
         },
     )
 
@@ -349,9 +351,9 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
         custom_parameters={"surface_flux.vgust": 5.01},
-        spinup=SpinupConfig(enabled=False),
+        spinup=Spinup(enabled=False),
         jitted=False,
-        output=PeriodOutputConfig(frequency="year"),
+        output=OutputConfig(period=PeriodOutput(frequency="year")),
     )
 
     assert result.land is land
@@ -367,11 +369,13 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         coords,
         terrain,
         {
-            "custom_parameters": {"surface_flux.vgust": 5.01},
-            "forcing_data": forcing,
-            "spinup": SpinupConfig(enabled=False),
-            "jitted": False,
-            "output": PeriodOutputConfig(frequency="year"),
+            "config": JaxGCMConfig(
+                custom_parameters={"surface_flux.vgust": 5.01},
+                forcing_data=forcing,
+                spinup=Spinup(enabled=False),
+                output=OutputConfig(period=PeriodOutput(frequency="year")),
+                jitted=False,
+            ),
         },
     )
 

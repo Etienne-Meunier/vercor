@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Optional
 
-from vercor.components import ComponentHooks, FieldSpec, HostComponent
-from vercor.jax_logging import LoggerLike
-from vercor.output.adapters import OutputSpec
-from vercor.setup_config import PeriodOutputConfig, SpinupConfig
+from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
+from vercor.output.adapters import OutputConfig
+from vercor.setup_config import CAMulatorConfig, PeriodOutput
 import vercor.setups.external.camulator_contracts as _camulator_contracts
 import vercor.setups.external.camulator_output as _camulator_output
 import vercor.setups.external.camulator_runtime as _camulator_runtime
@@ -16,48 +14,41 @@ from vercor.setups.external.camulator_gcm_state import CAMulatorGCMSetupState
 
 
 def make_camulator_gcm(
-    config_path: str,
-    name: str = "ATM",
-    model_weights_path: str = "checkpoint.pt00091.pt",
-    output_subfolder_name: Optional[str] = None,
-    init_noise: Optional[float] = None,
-    spinup: SpinupConfig | None = None,
-    device: str = "cuda",
-    output_cpus_number: int = 8,
-    output: PeriodOutputConfig | None = None,
-    logger: LoggerLike | None = None,
+    *,
+    config: CAMulatorConfig,
 ) -> HostComponent:
     """Return a host-backed CAMulator atmosphere component."""
 
-    spinup_config = SpinupConfig() if spinup is None else spinup
-    output_config = PeriodOutputConfig() if output is None else output
+    period_output = (
+        PeriodOutput() if config.output.period is None else config.output.period
+    )
     state = CAMulatorGCMSetupState(
-        config_path=config_path,
-        name=name,
-        model_weights_path=model_weights_path,
-        output_subfolder_name=output_subfolder_name,
-        init_noise=init_noise,
-        spinup_time=spinup_config.duration,
-        do_spinup=spinup_config.enabled,
-        device=device,
-        output_cpus_number=output_cpus_number,
-        output_frequency=output_config.frequency,
-        logger=logger,
+        config_path=config.config_path,
+        name=config.name,
+        model_weights_path=config.model_weights_path,
+        output_subfolder_name=config.output_subfolder_name,
+        init_noise=config.init_noise,
+        spinup_time=config.spinup.duration,
+        do_spinup=config.spinup.enabled,
+        device=config.device,
+        output_cpus_number=config.output_cpus_number,
+        output_frequency=period_output.frequency,
+        logger=config.logger,
     )
     component = HostComponent.from_step(
-        name=name,
+        name=config.name,
         grid=state.grid,
         step=partial(_camulator_runtime.step_camulator_runtime, state),
-        spec=FieldSpec(
+        spec=ComponentSpec(
             inputs=("sea_surface_temperature", "land_surface_temperature"),
             outputs=_camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
             defaults=_camulator_contracts.camulator_runtime_field_defaults(),
-        ),
-        hooks=ComponentHooks(initialize=state.initialize),
-        output=OutputSpec(
-            snapshot_writer=partial(
-                _camulator_output.write_camulator_snapshot_output, state
-            )
+            hooks=LifecycleHooks(initialize=state.initialize),
+            output=OutputConfig(
+                snapshot_writer=config.output.snapshot_writer
+                or partial(_camulator_output.write_camulator_snapshot_output, state),
+                period=config.output.period,
+            ),
         ),
     )
     return component

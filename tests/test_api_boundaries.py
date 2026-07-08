@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import pytest
 
 import vercor
-import vercor.runtime.facade as _runtime_facade
+import vercor._runtime.facade as _runtime_facade
 import vercor.components as components_module
 import vercor.components.base as base_module
 import vercor.components.contexts as component_contexts_module
@@ -24,7 +24,7 @@ import vercor.components.setup_validation as setup_validation_module
 from tests._architecture_support import package_import_cycles
 from tests._coverage_support import make_test_grid
 from vercor.components.base import Component
-from vercor.components.contracts import FieldSpec
+from vercor.components.contracts import ComponentSpec
 from vercor.components.data import DataComponent
 from vercor.components.host import HostComponent
 from vercor.calendar import DateTime360
@@ -32,8 +32,8 @@ from vercor.clock import Clock
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.fields import VALID_FIELD_NAMES, VectorField, flatten_field_items, vector
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 from vercor.regridding import bilinear
 
 
@@ -101,7 +101,6 @@ def test_public_api_uses_current_owners_and_facades() -> None:
 
     assert fields_module.__all__ == [
         "ExchangeField",
-        "FieldItem",
         "VALID_FIELD_NAMES",
         "VectorField",
         "vector",
@@ -122,9 +121,9 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     import vercor.state as state_module
     from vercor.output import (
         OutputVariable,
-        OutputSpec,
+        OutputConfig,
     )
-    from vercor.output.adapters import OutputSpec as OutputSpecOwner
+    from vercor.output.adapters import OutputConfig as OutputConfigOwner
     from vercor.output.variables import OutputVariable as VariableOwner
 
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
@@ -155,14 +154,14 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     ]
     assert state_module.__all__ == ["RunState", "ComponentState"]
     assert output_module.__all__ == [
-        "OutputSpec",
+        "OutputConfig",
         "OutputVariable",
         "SnapshotContext",
         "SnapshotWriter",
     ]
     assert OutputVariable is VariableOwner
-    assert OutputSpec is OutputSpecOwner
-    assert OutputSpec.__module__ == "vercor.output.adapters"
+    assert OutputConfig is OutputConfigOwner
+    assert OutputConfig.__module__ == "vercor.output.adapters"
     assert not hasattr(output_module, "ComponentOutputAdapter")
     assert not hasattr(output_module, "ComponentOutput")
     assert not hasattr(output_module, "register_component_snapshot_writer")
@@ -191,11 +190,11 @@ def test_state_constructors_do_not_expose_runtime_stores() -> None:
     run_state_signature = str(signature(vercor.RunState))
     component_state_signature = signature(vercor.ComponentState)
 
-    assert "RuntimeComponentState" not in run_state_signature
-    assert "RuntimeFieldStore" not in run_state_signature
+    assert "ComponentRuntimeState" not in run_state_signature
+    assert "FieldStore" not in run_state_signature
     assert "components" not in component_state_signature.parameters
     assert "data" not in component_state_signature.parameters
-    assert "RuntimeFieldStore" not in str(component_state_signature)
+    assert "FieldStore" not in str(component_state_signature)
     assert "fields" in component_state_signature.parameters
 
     with pytest.raises(TypeError, match="Coupler"):
@@ -211,6 +210,26 @@ def test_private_regridder_base_does_not_shadow_public_protocol() -> None:
     assert "class _BaseRegridder" in Path("vercor/_regridders/base.py").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.fast_always
+def test_runtime_internals_live_under_private_runtime_package() -> None:
+    with pytest.raises(ModuleNotFoundError, match="vercor.runtime.state"):
+        importlib.import_module("vercor.runtime.state")
+
+    runtime_state = importlib.import_module("vercor._runtime.state")
+    runtime_stores = importlib.import_module("vercor._runtime.stores")
+    runtime_contracts = importlib.import_module("vercor._runtime.contracts")
+    runtime_facade = importlib.import_module("vercor._runtime.facade")
+
+    assert hasattr(runtime_state, "ComponentRuntimeState")
+    assert not hasattr(runtime_state, "RuntimeComponentState")
+    assert hasattr(runtime_stores, "FieldStore")
+    assert not hasattr(runtime_stores, "RuntimeFieldStore")
+    assert hasattr(runtime_contracts, "ExchangeContract")
+    assert not hasattr(runtime_contracts, "RuntimeComponentContract")
+    assert hasattr(runtime_facade, "RuntimeInputs")
+    assert not hasattr(runtime_facade, "RuntimeFacadeInputs")
 
 
 @pytest.mark.fast_always
@@ -485,7 +504,7 @@ def test_public_api_uses_canonical_breaking_names(
         "ATM",
         renamed_grid,
         fields={"temperature": 280.0},
-        spec=FieldSpec(outputs=("temperature", "humidity")),
+        spec=ComponentSpec(outputs=("temperature", "humidity")),
     )
     assert component.field_spec.outputs == ("temperature", "humidity")
 
@@ -523,7 +542,7 @@ def test_public_api_uses_canonical_breaking_names(
 @pytest.mark.fast_always
 def test_public_api_facade_exports_supported_names_only() -> None:
     from vercor import (
-        FieldSpec,
+        ComponentSpec,
         KEEP_PAYLOAD,
         Settings,
         StepResult,
@@ -532,7 +551,7 @@ def test_public_api_facade_exports_supported_names_only() -> None:
     assert vercor.Settings is Settings
     assert KEEP_PAYLOAD is vercor.KEEP_PAYLOAD
     assert {
-        "ComponentFieldSpec",
+        "ComponentComponentSpec",
         "ComponentSetupContext",
         "ComponentStepContext",
         "ComponentStepResult",
@@ -541,7 +560,7 @@ def test_public_api_facade_exports_supported_names_only() -> None:
     assert "ComponentState" in vercor.__all__
     assert "CouplerState" not in vercor.__all__
 
-    spec = FieldSpec(
+    spec = ComponentSpec(
         inputs=("temperature", "temperature"),
         outputs=("sea_surface_temperature",),
         defaults={"sea_surface_temperature": 280.0},
@@ -554,7 +573,7 @@ def test_public_api_facade_exports_supported_names_only() -> None:
     assert result.payload is KEEP_PAYLOAD
 
     removed_aliases = (
-        "ComponentFieldSpec",
+        "ComponentComponentSpec",
         "ComponentSetupContext",
         "ComponentStepContext",
         "ComponentStepResult",
@@ -566,7 +585,7 @@ def test_public_api_facade_exports_supported_names_only() -> None:
 
     assert not hasattr(spec, "default_fields")
     with pytest.raises(TypeError, match="default_fields"):
-        FieldSpec(default_fields={"temperature": 280.0})  # type: ignore[call-arg]
+        ComponentSpec(default_fields={"temperature": 280.0})  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -579,10 +598,10 @@ def test_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> 
         fields={"temperature": 280.0},
     )
     payload = {"model": "state"}
-    runtime_state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({"temperature": jnp.asarray(280.0)}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    runtime_state = ComponentRuntimeState(
+        data=FieldStore.from_mapping({"temperature": jnp.asarray(280.0)}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
         runtime_payload=payload,
     )
 
@@ -733,7 +752,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
         "Coupler",
         "DataComponent",
         "Exchange",
-        "FieldSpec",
+        "ComponentSpec",
         "HostComponent",
         "RectilinearGrid",
         "SetupContext",
@@ -742,12 +761,12 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     }
     runtime_internal_names = {
         "ComponentInitContext",
-        "RuntimeComponentContract",
-        "RuntimeComponentState",
-        "RuntimeComponentState",
+        "ExchangeContract",
+        "ComponentRuntimeState",
+        "ComponentRuntimeState",
         "RuntimeCouplerState",
         "RuntimeDispatchContext",
-        "RuntimeFieldStore",
+        "FieldStore",
         "RuntimeStepContext",
         "RuntimeStepInfo",
     }
@@ -782,7 +801,7 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
     assert (
         vercor.ComponentPrefillHook is component_contracts_module.ComponentPrefillHook
     )
-    assert vercor.FieldSpec is component_contracts_module.FieldSpec
+    assert vercor.ComponentSpec is component_contracts_module.ComponentSpec
     assert vercor.SetupContext is component_contexts_module.SetupContext
     assert vercor.StepContext is component_contexts_module.StepContext
     assert vercor.StepResult is component_contracts_module.StepResult
@@ -824,7 +843,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     imported_host_module = importlib.import_module("vercor.components.host")
 
     assert base_module.__all__ == ["Component"]
-    assert not hasattr(base_module, "ComponentFieldSpec")
+    assert not hasattr(base_module, "ComponentComponentSpec")
     assert not hasattr(base_module, "ComponentSetupContext")
     assert not hasattr(base_module, "ComponentStepContext")
     assert not hasattr(base_module, "ComponentStepResult")
@@ -834,12 +853,12 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert components_module.__all__ == [
         "Component",
         "ComponentCreatePayloadHook",
-        "ComponentHooks",
+        "LifecycleHooks",
         "ComponentInitializeHook",
         "ComponentPrefillHook",
         "ComponentValidateHook",
         "DataComponent",
-        "FieldSpec",
+        "ComponentSpec",
         "HostComponent",
         "KEEP_PAYLOAD",
         "PrefillContext",
@@ -854,7 +873,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         components_module.ComponentCreatePayloadHook
         is contracts_module.ComponentCreatePayloadHook
     )
-    assert components_module.ComponentHooks is contracts_module.ComponentHooks
+    assert components_module.LifecycleHooks is contracts_module.LifecycleHooks
     assert (
         components_module.ComponentInitializeHook
         is contracts_module.ComponentInitializeHook
@@ -870,19 +889,19 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert host_module is imported_host_module
     assert components_module.DataComponent is data_module.DataComponent
     assert components_module.HostComponent is host_module.HostComponent
-    assert components_module.FieldSpec is contracts_module.FieldSpec
+    assert components_module.ComponentSpec is contracts_module.ComponentSpec
     assert components_module.SetupContext is component_contexts_module.SetupContext
     assert components_module.StepContext is component_contexts_module.StepContext
     assert components_module.StepResult is contracts_module.StepResult
     assert components_module.KEEP_PAYLOAD is contracts_module.KEEP_PAYLOAD
 
     removed_aliases = (
-        (components_module, "ComponentFieldSpec"),
+        (components_module, "ComponentComponentSpec"),
         (components_module, "ComponentSetupContext"),
         (components_module, "ComponentStepContext"),
         (components_module, "ComponentStepResult"),
         (components_module, "HostRuntimeComponent"),
-        (contracts_module, "ComponentFieldSpec"),
+        (contracts_module, "ComponentComponentSpec"),
         (contracts_module, "ComponentStepResult"),
         (component_contexts_module, "ComponentSetupContext"),
         (component_contexts_module, "ComponentStepContext"),
@@ -906,7 +925,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert not hasattr(components_module, "make_data_component")
     assert not hasattr(components_module, "make_differentiable_component")
     assert not hasattr(components_module, "make_host_component")
-    assert not hasattr(components_module, "RuntimeComponentState")
+    assert not hasattr(components_module, "ComponentRuntimeState")
     assert not hasattr(components_module, "ComponentInitContext")
     assert not hasattr(components_module, "RuntimeStepContext")
 
@@ -963,8 +982,8 @@ def test_removed_api_surfaces_stay_absent() -> None:
     import vercor.exchanges as exchanges_module
     import vercor.grids as grids_module
     import vercor.recipes as recipes_module
-    import vercor.runtime as runtime_module
-    import vercor.runtime.state as runtime_state_module
+    import vercor._runtime as runtime_module
+    import vercor._runtime.state as runtime_state_module
     import vercor.settings as settings_module
     import vercor.setups.external as external_module
     import vercor.setups.external.camulator_tensors as camulator_tensors_module
@@ -972,30 +991,30 @@ def test_removed_api_surfaces_stay_absent() -> None:
     import vercor.state as state_module
 
     removed_runtime_reexports = {
-        "RuntimeComponentContract",
-        "RuntimeComponentState",
+        "ExchangeContract",
+        "ComponentRuntimeState",
         "RuntimeCouplerState",
-        "RuntimeFieldStore",
+        "FieldStore",
         "RuntimeStepInfo",
         "append_unique_runtime_fields",
-        "build_runtime_contracts",
+        "build_exchange_contracts",
         "dispatch_component_exchanges",
-        "exchange_key_name",
+        "exchange_key",
         "flatten_exchange_fields",
     }
     for name in removed_runtime_reexports:
         assert not hasattr(runtime_module, name)
     assert getattr(runtime_module, "__all__", []) == []
-    assert not Path("vercor/runtime/contexts.py").exists()
-    with pytest.raises(ModuleNotFoundError, match="vercor.runtime.views"):
-        importlib.import_module("vercor.runtime.views")
+    assert not Path("vercor/_runtime/contexts.py").exists()
+    with pytest.raises(ModuleNotFoundError, match="vercor._runtime.views"):
+        importlib.import_module("vercor._runtime.views")
 
     assert not hasattr(state_module, "CouplerState")
     assert state_module.__all__ == ["RunState", "ComponentState"]
     assert not hasattr(runtime_state_module, "CouplerState")
     assert not hasattr(runtime_state_module, "RuntimeCouplerState")
     assert not hasattr(runtime_state_module, "RunState")
-    assert runtime_state_module.__all__ == ["RuntimeComponentState"]
+    assert runtime_state_module.__all__ == ["ComponentRuntimeState"]
     assert not hasattr(grids_module, "rectilinear_grid")
     assert "rectilinear_grid" not in grids_module.__all__
     for recipe_name in recipes_module.__all__:
@@ -1109,13 +1128,10 @@ def test_component_base_internals_are_private_modules() -> None:
     runtime_validation_source = Path(
         "vercor/components/_runtime_validation.py"
     ).read_text(encoding="utf-8")
-    core_runtime_validation_source = Path("vercor/runtime/validation.py").read_text(
+    core_runtime_validation_source = Path("vercor/_runtime/validation.py").read_text(
         encoding="utf-8"
     )
     runtime_execution_source = Path("vercor/components/runtime_execution.py").read_text(
-        encoding="utf-8"
-    )
-    lifecycle_source = Path("vercor/components/_lifecycle.py").read_text(
         encoding="utf-8"
     )
     validation_source = Path("vercor/components/setup_validation.py").read_text(
@@ -1125,7 +1141,8 @@ def test_component_base_internals_are_private_modules() -> None:
         "vercor/components/_constructor_options.py"
     ).read_text(encoding="utf-8")
 
-    assert "class FieldSpec" in public_contracts_source
+    assert "class ComponentSpec" in public_contracts_source
+    assert "class LifecycleHooks" in public_contracts_source
     assert "class StepResult" in public_contracts_source
     assert "ComponentInitializeHook =" in public_contracts_source
     assert "ComponentCreatePayloadHook =" in public_contracts_source
@@ -1133,9 +1150,9 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "ComponentValidateHook =" in public_contracts_source
     removed_getattr_marker = "__getattr__ = " + "depre" + "cated" + "_getattr("
     assert removed_getattr_marker not in public_contracts_source
-    assert "ComponentFieldSpec" not in component_contracts_module.__all__
+    assert "ComponentComponentSpec" not in component_contracts_module.__all__
     assert "ComponentStepResult" not in component_contracts_module.__all__
-    assert "class ComponentFieldSpec" not in contracts_source
+    assert "class ComponentComponentSpec" not in contracts_source
     assert "class ComponentStepResult" not in contracts_source
     assert "class DataComponent" in data_source
     assert "class HostComponent" in host_source
@@ -1143,13 +1160,13 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "class DataComponent" not in base_source
     assert "class HostRuntimeComponent" not in base_source
     assert "def normalize_field_spec(" in constructor_options_source
-    assert "def normalize_lifecycle_hooks(" in constructor_options_source
+    assert "def normalize_lifecycle_hooks(" not in constructor_options_source
     assert "normalize_field_spec(" not in base_source
     assert "normalize_field_spec(" not in host_source
     assert "def callable_component_options(" in callable_source
     assert "callable_component_options(" in base_source
     assert "callable_component_options(" in host_source
-    assert "normalize_lifecycle_hooks(" in data_source
+    assert "normalize_lifecycle_hooks(" not in data_source
     assert "def normalize_author_field_values" in contracts_source
     assert "class _CallableRuntimeMixin" in callable_source
     assert "def normalize_component_step_callable" in callable_source
@@ -1197,16 +1214,9 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "def data_component(" not in base_source
     assert "def differentiable_component(" not in base_source
     assert "def host_component(" not in base_source
-    assert "class ComponentLifecycleHooks" in lifecycle_source
-    assert "def install_lifecycle_hooks(" not in lifecycle_source
-    assert "class ComponentLifecycleOwner" not in lifecycle_source
-    assert "def with_updates(" not in lifecycle_source
+    assert not Path("vercor/components/_lifecycle.py").exists()
     assert "component._lifecycle_hooks = lifecycle_hooks" in callable_source
-    assert "normalize_lifecycle_hooks(" in data_source
-    assert "ComponentInitializeHook =" not in lifecycle_source
-    assert "ComponentCreatePayloadHook =" not in lifecycle_source
-    assert "ComponentPrefillHook =" not in lifecycle_source
-    assert "ComponentValidateHook =" not in lifecycle_source
+    assert "component._lifecycle_hooks = field_spec.hooks" in data_source
     assert "from vercor.components import _runtime_fields" not in base_source
     assert "from vercor.components.factories import _install_lifecycle_hooks" not in (
         callable_source
@@ -1246,7 +1256,7 @@ def test_component_base_internals_are_private_modules() -> None:
         "component_state.data.to_mapping()",
         "component_state.data.replace_many(fields)",
         "validate_runtime_component_data_field",
-        "from vercor.runtime.validation import",
+        "from vercor._runtime.validation import",
         "_initialize_hook",
         "_create_runtime_payload_hook",
     )
@@ -1255,7 +1265,7 @@ def test_component_base_internals_are_private_modules() -> None:
 
     for marker in (
         "validate_runtime_component_data_field",
-        "from vercor.runtime.validation import",
+        "from vercor._runtime.validation import",
     ):
         assert marker not in runtime_fields_source
 
@@ -1382,9 +1392,9 @@ def test_runtime_component_type_imports_are_annotation_only() -> None:
 
     modules_with_annotation_only_component_usage = (
         Path("vercor/coupler.py"),
-        Path("vercor/runtime/initialization.py"),
-        Path("vercor/runtime/topology.py"),
-        Path("vercor/runtime/coupler_state.py"),
+        Path("vercor/_runtime/initialization.py"),
+        Path("vercor/_runtime/topology.py"),
+        Path("vercor/_runtime/coupler_state.py"),
     )
 
     for path in modules_with_annotation_only_component_usage:
@@ -1554,10 +1564,10 @@ def test_runtime_state_is_separate_from_public_component_objects() -> None:
         name="ATM",
         grid=make_test_grid(name="api-boundary"),
     )
-    runtime_state = RuntimeComponentState(
-        data=RuntimeFieldStore.empty(),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    runtime_state = ComponentRuntimeState(
+        data=FieldStore.empty(),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
     )
 
     assert not isinstance(runtime_state, Component)
@@ -1652,11 +1662,11 @@ def test_private_setup_state_objects_do_not_borrow_component_methods() -> None:
 @pytest.mark.fast_always
 def test_setup_adapters_do_not_import_runtime_context_or_store_internals() -> None:
     forbidden_markers = (
-        "vercor.runtime.contexts",
-        "from vercor.runtime.contexts import ComponentInitContext",
-        "from vercor.runtime.contexts import RuntimeStepContext",
-        "from vercor.runtime import RuntimeFieldStore",
-        "RuntimeFieldStore.from_mapping",
+        "vercor._runtime.contexts",
+        "from vercor._runtime.contexts import ComponentInitContext",
+        "from vercor._runtime.contexts import RuntimeStepContext",
+        "from vercor._runtime import FieldStore",
+        "FieldStore.from_mapping",
     )
     for path in Path("vercor/setups").rglob("*.py"):
         source = path.read_text(encoding="utf-8")
@@ -1674,7 +1684,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     import vercor.grid_masks as grid_masks_module
     import vercor.physical_constants as physical_constants_module
     import vercor.exchanges as exchange_module
-    import vercor.runtime.exchange_keys as exchange_keys_module
+    import vercor._runtime.exchange_keys as exchange_keys_module
     import vercor.settings as settings_module
     import vercor.time_selection as time_selection_module
 
@@ -1740,8 +1750,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     time_selection_source = Path("vercor/time_selection.py").read_text(encoding="utf-8")
     forcing_index_path = Path("vercor/forcing_index.py")
     forcing_index_source = forcing_index_path.read_text(encoding="utf-8")
-    runtime_time_source = Path("vercor/runtime/time.py").read_text(encoding="utf-8")
-    runtime_validation_source = Path("vercor/runtime/validation.py").read_text(
+    runtime_time_source = Path("vercor/_runtime/time.py").read_text(encoding="utf-8")
+    runtime_validation_source = Path("vercor/_runtime/validation.py").read_text(
         encoding="utf-8"
     )
     exchange_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
@@ -1750,11 +1760,11 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
         encoding="utf-8"
     )
     exchanges_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
-    runtime_resources_source = Path("vercor/runtime/resources.py").read_text(
+    runtime_resources_source = Path("vercor/_runtime/resources.py").read_text(
         encoding="utf-8"
     )
-    runtime_cache_path = Path("vercor/runtime/cache.py")
-    runtime_compilation_path = Path("vercor/runtime/compilation.py")
+    runtime_cache_path = Path("vercor/_runtime/cache.py")
+    runtime_compilation_path = Path("vercor/_runtime/compilation.py")
     regridder_base_source = Path("vercor/_regridders/base.py").read_text(
         encoding="utf-8"
     )
@@ -1762,8 +1772,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
     regridder_init = Path("vercor/_regridders/__init__.py").read_text(encoding="utf-8")
     grid_masks_source = Path("vercor/grid_masks.py").read_text(encoding="utf-8")
-    topology_source = Path("vercor/runtime/topology.py").read_text(encoding="utf-8")
-    component_topology_source = Path("vercor/runtime/component_topology.py").read_text(
+    topology_source = Path("vercor/_runtime/topology.py").read_text(encoding="utf-8")
+    component_topology_source = Path("vercor/_runtime/component_topology.py").read_text(
         encoding="utf-8"
     )
     jax_gcm_tools_source = Path("vercor/setups/external/jax_gcm_tools.py").read_text(
@@ -1816,7 +1826,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
     assert not runtime_cache_path.exists()
-    assert "from vercor.runtime.compilation import" not in runtime_resources_source
+    assert "from vercor._runtime.compilation import" not in runtime_resources_source
     assert "CompiledRuntime = Callable[" not in runtime_resources_source
     assert "CompiledRuntime" not in runtime_resources_source
     assert "RuntimeCompilationKey" not in runtime_resources_source
@@ -1901,13 +1911,13 @@ def test_callable_component_factories_share_normalized_options_owner() -> None:
 @pytest.mark.fast_always
 def test_production_runtime_modules_use_coupler_state_name() -> None:
     production_paths = (
-        Path("vercor/runtime/coupler_state.py"),
-        Path("vercor/runtime/driver.py"),
-        Path("vercor/runtime/exchange_dispatch.py"),
-        Path("vercor/runtime/facade.py"),
-        Path("vercor/runtime/preparation.py"),
-        Path("vercor/runtime/runner.py"),
-        Path("vercor/runtime/state_validation.py"),
+        Path("vercor/_runtime/coupler_state.py"),
+        Path("vercor/_runtime/driver.py"),
+        Path("vercor/_runtime/exchange_dispatch.py"),
+        Path("vercor/_runtime/facade.py"),
+        Path("vercor/_runtime/preparation.py"),
+        Path("vercor/_runtime/runner.py"),
+        Path("vercor/_runtime/state_validation.py"),
         Path("vercor/output/runtime.py"),
     )
 
@@ -2043,7 +2053,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
         encoding="utf-8"
     )
     output_init_source = Path("vercor/output/__init__.py").read_text(encoding="utf-8")
-    facade_source = Path("vercor/runtime/facade.py").read_text(encoding="utf-8")
+    facade_source = Path("vercor/_runtime/facade.py").read_text(encoding="utf-8")
     runtime_output_source = Path("vercor/output/runtime.py").read_text(encoding="utf-8")
     period_averages_source = Path("vercor/output/period_averages.py").read_text(
         encoding="utf-8"
@@ -2106,7 +2116,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert not Path("vercor/setups/jax_array_helpers.py").exists()
     assert not Path("vercor/setups/data/camulator_land.py").exists()
     assert not Path("vercor/setups/external/windpp.py").exists()
-    assert "from vercor.runtime.validation import" not in jax_gcm_source
+    assert "from vercor._runtime.validation import" not in jax_gcm_source
     assert "class JAXGCMRuntimePayload" not in jax_gcm_source
     assert "class JAXGCMRuntimePayload" in jax_gcm_runtime_source
     assert "class JAXGCMSetupState" not in jax_gcm_source
@@ -2204,7 +2214,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "component.output.snapshot_writer" in snapshot_output_source
     assert "field_spec.outputs" not in snapshot_output_source
     assert ".data.get(" not in snapshot_output_source
-    assert "RuntimeComponentState.from_component_state" not in snapshot_output_source
+    assert "ComponentRuntimeState.from_component_state" not in snapshot_output_source
     assert "import numpy" not in period_averages_source
     assert "import numpy" not in period_files_source
     assert "import numpy" not in jax_gcm_output_source
@@ -2218,7 +2228,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def write_period_average_netcdf(" in period_files_source
     assert "class _ComponentOutputAdapter" in output_adapters_source
     assert "class ComponentOutput" not in output_adapters_source
-    assert "class OutputSpec" in output_public_adapters_source
+    assert "class OutputConfig" in output_public_adapters_source
     assert "class ComponentOutputAdapter" not in output_public_adapters_source
     assert "accumulate_output_variables(" not in output_adapters_source
     assert "self._accumulator.add_samples(" in output_adapters_source
@@ -2234,7 +2244,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "period_mean_output_variables(" not in jax_gcm_output_source
     assert "write_period_average_netcdf(" not in jax_gcm_output_source
     assert "def make_jax_gcm_output_adapter(" not in jax_gcm_output_source
-    assert "OutputSpec(" in jax_gcm_source
+    assert "OutputConfig(" in jax_gcm_source
     assert "def record_jax_gcm_period_output(" in jax_gcm_output_source
     assert "def write_jax_gcm_snapshot_output(" in jax_gcm_output_source
     assert "time_coordinate_variable(" in jax_gcm_output_source
@@ -2242,13 +2252,13 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "period_mean_output_variables(" not in veros_output_source
     assert "write_period_average_netcdf(" not in veros_output_source
     assert "def make_veros_output_adapter(" not in veros_output_source
-    assert "OutputSpec(" in veros_gcm_source
+    assert "OutputConfig(" in veros_gcm_source
     assert "def record_veros_period_output(" in veros_output_source
     assert "def write_veros_snapshot_output(" in veros_output_source
     assert "time_coordinate_variable(" in veros_output_source
     assert "used_dimension_names(" in veros_output_source
     assert "def make_camulator_output_adapter(" not in camulator_output_source
-    assert "OutputSpec(" in camulator_source
+    assert "OutputConfig(" in camulator_source
     assert "def record_camulator_period_output(" in camulator_output_source
     assert "def write_camulator_snapshot_output(" in camulator_output_source
     assert "write_period_average_if_due(" not in jax_gcm_runtime_source
@@ -2257,9 +2267,9 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "def __getattr__(" not in output_init_source
     assert "def __dir__(" not in output_init_source
     assert "_RUNTIME_EXPORTS" not in output_init_source
-    assert "OutputSpec" in output_init_source
+    assert "OutputConfig" in output_init_source
     assert "from vercor.output.variables import OutputVariable" in output_init_source
-    assert '"OutputSpec"' in output_init_source
+    assert '"OutputConfig"' in output_init_source
     assert '"ComponentOutputAdapter"' not in output_init_source
     assert '"OutputVariable"' in output_init_source
     assert "from vercor.output.runtime import (" not in output_init_source

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, PeriodOutputConfig, SpinupConfig
+from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput, Spinup
 from vercor.setups import make_erainterim_ocean
 from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
@@ -17,9 +17,9 @@ if __name__ == "__main__":
 
     jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
-        spinup=SpinupConfig(enabled=True),
+        spinup=Spinup(enabled=True),
         jitted=True,
-        output=PeriodOutputConfig(frequency="month"),
+        output=OutputConfig(period=PeriodOutput(frequency="month")),
     )
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere

@@ -39,9 +39,9 @@ from vercor.components.contexts import SetupContext, StepContext
 from vercor.output._adapters import _ComponentOutputAdapter as ComponentOutputAdapter
 from vercor.output.adapters import SnapshotContext
 from vercor.output.variables import OutputVariable
-from vercor.setup_config import PeriodOutputConfig
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
+from vercor.setup_config import OutputConfig, PeriodOutput, VerosConfig
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
 from vercor.settings import Settings
 from vercor.state import ComponentState
 
@@ -57,12 +57,12 @@ class _RecordingLogger:
 def _runtime_component_state(
     name: str,
     data: dict[str, Any] | None = None,
-) -> RuntimeComponentState:
+) -> ComponentRuntimeState:
     _ = name
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(data or {}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    return ComponentRuntimeState(
+        data=FieldStore.from_mapping(data or {}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
     )
 
 
@@ -912,10 +912,10 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     runtime_data.update(prefill_result.data)
     runtime_incoming.update(prefill_result.incoming)
     runtime_outgoing.update(prefill_result.outgoing)
-    component_state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(runtime_data),
-        incoming=RuntimeFieldStore.from_mapping(runtime_incoming),
-        outgoing=RuntimeFieldStore.from_mapping(runtime_outgoing),
+    component_state = ComponentRuntimeState(
+        data=FieldStore.from_mapping(runtime_data),
+        incoming=FieldStore.from_mapping(runtime_incoming),
+        outgoing=FieldStore.from_mapping(runtime_outgoing),
         runtime_payload=jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
             component
         ),
@@ -1207,12 +1207,10 @@ def test_jax_gcm_snapshot_output_uses_final_runtime_payload_not_runtime_data(
         },
         phydata={},
     )
-    component_state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
-            {"temperature": np.full((3, 2, 3), -999.0)}
-        ),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    component_state = ComponentRuntimeState(
+        data=FieldStore.from_mapping({"temperature": np.full((3, 2, 3), -999.0)}),
+        incoming=FieldStore.empty(),
+        outgoing=FieldStore.empty(),
         runtime_payload=SimpleNamespace(jcm_state=jcm_state),
     )
     output = tmp_path / "ATM.snapshot.nc"
@@ -1899,12 +1897,16 @@ def test_veros_constructor_builds_jax_backed_grid(
     )
 
     component = veros_gcm_module.make_veros_gcm(
-        custom_parameters={"dt_tracer": 600.0},
-        output=PeriodOutputConfig(
-            frequency="month",
-            variables=("temp", "surface_taux"),
+        config=VerosConfig(
+            custom_parameters={"dt_tracer": 600.0},
+            output=OutputConfig(
+                period=PeriodOutput(
+                    frequency="month",
+                    variables=("temp", "surface_taux"),
+                ),
+            ),
+            jitted=False,
         ),
-        jitted=False,
     )
 
     assert isinstance(component.grid.longitude, jax.Array)
