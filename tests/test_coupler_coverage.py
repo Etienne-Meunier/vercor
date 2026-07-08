@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import inspect
 import logging
@@ -88,17 +89,17 @@ class _RunComponent(Component):
         self.events = events
         self._data["temperature"] = np.ones((2, 2))
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, payload
         time = context.time
         time_label = "none" if time is None else time.isoformat()
-        self.events.append(
-            f"step_runtime:{self.name}:{time_label}:{context.dt_seconds}"
-        )
-        return component_state
+        self.events.append(f"step:{self.name}:{time_label}:{context.dt_seconds}")
+        return {}
 
 
 class _LoggingRunComponent(Component):
@@ -106,18 +107,20 @@ class _LoggingRunComponent(Component):
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self._data["temperature"] = np.ones((2, 2), dtype=float)
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = payload
         assert context.logger is not None
         context.logger.info(
             "scanned {} {}",
             self.name,
-            jnp.sum(component_state.data.get("temperature")),
+            jnp.sum(fields["temperature"]),
         )
-        return component_state
+        return {}
 
 
 class _HostRunComponent(HostComponent):
@@ -125,24 +128,26 @@ class _HostRunComponent(HostComponent):
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
         self._data["temperature"] = np.ones((2, 2))
+        self._data["host_time_seen"] = np.zeros((2, 2))
 
-    def step_host_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = payload
         if self.events is not None:
             time = context.time
             time_label = "none" if time is None else time.isoformat()
             self.events.append(
                 f"step_host:{self.name}:{time_label}:{context.dt_seconds}"
             )
-        data = component_state.data.set(
-            "temperature",
-            component_state.data.get("temperature") + context.dt_seconds,
-        )
         self._data["host_event"] = np.asarray(context.dt_seconds)
-        return component_state.with_data(data.set("host_time_seen", np.asarray(1.0)))
+        return {
+            "temperature": fields["temperature"] + context.dt_seconds,
+            "host_time_seen": np.ones((2, 2)),
+        }
 
 
 def make_coupler(
@@ -319,8 +324,8 @@ def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
 
     runtime_state = coupler.initial_state(prefill=True)
 
-    all_views = coupler.views(runtime_state)
-    selected_views = coupler.views(runtime_state, names=("LND", "ATM"))
+    all_views = runtime_state.components(coupler.run_order)
+    selected_views = runtime_state.components(("LND", "ATM"))
 
     assert tuple(all_views) == ("ATM", "OCN", "LND")
     assert tuple(selected_views) == ("LND", "ATM")

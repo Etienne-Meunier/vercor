@@ -131,7 +131,7 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
     assert float(view.field("only_incoming")) == 3.0
     assert [
         (store_name, field_name, float(value))
-        for store_name, field_name, value in view.iter_store_fields(
+        for store_name, field_name, value in view.iter_fields(
             "incoming",
             "outgoing",
         )

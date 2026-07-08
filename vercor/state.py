@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-import warnings
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import jax
@@ -144,21 +143,6 @@ class RunState(PyTreeNodeMixin):
             updated_component = component_state.with_outgoing(updated_store)
         return self._with_component_state(component, updated_component)
 
-    def with_component_fields(
-        self,
-        name: str,
-        fields: Mapping[str, RuntimeArray],
-    ) -> "RunState":
-        """Return a new run state with existing data fields replaced."""
-
-        warnings.warn(
-            "RunState.with_component_fields() is deprecated; use "
-            "RunState.with_fields(component, fields) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.with_fields(name, fields)
-
     def _component_index(self, name: str) -> int:
         try:
             return self.component_indices[name]
@@ -268,20 +252,6 @@ class ComponentState:
                 raise KeyError(f"Runtime view store {store_name!r} not found") from exc
             for field_name, value in zip(store.field_names, store.values, strict=True):
                 yield store_name, field_name, value
-
-    def iter_store_fields(
-        self,
-        *store_names: FieldStore,
-    ) -> Iterator[tuple[FieldStore, str, RuntimeArray]]:
-        """Deprecated wrapper for :meth:`iter_fields`."""
-
-        warnings.warn(
-            "ComponentState.iter_store_fields() is deprecated; use "
-            "ComponentState.iter_fields() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        yield from self.iter_fields(*store_names)
 
     @classmethod
     def _from_runtime(

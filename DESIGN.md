@@ -343,9 +343,8 @@ immutable runtime containers used during traced integration.
   `runtime_field_candidates(...)`, and `runtime_field(...)` own
   data/incoming/outgoing lookup for explicit views and compatible runtime
   states. `Coupler` exposes `initial_state()` and `run()` for runtime-state
-  creation, while `RunState.component(...)` and `RunState.components(...)` are
-  the canonical component-view factories. `Coupler.view(...)` and
-  `Coupler.views(...)` remain deprecated compatibility wrappers.
+  creation. `RunState.component(...)` and `RunState.components(...)` are the
+  only public component-view factories.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output.runtime` helpers, with
   `vercor.runtime.facade` validating and delegating output writes for

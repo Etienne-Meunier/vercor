@@ -248,13 +248,14 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
     assert coupler.add_exchanges(()) is coupler
     assert not hasattr(Coupler, "initialize")
     assert not hasattr(Coupler, "state")
+    assert not hasattr(Coupler, "view")
+    assert not hasattr(Coupler, "views")
     assert Coupler.initial_state.__annotations__.get("return") == "RunState"
     assert Coupler.run.__annotations__.get("return") == "RunState"
-    assert Coupler.view.__annotations__.get("return") == "ComponentState"
 
     state = coupler.initial_state()
     assert isinstance(state, vercor.RunState)
-    view = coupler.view(state, "ATM")
+    view = state.component("ATM")
     assert isinstance(view, vercor.ComponentState)
 
     calls: list[dict[str, object]] = []
@@ -272,6 +273,29 @@ def test_v3_coupler_public_methods_return_stable_state_and_views(
     assert calls[0]["write_snapshots"] is False
     with pytest.raises(TypeError, match="snapshots"):
         coupler.write_outputs(state, snapshots=False)  # type: ignore[call-arg]
+
+
+@pytest.mark.fast_always
+def test_vercor_deprecation_shims_are_removed_from_source() -> None:
+    forbidden_markers = (
+        "warnings.warn(",
+        "DeprecationWarning",
+        "def _legacy_runtime_step(",
+        "step_host_runtime_state",
+        "def step_runtime_state(",
+        "def with_component_fields(",
+        "def iter_store_fields(",
+    )
+
+    for path in Path("vercor").rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        for marker in forbidden_markers:
+            assert marker not in source, f"{path} still contains {marker}"
+
+    assert not hasattr(Coupler, "view")
+    assert not hasattr(Coupler, "views")
+    assert not hasattr(vercor.RunState, "with_component_fields")
+    assert not hasattr(vercor.ComponentState, "iter_store_fields")
 
 
 @pytest.mark.fast_always
@@ -314,13 +338,14 @@ def test_staged_component_constructor_hides_raw_setup_internals() -> None:
     )
 
     class MinimalComponent(Component):
-        def step_runtime_state(
+        def step(
             self,
-            component_state: RuntimeComponentState,
+            fields: Any,
             context: vercor.StepContext,
-        ) -> RuntimeComponentState:
-            _ = context
-            return component_state
+            payload: Any | None = None,
+        ) -> dict[str, Any]:
+            _ = fields, context, payload
+            return {}
 
     assert "data" not in signature(Component).parameters
     assert "setup_metadata" not in signature(Component).parameters
@@ -625,8 +650,8 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
 
     coupler.set_run_order(("ATM",))
     state = coupler.initial_state()
-    view = coupler.view(state, "ATM")
-    views = coupler.views(state)
+    view = state.component("ATM")
+    views = state.components()
 
     assert views["ATM"] is view or views["ATM"].name == view.name
     assert view.field("temperature").shape == component.grid.shape
@@ -636,6 +661,8 @@ def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
         "create_runtime_state",
         "runtime_component_view",
         "runtime_component_views",
+        "view",
+        "views",
     ):
         assert not hasattr(coupler, removed_name)
 

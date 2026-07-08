@@ -81,9 +81,7 @@ def test_v1_coupler_uses_initial_state_name() -> None:
 
     assert isinstance(coupler.initial_state(), vercor.RunState)
     assert not hasattr(Coupler, "state")
-    assert isinstance(
-        coupler.view(coupler.initial_state(), "ATM"), vercor.ComponentState
-    )
+    assert isinstance(coupler.initial_state().component("ATM"), vercor.ComponentState)
 
 
 @pytest.mark.fast_always

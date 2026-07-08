@@ -78,39 +78,39 @@ def _step_runtime_state(
 
 
 class _RuntimeOnlyComponent(base_module.Component):
-    def step_runtime_state(
+    def step(
         self,
-        component_state: RuntimeComponentState,
+        fields: Mapping[str, RuntimeArray],
         context: StepContext,
-    ) -> RuntimeComponentState:
-        data = component_state.data.set(
-            "temperature",
-            component_state.data.get("temperature") + context.dt_seconds,
-        )
-        return component_state.with_data(data)
+        payload: Any | None = None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = payload
+        return {"temperature": fields["temperature"] + context.dt_seconds}
 
 
 class _MissingSetupComponent(base_module.Component):
     def __init__(self) -> None:
         pass
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: RuntimeComponentState,
+        fields: Mapping[str, RuntimeArray],
         context: StepContext,
-    ) -> RuntimeComponentState:
-        _ = context
-        return component_state
+        payload: Any | None = None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = fields, context, payload
+        return {}
 
 
 class _HostStepOnlyComponent(host_module.HostComponent):
-    def step_host_runtime_state(
+    def step(
         self,
-        component_state: RuntimeComponentState,
+        fields: Mapping[str, RuntimeArray],
         context: StepContext,
-    ) -> RuntimeComponentState:
-        _ = context
-        return component_state
+        payload: Any | None = None,
+    ) -> Mapping[str, RuntimeArray]:
+        _ = fields, context, payload
+        return {}
 
 
 def test_component_runtime_execution_policy_helpers_detect_host_components() -> None:
@@ -136,32 +136,24 @@ def test_component_runtime_execution_policy_steps_selected_runtime_path() -> Non
     )
 
     class PureMarkerComponent(base_module.Component):
-        def step_runtime_state(
+        def step(
             self,
-            component_state: RuntimeComponentState,
+            fields: Mapping[str, RuntimeArray],
             context: StepContext,
-        ) -> RuntimeComponentState:
-            _ = context
-            return component_state.with_data(
-                component_state.data.set(
-                    "marker",
-                    component_state.data.get("marker") + 1.0,
-                )
-            )
+            payload: Any | None = None,
+        ) -> Mapping[str, RuntimeArray]:
+            _ = context, payload
+            return {"marker": fields["marker"] + 1.0}
 
     class HostMarkerComponent(host_module.HostComponent):
-        def step_host_runtime_state(
+        def step(
             self,
-            component_state: RuntimeComponentState,
+            fields: Mapping[str, RuntimeArray],
             context: StepContext,
-        ) -> RuntimeComponentState:
-            _ = context
-            return component_state.with_data(
-                component_state.data.set(
-                    "marker",
-                    component_state.data.get("marker") + 2.0,
-                )
-            )
+            payload: Any | None = None,
+        ) -> Mapping[str, RuntimeArray]:
+            _ = context, payload
+            return {"marker": fields["marker"] + 2.0}
 
     grid = make_test_grid()
     context = StepContext(dt_seconds=1.0, settings=Settings())
@@ -1015,22 +1007,14 @@ def test_subclasses_can_declare_fields_with_author_spec() -> None:
                 defaults={"temperature": 280.0},
             )
 
-        def step_runtime_state(
+        def step(
             self,
-            component_state: RuntimeComponentState,
+            fields: Mapping[str, RuntimeArray],
             context: StepContext,
-        ) -> RuntimeComponentState:
-            _ = context
-            return with_runtime_fields(
-                self,
-                component_state,
-                {
-                    "temperature": (
-                        runtime_field(self, component_state, "temperature")
-                        + runtime_field(self, component_state, "forcing")
-                    )
-                },
-            )
+            payload: Any | None = None,
+        ) -> Mapping[str, RuntimeArray]:
+            _ = context, payload
+            return {"temperature": fields["temperature"] + fields["forcing"]}
 
     component = DeclaredComponent(name="ATM", grid=grid)
     missing_input_state = create_runtime_component_state(

@@ -9,6 +9,19 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local expired VerCOR deprecation shim removal validation passed as of
+  2026-07-08 using the direct `scipy` environment executable: focused cleanup
+  pytest, Black, flake8, mypy, full fast pytest, full pytest, coverage pytest
+  at 90% total, and source-level absence guards for VerCOR
+  `DeprecationWarning`/`warnings.warn` usage. The cleanup removes
+  `Coupler.view(...)`, `Coupler.views(...)`,
+  `RunState.with_component_fields(...)`,
+  `ComponentState.iter_store_fields(...)`, and runtime dispatch support for
+  subclass `step_runtime_state(...)` / `step_host_runtime_state(...)`. Black
+  emitted the recurring Python 3.13/target-3.14 warning; full pytest/coverage
+  emitted only the existing external JAX dtype-promotion `FutureWarning` and
+  xarray merge `FutureWarning` in JAXGCM coverage. No VerCOR deprecation
+  warnings remain in active validation output.
 - Latest local v1 API boundary rewrite validation passed as of 2026-07-08
   using the direct `scipy` environment executable: Black, flake8, mypy, full
   fast pytest, full pytest, coverage pytest at 90% total, example

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import os
 import signal
@@ -28,13 +29,14 @@ class _NoopRuntimeComponent(Component):
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self._data["temperature"] = np.ones((2, 2), dtype=float)
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
-        _ = context
-        return component_state
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, context, payload
+        return {}
 
 
 class _InterruptingHostComponent(HostComponent):
@@ -42,14 +44,15 @@ class _InterruptingHostComponent(HostComponent):
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self._data["temperature"] = np.ones((2, 2), dtype=float)
 
-    def step_host_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
-        _ = context
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, context, payload
         signal.raise_signal(signal.SIGINT)
-        return component_state
+        return {}
 
 
 def _make_pure_coupler(steps: int = 2) -> Coupler:

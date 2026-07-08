@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import MappingProxyType
@@ -22,7 +21,7 @@ from vercor._run_order import normalize_run_order
 import vercor.runtime.facade as _runtime_facade
 from vercor.runtime.resources import CouplerRuntimeResources
 from vercor.settings import Settings
-from vercor.state import ComponentState, RunState
+from vercor.state import RunState
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -217,36 +216,6 @@ class Coupler:
         return _runtime_facade.create_runtime_state(
             inputs=self._runtime_inputs(),
             prefill_missing=prefill,
-        )
-
-    def view(
-        self,
-        state: RunState,
-        name: str,
-    ) -> ComponentState:
-        """Return a component view for diagnostics and output."""
-
-        warnings.warn(
-            "Coupler.view() is deprecated; use RunState.component(name) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return state.component(name)
-
-    def views(
-        self,
-        state: RunState,
-        names: Sequence[str] | None = None,
-    ) -> dict[str, ComponentState]:
-        """Return component views for diagnostics and output."""
-
-        warnings.warn(
-            "Coupler.views() is deprecated; use RunState.components(names) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return dict(
-            state.components(tuple(self.components) if names is None else names)
         )
 
     def write_outputs(
