@@ -573,7 +573,9 @@ def test_jax_gcm_constructor_builds_jax_backed_grid(
     assert component.spec.inputs == (
         "land_surface_temperature",
         "sea_surface_temperature",
+        "soil_moisture",
     )
+    assert "soil_moisture" in component.spec.defaults
     assert component.spec.outputs == (
         "land_surface_temperature",
         "sea_surface_temperature",

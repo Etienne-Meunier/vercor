@@ -52,7 +52,7 @@ def make_jax_gcm(
         grid=state.grid,
         step=partial(_jax_gcm_runtime.step_jax_gcm_component, state),
         spec=ComponentSpec(
-            inputs=("land_surface_temperature", "sea_surface_temperature"),
+            inputs=_jax_gcm_fields.JAXGCM_INPUT_GRID_FIELD_NAMES,
             outputs=(
                 "land_surface_temperature",
                 "sea_surface_temperature",

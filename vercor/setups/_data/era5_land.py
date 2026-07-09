@@ -9,6 +9,14 @@ from vercor.grids import RectilinearGrid
 from vercor.setups._data.assets import get_forcing_data
 from vercor.setups._data._component_helpers import time_interpolated_data_component
 
+_ERA5_LAND_INPUT_NAMES = (
+    "specific_humidity",
+    "model_level_height",
+    "potential_temperature",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+    "temperature",
+)
 _ERA5_LAND_FIELD_NAMES = ("land_surface_temperature",)
 
 
@@ -44,7 +52,9 @@ def make_era5_land(
         name=name,
         grid=grid,
         fields={"land_surface_temperature": land_surface_temperature},
+        inputs=_ERA5_LAND_INPUT_NAMES,
         outputs=_ERA5_LAND_FIELD_NAMES,
+        defaults={field_name: 0.0 for field_name in _ERA5_LAND_INPUT_NAMES},
         data_files=data_files,
     )
 

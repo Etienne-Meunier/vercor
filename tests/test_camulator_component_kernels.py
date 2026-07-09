@@ -26,8 +26,13 @@ import vercor.setups._external.camulator_tensors as camulator_tensors_module
 import vercor.setups._external.camulator_wind_filter as camulator_wind_filter_module
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
+from vercor._exchange_recipes import ATMOSPHERE_TO_LAND_RADIATION_FIELDS
+from vercor._runtime.contracts import build_exchange_contracts
 from vercor.components.contexts import SetupContext, StepContext
+from vercor.components import ComponentSpec, DataComponent
 from vercor.components.runtime_execution import step_component_runtime_state
+from vercor.exchanges import Exchange
+from vercor.fields import flatten_field_items
 from vercor.output._component_adapter import (
     _ComponentOutputAdapter as ComponentOutputAdapter,
 )
@@ -41,6 +46,7 @@ from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
+from vercor._runtime.validation import validate_exchange_fields_declared
 from vercor.settings import Settings
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
@@ -1239,8 +1245,16 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     component.initialize(_make_coupler(start))
+    assert component.spec.inputs == (
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+    )
     assert component.spec.outputs == ("land_surface_temperature",)
-    assert set(component.spec.defaults) == {"land_surface_temperature"}
+    assert set(component.spec.defaults) == {
+        "land_surface_temperature",
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+    }
     assert isinstance(component._data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(
         component._data["land_surface_temperature"], np.full((2, 2), 283.0)
@@ -1268,6 +1282,72 @@ def test_camulator_land_stores_jax_runtime_arrays(
         land_surface_temperature,
         np.asarray([[281.0, 282.0], [283.0, 284.0]]),
     )
+
+
+@pytest.mark.fast_always
+def test_camulator_land_declares_radiation_exchange_inputs(
+    monkeypatch: Any,
+) -> None:
+    start = datetime(2000, 1, 1, 0, 0, 0)
+    forcing_ds = xr.Dataset(
+        data_vars={
+            "TS": (
+                ("time", "lat", "lon"),
+                np.asarray([[[281.0, 282.0], [283.0, 284.0]]]),
+            )
+        },
+        coords={"time": [start]},
+    )
+    monkeypatch.setattr(
+        camulator_land_module,
+        "create_lnd_mask_from_ocn",
+        lambda **kwargs: (jnp.ones((2, 2)), jnp.zeros((2, 2))),
+    )
+    monkeypatch.setattr(
+        camulator_land_module,
+        "load_camulator_forcing_context",
+        lambda **kwargs: {
+            "conf": {
+                "data": {"lead_time_periods": 6},
+                "predict": {"start_datetime": start},
+            },
+            "forcing_dataset_raw": forcing_ds,
+        },
+    )
+
+    grid = RectilinearGrid(
+        name="grid",
+        longitude=jnp.asarray([0.0, 1.0]),
+        latitude=jnp.asarray([0.0, 1.0]),
+    )
+    radiation_fields = tuple(flatten_field_items(ATMOSPHERE_TO_LAND_RADIATION_FIELDS))
+    atmosphere = DataComponent.from_fields(
+        name="ATM",
+        grid=grid,
+        fields={field_name: jnp.zeros(grid.shape) for field_name in radiation_fields},
+        spec=ComponentSpec(outputs=radiation_fields),
+    )
+    land = camulator_land_module.make_camulator_land(
+        config_path="dummy.yaml",
+        camulator_grid=grid,
+        ocn_grid=grid,
+    )
+    components = {"ATM": atmosphere, "LND": land}
+    contracts = build_exchange_contracts(
+        tuple(components),
+        (
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
+            ),
+        ),
+        validate_endpoints=True,
+    )
+
+    assert contracts["LND"].receives == radiation_fields
+    for name, component in components.items():
+        validate_exchange_fields_declared(component, contracts[name])
 
 
 def test_camulator_step_uses_jax_prepared_forcing_boundaries(

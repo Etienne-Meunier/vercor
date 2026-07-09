@@ -18,8 +18,15 @@ from vercor.setups._external.camulator_forcing import (
     load_camulator_forcing_context,
 )
 
+_CAMULATOR_LAND_INPUTS = (
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+)
 _CAMULATOR_LAND_OUTPUTS = ("land_surface_temperature",)
-_CAMULATOR_LAND_DEFAULT_FIELDS = {"land_surface_temperature": 283.0}
+_CAMULATOR_LAND_DEFAULT_FIELDS = {
+    "land_surface_temperature": 283.0,
+    **{field_name: 0.0 for field_name in _CAMULATOR_LAND_INPUTS},
+}
 
 
 @dataclass
@@ -121,6 +128,7 @@ def make_camulator_land(
         grid=grid,
         step=step,
         spec=ComponentSpec(
+            inputs=_CAMULATOR_LAND_INPUTS,
             outputs=_CAMULATOR_LAND_OUTPUTS,
             defaults=_CAMULATOR_LAND_DEFAULT_FIELDS,
             lifecycle=LifecycleHooks(initialize=initialize),

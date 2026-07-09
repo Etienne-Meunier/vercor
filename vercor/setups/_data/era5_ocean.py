@@ -14,6 +14,17 @@ from vercor.setups._data._field_helpers import (
     positive_binary_mask,
 )
 
+_ERA5_OCEAN_INPUT_NAMES = (
+    "u_velocity",
+    "v_velocity",
+    "specific_humidity",
+    "model_level_height",
+    "density",
+    "potential_temperature",
+    "temperature",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+)
 _ERA5_OCEAN_FIELD_NAMES = ("sea_surface_temperature",)
 
 
@@ -58,7 +69,9 @@ def make_era5_ocean(
         name=name,
         grid=grid,
         fields={"sea_surface_temperature": sea_surface_temperature},
+        inputs=_ERA5_OCEAN_INPUT_NAMES,
         outputs=_ERA5_OCEAN_FIELD_NAMES,
+        defaults={field_name: 0.0 for field_name in _ERA5_OCEAN_INPUT_NAMES},
         data_files=data_files,
     )
 

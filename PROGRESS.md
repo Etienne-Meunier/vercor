@@ -9,6 +9,34 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local exchange-declaration audit follow-up validation passed as of
+  2026-07-09 using the direct `scipy` environment executable: focused red/green
+  CAMulator land radiation-contract pytest, focused JCM land output/contract
+  pytest, focused data/slab recipe declaration pytest, full fast pytest, full
+  pytest, Black, flake8, mypy, and `git diff --check`. The audit found and
+  fixed two additional dirty-tree issues: CAMulator land now declares received
+  atmosphere radiation fields/defaults for the bundled CAMulator-Veros recipe,
+  and JCM land now keeps received flux defaults as runtime-prefill data rather
+  than letting `DataComponent.initialize()` advertise them as data outputs.
+- Latest local JCM land/JAXGCM exchange declaration fix validation passed as
+  of 2026-07-09 using the direct `scipy` environment executable: red/green
+  JCM land recipe contract pytest, red/green JAXGCM constructor contract
+  pytest, an initial-state-only `run_jcm_with_era5data.py` reproduction that
+  now reaches `INITIAL_STATE_OK`, affected component/external/runtime fast
+  pytest, full fast pytest, Black, flake8, mypy, and `git diff --check`. The
+  fix declares JCM land's received atmosphere flux fields and JAXGCM's received
+  `soil_moisture` field/default, so strict setup-agnostic exchange validation
+  accepts the bundled JCM land-atmosphere recipes. The default `conda run`
+  orientation command still panicked before pytest in the local
+  `conda_rattler_solver` plugin; direct env Python remains the working path.
+- Latest local data setup exchange declaration fix validation passed as of
+  2026-07-09 using the direct `scipy` environment executable: focused red/green
+  data-factory contract pytest, affected component/runtime fast pytest, full
+  fast pytest, a `run_data_driver.py` initial-state-only smoke check, Black,
+  flake8, mypy, and `git diff --check`. The fix keeps strict setup-agnostic
+  exchange validation intact while declaring runtime receive fields/defaults on
+  bundled ERA5/ERA-Interim data setup factories, so data-backed imported fields
+  remain runtime inputs/fallbacks rather than advertised data outputs.
 - Latest local setup-agnostic exchange API validation passed as of 2026-07-09
   using the direct `scipy` environment executable: baseline fast pytest,
   focused red/green setup-agnostic API pytest, affected runtime/API pytest,

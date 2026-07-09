@@ -24,7 +24,10 @@ from vercor.setups._data.era5_land import make_era5_land
 from vercor.setups._data.era5_ocean import make_era5_ocean
 from vercor.setups._data.erainterim_ocean import make_erainterim_ocean
 from vercor.setups._data.jcm_land import make_jcm_land
-from vercor.setups._external.jax_gcm_fields import JAXGCM_OUTPUT_GRID_FIELD_NAMES
+from vercor.setups._external.jax_gcm_fields import (
+    JAXGCM_INPUT_GRID_FIELD_NAMES,
+    JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+)
 import vercor.setups._external.jax_gcm_runtime as jax_gcm_runtime_module
 import vercor.setups._external.jax_gcm_output as jax_gcm_output_module
 import vercor.setups._external.jax_gcm_state as jax_gcm_state_module
@@ -254,7 +257,7 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
             )
         ),
         spec=ComponentSpec(
-            inputs=("land_surface_temperature", "sea_surface_temperature"),
+            inputs=JAXGCM_INPUT_GRID_FIELD_NAMES,
             outputs=(
                 "land_surface_temperature",
                 "sea_surface_temperature",

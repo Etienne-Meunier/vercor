@@ -55,8 +55,7 @@ def jax_gcm_default_field_names(
 
     fields = (
         *_jax_gcm_fields.JAXGCM_OUTPUT_GRID_FIELD_NAMES,
-        "land_surface_temperature",
-        "sea_surface_temperature",
+        *_jax_gcm_fields.JAXGCM_INPUT_GRID_FIELD_NAMES,
     )
     if include_total_surface_temperature:
         return (*fields, "total_surface_temperature")

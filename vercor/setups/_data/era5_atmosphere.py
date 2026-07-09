@@ -26,6 +26,11 @@ from vercor.settings import Settings
 from vercor.setups._data.assets import get_forcing_data
 from vercor.setups._data._component_helpers import time_interpolated_data_component
 
+_REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
+_ERA5_ATMOSPHERE_INPUT_NAMES = (
+    "sea_surface_temperature",
+    "land_surface_temperature",
+)
 _ERA5_ATMOSPHERE_FIELD_NAMES = (
     "surface_pressure",
     "specific_humidity_3d",
@@ -197,7 +202,12 @@ def make_era5_atmosphere(
         name=name,
         grid=grid,
         fields=fields,
+        inputs=_ERA5_ATMOSPHERE_INPUT_NAMES,
         outputs=_ERA5_ATMOSPHERE_FIELD_NAMES,
+        defaults={
+            field_name: _REFERENCE_SURFACE_TEMPERATURE
+            for field_name in _ERA5_ATMOSPHERE_INPUT_NAMES
+        },
         data_files=data_files,
         lifecycle=LifecycleHooks(initialize=initialize),
     )

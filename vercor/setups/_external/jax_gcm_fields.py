@@ -11,6 +11,11 @@ from vercor.fluxes.vertical_coordinates import (
 
 REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 COLD_SURFACE_TEMPERATURE_THRESHOLD = 250.0
+JAXGCM_INPUT_GRID_FIELD_NAMES = (
+    "land_surface_temperature",
+    "sea_surface_temperature",
+    "soil_moisture",
+)
 JAXGCM_OUTPUT_GRID_FIELD_NAMES = (
     "u_velocity",
     "v_velocity",
@@ -25,8 +30,7 @@ JAXGCM_OUTPUT_GRID_FIELD_NAMES = (
     "model_level_height",
 )
 JAXGCM_REQUIRED_GRID_FIELD_NAMES = (
-    "land_surface_temperature",
-    "sea_surface_temperature",
+    *JAXGCM_INPUT_GRID_FIELD_NAMES,
     "total_surface_temperature",
     *JAXGCM_OUTPUT_GRID_FIELD_NAMES,
 )
@@ -161,6 +165,7 @@ def map_jcm_output_fields(
 
 __all__ = [
     "COLD_SURFACE_TEMPERATURE_THRESHOLD",
+    "JAXGCM_INPUT_GRID_FIELD_NAMES",
     "JAXGCM_OUTPUT_GRID_FIELD_NAMES",
     "JAXGCM_REQUIRED_GRID_FIELD_NAMES",
     "REFERENCE_SURFACE_TEMPERATURE",

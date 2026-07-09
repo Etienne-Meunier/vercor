@@ -17,8 +17,26 @@ import vercor.setups._data.erainterim_ocean as erainterim_ocean_module
 import vercor.setups._data.jcm_land as jcm_land_module
 from tests._coverage_support import CoverageCouplerStub, make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.components import ComponentSpec, DataComponent
 from vercor.components.contexts import StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
+from vercor._exchange_recipes import (
+    ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+    ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+    ATMOSPHERE_TO_LAND_BASIC_FIELDS,
+    ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
+    ATMOSPHERE_TO_LAND_STATE_FIELDS,
+    ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
+    ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
+    JCM_LAND_TO_ATMOSPHERE_FIELDS,
+    LAND_TO_ATMOSPHERE_SOIL_FIELDS,
+    LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
+    OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+    OCEAN_TO_SEAICE_SURFACE_FIELDS,
+    SEAICE_TO_OCEAN_FIELDS,
+    SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
+    SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
+)
 from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
 from vercor.setups._data.era5_land import make_era5_land
 from vercor.setups._data.era5_ocean import make_era5_ocean
@@ -28,9 +46,165 @@ from vercor.setups._slab.atmosphere import make_slab_atmosphere
 from vercor.setups._slab.land import make_slab_land
 from vercor.setups._slab.ocean import make_slab_ocean
 from vercor.setups._slab.seaice import make_slab_seaice
-from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
+from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
+from vercor._runtime.validation import validate_exchange_fields_declared
+from vercor.exchanges import Exchange
+from vercor.fields import flatten_field_items
+from vercor.regridding import bilinear, conservative
 from vercor.types import RuntimeArray
+
+_REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
+_DATA_ATMOSPHERE_INPUTS = tuple(
+    flatten_field_items(
+        (*OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS, *LAND_TO_ATMOSPHERE_SURFACE_FIELDS)
+    )
+)
+_DATA_DRIVER_LAND_INPUTS = tuple(
+    flatten_field_items(
+        (*ATMOSPHERE_TO_LAND_STATE_FIELDS, *ATMOSPHERE_TO_LAND_RADIATION_FIELDS)
+    )
+)
+_DATA_LAND_INPUTS = tuple(
+    dict.fromkeys(
+        flatten_field_items(
+            (*_DATA_DRIVER_LAND_INPUTS, *ATMOSPHERE_TO_LAND_BASIC_FIELDS)
+        )
+    )
+)
+_DATA_OCEAN_INPUTS = tuple(
+    flatten_field_items(
+        (*ATMOSPHERE_TO_OCEAN_STATE_FIELDS, *ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS)
+    )
+)
+_DATA_OCEAN_PUBLIC_RECIPE_INPUTS = tuple(
+    flatten_field_items(ATMOSPHERE_TO_DATA_OCEAN_FIELDS)
+)
+_JCM_LAND_INPUTS = tuple(flatten_field_items(ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS))
+
+
+def _install_data_driver_factory_fakes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch forcing readers with small arrays for data-driver contract tests."""
+
+    atmosphere_forcing: dict[str, NDArray] = {
+        "longitude": np.asarray([0.0, 180.0], dtype=float),
+        "latitude": np.asarray([45.0, 0.0, -45.0], dtype=float),
+        "hyai": np.asarray([0.0, 1.0, 2.0, 3.0, 4.0], dtype=float),
+        "hybi": np.asarray([10.0, 11.0, 12.0, 13.0, 14.0], dtype=float),
+        "hyam": np.asarray([20.0, 21.0, 22.0, 23.0], dtype=float),
+        "hybm": np.asarray([30.0, 31.0, 32.0, 33.0], dtype=float),
+        "lnsp": np.log(
+            np.arange(1, 1 + (2 * 3 * 1 * 12), dtype=float).reshape(2, 3, 1, 12)
+        ),
+        "q": np.arange(1, 1 + (2 * 3 * 3 * 12), dtype=float).reshape(2, 3, 3, 12)
+        / 1000.0,
+        "t": 250.0 + np.arange(2 * 3 * 3 * 12, dtype=float).reshape(2, 3, 3, 12),
+        "u": np.arange(1, 1 + (2 * 3 * 2 * 12), dtype=float).reshape(2, 3, 2, 12),
+        "v": -np.arange(1, 1 + (2 * 3 * 2 * 12), dtype=float).reshape(2, 3, 2, 12),
+        "msnswrf": np.full((2, 3, 12), 150.0, dtype=float),
+        "msdwlwrf": np.full((2, 3, 12), 75.0, dtype=float),
+    }
+    land_forcing: dict[str, NDArray] = {
+        "lon": np.asarray([0.0, 180.0], dtype=float),
+        "lat": np.asarray([-45.0, 45.0], dtype=float),
+        "mask": np.ones((2, 2), dtype=float),
+        "skt": np.full((2, 2, 12), _REFERENCE_SURFACE_TEMPERATURE, dtype=float),
+    }
+    era5_ocean_forcing: dict[str, NDArray] = {
+        "longitude": np.asarray([0.0, 180.0], dtype=float),
+        "latitude": np.asarray([10.0, -10.0], dtype=float),
+        "lsm": np.asarray(
+            [
+                [[0.0], [0.0]],
+                [[0.0], [0.0]],
+            ],
+            dtype=float,
+        ),
+        "sst": np.full((2, 2, 12), _REFERENCE_SURFACE_TEMPERATURE, dtype=float),
+    }
+    yt = np.arange(-78.0, 82.0, 4.0)
+    ocean_forcing: dict[str, NDArray] = {
+        "xt": np.asarray([0.0, 4.0], dtype=float),
+        "yt": yt,
+        "sss": np.ones((2, yt.size, 12), dtype=float),
+        "sst": np.full((2, yt.size, 12), 15.0, dtype=float),
+    }
+
+    def fake_atmosphere_data_path(file_type: str) -> Path:
+        return Path(f"/tmp/{file_type}.nc")
+
+    def fake_atmosphere_read(
+        data_files: Any,
+        variable: str,
+        where: str,
+        flip_y: bool = False,
+    ) -> RuntimeArray:
+        _ = data_files, where, flip_y
+        return atmosphere_forcing[variable]
+
+    def fake_land_data_path(file_type: str) -> Path:
+        assert file_type == "era5_land_masked"
+        return Path("/tmp/era5_land_masked.nc")
+
+    def fake_land_read(
+        data_files: Any,
+        variable: str,
+        where: str,
+        flip_y: bool = False,
+    ) -> RuntimeArray:
+        _ = data_files, where, flip_y
+        return land_forcing[variable]
+
+    def fake_ocean_data_path(file_type: str) -> Path:
+        assert file_type == "erainterim_ocean_4deg"
+        return Path("/tmp/erainterim_ocean_4deg.nc")
+
+    def fake_ocean_read(
+        data_files: Any,
+        variable: str,
+        where: str,
+        flip_y: bool = False,
+    ) -> RuntimeArray:
+        _ = data_files, where, flip_y
+        return ocean_forcing[variable]
+
+    def fake_era5_ocean_data_path(file_type: str) -> Path:
+        assert file_type == "era5_surface"
+        return Path("/tmp/era5_surface.nc")
+
+    def fake_era5_ocean_read(
+        data_files: Any,
+        variable: str,
+        where: str,
+        flip_y: bool = False,
+    ) -> RuntimeArray:
+        _ = data_files, where, flip_y
+        return era5_ocean_forcing[variable]
+
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "get_forcing_data",
+        fake_atmosphere_data_path,
+    )
+    monkeypatch.setattr(
+        era5_atmosphere_module,
+        "_read_forcing",
+        fake_atmosphere_read,
+    )
+    monkeypatch.setattr(era5_land_module, "get_forcing_data", fake_land_data_path)
+    monkeypatch.setattr(era5_land_module, "_read_forcing", fake_land_read)
+    monkeypatch.setattr(
+        erainterim_ocean_module,
+        "get_forcing_data",
+        fake_ocean_data_path,
+    )
+    monkeypatch.setattr(erainterim_ocean_module, "_read_forcing", fake_ocean_read)
+    monkeypatch.setattr(
+        era5_ocean_module,
+        "get_forcing_data",
+        fake_era5_ocean_data_path,
+    )
+    monkeypatch.setattr(era5_ocean_module, "_read_forcing", fake_era5_ocean_read)
 
 
 def _step_component(
@@ -56,6 +230,253 @@ def _step_component(
         ),
         allow_host_runtime=False,
     )
+
+
+def _fake_jcm_land_inputs() -> tuple[Any, Any, Any]:
+    coords = SimpleNamespace(
+        horizontal=SimpleNamespace(
+            longitudes=np.deg2rad(np.asarray([0.0, 180.0], dtype=float)),
+            latitudes=np.deg2rad(np.asarray([-45.0, 45.0], dtype=float)),
+        )
+    )
+    forcing = SimpleNamespace(
+        stl_am=np.asarray([[280.0, 281.0], [282.0, 283.0]], dtype=float),
+        soilw_am=np.asarray([[0.1, 0.2], [0.3, 0.4]], dtype=float),
+    )
+    return (
+        coords,
+        forcing,
+        make_test_grid(
+            name="ocn",
+            longitude=np.asarray([0.0, 180.0], dtype=float),
+            latitude=np.asarray([-45.0, 45.0], dtype=float),
+            binary_mask=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float),
+        ),
+    )
+
+
+@pytest.mark.fast_always
+def test_jcm_land_exchange_recipe_fields_are_declared() -> None:
+    coords, forcing, ocn_grid = _fake_jcm_land_inputs()
+    land = make_jcm_land(
+        jcm_coords=cast(Any, coords),
+        jcm_forcing=cast(Any, forcing),
+        ocn_grid=ocn_grid,
+    )
+    atmosphere_grid = make_test_grid(name="atm")
+    atmosphere = DataComponent.from_fields(
+        name="ATM",
+        grid=atmosphere_grid,
+        fields={
+            field_name: np.zeros(atmosphere_grid.shape, dtype=float)
+            for field_name in _JCM_LAND_INPUTS
+        },
+        spec=ComponentSpec(
+            inputs=tuple(flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)),
+            outputs=_JCM_LAND_INPUTS,
+            defaults={
+                field_name: 0.0
+                for field_name in flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)
+            },
+        ),
+    )
+    components = {"ATM": atmosphere, "LND": land}
+    contracts = build_exchange_contracts(
+        tuple(components),
+        (
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
+                regrid=bilinear,
+            ),
+        ),
+        validate_endpoints=True,
+    )
+
+    assert contracts["LND"].receives == _JCM_LAND_INPUTS
+    assert contracts["LND"].sends == tuple(
+        flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)
+    )
+    for name, component in components.items():
+        validate_exchange_fields_declared(component, contracts[name])
+
+
+@pytest.mark.fast_always
+def test_data_driver_exchange_recipes_are_declared_by_data_factories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_data_driver_factory_fakes(monkeypatch)
+    atmosphere = make_era5_atmosphere()
+    ocean = make_erainterim_ocean()
+    land = make_era5_land()
+    components = {
+        "ATM": atmosphere,
+        "OCN": ocean,
+        "LND": land,
+    }
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
+            regrid=conservative,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_STATE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
+            regrid=conservative,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+    )
+    contracts = build_exchange_contracts(
+        tuple(components),
+        exchanges,
+        validate_endpoints=True,
+    )
+
+    assert contracts["ATM"].receives == _DATA_ATMOSPHERE_INPUTS
+    assert contracts["OCN"].receives == _DATA_OCEAN_INPUTS
+    assert contracts["LND"].receives == _DATA_DRIVER_LAND_INPUTS
+    for name, component in components.items():
+        validate_exchange_fields_declared(component, contracts[name])
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize("make_ocean", (make_era5_ocean, make_erainterim_ocean))
+def test_public_data_ocean_recipe_fields_are_declared_by_data_factories(
+    monkeypatch: pytest.MonkeyPatch,
+    make_ocean: Any,
+) -> None:
+    _install_data_driver_factory_fakes(monkeypatch)
+    atmosphere_grid = make_test_grid(name="ATM")
+    atmosphere = DataComponent.from_fields(
+        name="ATM",
+        grid=atmosphere_grid,
+        fields={
+            field_name: np.zeros(atmosphere_grid.shape, dtype=float)
+            for field_name in _DATA_OCEAN_PUBLIC_RECIPE_INPUTS
+        },
+        spec=ComponentSpec(outputs=_DATA_OCEAN_PUBLIC_RECIPE_INPUTS),
+    )
+    ocean = make_ocean()
+    components = {"ATM": atmosphere, "OCN": ocean}
+    contracts = build_exchange_contracts(
+        tuple(components),
+        (
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+                regrid=bilinear,
+            ),
+        ),
+        validate_endpoints=True,
+    )
+
+    assert contracts["OCN"].receives == _DATA_OCEAN_PUBLIC_RECIPE_INPUTS
+    for name, component in components.items():
+        validate_exchange_fields_declared(component, contracts[name])
+
+
+@pytest.mark.fast_always
+def test_slab_driver_exchange_recipes_are_declared_by_slab_factories() -> None:
+    grid = make_test_grid(name="grid")
+    components = {
+        "ATM": make_slab_atmosphere(grid),
+        "OCN": make_slab_ocean(grid),
+        "LND": make_slab_land(grid),
+        "ICE": make_slab_seaice(grid),
+    }
+    contracts = build_exchange_contracts(
+        tuple(components),
+        (
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="OCN",
+                target="ICE",
+                fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
+                regrid=bilinear,
+            ),
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
+                regrid=conservative,
+            ),
+            Exchange(
+                source="ICE",
+                target="OCN",
+                fields=SEAICE_TO_OCEAN_FIELDS,
+                regrid=conservative,
+            ),
+        ),
+        validate_endpoints=True,
+    )
+
+    assert contracts["ATM"].receives == (
+        *flatten_field_items(OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS),
+        *flatten_field_items(LAND_TO_ATMOSPHERE_SOIL_FIELDS),
+    )
+    assert contracts["OCN"].receives == (
+        *flatten_field_items(SLAB_ATMOSPHERE_TO_OCEAN_FIELDS),
+        *flatten_field_items(SEAICE_TO_OCEAN_FIELDS),
+    )
+    assert contracts["LND"].receives == tuple(
+        flatten_field_items(SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS)
+    )
+    assert contracts["ICE"].receives == tuple(
+        flatten_field_items(OCEAN_TO_SEAICE_SURFACE_FIELDS)
+    )
+    for name, component in components.items():
+        validate_exchange_fields_declared(component, contracts[name])
 
 
 @pytest.mark.fast_always
@@ -229,6 +650,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
 
     assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
     assert component.settings.apply_time_interpolation
+    assert component.spec.inputs == _DATA_LAND_INPUTS
     assert component.spec.outputs == ("land_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
@@ -287,6 +709,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
 
     assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
     assert component.settings.apply_time_interpolation
+    assert component.spec.inputs == _DATA_OCEAN_INPUTS
     assert component.spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component._data["sea_surface_temperature"], jax.Array)
@@ -342,6 +765,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
 
     assert component._setup_metadata["DATA_FILES"] == {"model_level": str(fake_path)}
     assert component.settings.apply_time_interpolation
+    assert component.spec.inputs == _DATA_OCEAN_INPUTS
     assert component.spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component._data["sea_surface_temperature"], jax.Array)
@@ -511,6 +935,8 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         "surface": str(surface_path),
     }
     assert component.settings.apply_time_interpolation
+    assert component.spec.inputs == _DATA_ATMOSPHERE_INPUTS
+    assert set(component.spec.defaults) == set(_DATA_ATMOSPHERE_INPUTS)
     assert component.spec.outputs == (
         "surface_pressure",
         "specific_humidity_3d",
@@ -544,6 +970,20 @@ def test_era5_atmosphere_constructor_initialize_and_step(
 
     component.initialize(coupler.init_context())
 
+    assert component.spec.outputs == (
+        "surface_pressure",
+        "specific_humidity_3d",
+        "temperature_3d",
+        "u_velocity",
+        "v_velocity",
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+        "specific_humidity",
+        "temperature",
+        "model_level_height",
+        "density",
+        "potential_temperature",
+    )
     assert len(physics_calls["pressure"]) == 24
     assert len(physics_calls["height"]) == 12
     assert len(physics_calls["density"]) == 12

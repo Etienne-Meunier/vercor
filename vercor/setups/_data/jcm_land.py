@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from typing import TYPE_CHECKING, Any
 
-from vercor.components import DataComponent
+from vercor.components import ComponentSpec, DataComponent, LifecycleHooks, SetupContext
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from dinosaur.coordinate_systems import CoordinateSystem
     from jcm.forcing import ForcingData
 
+_JCM_LAND_INPUT_NAMES = ("latent_heat_flux", "sensible_heat_flux")
 _JCM_LAND_FIELD_NAMES = ("land_surface_temperature", "soil_moisture")
 
 
@@ -39,6 +40,9 @@ def make_jcm_land(
         binary_mask=lnd_bmask,
     )
 
+    def initialize(component: DataComponent, context: SetupContext) -> None:
+        _ = component, context
+
     component = DataComponent.from_fields(
         name=name,
         grid=grid,
@@ -46,8 +50,13 @@ def make_jcm_land(
             "land_surface_temperature": land_surface_temperature,
             "soil_moisture": soil_moisture,
         },
+        spec=ComponentSpec(
+            inputs=_JCM_LAND_INPUT_NAMES,
+            outputs=_JCM_LAND_FIELD_NAMES,
+            defaults={field_name: 0.0 for field_name in _JCM_LAND_INPUT_NAMES},
+            lifecycle=LifecycleHooks(initialize=initialize),
+        ),
     )
-    component.declare_fields(outputs=_JCM_LAND_FIELD_NAMES)
     component.update_settings(apply_daily_time_selection=True)
 
     return component
