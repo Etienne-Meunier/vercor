@@ -18,6 +18,10 @@ _ATMOSPHERE_OUTPUTS = (
     "v_velocity_10m",
 )
 _ATMOSPHERE_DEFAULT_FIELDS = {
+    "sea_surface_temperature": _REFERENCE_SURFACE_TEMPERATURE,
+    "land_surface_temperature": _REFERENCE_SURFACE_TEMPERATURE,
+    "soil_moisture": 0.0,
+    "ice_fraction": 0.0,
     "temperature_2m": _REFERENCE_SURFACE_TEMPERATURE,
     "sensible_heat_flux": 0.0,
     "latent_heat_flux": 0.0,

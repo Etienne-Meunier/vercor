@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
@@ -16,21 +16,59 @@ from vercor.jax_logging import LoggerLike
 from vercor._regridders.conservative import ConservativeRectilinearRegridder
 from vercor._runtime.component_topology import require_component
 from vercor._runtime.topology_state import RuntimeTopologyMaps, SurfaceExchangeMasks
+from vercor.setup_config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
+    from vercor.exchanges import Exchange
+
+
+def should_apply_surface_mask_policy(
+    components: Mapping[str, "Component"],
+    exchanges: Sequence["Exchange"],
+    policy: SurfaceMaskPolicy | None,
+) -> bool:
+    """Return whether configured exchanges should use the surface-mask policy."""
+
+    if policy is None or policy.mode == "disabled":
+        return False
+    if policy.mode == "required":
+        return True
+    role_names = (policy.atmosphere, policy.ocean, policy.land)
+    if not all(name in components for name in role_names):
+        return False
+    return any(
+        exchange.target == policy.atmosphere
+        and exchange.source in (policy.ocean, policy.land)
+        for exchange in exchanges
+    )
+
+
+def _require_surface_role(
+    components: Mapping[str, "Component"],
+    role_name: str,
+) -> "Component":
+    """Return a surface-role component with a policy-oriented error."""
+
+    try:
+        return require_component(components, role_name)
+    except CouplerError as exc:
+        raise CouplerError(
+            f"Surface mask policy requires role component {role_name!r} to be registered"
+        ) from exc
 
 
 def create_surface_exchange_masks(
     components: Mapping[str, "Component"],
     *,
+    policy: SurfaceMaskPolicy,
     logger: LoggerLike,
 ) -> SurfaceExchangeMasks:
     """Create atmosphere-grid ocean/land masks required by exchange setup."""
 
-    land_component = require_component(components, "LND")
-    atmosphere_component = require_component(components, "ATM")
-    ocean_component = require_component(components, "OCN")
+    land_component = _require_surface_role(components, policy.land)
+    atmosphere_component = _require_surface_role(components, policy.atmosphere)
+    ocean_component = _require_surface_role(components, policy.ocean)
 
     if not grids_identical(land_component.grid, atmosphere_component.grid):
         raise CouplerError(
@@ -72,10 +110,12 @@ def create_surface_exchange_masks(
 def validate_land_mask_consistency(
     components: Mapping[str, "Component"],
     surface_masks: SurfaceExchangeMasks,
+    *,
+    policy: SurfaceMaskPolicy,
 ) -> None:
     """Validate that a component land mask matches the remapped exchange mask."""
 
-    land_component = require_component(components, "LND")
+    land_component = _require_surface_role(components, policy.land)
     lnd_mask_from_component = land_component.grid.binary_mask
     if lnd_mask_from_component is not None:
         component_mask = jnp.asarray(lnd_mask_from_component)
@@ -96,17 +136,18 @@ def apply_surface_exchange_masks(
     topology_maps: RuntimeTopologyMaps,
     *,
     surface_masks: SurfaceExchangeMasks,
+    policy: SurfaceMaskPolicy,
 ) -> RuntimeTopologyMaps:
     """Patch special land/ocean masks onto bilinear atmosphere exchanges."""
 
     for key in topology_maps.binary_masks.keys():
         source, destination, interp_type = key
         if "bilinear" in interp_type:
-            if source == "OCN" and destination == "ATM":
+            if source == policy.ocean and destination == policy.atmosphere:
                 topology_maps.fractional_masks[key] = (
                     surface_masks.ocn_fmask_on_atm_grid
                 )
-            elif source == "LND" and destination == "ATM":
+            elif source == policy.land and destination == policy.atmosphere:
                 topology_maps.binary_masks[key] = surface_masks.lnd_bmask_on_atm_grid
                 topology_maps.fractional_masks[key] = (
                     surface_masks.lnd_fmask_on_atm_grid
@@ -117,5 +158,6 @@ def apply_surface_exchange_masks(
 __all__ = [
     "apply_surface_exchange_masks",
     "create_surface_exchange_masks",
+    "should_apply_surface_mask_policy",
     "validate_land_mask_consistency",
 ]

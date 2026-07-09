@@ -4,6 +4,7 @@ from vercor import (
     Clock,
     Coupler,
     Exchange,
+    JAXGCMConfig,
     OutputConfig,
     PeriodOutput,
     Spinup,
@@ -77,10 +78,12 @@ if __name__ == "__main__":
 
     jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
-        custom_parameters=custom_jcm_parameters,
-        spinup=Spinup(enabled=True),
-        jitted=True,
-        output=OutputConfig(period=PeriodOutput(frequency="month")),
+        config=JAXGCMConfig(
+            custom_parameters=custom_jcm_parameters,
+            spinup=Spinup(enabled=True),
+            output=OutputConfig(period=PeriodOutput(frequency="month")),
+            jitted=True,
+        ),
     )
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere

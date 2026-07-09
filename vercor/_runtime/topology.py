@@ -12,6 +12,7 @@ from vercor._runtime.topology_state import (
     RuntimeTopologyMaps,
 )
 from vercor.settings import Settings
+from vercor.setup_config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -24,18 +25,9 @@ def build_exchange_topology(
     settings: Settings,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
+    surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy(),
 ) -> ExchangeTopologyState:
     """Build exchange regridders, masks, and surface topology state."""
-
-    surface_masks = _surface_masks.create_surface_exchange_masks(
-        components,
-        logger=logger,
-    )
-    _surface_masks.validate_land_mask_consistency(
-        components,
-        surface_masks,
-    )
-    logger.info(" LND <--> ATM & OCN <--> ATM masks initialization complete")
 
     initialized_maps = _exchange_topology.build_exchange_topology_maps(
         components=components,
@@ -44,11 +36,31 @@ def build_exchange_topology(
         settings=settings,
         logger=logger,
     )
-    _surface_masks.apply_surface_exchange_masks(
-        initialized_maps,
-        surface_masks=surface_masks,
-    )
-    logger.info(" Exchange masks patching complete")
+    surface_masks = None
+    if _surface_masks.should_apply_surface_mask_policy(
+        components,
+        exchanges,
+        surface_mask_policy,
+    ):
+        if surface_mask_policy is None:
+            raise AssertionError("surface_mask_policy unexpectedly missing")
+        surface_masks = _surface_masks.create_surface_exchange_masks(
+            components,
+            policy=surface_mask_policy,
+            logger=logger,
+        )
+        _surface_masks.validate_land_mask_consistency(
+            components,
+            surface_masks,
+            policy=surface_mask_policy,
+        )
+        logger.info(" LND <--> ATM & OCN <--> ATM masks initialization complete")
+        _surface_masks.apply_surface_exchange_masks(
+            initialized_maps,
+            surface_masks=surface_masks,
+            policy=surface_mask_policy,
+        )
+        logger.info(" Exchange masks patching complete")
     return ExchangeTopologyState(
         topology_maps=initialized_maps,
         surface_masks=surface_masks,

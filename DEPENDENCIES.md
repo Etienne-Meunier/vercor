@@ -1,7 +1,7 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/physical_constants.py` - physical and bulk-formula default settings with AD-owned semantics
 3. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
-4. `vercor/settings.py` and `vercor/setup_config.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, grouped public setup configs such as `Spinup`, and static runtime controls built on (2)
+4. `vercor/settings.py` and `vercor/setup_config.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, grouped public setup configs such as `Spinup`, public `SurfaceMaskPolicy`, and static runtime controls built on (2)
 5. `vercor/_field_names.py` and `vercor/fields.py` - private shared field-name de-duplication plus canonical public field vocabulary, `ExchangeField` normalization, and `VectorField` owner
 6. `vercor/calendar.py` and `vercor/forcing_index.py` - calendar constants, model-calendar datetime values, leap-year logic, month/day conversion, and daily forcing-index policy
 7. `vercor/fluxes/vertical_coordinates.py` - hybrid/sigma-coordinate pressure and altitude helpers built on (1, 4)
@@ -65,10 +65,10 @@
 65. `vercor/_runtime/time.py` - `RuntimeStepInfo` plus host-precomputed daily/monthly runtime step metadata built on (3, 6, 23, 64)
 66. `vercor/_runtime/component_state.py`, `field_transfer.py`, `validation.py`, and `state_validation.py` - component runtime state creation, contract prefill, receive/send, time-sliced export selection, component/store runtime validation, and configured runtime-state/topology validation built on (1, 5, 14, 28, 62, 63, 64, 65)
 67. `vercor/_runtime/dispatch_context.py`, `exchange_dispatch.py`, and `driver.py` - destination-grouped static dispatch context construction, destination-specific exchange dispatch, component runtime stepping orchestration, and sent-store priming built on (6, 59, 62, 63, 64, 65, 66)
-68. `vercor/_runtime/component_topology.py` - default topology component-name validation and keyed required-component lookup built on (62)
-69. `vercor/_runtime/coupler_state.py` and `topology_state.py` - runtime coupler-state assembly, grouped exchange topology maps, surface-mask state, and topology-state contracts built on (1, 28, 63, 64, 66)
-70. `vercor/_runtime/exchange_topology.py`, `surface_masks.py`, and `topology.py` - generic exchange regridder/identity-mask map construction, ATM/OCN/LND surface-mask policy, and topology orchestration built on (1, 13, 19, 20, 25, 28, 68, 69)
-71. `vercor/_runtime/initialization.py` - setup-time precision synchronization, component initialization, setup validation, runtime contract validation, and exchange-topology handoff built on (24, 59, 62, 63, 66, 68, 70)
+68. `vercor/_runtime/component_topology.py` - keyed surface-role component lookup for optional surface-mask policy built on (62)
+69. `vercor/_runtime/coupler_state.py` and `topology_state.py` - runtime coupler-state assembly, grouped exchange topology maps, optional surface-mask state, and topology-state contracts built on (1, 28, 63, 64, 66)
+70. `vercor/_runtime/exchange_topology.py`, `surface_masks.py`, and `topology.py` - generic exchange regridder/identity-mask map construction, optional `SurfaceMaskPolicy`-controlled ATM/OCN/LND surface-mask policy, and topology orchestration built on (1, 4, 13, 19, 20, 25, 28, 68, 69)
+71. `vercor/_runtime/initialization.py` - setup-time precision synchronization, component initialization, setup validation, declaration-based runtime exchange-field validation, and exchange-topology handoff built on (24, 59, 62, 63, 66, 68, 70)
 72. `vercor/_runtime/run_context.py`, `progress.py`, and `interrupts.py` - frozen runtime execution context, progress callbacks, and cancellation controller built on (24, 25, 64, 67)
 73. `vercor/_runtime/resources.py` - private per-coupler runtime resource holder for topology maps, refreshed contracts, and interrupts built on (63, 64, 69, 72)
 74. `vercor/_runtime/preparation.py` - direct runtime state preparation, refreshed contract validation through runtime resources, and initial sent-store priming built on (24, 63, 64, 65, 67, 69, 73)

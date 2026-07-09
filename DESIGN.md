@@ -140,7 +140,12 @@ immutable runtime containers used during traced integration.
   and bundled concrete components are the objects users compose when
   configuring a coupled run. `Coupler` and setup helpers accept plain
   component-name sequences for run order and normalize them internally to
-  immutable tuples. `vercor.state.RunState` is opaque: users inspect results
+  immutable tuples. Component names are setup-owned identifiers rather than a
+  fixed enum, so custom coupled runs can use names outside the bundled
+  ATM/OCN/LND/ICE conventions. `SurfaceMaskPolicy` controls the optional
+  built-in atmosphere/ocean/land surface-mask patching; pass
+  `surface_mask_policy=None` or `SurfaceMaskPolicy(mode="disabled")` for
+  setup-agnostic custom exchanges. `vercor.state.RunState` is opaque: users inspect results
   through `RunState.component(name) -> ComponentState` and
   `ComponentState.field(...)`/`fields(...)`, while runtime stores remain
   private. `vercor.grids.RectilinearGrid`, `vercor.fields.VectorField`, and
@@ -308,16 +313,19 @@ immutable runtime containers used during traced integration.
   `vercor._runtime.validation`, and configured runtime-state/topology validation
   lives in `vercor._runtime.state_validation`. Runtime coupler-state assembly
   and runtime-contract refresh live in `vercor._runtime.coupler_state`; exchange
-  component-name validation and component lookup live in
-  `vercor._runtime.component_topology`; runtime topology data contracts live in
+  surface-role lookup lives in `vercor._runtime.component_topology`; runtime
+  topology data contracts live in
   `vercor._runtime.topology_state`, including grouped `RuntimeTopologyMaps`,
   `SurfaceExchangeMasks`, and `ExchangeTopologyState`. Generic exchange
   regridder/identity-mask map construction lives in
-  `vercor._runtime.exchange_topology`, while ATM/OCN/LND surface-mask creation,
-  validation, and bilinear exchange patching live in
-  `vercor._runtime.surface_masks`. `vercor._runtime.topology` remains the
-  orchestration boundary that composes those owners and returns the explicit
-  topology state for the runtime facade to store. Public `RunState` carries
+  `vercor._runtime.exchange_topology`, while optional atmosphere/ocean/land
+  surface-mask creation, validation, and bilinear exchange patching live in
+  `vercor._runtime.surface_masks` behind `SurfaceMaskPolicy`. Runtime exchange
+  validation checks that exchanged fields are declared by the sending and
+  receiving components instead of requiring the advisory common field
+  vocabulary. `vercor._runtime.topology` remains the orchestration boundary
+  that composes those owners and returns the explicit topology state for the
+  runtime facade to store. Public `RunState` carries
   component states and fractional masks through `jax.lax.scan`; binary masks
   remain in `RuntimeTopologyMaps` for final output and topology bookkeeping.
   Setup-time component
@@ -406,11 +414,12 @@ Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live
 in `vercor.calendar`. Daily forcing-index policy, including noleap and 360-day
 calendar mapping to forcing-file day indexes, lives in `vercor.forcing_index`.
-The canonical exchange field vocabulary lives in `vercor.fields` as
-`COMMON_FIELD_NAMES`.
+The common exchange field vocabulary lives in `vercor.fields` as the advisory
+`COMMON_FIELD_NAMES`; custom field names are valid when declared through
+`ComponentSpec` or seeded component fields.
 Rectilinear grid construction, center-to-edge geometry, and grid identity checks
 live in `vercor.grid_geometry`; mask math lives in `vercor.grid_masks`, while
-default component-topology name validation and lookup are private to
+surface-role lookup for the optional built-in surface-mask policy is private to
 `vercor._runtime.component_topology`. Generic hybrid/sigma-coordinate pressure
 and altitude helpers live in `vercor.fluxes.vertical_coordinates`, and generic
 JAXGCM PyTree transforms live beside that adapter in private

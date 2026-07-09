@@ -9,6 +9,20 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local setup-agnostic exchange API validation passed as of 2026-07-09
+  using the direct `scipy` environment executable: baseline fast pytest,
+  focused red/green setup-agnostic API pytest, affected runtime/API pytest,
+  full fast pytest, full pytest, Black, flake8, mypy, coverage pytest at 90%
+  total, example/package/test `compileall`, and `git diff --check`. The change
+  adds public `SurfaceMaskPolicy`, removes hard-coded exchange field and
+  topology component-name validation from generic runtime initialization,
+  validates exchanges against component declarations, makes surface-mask setup
+  optional/policy-controlled, propagates the actual runtime step index through
+  `StepContext.step`, accepts `JAXGCMConfig` in `make_jcm_land_atmosphere`,
+  and documents/tests custom named components exchanging custom fields. Black
+  emitted the recurring Python 3.13/target-3.14 warning; full pytest/coverage
+  emitted only the existing external JAX dtype-promotion `FutureWarning` and
+  xarray merge `FutureWarning` in JAXGCM coverage.
 - Latest local boundary-first API redesign validation passed as of 2026-07-09
   using the direct `scipy` environment executable: focused
   API-boundary/public-contract pytest, full fast pytest, Black, flake8, mypy,

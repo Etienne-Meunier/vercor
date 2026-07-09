@@ -403,6 +403,7 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert vercor.PeriodOutput is vercor.output.PeriodOutput
     assert "PeriodOutput" in vercor.__all__
     assert "Spinup" in vercor.__all__
+    assert "SurfaceMaskPolicy" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__
     assert "OutputConfig" in vercor.__all__
     assert "setups" not in vercor.__all__

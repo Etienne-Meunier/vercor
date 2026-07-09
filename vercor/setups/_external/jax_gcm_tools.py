@@ -1,6 +1,7 @@
+from collections.abc import Mapping
+from importlib import resources
 from pathlib import Path
 from typing import Optional, Tuple
-from importlib import resources
 
 from dinosaur.coordinate_systems import CoordinateSystem
 
@@ -13,7 +14,7 @@ from vercor.dtypes import as_jax_real_array
 
 
 def change_jcm_parameter_values(
-    parameters: dict[str, float], default_parameters: Parameters
+    parameters: Mapping[str, float], default_parameters: Parameters
 ) -> None:
 
     for key, value in parameters.items():

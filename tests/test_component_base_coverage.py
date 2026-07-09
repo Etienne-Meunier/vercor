@@ -52,7 +52,7 @@ from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
 from vercor._runtime.validation import (
     check_not_empty_import_export_lists,
-    check_valid_exchange_field_names,
+    validate_exchange_fields_declared,
     validate_component_runtime_contract_fields,
 )
 from vercor._runtime.time import scalar_runtime_step_info
@@ -1759,8 +1759,8 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
         receives=("temperature",),
         sends=("not_supported",),
     )
-    with pytest.raises(ComponentError, match="not a recognized exchange variable"):
-        check_valid_exchange_field_names(component, invalid)
+    with pytest.raises(ComponentError, match="not_supported.*ATM.*not declared"):
+        validate_exchange_fields_declared(component, invalid)
 
     contract = ExchangeContract(
         receives=("temperature",),

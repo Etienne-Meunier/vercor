@@ -10,7 +10,6 @@ from vercor.components.contexts import SetupContext
 from vercor.dtypes import as_jax_real_array
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
-from vercor._runtime.component_topology import validate_component_topology_names
 from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
 from vercor._runtime.topology import build_exchange_topology
 from vercor._runtime.topology_state import (
@@ -19,9 +18,10 @@ from vercor._runtime.topology_state import (
 )
 from vercor._runtime.validation import (
     check_not_empty_import_export_lists,
-    check_valid_exchange_field_names,
+    validate_exchange_fields_declared,
 )
 from vercor.settings import Settings
+from vercor.setup_config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -65,6 +65,7 @@ def initialize_coupler_runtime(
     settings: Settings,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
+    surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy(),
 ) -> RuntimeInitializationState:
     """Initialize components, contracts, and exchange topology for a coupler."""
 
@@ -96,7 +97,6 @@ def initialize_coupler_runtime(
     for name, component in components.items():
         component.initialize(init_context)
         validate_component_setup(component)
-        validate_component_topology_names({name: component})
         logger.info(f" Initialized {name}")
 
     runtime_contracts = build_exchange_contracts(
@@ -108,12 +108,13 @@ def initialize_coupler_runtime(
     for name, component in components.items():
         contract = runtime_contracts[name]
         check_not_empty_import_export_lists(component, contract)
-        check_valid_exchange_field_names(component, contract)
+        validate_exchange_fields_declared(component, contract)
 
     topology = build_exchange_topology(
         components=components,
         exchanges=exchanges,
         topology_maps=topology_maps,
+        surface_mask_policy=surface_mask_policy,
         settings=settings,
         logger=logger,
     )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -73,7 +73,7 @@ class JAXGCMSetupState:
         coords: CoordinateSystem,
         terrain: TerrainData,
         name: str = "ATM",
-        custom_parameters: dict[str, float] | None = None,
+        custom_parameters: Mapping[str, float] | None = None,
         model_timestep: timedelta = timedelta(minutes=30),
         save_interval: timedelta = timedelta(days=1),
         spinup_time: timedelta = timedelta(days=2),

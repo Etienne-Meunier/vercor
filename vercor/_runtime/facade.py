@@ -31,6 +31,7 @@ from vercor._runtime.runner import (
 )
 from vercor.state import RunState
 from vercor.settings import Settings
+from vercor.setup_config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -46,6 +47,7 @@ class RuntimeInputs:
     run_order: Sequence[str]
     clock: Clock
     settings: Settings
+    surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy()
 
 
 def create_runtime_resources() -> CouplerRuntimeResources:
@@ -69,6 +71,7 @@ def initialize_coupler_runtime(
         run_order=normalize_run_order(inputs.run_order),
         settings=inputs.settings,
         logger=logger,
+        surface_mask_policy=inputs.surface_mask_policy,
     )
     inputs.runtime_resources.runtime_contracts = initialized.runtime_contracts
     inputs.runtime_resources.topology_maps = initialized.topology.topology_maps

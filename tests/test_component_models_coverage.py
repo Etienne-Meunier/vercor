@@ -78,7 +78,13 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
         "u_velocity_10m",
         "v_velocity_10m",
     )
-    assert set(atmosphere.spec.defaults) == set(atmosphere.spec.outputs)
+    assert set(atmosphere.spec.defaults) == {
+        "sea_surface_temperature",
+        "land_surface_temperature",
+        "soil_moisture",
+        "ice_fraction",
+        *atmosphere.spec.outputs,
+    }
     atmosphere.initialize(coupler.init_context())
     atmosphere_state = _step_component(atmosphere, dt, timestamp, coupler)
     assert_allclose_compact(
@@ -111,10 +117,24 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     ocean = make_slab_ocean(grid=grid)
     assert ocean.spec.inputs == ("sensible_heat_flux", "latent_heat_flux")
     assert ocean.spec.outputs == ("sea_surface_temperature",)
-    assert set(ocean.spec.defaults) == {"sea_surface_temperature"}
+    assert set(ocean.spec.defaults) == {
+        "sea_surface_temperature",
+        "sensible_heat_flux",
+        "latent_heat_flux",
+        "u_velocity_10m",
+        "v_velocity_10m",
+        "u_velocity",
+        "v_velocity",
+        "specific_humidity",
+        "temperature",
+        "model_level_height",
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+        "ice_fraction",
+    }
     ocean_state = _step_component(ocean, dt, timestamp, coupler)
     assert ocean._data == {}
-    assert ocean_state.fields.field_names == ("sea_surface_temperature",)
+    assert "sea_surface_temperature" in ocean_state.fields.field_names
     assert_allclose_compact(
         ocean_state.fields.get("sea_surface_temperature"),
         np.full(grid.shape, 288.15),
@@ -135,6 +155,8 @@ def test_slab_component_initialize_and_step_behaviors() -> None:
     assert set(land.spec.defaults) == {
         "soil_moisture",
         "land_surface_temperature",
+        "latent_heat_flux",
+        "sensible_heat_flux",
     }
     land.initialize(coupler.init_context())
     land._data["latent_heat_flux"] = np.full(grid.shape, 100.0)

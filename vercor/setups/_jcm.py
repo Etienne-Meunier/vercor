@@ -64,20 +64,41 @@ def make_jcm_land_atmosphere(
     ocn_grid: RectilinearGrid,
     *,
     inputs: JCMInputs | None = None,
+    config: JAXGCMConfig | None = None,
     custom_parameters: Mapping[str, float] | None = None,
     spinup: Spinup | None = None,
-    jitted: bool = True,
+    jitted: bool | None = None,
     output: OutputConfig | None = None,
 ) -> JCMLandAtmosphereSetup:
     """Create paired JCM land and atmosphere setup components for an ocean grid."""
 
+    if config is not None and (
+        custom_parameters is not None
+        or spinup is not None
+        or jitted is not None
+        or output is not None
+    ):
+        raise TypeError(
+            "Use either config=JAXGCMConfig(...) or legacy JCM setup keyword "
+            "arguments, not both."
+        )
+
     make_jcm_land, make_jax_gcm = _load_jcm_factories()
-    spinup_config = Spinup(enabled=True) if spinup is None else spinup
-    output_config = (
-        OutputConfig(period=PeriodOutput(frequency="month"))
-        if output is None
-        else output
-    )
+    if config is None:
+        spinup_config = Spinup(enabled=True) if spinup is None else spinup
+        output_config = (
+            OutputConfig(period=PeriodOutput(frequency="month"))
+            if output is None
+            else output
+        )
+        config = JAXGCMConfig(
+            custom_parameters=(
+                None if custom_parameters is None else dict(custom_parameters)
+            ),
+            spinup=spinup_config,
+            output=output_config,
+            jitted=True if jitted is None else jitted,
+        )
     jcm_inputs = load_jcm_inputs() if inputs is None else inputs
     coords = jcm_inputs.coords
     terrain = jcm_inputs.terrain
@@ -93,13 +114,16 @@ def make_jcm_land_atmosphere(
         coords,
         terrain,
         config=JAXGCMConfig(
-            custom_parameters=(
-                None if custom_parameters is None else dict(custom_parameters)
+            name=config.name,
+            custom_parameters=config.custom_parameters,
+            model_timestep=config.model_timestep,
+            save_interval=config.save_interval,
+            forcing_data=(
+                forcing if config.forcing_data is None else config.forcing_data
             ),
-            forcing_data=forcing,
-            spinup=spinup_config,
-            output=output_config,
-            jitted=jitted,
+            spinup=config.spinup,
+            output=config.output,
+            jitted=config.jitted,
         ),
     )
     return JCMLandAtmosphereSetup(

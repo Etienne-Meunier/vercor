@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from vercor import (
+    Clock,
     Component,
+    Coupler,
     DataComponent,
     ComponentSpec,
+    Exchange,
     HostComponent,
     RectilinearGrid,
     StepContext,
     StepResult,
+    SurfaceMaskPolicy,
 )
 from vercor.dtypes import as_jax_real_array
 
@@ -108,6 +113,37 @@ def make_host_model(grid: RectilinearGrid) -> HostComponent:
     )
 
 
+def make_custom_coupler(grid: RectilinearGrid) -> Coupler:
+    """Assemble custom-named components without the built-in surface-mask policy."""
+
+    source = DataComponent.from_fields(
+        name="FORCING",
+        grid=grid,
+        fields={"custom_flux": 1.0},
+    )
+
+    def step(fields: Mapping[str, Any], context: StepContext) -> Mapping[str, Any]:
+        return {"custom_flux": fields["custom_flux"] + context.step}
+
+    model = Component.from_step(
+        name="MODEL",
+        grid=grid,
+        step=step,
+        spec=ComponentSpec(
+            inputs=("custom_flux",),
+            outputs=("custom_flux",),
+            defaults={"custom_flux": 0.0},
+        ),
+    )
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=3),
+        components=(source, model),
+        exchanges=(Exchange("FORCING", "MODEL", ("custom_flux",)),),
+        run_order=("FORCING", "MODEL"),
+        surface_mask_policy=SurfaceMaskPolicy(mode="disabled"),
+    )
+
+
 if __name__ == "__main__":
     example_grid = make_example_grid()
     for component in (
@@ -116,3 +152,4 @@ if __name__ == "__main__":
         make_host_model(example_grid),
     ):
         print(component)
+    print(make_custom_coupler(example_grid))

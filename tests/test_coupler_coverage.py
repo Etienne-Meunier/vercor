@@ -65,6 +65,7 @@ from vercor._runtime.topology_state import (
     SurfaceExchangeMasks,
 )
 from vercor.settings import Settings
+from vercor.setup_config import SurfaceMaskPolicy
 
 
 class _RecordingLogger:
@@ -571,14 +572,34 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
             "sensible_heat_flux": np.full((2, 2), 3.0),
         }
     )
+    components["ATM"].declare_fields(
+        inputs=("temperature", "specific_humidity", "soil_moisture", "ice_fraction"),
+        outputs=(
+            "downward_longwave_radiation_flux",
+            "temperature_2m",
+            "sensible_heat_flux",
+        ),
+    )
     components["OCN"]._data.update(
         {
             "temperature": np.full((2, 2), 4.0),
             "specific_humidity": np.full((2, 2), 5.0),
         }
     )
+    components["OCN"].declare_fields(
+        inputs=("downward_longwave_radiation_flux",),
+        outputs=("temperature", "specific_humidity"),
+    )
     components["LND"]._data["soil_moisture"] = np.full((2, 2), 6.0)
+    components["LND"].declare_fields(
+        inputs=("temperature_2m",),
+        outputs=("soil_moisture",),
+    )
     components["ICE"]._data["ice_fraction"] = np.full((2, 2), 7.0)
+    components["ICE"].declare_fields(
+        inputs=("sensible_heat_flux",),
+        outputs=("ice_fraction",),
+    )
 
     for component in components.values():
         coupler.add_component(cast(Any, component))
@@ -745,6 +766,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         state.topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
         np.full((2, 2), 0.4),
     )
+    assert state.surface_masks is not None
     assert_allclose_compact(
         state.surface_masks.lnd_bmask_on_atm_grid,
         np.asarray([[1.0, 0.0], [0.0, 1.0]]),
@@ -860,18 +882,19 @@ def test_apply_surface_exchange_masks_updates_only_expected_bilinear_pairs() -> 
         binary_masks=binary_masks,
         fractional_masks=fractional_masks,
     )
-    coupler.ocn_fmask_on_atm_grid = np.full((2, 2), 0.25)
-    coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
-    coupler.lnd_fmask_on_atm_grid = np.full((2, 2), 0.75)
+    ocn_fmask_on_atm_grid = np.full((2, 2), 0.25)
+    lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
+    lnd_fmask_on_atm_grid = np.full((2, 2), 0.75)
 
     topology_maps = coupler._runtime_resources.topology_maps
     apply_surface_exchange_masks(
         topology_maps,
         surface_masks=SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=coupler.ocn_fmask_on_atm_grid,
-            lnd_fmask_on_atm_grid=coupler.lnd_fmask_on_atm_grid,
-            lnd_bmask_on_atm_grid=coupler.lnd_bmask_on_atm_grid,
+            ocn_fmask_on_atm_grid=ocn_fmask_on_atm_grid,
+            lnd_fmask_on_atm_grid=lnd_fmask_on_atm_grid,
+            lnd_bmask_on_atm_grid=lnd_bmask_on_atm_grid,
         ),
+        policy=SurfaceMaskPolicy(),
     )
 
     assert_allclose_compact(
@@ -902,7 +925,7 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
             ),
         )
     )
-    shape_coupler.lnd_bmask_on_atm_grid = np.ones((2, 2))
+    shape_lnd_bmask_on_atm_grid = np.ones((2, 2))
 
     with pytest.raises(CouplerError, match="does not match atmospheric grid shape"):
         validate_land_mask_consistency(
@@ -910,8 +933,9 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
             SurfaceExchangeMasks(
                 ocn_fmask_on_atm_grid=np.zeros((2, 2)),
                 lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=shape_coupler.lnd_bmask_on_atm_grid,
+                lnd_bmask_on_atm_grid=shape_lnd_bmask_on_atm_grid,
             ),
+            policy=SurfaceMaskPolicy(),
         )
 
     value_coupler = make_coupler(
@@ -928,7 +952,7 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
             ),
         )
     )
-    value_coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
+    value_lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
 
     with pytest.raises(CouplerError, match="mismatched points: 2"):
         validate_land_mask_consistency(
@@ -936,8 +960,9 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
             SurfaceExchangeMasks(
                 ocn_fmask_on_atm_grid=np.zeros((2, 2)),
                 lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=value_coupler.lnd_bmask_on_atm_grid,
+                lnd_bmask_on_atm_grid=value_lnd_bmask_on_atm_grid,
             ),
+            policy=SurfaceMaskPolicy(),
         )
 
 
@@ -968,7 +993,11 @@ def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere
     )
 
     with pytest.raises(CouplerError, match="must use identical horizontal grids"):
-        create_surface_exchange_masks(coupler.components, logger=setup_logger())
+        create_surface_exchange_masks(
+            coupler.components,
+            policy=SurfaceMaskPolicy(),
+            logger=setup_logger(),
+        )
 
 
 def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> None:
@@ -981,7 +1010,11 @@ def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> No
     )
 
     with pytest.raises(ComponentError, match="has no binary mask defined"):
-        create_surface_exchange_masks(coupler.components, logger=setup_logger())
+        create_surface_exchange_masks(
+            coupler.components,
+            policy=SurfaceMaskPolicy(),
+            logger=setup_logger(),
+        )
 
 
 def test_output_masks_for_component_returns_destination_exchange_masks() -> None:

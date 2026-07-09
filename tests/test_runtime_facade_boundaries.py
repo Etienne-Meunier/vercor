@@ -20,6 +20,7 @@ def test_runtime_facade_inputs_bundle_owns_repeated_coupler_runtime_inputs() -> 
         "run_order",
         "clock",
         "settings",
+        "surface_mask_policy",
     ]
 
 
@@ -47,14 +48,14 @@ def test_runtime_preparation_module_owns_runtime_state_preparation() -> None:
 
 
 @pytest.mark.fast_always
-def test_component_topology_module_owns_component_name_validation() -> None:
+def test_component_topology_module_only_owns_role_lookup() -> None:
     component_topology_source = source_for("vercor/_runtime/component_topology.py")
     topology_source = source_for("vercor/_runtime/topology.py")
     surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
     initialization_source = source_for("vercor/_runtime/initialization.py")
 
-    assert "VALID_TOPOLOGY_COMPONENT_NAMES" in component_topology_source
-    assert "def validate_component_topology_names(" in component_topology_source
+    assert "VALID_TOPOLOGY_COMPONENT_NAMES" not in component_topology_source
+    assert "def validate_component_topology_names(" not in component_topology_source
     assert "def require_component(" in component_topology_source
     assert "def get_component(" not in component_topology_source
     assert ".values()" not in component_topology_source
@@ -63,7 +64,7 @@ def test_component_topology_module_owns_component_name_validation() -> None:
     assert "def require_component(" not in topology_source
     assert "from vercor._runtime.component_topology import" not in topology_source
     assert "from vercor._runtime.component_topology import" in surface_masks_source
-    assert "from vercor._runtime.component_topology import" in initialization_source
+    assert "from vercor._runtime.component_topology import" not in initialization_source
 
 
 @pytest.mark.fast_always

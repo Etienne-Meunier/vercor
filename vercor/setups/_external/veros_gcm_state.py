@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import timedelta
 from functools import partial
 from typing import Any, cast
@@ -57,7 +57,7 @@ class VerosGCMSetupState:
         self,
         name: str = "OCN",
         spinup_time: timedelta = timedelta(days=2),
-        custom_parameters: dict[str, Any] | None = None,
+        custom_parameters: Mapping[str, Any] | None = None,
         restore_to_climatology: bool = False,
         do_spinup: bool = False,
         output_frequency: str | None = None,

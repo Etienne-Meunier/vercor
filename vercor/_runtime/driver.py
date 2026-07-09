@@ -12,6 +12,7 @@ from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor._runtime.field_transfer import receive_runtime_fields, send_runtime_fields
 from vercor.state import RunState
 from vercor._runtime.time import RuntimeStepInfo
+from vercor.types import RuntimeArray
 
 
 def step_runtime_component(
@@ -23,6 +24,7 @@ def step_runtime_component(
     allow_host_runtime: bool,
     time: datetime | ModelDateTime | None = None,
     logger: LoggerLike | None = None,
+    step: int | RuntimeArray = 0,
 ) -> RunState:
     """Advance one component through dispatch, receive, step, and send phases."""
 
@@ -44,6 +46,7 @@ def step_runtime_component(
         settings=dispatch_context.settings,
         time=time,
         logger=logger,
+        step=step,
     )
     component_state = step_component_runtime_state(
         component,

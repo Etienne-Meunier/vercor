@@ -15,7 +15,21 @@ from vercor.grids import RectilinearGrid
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
 _OCEAN_INPUTS = ("sensible_heat_flux", "latent_heat_flux")
 _OCEAN_OUTPUTS = ("sea_surface_temperature",)
-_OCEAN_DEFAULT_FIELDS = {"sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE}
+_OCEAN_DEFAULT_FIELDS = {
+    "sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE,
+    "sensible_heat_flux": 0.0,
+    "latent_heat_flux": 0.0,
+    "u_velocity_10m": 0.0,
+    "v_velocity_10m": 0.0,
+    "u_velocity": 0.0,
+    "v_velocity": 0.0,
+    "specific_humidity": 0.0,
+    "temperature": 0.0,
+    "model_level_height": 0.0,
+    "net_shortwave_radiation_flux": 0.0,
+    "downward_longwave_radiation_flux": 0.0,
+    "ice_fraction": 0.0,
+}
 
 
 @jax.jit

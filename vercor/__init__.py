@@ -51,6 +51,7 @@ from vercor.setup_config import (
     CAMulatorConfig,
     JAXGCMConfig,
     Spinup,
+    SurfaceMaskPolicy,
     VerosConfig,
 )
 from vercor.state import ComponentState, RunState
@@ -88,6 +89,7 @@ __all__ = [
     "SnapshotContext",
     "SnapshotWriter",
     "Spinup",
+    "SurfaceMaskPolicy",
     "StepContext",
     "StepResult",
     "ValidationContext",

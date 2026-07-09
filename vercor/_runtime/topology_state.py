@@ -39,7 +39,7 @@ class ExchangeTopologyState:
     """Exchange topology maps and derived surface-exchange masks."""
 
     topology_maps: RuntimeTopologyMaps
-    surface_masks: SurfaceExchangeMasks
+    surface_masks: SurfaceExchangeMasks | None
 
 
 __all__ = [

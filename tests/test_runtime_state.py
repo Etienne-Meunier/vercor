@@ -390,7 +390,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def send_runtime_fields" in runtime_field_transfer_source
     assert "def validate_component_runtime_contract_fields" in runtime_validation_source
     assert "def check_not_empty_import_export_lists" in runtime_validation_source
-    assert "def check_valid_exchange_field_names" in runtime_validation_source
+    assert "def validate_exchange_fields_declared" in runtime_validation_source
     assert "def apply_run_precision_to_component(" in runtime_initialization_source
     assert "def initialize_coupler_runtime(" in runtime_initialization_source
     assert (
@@ -467,7 +467,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def validate_component_topology_names(" not in runtime_topology_source
     assert "def get_component(" not in runtime_topology_source
     assert "def require_component(" not in runtime_topology_source
-    assert "def validate_component_topology_names(" in runtime_component_topology_source
+    assert (
+        "def validate_component_topology_names("
+        not in runtime_component_topology_source
+    )
     assert "def require_component(" in runtime_component_topology_source
     assert "def get_component(" not in runtime_component_topology_source
     assert ".values()" not in runtime_component_topology_source

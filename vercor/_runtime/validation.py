@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.fields import COMMON_FIELD_NAMES
+from vercor.components._contracts import declared_runtime_field_names
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
@@ -122,15 +122,30 @@ def check_not_empty_import_export_lists(
         )
 
 
-def check_valid_exchange_field_names(
+def validate_exchange_fields_declared(
     component: "Component",
     contract: ExchangeContract,
 ) -> None:
-    """Check that a component's runtime contract uses supported exchange fields."""
+    """Check that exchanged fields are declared by the receiving/sending component."""
 
-    for field_name in set(contract.all_fields):
-        if field_name not in COMMON_FIELD_NAMES:
+    declared_fields = set(declared_runtime_field_names(component.spec))
+    seeded_fields = set(component.field_names)
+    send_fields = declared_fields | seeded_fields
+    receive_fields = declared_fields
+
+    for field_name in contract.sends:
+        if field_name not in send_fields:
             raise ComponentError(
-                f"Field name '{field_name}' in component '{component.name}' is not a recognized exchange variable.\n"
-                f"Replace field name '{field_name}' with one of the common names: {COMMON_FIELD_NAMES}"
+                f"Exchange send field '{field_name}' for component "
+                f"'{component.name}' is not declared. Seed the field with "
+                "seed_field()/seed_fields(), include it in factory fields, or "
+                "declare it as an output/default in ComponentSpec."
+            )
+
+    for field_name in contract.receives:
+        if field_name not in receive_fields:
+            raise ComponentError(
+                f"Exchange receive field '{field_name}' for component "
+                f"'{component.name}' is not declared. Add it to ComponentSpec "
+                "inputs, outputs, or defaults before coupling."
             )

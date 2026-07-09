@@ -121,6 +121,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "SnapshotContext",
         "SnapshotWriter",
         "Spinup",
+        "SurfaceMaskPolicy",
         "StepContext",
         "StepResult",
         "ValidationContext",
@@ -1986,7 +1987,10 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "from vercor.exchanges import VALID_EXCHANGE_FIELD_NAMES" not in (
         runtime_validation_source
     )
-    assert "from vercor.fields import COMMON_FIELD_NAMES" in (runtime_validation_source)
+    assert "from vercor.fields import COMMON_FIELD_NAMES" not in (
+        runtime_validation_source
+    )
+    assert "validate_exchange_fields_declared" in runtime_validation_source
     assert "from vercor.field_names import VALID_EXCHANGE_FIELD_NAMES" not in (
         runtime_validation_source
     )
@@ -2023,7 +2027,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "PHYSICAL_CONSTANT_SETTINGS" in settings_source
     assert "Incorrect component name" not in coupler_source
     assert "def validate_component_topology_names(" not in topology_source
-    assert "def validate_component_topology_names(" in component_topology_source
+    assert "def validate_component_topology_names(" not in component_topology_source
     assert "make_rectilinear_grid" not in regridder_init
     assert "centers_to_edges" not in regridder_init
     assert "compute_land_mask" not in regridder_init

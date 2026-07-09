@@ -131,6 +131,7 @@ def run_host_runtime(
                 allow_host_runtime=True,
                 time=time,
                 logger=logger,
+                step=n,
             )
             interrupts.checkpoint(f"host runtime component {cname}")
         interrupts.checkpoint("host runtime step")
@@ -177,6 +178,7 @@ def run_scanned_runtime(
                 dispatch_context=dispatch_context,
                 allow_host_runtime=False,
                 logger=logger,
+                step=step_index,
             )
             interrupts.scanned_checkpoint(
                 f"scanned runtime component {cname}",

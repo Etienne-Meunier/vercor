@@ -7,6 +7,7 @@ from datetime import datetime
 from vercor.calendar import ModelDateTime
 from vercor.jax_logging import LoggerLike
 from vercor.settings import Settings
+from vercor.types import RuntimeArray
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,7 @@ class StepContext:
     settings: Settings
     time: datetime | ModelDateTime | None = None
     logger: LoggerLike | None = None
-    step: int = 0
+    step: int | RuntimeArray = 0
 
 
 __all__ = [
