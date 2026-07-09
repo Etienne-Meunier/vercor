@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
+from types import MappingProxyType
 from typing import Any
 
 from vercor.output import OutputConfig, PeriodOutput
@@ -36,7 +37,7 @@ class JAXGCMConfig:
             object.__setattr__(
                 self,
                 "custom_parameters",
-                dict(self.custom_parameters),
+                MappingProxyType(dict(self.custom_parameters)),
             )
 
 
@@ -58,7 +59,7 @@ class VerosConfig:
             object.__setattr__(
                 self,
                 "custom_parameters",
-                dict(self.custom_parameters),
+                MappingProxyType(dict(self.custom_parameters)),
             )
 
 

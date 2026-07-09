@@ -7,7 +7,9 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Self
 
 from vercor.clock import Clock
+from vercor.components._adapter import normalize_component
 from vercor.components.setup_validation import validate_component_setup
+from vercor.config import RuntimeOptions
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.fields import VectorField
@@ -20,12 +22,12 @@ from vercor.jax_logging import (
 from vercor._run_order import normalize_run_order
 import vercor._runtime.facade as _runtime_facade
 from vercor.settings import Settings
-from vercor.setup_config import SurfaceMaskPolicy
 from vercor.state import RunState
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
+    from vercor.components.contracts import ComponentLike
 
 
 class Coupler:
@@ -56,11 +58,10 @@ class Coupler:
         self,
         clock: Clock,
         *,
-        components: Iterable["Component"] = (),
+        components: Iterable["ComponentLike"] = (),
         exchanges: Iterable[Exchange] = (),
         run_order: Sequence[str] = (),
-        settings: Settings | None = None,
-        surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy(),
+        runtime: RuntimeOptions | None = None,
         logger: LoggerLike | None = None,
         log_level: int | str = "INFO",
     ) -> None:
@@ -69,8 +70,11 @@ class Coupler:
         self.clock = clock
         self.log_level = log_level
         self.logger = logger if logger is not None else _setup_logger()
-        self.settings = settings or Settings()
-        self.surface_mask_policy = surface_mask_policy
+        self.runtime = RuntimeOptions() if runtime is None else runtime
+        self.settings = Settings(
+            enable_x64=self.runtime.dtype.enable_x64,
+            year_in_seconds=self.runtime.year_in_seconds,
+        )
         self._components: dict[str, Component] = {}
         self._components_view: MappingProxyType[str, Component] = MappingProxyType(
             self._components
@@ -128,17 +132,20 @@ class Coupler:
 
     def add_component(
         self,
-        component: "Component",
+        component: "ComponentLike",
     ) -> Self:
         """Register a component with the coupler."""
 
-        validate_component_setup(component)
-        if component.name in self.components:
-            raise CouplerError(f"Component {component.name} already registered")
+        normalized_component = normalize_component(component)
+        validate_component_setup(normalized_component)
+        if normalized_component.name in self.components:
+            raise CouplerError(
+                f"Component {normalized_component.name} already registered"
+            )
 
-        self._components[component.name] = component
+        self._components[normalized_component.name] = normalized_component
         self._invalidate_runtime_resources()
-        self.logger.info(f" Registered component {component.name}")
+        self.logger.info(f" Registered component {normalized_component.name}")
         return self
 
     def add_exchange(self, exchange: Exchange) -> Self:
@@ -194,7 +201,7 @@ class Coupler:
             self.run_order,
             self.clock,
             self.settings,
-            self.surface_mask_policy,
+            self.runtime,
         )
 
     def _initialize_runtime(self) -> None:

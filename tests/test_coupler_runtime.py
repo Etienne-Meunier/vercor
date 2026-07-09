@@ -13,6 +13,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock, _forcing_year_type_for_calendar
 from vercor.components import (
     Component,
+    FieldImportPolicy,
     LifecycleHooks,
     DataComponent,
     ComponentSpec,
@@ -129,14 +130,18 @@ def _make_data_component(
     data: dict[str, jax.Array],
     receives: tuple[str, ...] = (),
     sends: tuple[str, ...] = (),
-    settings: Settings | None = None,
+    import_policy: FieldImportPolicy | None = None,
 ) -> Any:
     _ = component_type
     component = DataComponent.from_fields(
         name=name,
         grid=grid,
         fields=data,
-        settings=settings or Settings(),
+        spec=ComponentSpec(
+            import_policy=(
+                FieldImportPolicy() if import_policy is None else import_policy
+            ),
+        ),
     )
     component.declare_fields(inputs=receives, outputs=sends)
     return component
@@ -990,7 +995,7 @@ def test_data_forcing_components_run_inside_runtime() -> None:
         grid=grid,
         data={"sea_surface_temperature": monthly_ocean},
         sends=("sea_surface_temperature",),
-        settings=Settings(apply_time_interpolation=True),
+        import_policy=FieldImportPolicy(time_interpolation=True),
     )
     land = _make_data_component(
         make_era5_land,
@@ -998,7 +1003,7 @@ def test_data_forcing_components_run_inside_runtime() -> None:
         grid=grid,
         data={"land_surface_temperature": monthly_land},
         sends=("land_surface_temperature",),
-        settings=Settings(apply_time_interpolation=True),
+        import_policy=FieldImportPolicy(time_interpolation=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1101,7 +1106,9 @@ def test_public_data_component_monthly_output_validates_and_sends_runtime_slice(
         name="OCN",
         grid=grid,
         fields={"sea_surface_temperature": monthly_ocean},
-        settings=Settings(apply_time_interpolation=True),
+        spec=ComponentSpec(
+            import_policy=FieldImportPolicy(time_interpolation=True),
+        ),
     )
     atmosphere = make_slab_atmosphere(grid)
     coupler = Coupler(
@@ -1163,7 +1170,7 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
         grid=grid,
         data={"sea_surface_temperature": forcing},
         sends=("sea_surface_temperature",),
-        settings=Settings(apply_daily_time_selection=True),
+        import_policy=FieldImportPolicy(daily_selection=True),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 2), dt_seconds=3600.0, steps=1),
@@ -1236,7 +1243,7 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         grid=ocean_grid,
         data={"sea_surface_temperature": monthly_ocean},
         sends=("sea_surface_temperature",),
-        settings=Settings(apply_time_interpolation=True),
+        import_policy=FieldImportPolicy(time_interpolation=True),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
@@ -1317,7 +1324,7 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
         grid=grid,
         data={"land_surface_temperature": forcing},
         sends=("land_surface_temperature",),
-        settings=Settings(apply_daily_time_selection=True),
+        import_policy=FieldImportPolicy(daily_selection=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1393,7 +1400,7 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
         grid=grid,
         data={"land_surface_temperature": forcing},
         sends=("land_surface_temperature",),
-        settings=Settings(apply_daily_time_selection=True),
+        import_policy=FieldImportPolicy(daily_selection=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1473,7 +1480,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         grid=grid,
         data={"land_surface_temperature": forcing},
         sends=("land_surface_temperature",),
-        settings=Settings(apply_daily_time_selection=True),
+        import_policy=FieldImportPolicy(daily_selection=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1564,7 +1571,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         grid=grid,
         data={"sea_surface_temperature": monthly_ocean},
         sends=("sea_surface_temperature",),
-        settings=Settings(apply_time_interpolation=True),
+        import_policy=FieldImportPolicy(time_interpolation=True),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,

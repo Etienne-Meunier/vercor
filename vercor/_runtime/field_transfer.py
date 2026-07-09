@@ -39,7 +39,9 @@ def _select_runtime_field_for_send(
     if step_info is None:
         return field
 
-    if component.settings.apply_time_interpolation:
+    import_policy = component.spec.import_policy
+
+    if import_policy.time_interpolation:
         arr = jnp.asarray(field)
         left = jnp.take(arr, step_info.monthly_index_left, axis=0)
         right = jnp.take(arr, step_info.monthly_index_right, axis=0)
@@ -48,7 +50,7 @@ def _select_runtime_field_for_send(
             + step_info.monthly_weight_right * right
         )
 
-    if component.settings.apply_daily_time_selection:
+    if import_policy.daily_selection:
         return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
 
     return field

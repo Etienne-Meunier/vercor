@@ -16,6 +16,7 @@ from vercor import (
     RectilinearGrid,
     StepContext,
     StepResult,
+    RuntimeOptions,
     SurfaceMaskPolicy,
 )
 from vercor.dtypes import as_jax_real_array
@@ -140,7 +141,7 @@ def make_custom_coupler(grid: RectilinearGrid) -> Coupler:
         components=(source, model),
         exchanges=(Exchange("FORCING", "MODEL", ("custom_flux",)),),
         run_order=("FORCING", "MODEL"),
-        surface_mask_policy=SurfaceMaskPolicy(mode="disabled"),
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy(mode="disabled")),
     )
 
 

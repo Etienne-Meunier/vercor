@@ -649,7 +649,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
-    assert component.settings.apply_time_interpolation
+    assert component.spec.import_policy.time_interpolation
     assert component.spec.inputs == _DATA_LAND_INPUTS
     assert component.spec.outputs == ("land_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
@@ -708,7 +708,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component._setup_metadata["DATA_FILES"] == {"surface": str(fake_path)}
-    assert component.settings.apply_time_interpolation
+    assert component.spec.import_policy.time_interpolation
     assert component.spec.inputs == _DATA_OCEAN_INPUTS
     assert component.spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
@@ -764,7 +764,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
     assert component._setup_metadata["DATA_FILES"] == {"model_level": str(fake_path)}
-    assert component.settings.apply_time_interpolation
+    assert component.spec.import_policy.time_interpolation
     assert component.spec.inputs == _DATA_OCEAN_INPUTS
     assert component.spec.outputs == ("sea_surface_temperature",)
     assert isinstance(component.grid.longitude, jax.Array)
@@ -934,7 +934,7 @@ def test_era5_atmosphere_constructor_initialize_and_step(
         "model_level": str(model_level_path),
         "surface": str(surface_path),
     }
-    assert component.settings.apply_time_interpolation
+    assert component.spec.import_policy.time_interpolation
     assert component.spec.inputs == _DATA_ATMOSPHERE_INPUTS
     assert set(component.spec.defaults) == set(_DATA_ATMOSPHERE_INPUTS)
     assert component.spec.outputs == (
@@ -1038,7 +1038,7 @@ def test_jcm_land_constructor_converts_coords_and_preserves_data(
     component.initialize(coupler.init_context())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component.settings.apply_daily_time_selection
+    assert component.spec.import_policy.daily_selection
     assert component.spec.outputs == (
         "land_surface_temperature",
         "soil_moisture",

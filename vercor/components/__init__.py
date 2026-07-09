@@ -2,8 +2,10 @@ from vercor.components.base import (
     Component,
 )
 from vercor.components.contracts import (
+    ComponentLike,
     LifecycleHooks,
     ComponentCreatePayloadHook,
+    FieldImportPolicy,
     ComponentInitializeHook,
     ComponentPrefillHook,
     ComponentValidateHook,
@@ -27,7 +29,9 @@ from vercor.components.host import (
 
 __all__ = [
     "Component",
+    "ComponentLike",
     "ComponentCreatePayloadHook",
+    "FieldImportPolicy",
     "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",

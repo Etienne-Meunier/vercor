@@ -76,6 +76,7 @@ def merge_component_outputs(
         defaults=spec.defaults,
         lifecycle=spec.lifecycle,
         output=spec.output,
+        import_policy=spec.import_policy,
     )
 
 

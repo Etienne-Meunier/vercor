@@ -65,7 +65,7 @@ from vercor._runtime.topology_state import (
     SurfaceExchangeMasks,
 )
 from vercor.settings import Settings
-from vercor.setup_config import SurfaceMaskPolicy
+from vercor.config import SurfaceMaskPolicy
 
 
 class _RecordingLogger:

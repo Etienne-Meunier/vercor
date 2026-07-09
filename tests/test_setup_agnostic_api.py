@@ -21,6 +21,7 @@ from vercor import (
     Exchange,
     HostComponent,
     LifecycleHooks,
+    RuntimeOptions,
     StepContext,
     SurfaceMaskPolicy,
 )
@@ -74,7 +75,7 @@ def test_custom_named_components_can_exchange_custom_fields_without_surface_mask
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("custom_flux",)),),
         run_order=("SRC", "DST"),
-        surface_mask_policy=None,
+        runtime=RuntimeOptions(surface_masks=None),
     )
 
     final_state = coupler.run()
@@ -108,7 +109,7 @@ def test_exchanged_fields_must_be_declared_by_receiving_component() -> None:
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("custom_flux",)),),
         run_order=("SRC", "DST"),
-        surface_mask_policy=None,
+        runtime=RuntimeOptions(surface_masks=None),
     )
 
     with pytest.raises(ComponentError, match="custom_flux.*DST.*declare"):
@@ -130,7 +131,7 @@ def test_required_surface_mask_policy_preserves_missing_role_errors() -> None:
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("temperature",)),),
         run_order=("SRC", "DST"),
-        surface_mask_policy=SurfaceMaskPolicy(mode="required"),
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy(mode="required")),
     )
 
     with pytest.raises(CouplerError, match="role component 'LND'"):
@@ -156,7 +157,7 @@ def test_step_context_step_increments_in_scanned_runtime() -> None:
         clock=_clock(steps=3),
         components=(component,),
         run_order=("MODEL",),
-        surface_mask_policy=None,
+        runtime=RuntimeOptions(surface_masks=None),
     )
 
     final_state = coupler.run()
@@ -186,7 +187,7 @@ def test_step_context_step_increments_in_host_runtime() -> None:
         clock=_clock(steps=3),
         components=(component,),
         run_order=("HOST",),
-        surface_mask_policy=None,
+        runtime=RuntimeOptions(surface_masks=None),
     )
 
     final_state = coupler.run()
@@ -215,7 +216,7 @@ def test_no_exchange_components_run_initialize_hooks_before_state_creation() -> 
         clock=_clock(),
         components=(component,),
         run_order=("ONLY",),
-        surface_mask_policy=None,
+        runtime=RuntimeOptions(surface_masks=None),
     )
 
     state = coupler.initial_state()

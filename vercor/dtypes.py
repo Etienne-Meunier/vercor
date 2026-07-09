@@ -30,7 +30,7 @@ class DTypePolicy:
     metadata compact across both real-precision modes.
     """
 
-    enable_x64: bool
+    enable_x64: bool = False
 
     @classmethod
     def from_jax_config(cls) -> "DTypePolicy":

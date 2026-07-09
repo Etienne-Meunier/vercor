@@ -12,7 +12,7 @@ from vercor._runtime.topology_state import (
     RuntimeTopologyMaps,
 )
 from vercor.settings import Settings
-from vercor.setup_config import SurfaceMaskPolicy
+from vercor.config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component

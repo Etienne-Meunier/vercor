@@ -22,6 +22,7 @@ def runtime_facade_inputs(coupler: Coupler) -> runtime_facade.RuntimeInputs:
         coupler.run_order,
         coupler.clock,
         coupler.settings,
+        coupler.runtime,
     )
 
 

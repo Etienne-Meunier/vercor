@@ -21,7 +21,7 @@ from vercor._runtime.validation import (
     validate_exchange_fields_declared,
 )
 from vercor.settings import Settings
-from vercor.setup_config import SurfaceMaskPolicy
+from vercor.config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component

@@ -86,6 +86,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "AssetError",
         "Clock",
         "Component",
+        "ComponentLike",
         "ComponentCreatePayloadHook",
         "ComponentError",
         "ComponentInitializeHook",
@@ -99,8 +100,10 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "DateTime360",
         "DateTime365",
         "DTypePolicy",
+        "ExecutionBackend",
         "Exchange",
         "ExchangeError",
+        "FieldImportPolicy",
         "GridError",
         "HostComponent",
         "KEEP_PAYLOAD",
@@ -113,6 +116,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "PrefillResult",
         "RectilinearGrid",
         "RegridderError",
+        "RuntimeOptions",
         "RunState",
         "Settings",
         "SetupContext",
@@ -174,13 +178,8 @@ def test_setup_implementation_modules_are_private_after_boundary_redesign() -> N
     }
 
     assert public_factory_names.issubset(set(setup_facade.__all__))
-    assert not hasattr(vercor.setup_config, "JAXGCMConfig")
-    assert not hasattr(vercor.setup_config, "VerosConfig")
-    assert not hasattr(vercor.setup_config, "CAMulatorConfig")
-    assert not hasattr(vercor.setup_config, "Spinup")
-    assert vercor.setup_config.__all__ == [
-        "SurfaceMaskPolicy",
-    ]
+    with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
+        importlib.import_module("vercor.setup_config")
     for module_name in (
         "vercor.setups.data",
         "vercor.setups.data.era5_land",
@@ -198,7 +197,7 @@ def test_setup_implementation_modules_are_private_after_boundary_redesign() -> N
 def test_boundary_redesign_removes_remaining_duplicate_public_helpers() -> None:
     import vercor.fields as fields_module
     import vercor.grids as grids_module
-    import vercor.setup_config as setup_config_module
+    import vercor.config as config_module
     from vercor.state import ComponentState
 
     assert hasattr(fields_module, "COMMON_FIELD_NAMES")
@@ -212,8 +211,8 @@ def test_boundary_redesign_removes_remaining_duplicate_public_helpers() -> None:
     ]
     assert not hasattr(grids_module, "Grid")
     assert not hasattr(ComponentState, "field_candidates")
-    assert "OutputFrequency" not in setup_config_module.__all__
-    assert not hasattr(setup_config_module, "OutputFrequency")
+    assert "OutputFrequency" not in config_module.__all__
+    assert not hasattr(config_module, "OutputFrequency")
 
 
 @pytest.mark.fast_always
@@ -1042,7 +1041,9 @@ def test_components_package_exports_only_component_author_contracts() -> None:
 
     assert components_module.__all__ == [
         "Component",
+        "ComponentLike",
         "ComponentCreatePayloadHook",
+        "FieldImportPolicy",
         "LifecycleHooks",
         "ComponentInitializeHook",
         "ComponentPrefillHook",
@@ -1059,6 +1060,8 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         "ValidationContext",
     ]
     assert components_module.Component is Component
+    assert components_module.ComponentLike is contracts_module.ComponentLike
+    assert components_module.FieldImportPolicy is contracts_module.FieldImportPolicy
     assert (
         components_module.ComponentCreatePayloadHook
         is contracts_module.ComponentCreatePayloadHook
@@ -1927,7 +1930,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert callable(time_selection_module.get_periodic_interval)
     assert not hasattr(time_selection_module, "get_field_time_slice")
     assert not hasattr(time_selection_module, "get_field_at_specific_time")
-    assert "apply_daily_time_selection" in settings_module.DEFAULT_SETTINGS
+    assert "apply_daily_time_selection" not in settings_module.DEFAULT_SETTINGS
+    assert "apply_time_interpolation" not in settings_module.DEFAULT_SETTINGS
     assert "get_field_time_slice" not in settings_module.DEFAULT_SETTINGS
     assert not hasattr(settings_module.Settings(), "get_field_time_slice")
     with pytest.raises(ModuleNotFoundError, match="vercor.pytree_utils"):

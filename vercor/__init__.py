@@ -4,8 +4,10 @@ from vercor.components.base import (
     Component,
 )
 from vercor.components.contracts import (
+    ComponentLike,
     LifecycleHooks,
     ComponentCreatePayloadHook,
+    FieldImportPolicy,
     ComponentInitializeHook,
     ComponentPrefillHook,
     ComponentValidateHook,
@@ -25,6 +27,11 @@ from vercor.components.data import (
 )
 from vercor.components.host import (
     HostComponent,
+)
+from vercor.config import (
+    ExecutionBackend,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
 )
 from vercor.coupler import Coupler
 from vercor.exceptions import (
@@ -47,9 +54,6 @@ from vercor.output import (
     SnapshotWriter,
 )
 from vercor.settings import Settings
-from vercor.setup_config import (
-    SurfaceMaskPolicy,
-)
 from vercor.state import ComponentState, RunState
 
 __all__ = [
@@ -58,9 +62,12 @@ __all__ = [
     "CouplerError",
     "RunState",
     "Component",
+    "ComponentLike",
     "ComponentError",
     "ComponentCreatePayloadHook",
     "ComponentState",
+    "ExecutionBackend",
+    "FieldImportPolicy",
     "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",
@@ -78,6 +85,7 @@ __all__ = [
     "PrefillContext",
     "PrefillResult",
     "RegridderError",
+    "RuntimeOptions",
     "Settings",
     "SetupContext",
     "SnapshotContext",

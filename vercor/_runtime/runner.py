@@ -8,8 +8,14 @@ from jax.errors import JaxRuntimeError
 
 from vercor.clock import Clock
 from vercor.components.runtime_execution import host_component_names
+from vercor.exceptions import ComponentError
 from vercor.jax_logging import LoggerLike
 from vercor.dtypes import as_jax_index_array
+from vercor._runtime.backends import (
+    _HostLoopBackend,
+    _JAXScannedBackend,
+    run_custom_backend,
+)
 from vercor._runtime.dispatch_context import RuntimeDispatchContext
 from vercor._runtime.driver import step_runtime_component
 from vercor._runtime.interrupts import RuntimeInterruptController
@@ -35,25 +41,37 @@ def run_coupler_runtime(
     """Run a validated runtime state through the host or compiled scanned path."""
 
     with context.interrupts.signal_scope():
-        host_names = host_component_names(context.dispatch_context.components)
-        if not host_names:
-            return _run_compiled_scanned_runtime(
+        if not isinstance(context.execution, str):
+            return run_custom_backend(
+                context.execution,
                 runtime_state,
                 context=context,
             )
+
+        host_names = host_component_names(context.dispatch_context.components)
+        if context.execution == "jax":
+            if host_names:
+                raise ComponentError(
+                    "RuntimeOptions(execution='jax') cannot run host-backed "
+                    f"component(s): {', '.join(host_names)}"
+                )
+            return _JAXScannedBackend().run(runtime_state, context=context)
+
+        if context.execution == "host":
+            if host_names:
+                _warn_non_differentiable_host_runtime(
+                    context.logger,
+                    host_names,
+                )
+            return _HostLoopBackend().run(runtime_state, context=context)
+
+        if not host_names:
+            return _JAXScannedBackend().run(runtime_state, context=context)
         _warn_non_differentiable_host_runtime(
             context.logger,
             host_names,
         )
-        return run_host_runtime(
-            runtime_state,
-            run_order=context.run_order,
-            clock=context.clock,
-            settings=context.dispatch_context.settings,
-            logger=context.logger,
-            dispatch_context=context.dispatch_context,
-            interrupts=context.interrupts,
-        )
+        return _HostLoopBackend().run(runtime_state, context=context)
 
 
 def _run_compiled_scanned_runtime(

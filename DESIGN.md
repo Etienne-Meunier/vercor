@@ -142,9 +142,11 @@ immutable runtime containers used during traced integration.
   component-name sequences for run order and normalize them internally to
   immutable tuples. Component names are setup-owned identifiers rather than a
   fixed enum, so custom coupled runs can use names outside the bundled
-  ATM/OCN/LND/ICE conventions. `SurfaceMaskPolicy` controls the optional
-  built-in atmosphere/ocean/land surface-mask patching; pass
-  `surface_mask_policy=None` or `SurfaceMaskPolicy(mode="disabled")` for
+  ATM/OCN/LND/ICE conventions. `RuntimeOptions` owns static coupler runtime
+  policy, including dtype, execution backend, model-year length, and optional
+  surface-mask patching. Pass
+  `RuntimeOptions(surface_masks=None)` or
+  `RuntimeOptions(surface_masks=SurfaceMaskPolicy(mode="disabled"))` for
   setup-agnostic custom exchanges. Component lifecycle initialization runs for
   any non-empty configured component graph, including custom single-component
   or no-exchange workflows. `vercor.state.RunState` is opaque: users inspect results
@@ -697,13 +699,19 @@ class PhysicsParameters:
 
 
 @dataclass(frozen=True)
-class ControlParameters:
-    """Control parameters. NOT traced by JAX (static)."""
-    apply_daily_time_selection: bool
-    apply_time_interpolation: bool
-    enable_x64: bool
-    identifier: str
-    ...
+class RuntimeOptions:
+    """Static coupler runtime policy. NOT traced by JAX."""
+    dtype: DTypePolicy
+    execution: str | ExecutionBackend
+    surface_masks: SurfaceMaskPolicy | None
+    year_in_seconds: float
+
+
+@dataclass(frozen=True)
+class FieldImportPolicy:
+    """Static component field-import policy."""
+    daily_selection: bool
+    time_interpolation: bool
 ```
 
 The split between `PhysicsParameters` (traced) and `ControlParameters` (static) is critical:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import vercor.output._runtime as _runtime_output
 from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
+from vercor.config import RuntimeOptions
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor._run_order import normalize_run_order
@@ -31,7 +32,6 @@ from vercor._runtime.runner import (
 )
 from vercor.state import RunState
 from vercor.settings import Settings
-from vercor.setup_config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -47,7 +47,7 @@ class RuntimeInputs:
     run_order: Sequence[str]
     clock: Clock
     settings: Settings
-    surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy()
+    runtime: RuntimeOptions
 
 
 def create_runtime_resources() -> CouplerRuntimeResources:
@@ -71,7 +71,7 @@ def initialize_coupler_runtime(
         run_order=normalize_run_order(inputs.run_order),
         settings=inputs.settings,
         logger=logger,
-        surface_mask_policy=inputs.surface_mask_policy,
+        surface_mask_policy=inputs.runtime.surface_masks,
     )
     inputs.runtime_resources.runtime_contracts = initialized.runtime_contracts
     inputs.runtime_resources.topology_maps = initialized.topology.topology_maps
@@ -109,6 +109,7 @@ def runtime_run_context(
             inputs=inputs,
         ),
         interrupts=inputs.runtime_resources.interrupt_controller,
+        execution=inputs.runtime.execution,
     )
 
 

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from vercor.components import ComponentSpec, LifecycleHooks, DataComponent, SetupContext
+from vercor.components import (
+    ComponentSpec,
+    FieldImportPolicy,
+    LifecycleHooks,
+    DataComponent,
+    SetupContext,
+)
 from vercor.grids import RectilinearGrid
 
 
@@ -39,8 +45,8 @@ def time_interpolated_data_component(
             outputs=outputs,
             defaults=defaults,
             lifecycle=runtime_lifecycle,
+            import_policy=FieldImportPolicy(time_interpolation=True),
         ),
     )
-    component.update_settings(apply_time_interpolation=True)
     component._setup_metadata["DATA_FILES"] = dict(data_files)
     return component

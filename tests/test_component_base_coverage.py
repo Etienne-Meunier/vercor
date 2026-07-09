@@ -609,17 +609,19 @@ def test_base_initialize_seeds_declared_defaults() -> None:
 
 
 @pytest.mark.fast_always
-def test_update_settings_is_chainable() -> None:
+def test_configure_import_policy_is_chainable() -> None:
     component = _RuntimeOnlyComponent(name="ATM", grid=make_test_grid())
 
-    returned = component.update_settings(
-        apply_time_interpolation=True,
-        apply_daily_time_selection=True,
+    returned = component.configure(
+        contracts_module.ComponentSpec(
+            import_policy=contracts_module.FieldImportPolicy(
+                time_interpolation=True,
+            ),
+        )
     )
 
     assert returned is component
-    assert component.settings.apply_time_interpolation
-    assert component.settings.apply_daily_time_selection
+    assert component.spec.import_policy.time_interpolation
 
 
 @pytest.mark.fast_always
@@ -1838,8 +1840,14 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     )
     monthly = jnp.zeros((12, *grid.shape), dtype=jnp.float64)
     monthly = monthly.at[0].set(jnp.asarray([[1.0, 2.0], [3.0, 4.0]]))
-    component.settings.apply_time_interpolation = True
-    component.settings.apply_daily_time_selection = False
+    component.configure(
+        contracts_module.ComponentSpec(
+            outputs=("temperature",),
+            import_policy=contracts_module.FieldImportPolicy(
+                time_interpolation=True,
+            ),
+        )
+    )
     component._data["temperature"] = monthly
     component_state = send_runtime_fields(
         component,
@@ -1858,8 +1866,14 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
         clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1)
     )
     daily = jnp.arange(5 * 2 * 2, dtype=jnp.float64).reshape((5, *grid.shape))
-    component.settings.apply_time_interpolation = False
-    component.settings.apply_daily_time_selection = True
+    component.configure(
+        contracts_module.ComponentSpec(
+            outputs=("temperature",),
+            import_policy=contracts_module.FieldImportPolicy(
+                daily_selection=True,
+            ),
+        )
+    )
     component._data["temperature"] = daily
     component_state = send_runtime_fields(
         component,

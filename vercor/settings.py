@@ -24,16 +24,6 @@ CONTROL_SETTINGS: dict[str, SettingSpec] = {
     ),
     "identifier": SettingSpec("UNNAMED", "Identifier of the current simulation", "-"),
     "missval": SettingSpec(0.0, "Missing value for fields", "-"),
-    "apply_time_interpolation": SettingSpec(
-        False,
-        "Apply monthly time interpolation to exported forcing data",
-        "-",
-    ),
-    "apply_daily_time_selection": SettingSpec(
-        False,
-        "Apply daily time selection to exported forcing data",
-        "-",
-    ),
     "year_in_seconds": SettingSpec(
         365 * 86400.0,
         "Nominal model year length",
@@ -62,8 +52,6 @@ class Settings:
     enable_x64: bool
     identifier: str
     missval: float
-    apply_time_interpolation: bool
-    apply_daily_time_selection: bool
     year_in_seconds: float
     earth_radius: float
     gravity: float

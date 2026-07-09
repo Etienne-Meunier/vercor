@@ -9,8 +9,8 @@ import jax.numpy as jnp
 import pytest
 
 import vercor
+import vercor.config
 import vercor.output
-import vercor.setup_config
 import vercor.setups
 from tests._coverage_support import make_test_grid
 from vercor import Clock, Coupler, DataComponent, RectilinearGrid
@@ -154,7 +154,9 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     ):
         assert removed_name not in vercor.output.__all__
         assert not hasattr(vercor.output, removed_name)
-    assert not hasattr(vercor.setup_config, "OutputConfig")
+    assert not hasattr(vercor.config, "OutputConfig")
+    with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
+        importlib.import_module("vercor.setup_config")
 
 
 @pytest.mark.fast_always
@@ -409,6 +411,7 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert "Spinup" not in vercor.__all__
     assert "Spinup" in vercor.setups.__all__
     assert "SurfaceMaskPolicy" in vercor.__all__
+    assert "RuntimeOptions" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__
     assert "OutputConfig" in vercor.__all__
     assert "setups" not in vercor.__all__

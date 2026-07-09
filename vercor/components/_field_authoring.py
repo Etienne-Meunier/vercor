@@ -61,6 +61,7 @@ class ComponentFieldAuthoringMixin:
             or {},
             lifecycle=self._spec.lifecycle,
             output=self._spec.output,
+            import_policy=self._spec.import_policy,
         )
         return self
 
@@ -75,6 +76,11 @@ class ComponentFieldAuthoringMixin:
         """Return setup-time field names in insertion order."""
 
         return tuple(self._data)
+
+    def initial_fields(self) -> Mapping[str, RuntimeArray]:
+        """Return setup-time grid fields as a plain field mapping."""
+
+        return dict(self._data)
 
     def update_settings(self, **values: object) -> Self:
         """Update component settings by name and return this component."""

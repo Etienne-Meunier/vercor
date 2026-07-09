@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final, TypeAlias
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Final, Protocol, TypeAlias
 
 from vercor.components.contexts import (
     SetupContext,
@@ -11,6 +12,9 @@ from vercor.components.contexts import (
 from vercor._field_names import unique_field_names as _unique_field_names
 from vercor.output import OutputConfig
 from vercor.types import RuntimeArray
+
+if TYPE_CHECKING:
+    from vercor.grids import RectilinearGrid
 
 KEEP_PAYLOAD: Final = object()
 """Sentinel meaning a component step should preserve the existing payload."""
@@ -74,6 +78,42 @@ ComponentPrefillHook = Callable[[Any, PrefillContext], PrefillResult | None]
 ComponentValidateHook = Callable[[Any, ValidationContext], None]
 
 
+class ComponentLike(Protocol):
+    """Public structural contract for user-provided model components."""
+
+    @property
+    def name(self) -> str:
+        """Return the component name used in exchanges and run order."""
+        ...
+
+    @property
+    def grid(self) -> "RectilinearGrid":
+        """Return the component grid."""
+        ...
+
+    @property
+    def spec(self) -> "ComponentSpec":
+        """Return the component runtime field contract."""
+        ...
+
+    def initial_fields(self) -> Mapping[str, RuntimeArray]:
+        """Return setup-time fields used to seed runtime state."""
+        ...
+
+    def initialize(self, context: SetupContext) -> None:
+        """Run setup-time initialization before runtime state is created."""
+        ...
+
+    def step(
+        self,
+        fields: Mapping[str, RuntimeArray],
+        context: StepContext,
+        payload: Any | None = None,
+    ) -> _ComponentStepReturn:
+        """Return runtime field updates for one component step."""
+        ...
+
+
 @dataclass(frozen=True)
 class LifecycleHooks:
     """Optional lifecycle hooks for component setup and runtime customization."""
@@ -82,6 +122,22 @@ class LifecycleHooks:
     create_payload: ComponentCreatePayloadHook | None = None
     prefill: ComponentPrefillHook | None = None
     validate: ComponentValidateHook | None = None
+
+
+@dataclass(frozen=True)
+class FieldImportPolicy:
+    """Policy for selecting time-dependent fields when a component sends data."""
+
+    time_interpolation: bool = False
+    daily_selection: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate mutually exclusive import selection policies."""
+
+        if self.time_interpolation and self.daily_selection:
+            raise ValueError(
+                "time_interpolation and daily_selection cannot both be enabled"
+            )
 
 
 @dataclass(frozen=True, init=False)
@@ -100,6 +156,7 @@ class ComponentSpec:
     defaults: Mapping[str, object] = field(default_factory=dict)
     lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)
     output: OutputConfig = field(default_factory=OutputConfig)
+    import_policy: FieldImportPolicy = field(default_factory=FieldImportPolicy)
 
     def __init__(
         self,
@@ -109,12 +166,17 @@ class ComponentSpec:
         *,
         lifecycle: LifecycleHooks | None = None,
         output: OutputConfig | None = None,
+        import_policy: FieldImportPolicy | None = None,
     ) -> None:
         """Create a field declaration."""
 
         object.__setattr__(self, "inputs", _unique_field_names(inputs))
         object.__setattr__(self, "outputs", _unique_field_names(outputs))
-        object.__setattr__(self, "defaults", dict(defaults or {}))
+        object.__setattr__(
+            self,
+            "defaults",
+            MappingProxyType(dict(defaults or {})),
+        )
         object.__setattr__(
             self,
             "lifecycle",
@@ -125,10 +187,17 @@ class ComponentSpec:
             "output",
             OutputConfig() if output is None else output,
         )
+        object.__setattr__(
+            self,
+            "import_policy",
+            FieldImportPolicy() if import_policy is None else import_policy,
+        )
 
 
 __all__ = [
+    "ComponentLike",
     "ComponentCreatePayloadHook",
+    "FieldImportPolicy",
     "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",

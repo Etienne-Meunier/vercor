@@ -9,6 +9,24 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local VerCOR 1.0 API/plugin-boundary validation passed as of
+  2026-07-09 using the direct `scipy` environment executable: focused
+  red/green plugin-architecture pytest, affected API/setup/runtime fast pytest,
+  full fast pytest, full pytest, coverage pytest at 90% total, Black, flake8,
+  mypy, example/package/test `compileall`, and `git diff --check`. The
+  breaking v1 cleanup moves core runtime policy to public `vercor.config`
+  (`RuntimeOptions`, `SurfaceMaskPolicy`, `ExecutionBackend`, `DTypePolicy`),
+  removes the old `vercor.setup_config` module, replaces `Coupler`'s
+  `surface_mask_policy=` keyword with `runtime=RuntimeOptions(...)`, adds
+  public `ComponentLike` and `FieldImportPolicy`, normalizes structural custom
+  components through private `vercor.components._adapter`, moves time-selection
+  data-import behavior from mutable `Settings` to `ComponentSpec.import_policy`,
+  freezes component/setup config mappings, adds private runtime backend owners
+  for built-in and custom execution paths, adds `CouplerSpec`, and bumps the
+  package version to 1.0.0. Black emitted the recurring Python
+  3.13/target-3.14 warning; full pytest/coverage emitted only the existing
+  external JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 - Latest local VerCOR 0.8 setup-config/API-boundary validation passed as of
   2026-07-09 using the direct `scipy` environment executable: focused red/green
   lifecycle/setup-boundary/JCM paired-config pytest, affected

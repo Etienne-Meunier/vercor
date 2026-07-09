@@ -13,6 +13,7 @@ import pytest
 from tests._coverage_support import make_test_grid
 from tests._runtime_helpers import runtime_state_from_coupler_components
 from tests.assertions import assert_allclose_compact
+from vercor.components import ComponentSpec, FieldImportPolicy
 from vercor.components.data import DataComponent
 from vercor.clock import Clock
 from vercor.coupler import Coupler
@@ -32,9 +33,12 @@ from vercor.types import RuntimeArray
 
 
 class _RuntimeSendComponent(DataComponent):
-    def __init__(self, settings: Settings) -> None:
-        super().__init__("DATA", make_test_grid(name="runtime-send"))
-        self.settings = settings
+    def __init__(self, import_policy: FieldImportPolicy) -> None:
+        super().__init__(
+            "DATA",
+            make_test_grid(name="runtime-send"),
+            spec=ComponentSpec(import_policy=import_policy),
+        )
 
     def initialize(self, context: SetupContext) -> None:
         _ = context
@@ -1039,7 +1043,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(Settings(apply_time_interpolation=True))
+    component = _RuntimeSendComponent(FieldImportPolicy(time_interpolation=True))
     contract = ExchangeContract(sends=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
@@ -1081,7 +1085,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(Settings(apply_daily_time_selection=True))
+    component = _RuntimeSendComponent(FieldImportPolicy(daily_selection=True))
     contract = ExchangeContract(sends=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],

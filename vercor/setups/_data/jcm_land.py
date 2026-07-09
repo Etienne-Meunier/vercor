@@ -1,7 +1,13 @@
 import jax.numpy as jnp
 from typing import TYPE_CHECKING, Any
 
-from vercor.components import ComponentSpec, DataComponent, LifecycleHooks, SetupContext
+from vercor.components import (
+    ComponentSpec,
+    DataComponent,
+    FieldImportPolicy,
+    LifecycleHooks,
+    SetupContext,
+)
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
@@ -55,8 +61,8 @@ def make_jcm_land(
             outputs=_JCM_LAND_FIELD_NAMES,
             defaults={field_name: 0.0 for field_name in _JCM_LAND_INPUT_NAMES},
             lifecycle=LifecycleHooks(initialize=initialize),
+            import_policy=FieldImportPolicy(daily_selection=True),
         ),
     )
-    component.update_settings(apply_daily_time_selection=True)
 
     return component

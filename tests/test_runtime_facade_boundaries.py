@@ -20,7 +20,7 @@ def test_runtime_facade_inputs_bundle_owns_repeated_coupler_runtime_inputs() -> 
         "run_order",
         "clock",
         "settings",
-        "surface_mask_policy",
+        "runtime",
     ]
 
 
