@@ -223,7 +223,7 @@ class Coupler:
     def initial_state(self, *, prefill_missing: bool = True) -> RunState:
         """Create and validate the coupled runtime state."""
 
-        if self.exchanges:
+        if self.components:
             self._initialize_runtime()
         return _runtime_facade.create_runtime_state(
             inputs=self._runtime_inputs(),
@@ -240,7 +240,7 @@ class Coupler:
     ) -> None:
         """Write final runtime fields and optional native component snapshots."""
 
-        if self.exchanges:
+        if self.components:
             self._initialize_runtime()
         self.logger.info(" ------------ Writing coupler outputs ------------")
         _runtime_facade.finalize(
@@ -280,7 +280,7 @@ class Coupler:
         Host-backed components run through the Python host bridge.
         """
 
-        if state is None and self.exchanges:
+        if state is None and self.components:
             self._initialize_runtime()
         inputs = self._runtime_inputs()
         runtime_state = _runtime_facade.prepare_runtime_state(

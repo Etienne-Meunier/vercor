@@ -20,13 +20,13 @@ from vercor import (
     DataComponent,
     Exchange,
     HostComponent,
-    JAXGCMConfig,
-    Spinup,
+    LifecycleHooks,
     StepContext,
     SurfaceMaskPolicy,
 )
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.output import OutputConfig, PeriodOutput
+from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 
 
 def _clock(steps: int = 1) -> Clock:
@@ -198,6 +198,36 @@ def test_step_context_step_increments_in_host_runtime() -> None:
 
 
 @pytest.mark.fast_always
+def test_no_exchange_components_run_initialize_hooks_before_state_creation() -> None:
+    grid = make_test_grid(name="no-exchange-init-grid")
+    events: list[tuple[str, tuple[str, ...]]] = []
+
+    def initialize(component: DataComponent, context: vercor.SetupContext) -> None:
+        events.append((component.name, tuple(context.run_order)))
+        component.seed_field("temperature", 280.0)
+
+    component = DataComponent.from_fields(
+        "ONLY",
+        grid,
+        spec=ComponentSpec(lifecycle=LifecycleHooks(initialize=initialize)),
+    )
+    coupler = Coupler(
+        clock=_clock(),
+        components=(component,),
+        run_order=("ONLY",),
+        surface_mask_policy=None,
+    )
+
+    state = coupler.initial_state()
+
+    assert events == [("ONLY", ("ONLY",))]
+    assert_allclose_compact(
+        state.component("ONLY").field("temperature"),
+        np.full(grid.shape, 280.0),
+    )
+
+
+@pytest.mark.fast_always
 def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,12 +249,14 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
         loaded_coords: object,
         loaded_forcing: object,
         loaded_ocn_grid: object,
+        *,
+        name: str = "LND",
     ) -> DataComponent:
         assert loaded_coords is coords
         assert loaded_forcing is forcing
         assert loaded_ocn_grid is ocn_grid
         return DataComponent.from_fields(
-            "LND",
+            name,
             jcm_grid,
             {"land_surface_temperature": 280.0},
         )
@@ -262,7 +294,7 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
     )
     setup = jcm_setup_module.make_jcm_land_atmosphere(
         ocn_grid,
-        config=config,
+        config=JCMLandAtmosphereConfig(atmosphere=config),
     )
 
     assert setup.atmosphere.name == "CUSTOM_ATM"

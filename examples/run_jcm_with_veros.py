@@ -4,13 +4,16 @@ from vercor import (
     Clock,
     Coupler,
     Exchange,
-    JAXGCMConfig,
     OutputConfig,
     PeriodOutput,
+)
+from vercor.setups import (
+    JAXGCMConfig,
+    JCMLandAtmosphereConfig,
     Spinup,
     VerosConfig,
+    make_veros_gcm,
 )
-from vercor.setups import make_veros_gcm
 from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
@@ -78,11 +81,13 @@ if __name__ == "__main__":
 
     jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
-        config=JAXGCMConfig(
-            custom_parameters=custom_jcm_parameters,
-            spinup=Spinup(enabled=True),
-            output=OutputConfig(period=PeriodOutput(frequency="month")),
-            jitted=True,
+        config=JCMLandAtmosphereConfig(
+            atmosphere=JAXGCMConfig(
+                custom_parameters=custom_jcm_parameters,
+                spinup=Spinup(enabled=True),
+                output=OutputConfig(period=PeriodOutput(frequency="month")),
+                jitted=True,
+            ),
         ),
     )
     lnd = jcm_setup.land

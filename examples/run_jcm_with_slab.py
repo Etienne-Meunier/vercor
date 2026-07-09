@@ -3,8 +3,14 @@ from datetime import datetime
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange, JAXGCMConfig, RectilinearGrid
-from vercor.setups import load_jcm_inputs, make_jax_gcm, make_slab_land, make_slab_ocean
+from vercor import Clock, Coupler, Exchange, RectilinearGrid
+from vercor.setups import (
+    JAXGCMConfig,
+    load_jcm_inputs,
+    make_jax_gcm,
+    make_slab_land,
+    make_slab_ocean,
+)
 from vercor.dtypes import as_jax_real_array
 from vercor.regridding import bilinear, conservative
 from vercor.recipes import (

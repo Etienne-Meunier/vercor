@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from vercor.setups.config import (
+    CAMulatorConfig,
+    JAXGCMConfig,
+    JCMLandAtmosphereConfig,
+    Spinup,
+    VerosConfig,
+)
 from vercor.setups._lazy_imports import (
     LazyExport,
     lazy_export_names,
@@ -16,6 +23,7 @@ from vercor.setups._slab import (
     make_slab_seaice,
 )
 from vercor.setups._jcm import (
+    JCMLandAtmosphereSetup,
     JCMInputs,
     load_jcm_inputs,
     make_jcm_land_atmosphere,
@@ -40,7 +48,13 @@ _LAZY_EXPORTS = {
 }
 
 __all__ = [
+    "CAMulatorConfig",
+    "JAXGCMConfig",
+    "JCMLandAtmosphereConfig",
+    "JCMLandAtmosphereSetup",
     "JCMInputs",
+    "Spinup",
+    "VerosConfig",
     "load_jcm_inputs",
     "make_slab_atmosphere",
     "make_slab_land",

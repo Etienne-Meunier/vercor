@@ -22,7 +22,7 @@ from vercor.setups._external.camulator_forcing import (
 from tests._coverage_support import make_test_grid
 from vercor.components import DataComponent
 from vercor.output import OutputConfig, PeriodOutput
-from vercor.setup_config import JAXGCMConfig, Spinup
+from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 from vercor.settings import Settings
 
 
@@ -191,8 +191,10 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         received_coords: object,
         received_forcing: object,
         received_grid: object,
+        *,
+        name: str = "LND",
     ) -> Any:
-        calls["land_args"] = (received_coords, received_forcing, received_grid)
+        calls["land_args"] = (received_coords, received_forcing, received_grid, name)
         return land
 
     def fake_transposed_host_array(mask: object) -> str:
@@ -221,7 +223,9 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
         inputs=inputs,
-        spinup=Spinup(enabled=False),
+        config=JCMLandAtmosphereConfig(
+            atmosphere=JAXGCMConfig(spinup=Spinup(enabled=False)),
+        ),
     )
 
     assert result.land is land
@@ -231,7 +235,7 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     assert result.forcing is forcing
     assert terrain.fmask == "patched-mask"
     assert calls["mask"] is land_mask
-    assert calls["land_args"] == (coords, forcing, ocean_grid)
+    assert calls["land_args"] == (coords, forcing, ocean_grid, "LND")
     assert calls["atmosphere_args"] == (
         coords,
         terrain,
@@ -239,7 +243,6 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
             "config": JAXGCMConfig(
                 forcing_data=forcing,
                 spinup=Spinup(enabled=False),
-                output=OutputConfig(period=PeriodOutput(frequency="month")),
                 jitted=True,
             ),
         },
@@ -332,8 +335,10 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         received_coords: object,
         received_forcing: object,
         received_grid: object,
+        *,
+        name: str = "LND",
     ) -> Any:
-        calls["land_args"] = (received_coords, received_forcing, received_grid)
+        calls["land_args"] = (received_coords, received_forcing, received_grid, name)
         return land
 
     def fake_transposed_host_array(mask: object) -> str:
@@ -357,10 +362,15 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
 
     result = helper.make_jcm_land_atmosphere(
         ocean_grid,
-        custom_parameters={"surface_flux.vgust": 5.01},
-        spinup=Spinup(enabled=False),
-        jitted=False,
-        output=OutputConfig(period=PeriodOutput(frequency="year")),
+        config=JCMLandAtmosphereConfig(
+            atmosphere=JAXGCMConfig(
+                custom_parameters={"surface_flux.vgust": 5.01},
+                spinup=Spinup(enabled=False),
+                output=OutputConfig(period=PeriodOutput(frequency="year")),
+                jitted=False,
+            ),
+            land_name="CUSTOM_LND",
+        ),
     )
 
     assert result.land is land
@@ -371,7 +381,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     assert terrain.fmask == "patched-mask"
     assert calls["load_inputs"] is True
     assert calls["mask"] is land_mask
-    assert calls["land_args"] == (coords, forcing, ocean_grid)
+    assert calls["land_args"] == (coords, forcing, ocean_grid, "CUSTOM_LND")
     assert calls["atmosphere_args"] == (
         coords,
         terrain,

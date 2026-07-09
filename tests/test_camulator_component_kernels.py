@@ -38,7 +38,7 @@ from vercor.output._component_adapter import (
 )
 from vercor.output import OutputVariable
 from vercor.output import OutputConfig, PeriodOutput
-from vercor.setup_config import CAMulatorConfig
+from vercor.setups import CAMulatorConfig
 from vercor.setups._external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
 from vercor.grids import RectilinearGrid

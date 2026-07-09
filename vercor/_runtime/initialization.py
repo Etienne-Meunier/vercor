@@ -107,8 +107,9 @@ def initialize_coupler_runtime(
 
     for name, component in components.items():
         contract = runtime_contracts[name]
-        check_not_empty_import_export_lists(component, contract)
-        validate_exchange_fields_declared(component, contract)
+        if contract.all_fields:
+            check_not_empty_import_export_lists(component, contract)
+            validate_exchange_fields_declared(component, contract)
 
     topology = build_exchange_topology(
         components=components,

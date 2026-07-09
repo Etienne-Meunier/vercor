@@ -42,7 +42,7 @@ from vercor.output._component_adapter import (
 from vercor.output import SnapshotContext
 from vercor.output import OutputVariable
 from vercor.output import OutputConfig, PeriodOutput
-from vercor.setup_config import VerosConfig
+from vercor.setups import VerosConfig
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
 from vercor.settings import Settings

@@ -1,7 +1,7 @@
 1. `vercor/dtypes.py` - canonical JAX/NumPy dtype policy and array-construction helpers
 2. `vercor/physical_constants.py` - physical and bulk-formula default settings with AD-owned semantics
 3. `vercor/pytree.py` - shared declarative PyTree mixin for immutable JAX-registered containers
-4. `vercor/settings.py` and `vercor/setup_config.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, grouped public setup configs such as `Spinup`, public `SurfaceMaskPolicy`, and static runtime controls built on (2)
+4. `vercor/settings.py`, `vercor/setup_config.py`, and `vercor/setups/config.py` - unified metadata-backed public `Settings` container, strict known-setting constructor overrides, explicit `custom={...}` settings, `SettingSpec` metadata records, core `SurfaceMaskPolicy`, setup-owned config dataclasses such as `Spinup`, `JAXGCMConfig`, `VerosConfig`, `CAMulatorConfig`, and `JCMLandAtmosphereConfig`, and static runtime controls built on (2)
 5. `vercor/_field_names.py` and `vercor/fields.py` - private shared field-name de-duplication plus canonical public field vocabulary, `ExchangeField` normalization, and `VectorField` owner
 6. `vercor/calendar.py` and `vercor/forcing_index.py` - calendar constants, model-calendar datetime values, leap-year logic, month/day conversion, and daily forcing-index policy
 7. `vercor/fluxes/vertical_coordinates.py` - hybrid/sigma-coordinate pressure and altitude helpers built on (1, 4)
@@ -54,7 +54,7 @@
 54. `vercor/setups/_data/era5_land.py` - ERA5 land forcing adapter with canonical layout and runtime temperature storage built on (12, 14, 22, 49, 51)
 55. `vercor/setups/_data/erainterim_ocean.py` - ERA-Interim ocean forcing adapter built on (12, 14, 22, 49, 50, 51)
 56. `vercor/setups/_data/jcm_land.py` - JCM land forcing adapter with coordinate conversion and runtime storage built on (1, 12, 20, 50)
-57. `vercor/setups/_jcm.py` - `JCMInputs`, public `load_jcm_inputs(...)`, paired JCM atmosphere/land setup construction through `make_jcm_land_atmosphere(...)` with optional preloaded inputs, and private lazy optional JCM factory loading built on (10, 32, 56)
+57. `vercor/setups/_jcm.py` - `JCMInputs`, public `load_jcm_inputs(...)`, paired JCM atmosphere/land setup construction through config-only `make_jcm_land_atmosphere(..., config=JCMLandAtmosphereConfig(...))` with optional preloaded inputs, and private lazy optional JCM factory loading built on (4, 10, 32, 56)
 58. `vercor/setups/_slab/atmosphere.py`, `ocean.py`, `land.py`, and `seaice.py` - slab model adapters built on (1, 9, 12)
 59. `vercor/components/contexts.py` - immutable component setup and step context payloads built on calendar, tuple run-order sequences, settings helpers, and (25)
 60. `vercor/state.py` - public `RunState` and `ComponentState` owners plus shared read-only field resolution for diagnostics/output views and runtime states built on (3, 12, 63, 64)

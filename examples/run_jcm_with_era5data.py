@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput, Spinup
+from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput
 from vercor.setups import make_era5_ocean
 from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
@@ -8,6 +8,7 @@ from vercor.recipes import (
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
+from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 from vercor.setups import make_jcm_land_atmosphere
 from vercor.regridding import bilinear
 
@@ -16,9 +17,13 @@ if __name__ == "__main__":
 
     jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
-        spinup=Spinup(enabled=True),
-        jitted=True,
-        output=OutputConfig(period=PeriodOutput(frequency="month")),
+        config=JCMLandAtmosphereConfig(
+            atmosphere=JAXGCMConfig(
+                spinup=Spinup(enabled=True),
+                output=OutputConfig(period=PeriodOutput(frequency="month")),
+                jitted=True,
+            ),
+        ),
     )
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere

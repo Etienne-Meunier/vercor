@@ -84,7 +84,6 @@ def test_public_api_exports_state_view_fields_and_regridders() -> None:
 def test_root_api_is_core_only_after_boundary_redesign() -> None:
     allowed_root_exports = {
         "AssetError",
-        "CAMulatorConfig",
         "Clock",
         "Component",
         "ComponentCreatePayloadHook",
@@ -104,7 +103,6 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "ExchangeError",
         "GridError",
         "HostComponent",
-        "JAXGCMConfig",
         "KEEP_PAYLOAD",
         "LifecycleHooks",
         "ModelDateTime",
@@ -120,14 +118,12 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "SetupContext",
         "SnapshotContext",
         "SnapshotWriter",
-        "Spinup",
         "SurfaceMaskPolicy",
         "StepContext",
         "StepResult",
         "ValidationContext",
         "VectorField",
         "vector",
-        "VerosConfig",
     }
 
     assert set(vercor.__all__) == allowed_root_exports
@@ -136,9 +132,13 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "conservative",
         "Regridder",
         "RegridderFactory",
+        "CAMulatorConfig",
         "fluxes",
+        "JAXGCMConfig",
         "recipes",
         "setups",
+        "Spinup",
+        "VerosConfig",
     ):
         assert name not in vercor.__all__
     for name in ("bilinear", "conservative", "Regridder", "RegridderFactory"):
@@ -150,6 +150,10 @@ def test_setup_implementation_modules_are_private_after_boundary_redesign() -> N
     import vercor.setups as setup_facade
 
     public_factory_names = {
+        "CAMulatorConfig",
+        "JAXGCMConfig",
+        "JCMLandAtmosphereConfig",
+        "JCMLandAtmosphereSetup",
         "load_jcm_inputs",
         "make_camulator_gcm",
         "make_camulator_land",
@@ -165,9 +169,18 @@ def test_setup_implementation_modules_are_private_after_boundary_redesign() -> N
         "make_slab_ocean",
         "make_slab_seaice",
         "make_veros_gcm",
+        "Spinup",
+        "VerosConfig",
     }
 
     assert public_factory_names.issubset(set(setup_facade.__all__))
+    assert not hasattr(vercor.setup_config, "JAXGCMConfig")
+    assert not hasattr(vercor.setup_config, "VerosConfig")
+    assert not hasattr(vercor.setup_config, "CAMulatorConfig")
+    assert not hasattr(vercor.setup_config, "Spinup")
+    assert vercor.setup_config.__all__ == [
+        "SurfaceMaskPolicy",
+    ]
     for module_name in (
         "vercor.setups.data",
         "vercor.setups.data.era5_land",

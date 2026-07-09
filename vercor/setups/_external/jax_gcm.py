@@ -9,7 +9,7 @@ from jcm.physics_interface import TerrainData
 
 from vercor.components import Component, LifecycleHooks, ComponentSpec
 from vercor.output import OutputConfig
-from vercor.setup_config import JAXGCMConfig
+from vercor.setups.config import JAXGCMConfig
 import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
 import vercor.setups._external.jax_gcm_output as _jax_gcm_output
 import vercor.setups._external.jax_gcm_runtime as _jax_gcm_runtime

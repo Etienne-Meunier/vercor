@@ -1727,8 +1727,7 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
     if fast_mode:
         pytest.skip("Real JCM payload structure regression runs outside --fast")
 
-    from vercor.setups import load_jcm_inputs, make_jax_gcm
-    from vercor.setup_config import JAXGCMConfig
+    from vercor.setups import JAXGCMConfig, load_jcm_inputs, make_jax_gcm
 
     inputs = load_jcm_inputs()
     component = make_jax_gcm(

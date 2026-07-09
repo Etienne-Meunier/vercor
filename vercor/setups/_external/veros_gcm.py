@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import partial
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
-from vercor.setup_config import VerosConfig
+from vercor.setups.config import VerosConfig
 import vercor.setups._external.veros_gcm_state as _veros_gcm_state
 import vercor.setups._external.veros_output as _veros_output
 import vercor.setups._external.veros_runtime as _veros_runtime

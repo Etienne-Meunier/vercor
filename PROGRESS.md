@@ -9,6 +9,19 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local VerCOR 0.8 setup-config/API-boundary validation passed as of
+  2026-07-09 using the direct `scipy` environment executable: focused red/green
+  lifecycle/setup-boundary/JCM paired-config pytest, affected
+  API/setup/runtime fast pytest, full fast pytest, full pytest, coverage pytest
+  at 90% total, Black, flake8, mypy, example/package/test `compileall`, and
+  `git diff --check`. The breaking cleanup keeps setup-specific config
+  dataclasses behind `vercor.setups`, removes their root and
+  `vercor.setup_config` exports, adds `JCMLandAtmosphereConfig` for the paired
+  JCM land/atmosphere factory, removes the duplicate JCM setup keyword path,
+  and initializes component lifecycle hooks for no-exchange component graphs.
+  Black emitted the recurring Python 3.13/target-3.14 warning; full
+  pytest/coverage emitted only the existing external JAX dtype-promotion
+  `FutureWarning` and xarray merge `FutureWarning` in JAXGCM coverage.
 - Latest local exchange-declaration audit follow-up validation passed as of
   2026-07-09 using the direct `scipy` environment executable: focused red/green
   CAMulator land radiation-contract pytest, focused JCM land output/contract

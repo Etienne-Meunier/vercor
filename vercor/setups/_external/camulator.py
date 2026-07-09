@@ -6,7 +6,7 @@ from functools import partial
 
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
-from vercor.setup_config import CAMulatorConfig
+from vercor.setups.config import CAMulatorConfig
 import vercor.setups._external.camulator_contracts as _camulator_contracts
 import vercor.setups._external.camulator_output as _camulator_output
 import vercor.setups._external.camulator_runtime as _camulator_runtime

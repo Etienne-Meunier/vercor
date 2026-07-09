@@ -145,7 +145,9 @@ immutable runtime containers used during traced integration.
   ATM/OCN/LND/ICE conventions. `SurfaceMaskPolicy` controls the optional
   built-in atmosphere/ocean/land surface-mask patching; pass
   `surface_mask_policy=None` or `SurfaceMaskPolicy(mode="disabled")` for
-  setup-agnostic custom exchanges. `vercor.state.RunState` is opaque: users inspect results
+  setup-agnostic custom exchanges. Component lifecycle initialization runs for
+  any non-empty configured component graph, including custom single-component
+  or no-exchange workflows. `vercor.state.RunState` is opaque: users inspect results
   through `RunState.component(name) -> ComponentState` and
   `ComponentState.field(...)`/`fields(...)`, while runtime stores remain
   private. `vercor.grids.RectilinearGrid`, `vercor.fields.VectorField`, and
@@ -390,12 +392,15 @@ Reusable concrete adapters live under the canonical packaged namespace
 should not depend on a top-level `setups` package. Setup adapters use
 `SetupContext`, `StepContext`, and plain runtime-array mappings at their author
 boundary instead of importing runtime context/store internals directly.
-The public setup facade exports concrete factory functions and the
+The public setup facade exports concrete factory functions, setup-specific
+configuration dataclasses (`Spinup`, `JAXGCMConfig`, `VerosConfig`,
+`CAMulatorConfig`, and `JCMLandAtmosphereConfig`), and the
 `JCMInputs`/`load_jcm_inputs(...)` loader for reusable JCM coordinate, terrain,
-and forcing inputs; setup subpackages no longer advertise lazy module objects in
-their `__all__` lists. Deep adapter modules live under underscore packages for
-package-internal tests and optional-dependency boundaries, but supported user
-workflows enter through `vercor.setups`.
+and forcing inputs. The root package stays core-only and does not reexport
+bundled setup configuration. Setup subpackages no longer advertise lazy module
+objects in their `__all__` lists. Deep adapter modules live under underscore
+packages for package-internal tests and optional-dependency boundaries, but
+supported user workflows enter through `vercor.setups`.
 Examples and setup factories assemble runs through `Coupler(...)`,
 `Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
@@ -503,7 +508,10 @@ mask/kernel construction and selected tensor mutation live in
 setup-time model resources, timestep alignment, field seeding, and lifecycle
 callbacks, while `vercor.setups._external.camulator` remains the thin public
 factory. Public external setup factories group spinup and period-output options
-as `Spinup` and `PeriodOutput` instead of parallel keyword bundles.
+as `Spinup` and `PeriodOutput` instead of parallel keyword bundles. The paired
+JCM land/atmosphere helper takes a single `JCMLandAtmosphereConfig`, whose
+`atmosphere` field carries the `JAXGCMConfig`; legacy parallel JCM setup
+keywords are not public API.
 CAMulator forecast-increment output remains the default when
 `PeriodOutput.frequency` is unset; when it is `day`, `month`, or `year`,
 `CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter` and

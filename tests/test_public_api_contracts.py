@@ -11,6 +11,7 @@ import pytest
 import vercor
 import vercor.output
 import vercor.setup_config
+import vercor.setups
 from tests._coverage_support import make_test_grid
 from vercor import Clock, Coupler, DataComponent, RectilinearGrid
 from vercor.output import OutputVariable
@@ -289,10 +290,10 @@ def test_state_views_use_domain_scopes_not_runtime_store_names() -> None:
 def test_output_and_setup_configs_use_final_names() -> None:
     period = vercor.PeriodOutput(frequency="month", variables=("temp",))
     output = vercor.OutputConfig(period=period)
-    spinup = vercor.Spinup(enabled=True)
-    veros = vercor.VerosConfig(spinup=spinup, output=output)
-    jax_gcm = vercor.JAXGCMConfig(spinup=spinup, output=output)
-    camulator = vercor.CAMulatorConfig(
+    spinup = vercor.setups.Spinup(enabled=True)
+    veros = vercor.setups.VerosConfig(spinup=spinup, output=output)
+    jax_gcm = vercor.setups.JAXGCMConfig(spinup=spinup, output=output)
+    camulator = vercor.setups.CAMulatorConfig(
         config_path="config.yml", spinup=spinup, output=output
     )
 
@@ -304,9 +305,12 @@ def test_output_and_setup_configs_use_final_names() -> None:
     assert period.frequency == "month"
     assert jax_gcm.jitted is True
     assert camulator.device == "cuda"
-    for removed_name in ("SpinupConfig", "PeriodOutputConfig"):
+    for removed_name in ("Spinup", "SpinupConfig", "PeriodOutputConfig"):
         assert removed_name not in vercor.__all__
         assert not hasattr(vercor, removed_name)
+    for setup_name in ("Spinup", "VerosConfig", "JAXGCMConfig", "CAMulatorConfig"):
+        assert setup_name in vercor.setups.__all__
+        assert hasattr(vercor.setups, setup_name)
 
 
 @pytest.mark.fast_always
@@ -394,7 +398,7 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
 @pytest.mark.fast_always
 def test_setup_and_dtype_config_objects_are_public() -> None:
     output = vercor.PeriodOutput(frequency="month", variables=("temp", "salt"))
-    spinup = vercor.Spinup(enabled=True)
+    spinup = vercor.setups.Spinup(enabled=True)
 
     assert output.frequency == "month"
     assert output.variables == ("temp", "salt")
@@ -402,7 +406,8 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert vercor.DTypePolicy(enable_x64=True).enable_x64
     assert vercor.PeriodOutput is vercor.output.PeriodOutput
     assert "PeriodOutput" in vercor.__all__
-    assert "Spinup" in vercor.__all__
+    assert "Spinup" not in vercor.__all__
+    assert "Spinup" in vercor.setups.__all__
     assert "SurfaceMaskPolicy" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__
     assert "OutputConfig" in vercor.__all__

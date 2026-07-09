@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput, VerosConfig
+from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
-from vercor.setups import make_veros_gcm
+from vercor.setups import VerosConfig, make_veros_gcm
 from vercor.recipes import (
     ATMOSPHERE_TO_LAND_BASIC_FIELDS,
     ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
