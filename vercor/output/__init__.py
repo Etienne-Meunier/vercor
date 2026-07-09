@@ -72,6 +72,7 @@ class OutputConfig:
 
 __all__ = [
     "OutputConfig",
+    "OutputFrequency",
     "OutputVariable",
     "PeriodOutput",
     "SnapshotContext",

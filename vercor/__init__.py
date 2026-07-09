@@ -34,8 +34,8 @@ from vercor.runtime import (
     ExecutionContext,
     RuntimeDriver,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
+from vercor.coupling import CouplerSpec
 from vercor.coupler import Coupler
 from vercor.exceptions import (
     AssetError,
@@ -70,6 +70,7 @@ __all__ = [
     "ComponentError",
     "ComponentCreatePayloadHook",
     "ComponentState",
+    "CouplerSpec",
     "ExecutionBackend",
     "ExecutionContext",
     "FieldImportPolicy",
@@ -96,7 +97,6 @@ __all__ = [
     "SetupContext",
     "SnapshotContext",
     "SnapshotWriter",
-    "SurfaceMaskPolicy",
     "StepContext",
     "StepResult",
     "ValidationContext",

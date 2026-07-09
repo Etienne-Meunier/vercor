@@ -310,4 +310,4 @@ def _field(source: ComponentState, name: str) -> RuntimeArray:
     raise KeyError(f"Field {name!r} not found")
 
 
-__all__ = ["RunState", "ComponentState"]
+__all__ = ["ComponentState", "FieldLookupScope", "FieldScope", "RunState"]

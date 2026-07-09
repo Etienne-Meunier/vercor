@@ -13,26 +13,28 @@ import vercor
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor import Clock, ComponentSpec, Coupler, Exchange, StepContext
+from vercor.runtime import RuntimeOptions
+from vercor.topology import SurfaceMaskPolicy
 
 
 @pytest.mark.fast_always
 def test_runtime_options_own_core_runtime_configuration() -> None:
-    from vercor.config import RuntimeOptions, SurfaceMaskPolicy
-
     runtime = RuntimeOptions(
-        surface_masks=SurfaceMaskPolicy(mode="disabled"),
+        topology=SurfaceMaskPolicy(mode="disabled"),
         model_year_seconds=360.0,
     )
 
-    assert runtime.surface_masks == SurfaceMaskPolicy(mode="disabled")
+    assert runtime.topology == SurfaceMaskPolicy(mode="disabled")
     assert runtime.dtype.enable_x64 is False
     assert runtime.execution == "auto"
     assert runtime.model_year_seconds == 360.0
     assert vercor.RuntimeOptions is RuntimeOptions
-    assert vercor.SurfaceMaskPolicy is SurfaceMaskPolicy
     assert "RuntimeOptions" in vercor.__all__
-    assert "SurfaceMaskPolicy" in vercor.__all__
+    assert "SurfaceMaskPolicy" not in vercor.__all__
+    assert not hasattr(vercor, "SurfaceMaskPolicy")
 
+    with pytest.raises(ModuleNotFoundError, match="vercor.config"):
+        importlib.import_module("vercor.config")
     with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
         importlib.import_module("vercor.setup_config")
 
@@ -60,8 +62,6 @@ def test_component_spec_freezes_mapping_inputs_and_exposes_execution_policy() ->
 
 @pytest.mark.fast_always
 def test_structural_component_like_runs_without_private_component_internals() -> None:
-    from vercor.config import RuntimeOptions
-
     class PlainComponent:
         name = "MODEL"
 
@@ -98,7 +98,7 @@ def test_structural_component_like_runs_without_private_component_internals() ->
         Clock(start=datetime(2000, 1, 1), dt_seconds=2.0, steps=2),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     final_state = coupler.run()
@@ -112,7 +112,6 @@ def test_structural_component_like_runs_without_private_component_internals() ->
 
 @pytest.mark.fast_always
 def test_coupler_spec_builds_coupler_from_plain_recipe() -> None:
-    from vercor.config import RuntimeOptions
     from vercor.coupling import CouplerSpec
 
     grid = make_test_grid(name="coupler-spec")
@@ -131,13 +130,13 @@ def test_coupler_spec_builds_coupler_from_plain_recipe() -> None:
         components=(forcing, model),
         exchanges=(Exchange("SRC", "DST", ("flux",)),),
         run_order=("SRC", "DST"),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     coupler = recipe.build(Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
 
     assert isinstance(coupler, Coupler)
-    assert coupler.runtime.surface_masks is None
+    assert coupler.runtime.topology is None
     assert_allclose_compact(
         coupler.run().component("DST").field("flux"),
         jnp.full(grid.shape, 3.0),
@@ -146,8 +145,6 @@ def test_coupler_spec_builds_coupler_from_plain_recipe() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_options_accept_custom_execution_backend() -> None:
-    from vercor.config import RuntimeOptions
-
     class RecordingBackend:
         def __init__(self) -> None:
             self.calls = 0
@@ -178,7 +175,7 @@ def test_runtime_options_accept_custom_execution_backend() -> None:
         Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(surface_masks=None, execution=backend),
+        runtime=RuntimeOptions(topology=None, execution=backend),
     )
 
     final_state = coupler.run()

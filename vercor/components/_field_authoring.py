@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Self
 
 from vercor.components.contracts import (
-    ComponentSpec as _ComponentSpec,
-    _AuthorFieldValues,
-    _FieldNames,
+    ComponentSpec,
 )
 from vercor.components._constructor_options import normalize_component_spec
 from vercor.components._contracts import (
@@ -27,9 +25,9 @@ class ComponentFieldAuthoringMixin:
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray]
     settings: Settings
-    _spec: _ComponentSpec
+    _spec: ComponentSpec
 
-    def configure(self: Self, spec: _ComponentSpec) -> Self:
+    def configure(self: Self, spec: ComponentSpec) -> Self:
         """Replace this component's public runtime field contract."""
 
         self._spec = spec
@@ -38,9 +36,9 @@ class ComponentFieldAuthoringMixin:
     def declare_fields(
         self: Self,
         *,
-        inputs: _FieldNames = (),
-        outputs: _FieldNames = (),
-        defaults: _AuthorFieldValues = None,
+        inputs: Iterable[str] = (),
+        outputs: Iterable[str] = (),
+        defaults: Mapping[str, object] | None = None,
     ) -> Self:
         """Declare runtime data fields for subclasses using author-facing names."""
 
@@ -49,7 +47,7 @@ class ComponentFieldAuthoringMixin:
             outputs=outputs,
             defaults=defaults,
         )
-        self._spec = _ComponentSpec(
+        self._spec = ComponentSpec(
             inputs=declared.inputs,
             outputs=declared.outputs,
             defaults=_normalize_author_field_values(
@@ -66,7 +64,7 @@ class ComponentFieldAuthoringMixin:
         return self
 
     @property
-    def spec(self) -> _ComponentSpec:
+    def spec(self) -> ComponentSpec:
         """Return this component's declared author-facing runtime field contract."""
 
         return self._spec
@@ -91,9 +89,9 @@ class ComponentFieldAuthoringMixin:
 
     def grid_field_defaults(
         self,
-        names: _FieldNames,
+        names: Iterable[str],
         value: object = 0.0,
-        overrides: _AuthorFieldValues = None,
+        overrides: Mapping[str, object] | None = None,
         policy: PrecisionPolicy = None,
     ) -> dict[str, RuntimeArray]:
         """Return grid-shaped default fields for named runtime data fields."""

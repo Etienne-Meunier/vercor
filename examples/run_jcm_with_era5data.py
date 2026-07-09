@@ -7,7 +7,6 @@ from vercor import (
     OutputConfig,
     PeriodOutput,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.setups import make_era5_ocean
 from vercor.recipes import (
@@ -19,6 +18,7 @@ from vercor.recipes import (
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 from vercor.setups import make_jcm_land_atmosphere
 from vercor.regridding import bilinear
+from vercor.topology import SurfaceMaskPolicy
 
 if __name__ == "__main__":
     ocn = make_era5_ocean()
@@ -55,7 +55,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
     # Exchanges

@@ -66,7 +66,7 @@ from vercor._runtime.topology_state import (
     SurfaceExchangeMasks,
 )
 from vercor.settings import Settings
-from vercor.config import SurfaceMaskPolicy
+from vercor.topology import SurfaceMaskPolicy
 
 
 class _RecordingLogger:
@@ -548,7 +548,7 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
 def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler(runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()))
+    coupler = make_coupler(runtime=RuntimeOptions(topology=SurfaceMaskPolicy()))
     logger = _RecordingLogger()
     coupler.logger = cast(Any, logger)
     coupler.settings.enable_x64 = False
@@ -733,6 +733,9 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         topology_maps.binary_masks[("LND", "ATM", "bilinear")],
         lnd_mask,
     )
+    assert not hasattr(coupler, "ocn_fmask_on_atm_grid")
+    assert not hasattr(coupler, "lnd_fmask_on_atm_grid")
+    assert not hasattr(coupler, "lnd_bmask_on_atm_grid")
 
 
 @pytest.mark.fast_always
@@ -760,7 +763,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         components=cast(Any, components),
         exchanges=(exchange,),
         settings=Settings(),
-        surface_mask_policy=SurfaceMaskPolicy(),
+        topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -851,7 +854,7 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
             fractional_masks=existing_fractional_masks,
         ),
         settings=Settings(),
-        surface_mask_policy=SurfaceMaskPolicy(),
+        topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
 

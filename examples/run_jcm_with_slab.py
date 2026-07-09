@@ -9,7 +9,6 @@ from vercor import (
     Exchange,
     RectilinearGrid,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.setups import (
     JAXGCMConfig,
@@ -30,6 +29,7 @@ from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
+from vercor.topology import SurfaceMaskPolicy
 
 if __name__ == "__main__":
 
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
     # Exchanges

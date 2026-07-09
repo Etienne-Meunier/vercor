@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, runtime_checkabl
 
 from vercor.dtypes import DTypePolicy
 from vercor.state import ComponentState, RunState
+from vercor.topology import TopologyPolicy
 
 if TYPE_CHECKING:
     from vercor.clock import Clock
@@ -18,35 +19,12 @@ ExecutionMode: TypeAlias = Literal["auto", "jax", "host"]
 
 
 @dataclass(frozen=True)
-class SurfaceMaskPolicy:
-    """Policy for the bundled atmosphere/ocean/land surface-mask topology."""
-
-    mode: Literal["auto", "required", "disabled"] = "auto"
-    atmosphere: str = "ATM"
-    ocean: str = "OCN"
-    land: str = "LND"
-
-    def __post_init__(self) -> None:
-        """Validate surface-mask policy values."""
-
-        if self.mode not in ("auto", "required", "disabled"):
-            raise ValueError("mode must be one of 'auto', 'required', 'disabled'")
-        for role, name in (
-            ("atmosphere", self.atmosphere),
-            ("ocean", self.ocean),
-            ("land", self.land),
-        ):
-            if not isinstance(name, str) or not name:
-                raise ValueError(f"{role} component name must be a non-empty string")
-
-
-@dataclass(frozen=True)
 class RuntimeOptions:
     """Public static runtime policy for a coupled VerCOR run."""
 
     dtype: DTypePolicy = field(default_factory=DTypePolicy)
     execution: ExecutionMode | "ExecutionBackend" = "auto"
-    surface_masks: SurfaceMaskPolicy | None = None
+    topology: TopologyPolicy | None = None
     model_year_seconds: float = 365 * 86400.0
 
     def __post_init__(self) -> None:
@@ -57,13 +35,20 @@ class RuntimeOptions:
                 raise ValueError(
                     "execution must be 'auto', 'jax', 'host', or a backend"
                 )
-            return
+        else:
+            run = getattr(self.execution, "run", None)
+            if not callable(run):
+                raise TypeError(
+                    "execution backend must expose run(state, *, context, driver)"
+                )
 
-        run = getattr(self.execution, "run", None)
-        if not callable(run):
-            raise TypeError(
-                "execution backend must expose run(state, *, context, driver)"
-            )
+        if self.topology is not None:
+            applies = getattr(self.topology, "applies", None)
+            build = getattr(self.topology, "build", None)
+            if not callable(applies) or not callable(build):
+                raise TypeError(
+                    "topology policy must expose applies(context) and build(context)"
+                )
 
 
 @dataclass(frozen=True)
@@ -115,5 +100,4 @@ __all__ = [
     "RunState",
     "RuntimeDriver",
     "RuntimeOptions",
-    "SurfaceMaskPolicy",
 ]

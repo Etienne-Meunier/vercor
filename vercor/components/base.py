@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     FieldImportPolicy,
     LifecycleHooks,
-    ComponentSpec as _ComponentSpec,
+    ComponentSpec,
+    StepResult,
     _AuthorStepCallable,
     _ComponentStepReturn,
 )
@@ -70,8 +71,8 @@ class Component(
     _data: dict[str, RuntimeArray] = field(default_factory=dict)
     settings: Settings = field(default_factory=Settings)
     _setup_metadata: dict[str, Any] = field(default_factory=dict)
-    _spec: _ComponentSpec = field(
-        default_factory=_ComponentSpec,
+    _spec: ComponentSpec = field(
+        default_factory=ComponentSpec,
         init=False,
         repr=False,
     )
@@ -92,7 +93,7 @@ class Component(
         grid: RectilinearGrid,
         *,
         settings: Settings | None = None,
-        spec: _ComponentSpec | None = None,
+        spec: ComponentSpec | None = None,
     ) -> None:
         """Create a component configuration shell for setup-time authoring."""
 
@@ -101,7 +102,7 @@ class Component(
         self._data = {}
         self.settings = Settings() if settings is None else settings
         self._setup_metadata = {}
-        self._spec = _ComponentSpec() if spec is None else spec
+        self._spec = ComponentSpec() if spec is None else spec
         self._import_policy = FieldImportPolicy()
         self._lifecycle_hooks = self._spec.lifecycle
 
@@ -122,9 +123,12 @@ class Component(
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: _AuthorStepCallable,
+        step: Callable[
+            ...,
+            Mapping[str, RuntimeArray] | StepResult,
+        ],
         *,
-        spec: _ComponentSpec | None = None,
+        spec: ComponentSpec | None = None,
         payload: Any | None = None,
         settings: Settings | None = None,
     ) -> "Component":
@@ -223,7 +227,7 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         step: _AuthorStepCallable,
         payload: Any | None,
         settings: Settings | None,
-        spec: _ComponentSpec,
+        spec: ComponentSpec,
         lifecycle_hooks: LifecycleHooks,
     ) -> None:
         if settings is None:

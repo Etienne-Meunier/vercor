@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import Protocol, TypeVar
 
 from vercor.exceptions import CouplerError
 
-if TYPE_CHECKING:
-    from vercor.components.base import Component
+
+class _NamedComponent(Protocol):
+    @property
+    def name(self) -> str:
+        """Return the registered component name."""
+        ...
 
 
-def require_component(components: Mapping[str, Component], name: str) -> Component:
+_ComponentT = TypeVar("_ComponentT", bound=_NamedComponent)
+
+
+def require_component(
+    components: Mapping[str, _ComponentT],
+    name: str,
+) -> _ComponentT:
     """Return the component registered under ``name`` or raise a coupler error."""
 
     try:

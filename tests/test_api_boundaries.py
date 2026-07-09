@@ -42,11 +42,13 @@ from vercor.regridding import bilinear
 def test_public_api_exports_state_view_fields_and_regridders() -> None:
     from vercor import (
         ComponentState,
+        CouplerSpec,
         RectilinearGrid,
         RunState,
         VectorField as PublicVectorField,
         vector as public_vector,
     )
+    from vercor.coupling import CouplerSpec as PublicCouplerSpec
     from vercor.regridding import (
         Regridder,
         RegridderFactory,
@@ -58,6 +60,7 @@ def test_public_api_exports_state_view_fields_and_regridders() -> None:
 
     assert PublicVectorField is VectorField
     assert public_vector is vector
+    assert CouplerSpec is PublicCouplerSpec
     assert RectilinearGrid is vercor.grids.RectilinearGrid
     assert public_bilinear is bilinear
     assert callable(public_conservative)
@@ -96,6 +99,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "ComponentState",
         "ComponentValidateHook",
         "Coupler",
+        "CouplerSpec",
         "CouplerError",
         "DataComponent",
         "DateTime360",
@@ -125,7 +129,6 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "SetupContext",
         "SnapshotContext",
         "SnapshotWriter",
-        "SurfaceMaskPolicy",
         "StepContext",
         "StepResult",
         "ValidationContext",
@@ -145,6 +148,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "recipes",
         "setups",
         "Spinup",
+        "SurfaceMaskPolicy",
         "VerosConfig",
     ):
         assert name not in vercor.__all__
@@ -200,9 +204,10 @@ def test_setup_implementation_modules_are_private_after_boundary_redesign() -> N
 def test_boundary_redesign_removes_remaining_duplicate_public_helpers() -> None:
     import vercor.fields as fields_module
     import vercor.grids as grids_module
-    import vercor.config as config_module
     from vercor.state import ComponentState
 
+    with pytest.raises(ModuleNotFoundError, match="vercor.config"):
+        importlib.import_module("vercor.config")
     assert hasattr(fields_module, "COMMON_FIELD_NAMES")
     assert "sea_surface_temperature" in fields_module.COMMON_FIELD_NAMES
     assert not hasattr(fields_module, "VALID_FIELD_NAMES")
@@ -214,8 +219,6 @@ def test_boundary_redesign_removes_remaining_duplicate_public_helpers() -> None:
     ]
     assert not hasattr(grids_module, "Grid")
     assert not hasattr(ComponentState, "field_candidates")
-    assert "OutputFrequency" not in config_module.__all__
-    assert not hasattr(config_module, "OutputFrequency")
 
 
 @pytest.mark.fast_always
@@ -293,9 +296,15 @@ def test_public_facades_hide_private_implementation_modules() -> None:
         "bilinear",
         "conservative",
     ]
-    assert state_module.__all__ == ["RunState", "ComponentState"]
+    assert state_module.__all__ == [
+        "ComponentState",
+        "FieldLookupScope",
+        "FieldScope",
+        "RunState",
+    ]
     assert output_module.__all__ == [
         "OutputConfig",
+        "OutputFrequency",
         "OutputVariable",
         "PeriodOutput",
         "SnapshotContext",
@@ -1213,7 +1222,12 @@ def test_removed_api_surfaces_stay_absent() -> None:
         importlib.import_module("vercor._runtime.views")
 
     assert not hasattr(state_module, "CouplerState")
-    assert state_module.__all__ == ["RunState", "ComponentState"]
+    assert state_module.__all__ == [
+        "ComponentState",
+        "FieldLookupScope",
+        "FieldScope",
+        "RunState",
+    ]
     assert not hasattr(runtime_state_module, "CouplerState")
     assert not hasattr(runtime_state_module, "RuntimeCouplerState")
     assert not hasattr(runtime_state_module, "RunState")
@@ -1297,6 +1311,9 @@ def test_callable_author_api_does_not_expose_removed_field_seed_keyword() -> Non
 
     for callable_factory in public_callables:
         parameters = signature(callable_factory).parameters
+        public_signature = str(signature(callable_factory))
+        assert "_AuthorStepCallable" not in public_signature
+        assert "_ComponentSpec" not in public_signature
         assert removed_keyword not in parameters
         assert "required_fields" not in parameters
         assert "spec" in parameters
@@ -1309,6 +1326,28 @@ def test_callable_author_api_does_not_expose_removed_field_seed_keyword() -> Non
 
     assert not hasattr(components_module.Component, "from_model")
     assert not hasattr(components_module.HostComponent, "from_model")
+
+
+@pytest.mark.fast_always
+def test_public_component_signatures_do_not_expose_private_aliases() -> None:
+    public_callables = (
+        components_module.ComponentSpec,
+        components_module.DataComponent.from_fields,
+        components_module.Component.declare_fields,
+        components_module.Component.grid_field_defaults,
+        components_module.Component.seed_fields,
+        components_module.HostComponent.from_step,
+    )
+
+    for public_callable in public_callables:
+        public_signature = str(signature(public_callable))
+        for private_alias in (
+            "_AuthorFieldValues",
+            "_AuthorStepCallable",
+            "_ComponentSpec",
+            "_FieldNames",
+        ):
+            assert private_alias not in public_signature
 
 
 @pytest.mark.fast_always

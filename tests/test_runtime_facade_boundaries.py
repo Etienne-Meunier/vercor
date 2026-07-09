@@ -52,6 +52,7 @@ def test_component_topology_module_only_owns_role_lookup() -> None:
     component_topology_source = source_for("vercor/_runtime/component_topology.py")
     topology_source = source_for("vercor/_runtime/topology.py")
     surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
+    topology_policy_source = source_for("vercor/_runtime/topology_policy.py")
     initialization_source = source_for("vercor/_runtime/initialization.py")
 
     assert "VALID_TOPOLOGY_COMPONENT_NAMES" not in component_topology_source
@@ -64,6 +65,9 @@ def test_component_topology_module_only_owns_role_lookup() -> None:
     assert "def require_component(" not in topology_source
     assert "from vercor._runtime.component_topology import" not in topology_source
     assert "from vercor._runtime.component_topology import" in surface_masks_source
+    assert (
+        "from vercor._runtime.component_topology import" not in topology_policy_source
+    )
     assert "from vercor._runtime.component_topology import" not in initialization_source
 
 
@@ -97,6 +101,7 @@ def test_runtime_topology_policy_boundaries_are_focused() -> None:
     topology_state_source = source_for("vercor/_runtime/topology_state.py")
     exchange_topology_source = source_for("vercor/_runtime/exchange_topology.py")
     surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
+    topology_policy_source = source_for("vercor/_runtime/topology_policy.py")
     topology_source = source_for("vercor/_runtime/topology.py")
     resources_source = source_for("vercor/_runtime/resources.py")
 
@@ -122,6 +127,8 @@ def test_runtime_topology_policy_boundaries_are_focused() -> None:
     assert "def create_surface_exchange_masks(" in surface_masks_source
     assert "def validate_land_mask_consistency(" in surface_masks_source
     assert "def apply_surface_exchange_masks(" in surface_masks_source
+    assert "def apply_topology_policy(" in topology_policy_source
+    assert "def build_topology_context(" in topology_policy_source
 
     for marker in (
         "compute_ocn_lnd_masks_on_atm_grid",
@@ -137,7 +144,8 @@ def test_runtime_topology_policy_boundaries_are_focused() -> None:
         assert marker not in topology_source
 
     assert "import vercor._runtime.exchange_topology as" in topology_source
-    assert "import vercor._runtime.surface_masks as" in topology_source
+    assert "import vercor._runtime.topology_policy as" in topology_source
+    assert "import vercor._runtime.surface_masks as" not in topology_source
     assert "from vercor._runtime.topology_state import" in topology_source
     assert "from vercor._runtime.topology_state import" in resources_source
 

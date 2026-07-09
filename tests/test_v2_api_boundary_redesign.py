@@ -11,6 +11,7 @@ import pytest
 
 import vercor
 import vercor.runtime as runtime
+import vercor.topology as topology
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 
@@ -36,17 +37,39 @@ def test_runtime_module_owns_public_runtime_contracts() -> None:
         "RunState",
         "RuntimeDriver",
         "RuntimeOptions",
-        "SurfaceMaskPolicy",
     ]
     assert vercor.RuntimeOptions is runtime.RuntimeOptions
     assert vercor.ExecutionContext is runtime.ExecutionContext
     assert vercor.RuntimeDriver is runtime.RuntimeDriver
     assert vercor.RunState is runtime.RunState
     assert vercor.ComponentState is runtime.ComponentState
-    assert options.surface_masks is None
+    assert options.topology is None
     assert options.model_year_seconds == 365 * 86400.0
     assert "year_in_seconds" not in signature(runtime.RuntimeOptions).parameters
+    assert "surface_masks" not in signature(runtime.RuntimeOptions).parameters
+    assert not hasattr(runtime, "SurfaceMaskPolicy")
+    assert not hasattr(vercor, "SurfaceMaskPolicy")
     assert "RuntimeRunContext" not in str(signature(runtime.ExecutionBackend.run))
+
+
+@pytest.mark.fast_always
+def test_topology_module_owns_public_topology_contracts() -> None:
+    policy = topology.SurfaceMaskPolicy(mode="disabled")
+    patch = topology.ExchangeTopologyPatch(
+        fractional_masks={("SRC", "DST", "custom"): jnp.asarray(1.0)}
+    )
+
+    assert topology.__all__ == [
+        "ExchangeKey",
+        "ExchangeTopologyPatch",
+        "SurfaceMaskPolicy",
+        "TopologyContext",
+        "TopologyPolicy",
+    ]
+    assert policy.mode == "disabled"
+    assert patch.fractional_masks[("SRC", "DST", "custom")].shape == ()
+    assert "TopologyPolicy" not in vercor.__all__
+    assert "SurfaceMaskPolicy" not in vercor.__all__
 
 
 @pytest.mark.fast_always
@@ -253,6 +276,7 @@ def test_coupling_module_owns_generic_coupler_recipe() -> None:
 
     assert coupling.Coupler is vercor.Coupler
     assert coupling.Exchange is vercor.Exchange
-    assert recipes.CouplerSpec is coupling.CouplerSpec
+    assert vercor.CouplerSpec is coupling.CouplerSpec
+    assert not hasattr(recipes, "CouplerSpec")
     assert "CouplerSpec" not in recipes.__all__
     assert isinstance(coupler, vercor.Coupler)

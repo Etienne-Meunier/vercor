@@ -144,9 +144,9 @@ immutable runtime containers used during traced integration.
   fixed enum, so custom coupled runs can use names outside the bundled
   ATM/OCN/LND/ICE conventions. `RuntimeOptions` owns static coupler runtime
   policy, including dtype, execution backend, model-year length, and optional
-  surface-mask patching. Pass
-  `RuntimeOptions(surface_masks=SurfaceMaskPolicy())` to opt into the bundled
-  ATM/OCN/LND surface-mask topology, and leave `surface_masks=None` for
+  topology policy. Pass
+  `RuntimeOptions(topology=vercor.topology.SurfaceMaskPolicy())` to opt into
+  the bundled ATM/OCN/LND surface-mask topology, and leave `topology=None` for
   setup-agnostic custom exchanges. Public custom execution backends implement
   `vercor.runtime.ExecutionBackend` and receive an `ExecutionContext` plus
   `RuntimeDriver`; the private runtime context is not part of the public
@@ -331,9 +331,11 @@ immutable runtime containers used during traced integration.
   `vercor._runtime.topology_state`, including grouped `RuntimeTopologyMaps`,
   `SurfaceExchangeMasks`, and `ExchangeTopologyState`. Generic exchange
   regridder/identity-mask map construction lives in
-  `vercor._runtime.exchange_topology`, while optional atmosphere/ocean/land
+  `vercor._runtime.exchange_topology`; public topology policies are adapted by
+  `vercor._runtime.topology_policy`, while optional atmosphere/ocean/land
   surface-mask creation, validation, and bilinear exchange patching live in
-  `vercor._runtime.surface_masks` behind `SurfaceMaskPolicy`. Runtime exchange
+  `vercor._runtime.surface_masks` behind `vercor.topology.SurfaceMaskPolicy`.
+  Runtime exchange
   validation checks that exchanged fields are declared by the sending and
   receiving components instead of requiring the advisory common field
   vocabulary. `vercor._runtime.topology` remains the orchestration boundary
@@ -712,7 +714,7 @@ class RuntimeOptions:
     """Static coupler runtime policy. NOT traced by JAX."""
     dtype: DTypePolicy
     execution: str | ExecutionBackend
-    surface_masks: SurfaceMaskPolicy | None
+    topology: TopologyPolicy | None
     model_year_seconds: float
 
 

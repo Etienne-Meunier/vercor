@@ -8,7 +8,6 @@ from vercor import (
     Coupler,
     Exchange,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.diagnostics import (
     ComponentMetric,
@@ -18,6 +17,7 @@ from vercor.diagnostics import (
     total_surface_temperature,
 )
 from vercor.regridding import bilinear, conservative
+from vercor.topology import SurfaceMaskPolicy
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import make_erainterim_ocean
@@ -46,7 +46,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
     # Exchanges

@@ -24,7 +24,6 @@ import vercor._runtime.facade as _runtime_facade
 from vercor.runtime import RuntimeOptions
 from vercor.settings import Settings
 from vercor.state import RunState
-from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -48,9 +47,6 @@ class Coupler:
         components: mapping of component name to component instance
         exchanges: list of all Exchange instances
         settings: Settings instance for coupler settings
-        lnd_bmask_on_atm_grid: binary land mask regridded onto atmosphere grid
-        ocn_fmask_on_atm_grid: fractional ocean mask regridded onto atmosphere grid
-        lnd_fmask_on_atm_grid: fractional land mask regridded onto atmosphere grid
         _runtime_resources: runtime-owned holder for topology maps, runtime
             contracts, and interrupt controller.
     """
@@ -83,9 +79,6 @@ class Coupler:
         self._run_order: tuple[str, ...] = ()
         self._runtime_resources = _runtime_facade.create_runtime_resources()
         self._runtime_initialized = False
-        self.ocn_fmask_on_atm_grid: RuntimeArray | None = None
-        self.lnd_fmask_on_atm_grid: RuntimeArray | None = None
-        self.lnd_bmask_on_atm_grid: RuntimeArray | None = None
         configured_run_order = normalize_run_order(run_order)
 
         if isinstance(self.logger, logging.Logger):
@@ -225,21 +218,11 @@ class Coupler:
         if self._runtime_initialized:
             return
 
-        initialized = _runtime_facade.initialize_coupler_runtime(
+        _runtime_facade.initialize_coupler_runtime(
             inputs=self._runtime_inputs(),
             logger=self.logger,
         )
 
-        topology = initialized.topology
-        surface_masks = topology.surface_masks
-        if surface_masks is None:
-            self.ocn_fmask_on_atm_grid = None
-            self.lnd_fmask_on_atm_grid = None
-            self.lnd_bmask_on_atm_grid = None
-        else:
-            self.ocn_fmask_on_atm_grid = surface_masks.ocn_fmask_on_atm_grid
-            self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
-            self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
         self._runtime_initialized = True
 
     def initial_state(self, *, prefill_missing: bool = True) -> RunState:

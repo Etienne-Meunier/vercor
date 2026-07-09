@@ -174,8 +174,8 @@ class ComponentSpec:
             execution or Python host execution.
     """
 
-    inputs: _FieldNames = ()
-    outputs: _FieldNames = ()
+    inputs: Iterable[str] = ()
+    outputs: Iterable[str] = ()
     defaults: Mapping[str, object] = field(default_factory=dict)
     execution: Literal["jax", "host"] = "jax"
     lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)
@@ -183,8 +183,8 @@ class ComponentSpec:
 
     def __init__(
         self,
-        inputs: _FieldNames = (),
-        outputs: _FieldNames = (),
+        inputs: Iterable[str] = (),
+        outputs: Iterable[str] = (),
         defaults: Mapping[str, object] | None = None,
         *,
         execution: Literal["jax", "host"] = "jax",

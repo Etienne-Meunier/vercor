@@ -7,7 +7,6 @@ from vercor import (
     OutputConfig,
     PeriodOutput,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.setups import (
     JAXGCMConfig,
@@ -24,6 +23,7 @@ from vercor.recipes import (
 )
 from vercor.setups import make_jcm_land_atmosphere
 from vercor.regridding import bilinear
+from vercor.topology import SurfaceMaskPolicy
 
 from jcm.physics.speedy.params import Parameters
 
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
     # Exchanges

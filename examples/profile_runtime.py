@@ -13,7 +13,6 @@ from vercor import (
     Coupler,
     Exchange,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.dtypes import jax_ones
 from vercor import RectilinearGrid
@@ -32,6 +31,7 @@ from vercor.recipes import (
     SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
     SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
 )
+from vercor.topology import SurfaceMaskPolicy
 
 
 @dataclass(frozen=True)
@@ -127,7 +127,7 @@ def build_slab_coupler(
             make_slab_seaice(ice_grid),
         ),
         run_order=("OCN", "ATM", "LND", "ICE"),
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
         log_level=log_level,
     )
     coupler.add_exchanges(

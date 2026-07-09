@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 from vercor.components.contracts import (
     ComponentSpec,
     FieldImportPolicy,
-    _AuthorFieldValues,
     _ComponentStepReturn,
 )
 from vercor.components._contracts import (
@@ -37,7 +36,7 @@ class DataComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        fields: _AuthorFieldValues = None,
+        fields: Mapping[str, object] | None = None,
         *,
         settings: Settings | None = None,
         spec: ComponentSpec | None = None,

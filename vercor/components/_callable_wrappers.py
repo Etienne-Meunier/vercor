@@ -11,14 +11,12 @@ from vercor.components.contracts import (
     _ComponentStepCallable,
     _ComponentStepReturn,
 )
-from vercor.components._runtime_fields import apply_step_result, runtime_fields
 from vercor.exceptions import ComponentError
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
     from vercor.components.contexts import StepContext
-    from vercor._runtime.state import ComponentRuntimeState
 
 
 @dataclass(frozen=True)
@@ -173,21 +171,3 @@ class _CallableRuntimeMixin:
         """Return the payload supplied to the callable component factory."""
 
         return self._payload
-
-    def _step_callable_runtime_state(
-        self,
-        component_state: "ComponentRuntimeState",
-        context: StepContext,
-    ) -> "ComponentRuntimeState":
-        """Advance callable-backed runtime state using the normalized step."""
-
-        component = cast("Component", self)
-        return apply_step_result(
-            component,
-            component_state,
-            self._step(
-                runtime_fields(component_state),
-                context,
-                component_state.payload,
-            ),
-        )

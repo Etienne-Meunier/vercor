@@ -9,7 +9,6 @@ import jax.numpy as jnp
 import pytest
 
 import vercor
-import vercor.config
 import vercor.output
 import vercor.setups
 from tests._coverage_support import make_test_grid
@@ -142,6 +141,7 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     assert vercor.output.PeriodOutput.__module__ == "vercor.output"
     assert vercor.output.__all__ == [
         "OutputConfig",
+        "OutputFrequency",
         "OutputVariable",
         "PeriodOutput",
         "SnapshotContext",
@@ -154,7 +154,8 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     ):
         assert removed_name not in vercor.output.__all__
         assert not hasattr(vercor.output, removed_name)
-    assert not hasattr(vercor.config, "OutputConfig")
+    with pytest.raises(ModuleNotFoundError, match="vercor.config"):
+        importlib.import_module("vercor.config")
     with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
         importlib.import_module("vercor.setup_config")
 
@@ -414,7 +415,7 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert "PeriodOutput" in vercor.__all__
     assert "Spinup" not in vercor.__all__
     assert "Spinup" in vercor.setups.__all__
-    assert "SurfaceMaskPolicy" in vercor.__all__
+    assert "SurfaceMaskPolicy" not in vercor.__all__
     assert "RuntimeOptions" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__
     assert "OutputConfig" in vercor.__all__

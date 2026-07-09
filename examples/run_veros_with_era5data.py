@@ -7,7 +7,6 @@ from vercor import (
     OutputConfig,
     PeriodOutput,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
@@ -19,6 +18,7 @@ from vercor.recipes import (
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
 from vercor.regridding import bilinear
+from vercor.topology import SurfaceMaskPolicy
 
 if __name__ == "__main__":
     atm = make_era5_atmosphere()
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
     # Exchanges

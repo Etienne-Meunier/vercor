@@ -71,7 +71,7 @@ def initialize_coupler_runtime(
         run_order=normalize_run_order(inputs.run_order),
         settings=inputs.settings,
         logger=logger,
-        surface_mask_policy=inputs.runtime.surface_masks,
+        topology_policy=inputs.runtime.topology,
     )
     inputs.runtime_resources.runtime_contracts = initialized.runtime_contracts
     inputs.runtime_resources.topology_maps = initialized.topology.topology_maps

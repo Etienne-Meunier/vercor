@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import vercor
+import vercor.topology as topology_module
 import vercor.setups._jcm as jcm_setup_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
@@ -23,11 +24,11 @@ from vercor import (
     LifecycleHooks,
     RuntimeOptions,
     StepContext,
-    SurfaceMaskPolicy,
 )
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.output import OutputConfig, PeriodOutput
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
+from vercor.topology import SurfaceMaskPolicy
 
 
 def _clock(steps: int = 1) -> Clock:
@@ -40,8 +41,9 @@ def test_surface_mask_policy_is_public_core_configuration() -> None:
 
     assert policy.mode == "disabled"
     assert policy.atmosphere == "ATM"
-    assert "SurfaceMaskPolicy" in vercor.__all__
-    assert vercor.SurfaceMaskPolicy is SurfaceMaskPolicy
+    assert "SurfaceMaskPolicy" in topology_module.__all__
+    assert "SurfaceMaskPolicy" not in vercor.__all__
+    assert not hasattr(vercor, "SurfaceMaskPolicy")
 
 
 @pytest.mark.fast_always
@@ -75,7 +77,7 @@ def test_custom_named_components_can_exchange_custom_fields_without_surface_mask
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("custom_flux",)),),
         run_order=("SRC", "DST"),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     final_state = coupler.run()
@@ -109,7 +111,7 @@ def test_exchanged_fields_must_be_declared_by_receiving_component() -> None:
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("custom_flux",)),),
         run_order=("SRC", "DST"),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     with pytest.raises(ComponentError, match="custom_flux.*DST.*declare"):
@@ -131,7 +133,7 @@ def test_required_surface_mask_policy_preserves_missing_role_errors() -> None:
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("temperature",)),),
         run_order=("SRC", "DST"),
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy(mode="required")),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy(mode="required")),
     )
 
     with pytest.raises(CouplerError, match="role component 'LND'"):
@@ -157,7 +159,7 @@ def test_step_context_step_increments_in_scanned_runtime() -> None:
         clock=_clock(steps=3),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     final_state = coupler.run()
@@ -187,7 +189,7 @@ def test_step_context_step_increments_in_host_runtime() -> None:
         clock=_clock(steps=3),
         components=(component,),
         run_order=("HOST",),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     final_state = coupler.run()
@@ -216,7 +218,7 @@ def test_no_exchange_components_run_initialize_hooks_before_state_creation() -> 
         clock=_clock(),
         components=(component,),
         run_order=("ONLY",),
-        runtime=RuntimeOptions(surface_masks=None),
+        runtime=RuntimeOptions(topology=None),
     )
 
     state = coupler.initial_state()

@@ -9,6 +9,22 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local VerCOR 3.0 API-boundary validation passed as of
+  2026-07-09. The breaking cleanup removes the `vercor.config` compatibility
+  owner, moves surface-mask customization to public `vercor.topology`,
+  replaces `RuntimeOptions.surface_masks` with
+  `RuntimeOptions.topology`, keeps bundled ATM/OCN/LND mask mechanics private
+  behind `SurfaceMaskPolicy`, removes setup-specific mask attributes from
+  `Coupler`, removes the hidden `vercor.recipes.CouplerSpec` alias, exposes
+  owner-module-only output/state type aliases, and cleans public component
+  signatures so they no longer advertise underscored private type aliases.
+  Validation passed using the direct `scipy` environment executable: focused
+  fast API/plugin/setup/topology pytest, full fast pytest, Black, flake8, mypy,
+  full pytest, coverage pytest at 90% total, example/package/test
+  `compileall`, and `git diff --check`. Black emitted the recurring Python
+  3.13/target-3.14 warning; full pytest/coverage emitted only the existing
+  external JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 - Latest local VerCOR 2.0 API-boundary validation passed as of 2026-07-09
   using the direct `scipy` environment executable: focused v2 API-boundary
   pytest, custom component/backend smoke check, full fast pytest, full pytest,

@@ -22,7 +22,6 @@ from vercor._exchange_recipes import (
     SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
     SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
 )
-from vercor.coupling import CouplerSpec as CouplerSpec  # noqa: F401
 
 __all__ = [
     "ATMOSPHERE_TO_DATA_OCEAN_FIELDS",

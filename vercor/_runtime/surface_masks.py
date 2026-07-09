@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import jax.numpy as jnp
 
@@ -16,15 +16,27 @@ from vercor.jax_logging import LoggerLike
 from vercor._regridders.conservative import ConservativeRectilinearRegridder
 from vercor._runtime.component_topology import require_component
 from vercor._runtime.topology_state import RuntimeTopologyMaps, SurfaceExchangeMasks
-from vercor.runtime import SurfaceMaskPolicy
+from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyContext
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
     from vercor.exchanges import Exchange
+    from vercor.grids import RectilinearGrid
+
+
+class _SurfaceRoleComponent(Protocol):
+    @property
+    def name(self) -> str:
+        """Return the registered component name."""
+        ...
+
+    @property
+    def grid(self) -> "RectilinearGrid":
+        """Return the component grid."""
+        ...
 
 
 def should_apply_surface_mask_policy(
-    components: Mapping[str, "Component"],
+    components: Mapping[str, _SurfaceRoleComponent],
     exchanges: Sequence["Exchange"],
     policy: SurfaceMaskPolicy | None,
 ) -> bool:
@@ -45,9 +57,9 @@ def should_apply_surface_mask_policy(
 
 
 def _require_surface_role(
-    components: Mapping[str, "Component"],
+    components: Mapping[str, _SurfaceRoleComponent],
     role_name: str,
-) -> "Component":
+) -> _SurfaceRoleComponent:
     """Return a surface-role component with a policy-oriented error."""
 
     try:
@@ -59,7 +71,7 @@ def _require_surface_role(
 
 
 def create_surface_exchange_masks(
-    components: Mapping[str, "Component"],
+    components: Mapping[str, _SurfaceRoleComponent],
     *,
     policy: SurfaceMaskPolicy,
     logger: LoggerLike,
@@ -108,7 +120,7 @@ def create_surface_exchange_masks(
 
 
 def validate_land_mask_consistency(
-    components: Mapping[str, "Component"],
+    components: Mapping[str, _SurfaceRoleComponent],
     surface_masks: SurfaceExchangeMasks,
     *,
     policy: SurfaceMaskPolicy,
@@ -155,8 +167,45 @@ def apply_surface_exchange_masks(
     return topology_maps
 
 
+def build_surface_mask_topology_patch(
+    context: TopologyContext,
+    policy: SurfaceMaskPolicy,
+) -> tuple[ExchangeTopologyPatch, SurfaceExchangeMasks]:
+    """Return public topology patch data plus private derived surface masks."""
+
+    surface_masks = create_surface_exchange_masks(
+        context.components,
+        policy=policy,
+        logger=context.logger,
+    )
+    validate_land_mask_consistency(
+        context.components,
+        surface_masks,
+        policy=policy,
+    )
+    binary_masks = {}
+    fractional_masks = {}
+    for key in context.exchange_keys:
+        source, destination, regrid_key = key
+        if "bilinear" not in regrid_key:
+            continue
+        if source == policy.ocean and destination == policy.atmosphere:
+            fractional_masks[key] = surface_masks.ocn_fmask_on_atm_grid
+        elif source == policy.land and destination == policy.atmosphere:
+            binary_masks[key] = surface_masks.lnd_bmask_on_atm_grid
+            fractional_masks[key] = surface_masks.lnd_fmask_on_atm_grid
+    return (
+        ExchangeTopologyPatch(
+            binary_masks=binary_masks,
+            fractional_masks=fractional_masks,
+        ),
+        surface_masks,
+    )
+
+
 __all__ = [
     "apply_surface_exchange_masks",
+    "build_surface_mask_topology_patch",
     "create_surface_exchange_masks",
     "should_apply_surface_mask_policy",
     "validate_land_mask_consistency",

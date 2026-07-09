@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     LifecycleHooks,
     ComponentSpec,
+    StepResult,
     _AuthorStepCallable,
     _ComponentStepReturn,
 )
@@ -49,7 +50,10 @@ class HostComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: _AuthorStepCallable,
+        step: Callable[
+            ...,
+            Mapping[str, "RuntimeArray"] | StepResult,
+        ],
         *,
         spec: ComponentSpec | None = None,
         payload: Any | None = None,

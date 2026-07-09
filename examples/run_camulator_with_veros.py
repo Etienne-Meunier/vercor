@@ -7,7 +7,6 @@ from vercor import (
     OutputConfig,
     PeriodOutput,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.setups import CAMulatorConfig, Spinup, VerosConfig, make_camulator_gcm
 from vercor.setups import make_camulator_land
@@ -20,6 +19,7 @@ from vercor.recipes import (
 )
 
 from vercor.regridding import bilinear
+from vercor.topology import SurfaceMaskPolicy
 
 if __name__ == "__main__":
     ocn = make_veros_gcm(
@@ -72,7 +72,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
     # Exchanges

@@ -13,8 +13,11 @@ The stable user-facing modules are:
   `DataComponent`, `HostComponent`, `ComponentLike`, `ComponentInfo`, and
   `ComponentSpec`.
 - `vercor.runtime`: runtime policy and extension contracts such as
-  `RuntimeOptions`, `SurfaceMaskPolicy`, `ExecutionBackend`,
+  `RuntimeOptions`, `ExecutionBackend`,
   `ExecutionContext`, `RuntimeDriver`, `RunState`, and `ComponentState`.
+- `vercor.topology`: optional topology policy contracts such as
+  `TopologyPolicy`, `TopologyContext`, `ExchangeTopologyPatch`, and
+  `SurfaceMaskPolicy`.
 - `vercor.coupling`: `Coupler`, `CouplerSpec`, and `Exchange`.
 - `vercor.fields`, `vercor.regridding`, `vercor.output`, `vercor.setups`,
   `vercor.recipes`, and `vercor.diagnostics`.
@@ -26,8 +29,9 @@ the structural `ComponentLike` contract. Runtime execution is selected with
 `ExecutionBackend.run(state, *, context, driver)`.
 
 Bundled ATM/OCN/LND setup examples opt in to
-`RuntimeOptions(surface_masks=SurfaceMaskPolicy())`. For setup-agnostic custom
-graphs, leave `RuntimeOptions.surface_masks` as `None`.
+`RuntimeOptions(topology=SurfaceMaskPolicy())` with
+`SurfaceMaskPolicy` imported from `vercor.topology`. For setup-agnostic custom
+graphs, leave `RuntimeOptions.topology` as `None`.
 
 ## Minimal Example
 
