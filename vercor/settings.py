@@ -24,11 +24,6 @@ CONTROL_SETTINGS: dict[str, SettingSpec] = {
     ),
     "identifier": SettingSpec("UNNAMED", "Identifier of the current simulation", "-"),
     "missval": SettingSpec(0.0, "Missing value for fields", "-"),
-    "year_in_seconds": SettingSpec(
-        365 * 86400.0,
-        "Nominal model year length",
-        "s",
-    ),
 }
 
 
@@ -52,7 +47,6 @@ class Settings:
     enable_x64: bool
     identifier: str
     missval: float
-    year_in_seconds: float
     earth_radius: float
     gravity: float
     rhoAir: float

@@ -16,7 +16,7 @@ def runtime_facade_inputs(coupler: Coupler) -> runtime_facade.RuntimeInputs:
     """Return the runtime facade inputs for focused runtime tests."""
 
     return runtime_facade.RuntimeInputs(
-        coupler.components,
+        coupler._runtime_components,
         coupler.exchanges,
         coupler._runtime_resources,
         coupler.run_order,
@@ -60,6 +60,7 @@ def run_scanned_coupler(
         run_order=tuple(coupler.run_order),
         clock=coupler.clock,
         settings=coupler.settings,
+        model_year_seconds=coupler.runtime.model_year_seconds,
         logger=coupler.logger,
         dispatch_context=runtime_facade.runtime_dispatch_context(
             inputs=runtime_facade_inputs(coupler),

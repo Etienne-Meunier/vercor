@@ -61,8 +61,8 @@ def make_jcm_land(
             outputs=_JCM_LAND_FIELD_NAMES,
             defaults={field_name: 0.0 for field_name in _JCM_LAND_INPUT_NAMES},
             lifecycle=LifecycleHooks(initialize=initialize),
-            import_policy=FieldImportPolicy(daily_selection=True),
         ),
+        import_policy=FieldImportPolicy(daily_selection=True),
     )
 
     return component

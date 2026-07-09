@@ -31,7 +31,7 @@ from tests._runtime_helpers import (
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
 from vercor.components.base import Component
-from vercor.components.contracts import ComponentSpec
+from vercor.components.contracts import ComponentInfo, ComponentSpec
 from vercor.components.host import HostComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
@@ -52,6 +52,7 @@ from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output._runtime import output_masks_for_component
 from vercor.output import OutputConfig, SnapshotContext
+from vercor.runtime import RuntimeOptions
 from vercor._runtime.surface_masks import (
     apply_surface_exchange_masks,
     create_surface_exchange_masks,
@@ -157,12 +158,14 @@ def make_coupler(
     components: Any = (),
     exchanges: Any = (),
     run_order: Any = (),
+    runtime: RuntimeOptions | None = None,
 ) -> Coupler:
     return Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=components,
         exchanges=exchanges,
         run_order=run_order,
+        runtime=runtime,
     )
 
 
@@ -545,7 +548,7 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
 def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
+    coupler = make_coupler(runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()))
     logger = _RecordingLogger()
     coupler.logger = cast(Any, logger)
     coupler.settings.enable_x64 = False
@@ -757,6 +760,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         components=cast(Any, components),
         exchanges=(exchange,),
         settings=Settings(),
+        surface_mask_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -847,6 +851,7 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
             fractional_masks=existing_fractional_masks,
         ),
         settings=Settings(),
+        surface_mask_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -929,7 +934,7 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
 
     with pytest.raises(CouplerError, match="does not match atmospheric grid shape"):
         validate_land_mask_consistency(
-            shape_coupler.components,
+            shape_coupler._runtime_components,
             SurfaceExchangeMasks(
                 ocn_fmask_on_atm_grid=np.zeros((2, 2)),
                 lnd_fmask_on_atm_grid=np.ones((2, 2)),
@@ -956,7 +961,7 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
 
     with pytest.raises(CouplerError, match="mismatched points: 2"):
         validate_land_mask_consistency(
-            value_coupler.components,
+            value_coupler._runtime_components,
             SurfaceExchangeMasks(
                 ocn_fmask_on_atm_grid=np.zeros((2, 2)),
                 lnd_fmask_on_atm_grid=np.ones((2, 2)),
@@ -994,7 +999,7 @@ def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere
 
     with pytest.raises(CouplerError, match="must use identical horizontal grids"):
         create_surface_exchange_masks(
-            coupler.components,
+            coupler._runtime_components,
             policy=SurfaceMaskPolicy(),
             logger=setup_logger(),
         )
@@ -1011,7 +1016,7 @@ def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> No
 
     with pytest.raises(ComponentError, match="has no binary mask defined"):
         create_surface_exchange_masks(
-            coupler.components,
+            coupler._runtime_components,
             policy=SurfaceMaskPolicy(),
             logger=setup_logger(),
         )
@@ -1270,7 +1275,7 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     coupler.write_outputs(state, output_dir=Path("snapshot"))
 
     assert captured_runtime["final_state"] is state
-    assert captured_runtime["components"] is coupler.components
+    assert captured_runtime["components"] is coupler._runtime_components
     assert captured_runtime["exchanges"] is coupler.exchanges
     assert (
         captured_runtime["binary_masks"]
@@ -1285,7 +1290,7 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     assert captured_runtime["filename_template"] == "{component}.runtime_fields.nc"
     assert captured_runtime["logger"] is coupler.logger
     assert captured_snapshots["final_state"] is state
-    assert captured_snapshots["components"] is coupler.components
+    assert captured_snapshots["components"] is coupler._runtime_components
     assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 0)
     assert captured_snapshots["output_dir"] == Path("snapshot")
     assert captured_snapshots["logger"] is coupler.logger
@@ -1336,7 +1341,7 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
 
     output_runtime_module.write_coupler_runtime_outputs(
         final_state=state,
-        components=coupler.components,
+        components=coupler._runtime_components,
         exchanges=coupler.exchanges,
         binary_masks=coupler._runtime_resources.topology_maps.binary_masks,
         fractional_masks=coupler._runtime_resources.topology_maps.fractional_masks,
@@ -1376,13 +1381,17 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
 
     output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
-        components=coupler.components,
+        components=coupler._runtime_components,
         output_time=datetime(2000, 1, 1, 0, 1),
         logger=coupler.logger,
     )
 
     assert len(calls) == 1
-    assert calls[0].component is component
+    assert calls[0].component == ComponentInfo(
+        name=component.name,
+        grid=component.grid,
+        spec=component.spec,
+    )
     assert isinstance(calls[0].state, ComponentState)
     assert calls[0].state.name == "ATM"
     assert calls[0].output_path == Path("atm.snapshot.nc")

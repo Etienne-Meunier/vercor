@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, TypeAlias
 
 from vercor.components.contexts import (
     SetupContext,
@@ -114,6 +114,27 @@ class ComponentLike(Protocol):
         ...
 
 
+@dataclass(frozen=True, eq=False)
+class ComponentInfo:
+    """Public immutable description of a registered component."""
+
+    name: str
+    grid: "RectilinearGrid"
+    spec: "ComponentSpec"
+
+    def __eq__(self, other: object) -> bool:
+        """Compare component metadata without array-valued grid equality."""
+
+        if not isinstance(other, ComponentInfo):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.grid.name == other.grid.name
+            and self.grid.shape == other.grid.shape
+            and self.spec == other.spec
+        )
+
+
 @dataclass(frozen=True)
 class LifecycleHooks:
     """Optional lifecycle hooks for component setup and runtime customization."""
@@ -149,14 +170,16 @@ class ComponentSpec:
         outputs: Fields the model may write. These are pre-seeded as grid-shaped
             zeros before traced runtime execution.
         defaults: Field defaults used when runtime state is created.
+        execution: Runtime path for this component, either differentiable JAX
+            execution or Python host execution.
     """
 
     inputs: _FieldNames = ()
     outputs: _FieldNames = ()
     defaults: Mapping[str, object] = field(default_factory=dict)
+    execution: Literal["jax", "host"] = "jax"
     lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)
     output: OutputConfig = field(default_factory=OutputConfig)
-    import_policy: FieldImportPolicy = field(default_factory=FieldImportPolicy)
 
     def __init__(
         self,
@@ -164,12 +187,14 @@ class ComponentSpec:
         outputs: _FieldNames = (),
         defaults: Mapping[str, object] | None = None,
         *,
+        execution: Literal["jax", "host"] = "jax",
         lifecycle: LifecycleHooks | None = None,
         output: OutputConfig | None = None,
-        import_policy: FieldImportPolicy | None = None,
     ) -> None:
         """Create a field declaration."""
 
+        if execution not in ("jax", "host"):
+            raise ValueError("execution must be 'jax' or 'host'")
         object.__setattr__(self, "inputs", _unique_field_names(inputs))
         object.__setattr__(self, "outputs", _unique_field_names(outputs))
         object.__setattr__(
@@ -177,6 +202,7 @@ class ComponentSpec:
             "defaults",
             MappingProxyType(dict(defaults or {})),
         )
+        object.__setattr__(self, "execution", execution)
         object.__setattr__(
             self,
             "lifecycle",
@@ -187,15 +213,11 @@ class ComponentSpec:
             "output",
             OutputConfig() if output is None else output,
         )
-        object.__setattr__(
-            self,
-            "import_policy",
-            FieldImportPolicy() if import_policy is None else import_policy,
-        )
 
 
 __all__ = [
     "ComponentLike",
+    "ComponentInfo",
     "ComponentCreatePayloadHook",
     "FieldImportPolicy",
     "LifecycleHooks",

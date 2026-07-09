@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 import vercor.output._runtime as _runtime_output
 from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
-from vercor.config import RuntimeOptions
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
+from vercor.runtime import RuntimeOptions
 from vercor._run_order import normalize_run_order
 from vercor._runtime.dispatch_context import (
     RuntimeDispatchContext,
@@ -109,7 +109,7 @@ def runtime_run_context(
             inputs=inputs,
         ),
         interrupts=inputs.runtime_resources.interrupt_controller,
-        execution=inputs.runtime.execution,
+        options=inputs.runtime,
     )
 
 

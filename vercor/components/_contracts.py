@@ -74,9 +74,9 @@ def merge_component_outputs(
         inputs=spec.inputs,
         outputs=unique_field_names((*spec.outputs, *tuple(output_names))),
         defaults=spec.defaults,
+        execution=spec.execution,
         lifecycle=spec.lifecycle,
         output=spec.output,
-        import_policy=spec.import_policy,
     )
 
 

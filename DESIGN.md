@@ -145,9 +145,12 @@ immutable runtime containers used during traced integration.
   ATM/OCN/LND/ICE conventions. `RuntimeOptions` owns static coupler runtime
   policy, including dtype, execution backend, model-year length, and optional
   surface-mask patching. Pass
-  `RuntimeOptions(surface_masks=None)` or
-  `RuntimeOptions(surface_masks=SurfaceMaskPolicy(mode="disabled"))` for
-  setup-agnostic custom exchanges. Component lifecycle initialization runs for
+  `RuntimeOptions(surface_masks=SurfaceMaskPolicy())` to opt into the bundled
+  ATM/OCN/LND surface-mask topology, and leave `surface_masks=None` for
+  setup-agnostic custom exchanges. Public custom execution backends implement
+  `vercor.runtime.ExecutionBackend` and receive an `ExecutionContext` plus
+  `RuntimeDriver`; the private runtime context is not part of the public
+  contract. Component lifecycle initialization runs for
   any non-empty configured component graph, including custom single-component
   or no-exchange workflows. `vercor.state.RunState` is opaque: users inspect results
   through `RunState.component(name) -> ComponentState` and
@@ -166,9 +169,11 @@ immutable runtime containers used during traced integration.
   data-only fields, `Component.from_step()` for pure callable JAX models, and
   `HostComponent.from_step()` for Python host-side models. These constructors
   declare fields through `spec=ComponentSpec(...)`: `inputs` declare fields the
-  model reads, `outputs` declare fields the model writes, and `defaults`
-  declare concrete runtime defaults for fields the model reads or updates.
-  Scalar default and seeded values expand to grid-shaped constants.
+  model reads, `outputs` declare fields the model writes, `defaults` declare
+  concrete runtime defaults for fields the model reads or updates, and
+  `execution` declares whether the component runs through the differentiable
+  JAX path or the Python host path. Scalar default and seeded values expand to
+  grid-shaped constants.
   `SetupContext` and `StepContext` are public setup and step context payloads
   passed to author callbacks, with canonical ownership in
   `vercor.components.contexts`.
@@ -185,17 +190,21 @@ immutable runtime containers used during traced integration.
   component-author type contracts and are reexported from `vercor.components`
   and `vercor`.
   `ComponentSpec`, `component.spec`, and `declare_fields()` provide the same
-  vocabulary and read-only introspection for subclasses. `field_names` exposes
-  setup-time seeded field names in insertion order; direct `component.data`
-  and `component.setup_metadata` mutation is not public API. Subclass
-  constructors can use `seed_field(...)`, `seed_fields(...)`,
-  `update_settings(...)`, and `grid_field_defaults(...)` to build validated
-  grid-shaped default-field mappings with scalar expansion and field-specific
-  overrides. Components that write native snapshots receive a typed
-  `OutputConfig(snapshot_writer=...)` spec. Snapshot writers receive
-  `SnapshotContext`, which exposes the public `ComponentState`, component
-  payload, output path, time, and logger without exposing
-  `ComponentRuntimeState`. Mutable period-output adapters live under
+  vocabulary and read-only introspection for subclasses. `DataComponent` owns
+  data-import behavior through
+  `DataComponent.from_fields(..., import_policy=FieldImportPolicy(...))`;
+  model-oriented `ComponentSpec` does not carry data selection policy.
+  `field_names` exposes setup-time seeded field names in insertion order;
+  direct `component.data` and `component.setup_metadata` mutation is not
+  public API. Subclass constructors can use `seed_field(...)`,
+  `seed_fields(...)`, `update_settings(...)`, and `grid_field_defaults(...)`
+  to build validated grid-shaped default-field mappings with scalar expansion
+  and field-specific overrides. Components that write native snapshots receive
+  a typed `OutputConfig(snapshot_writer=...)` spec. Snapshot writers receive
+  `SnapshotContext`, which exposes public `ComponentInfo`, the public
+  `ComponentState`, component payload, output path, time, and logger without
+  exposing normalized component adapters or `ComponentRuntimeState`. Mutable
+  period-output adapters live under
   `vercor.output._component_adapter`.
   `DataComponent` seeding
   automatically records seeded fields as declared outputs, so data-only
@@ -232,11 +241,11 @@ immutable runtime containers used during traced integration.
   callable-backed host wrapper is owned by `vercor.components.host`, keeping
   each runtime kind beside its public abstract base. Private helper modules use
   type-only `Component` annotations where they need concrete component shape.
-  `vercor.components._protocols` is reserved for the runtime-checkable
-  `HostRuntimeExecutionProtocol`, so host-runtime detection remains structural
-  rather than a concrete component class check. The protocol requires only the
-  private `_requires_host_runtime()` marker. Component-facing runtime-field
-  adapters and runtime-store mutation helpers live in private
+  Host/scanned runtime selection is driven by the public
+  `ComponentSpec.execution` value, so structural custom components can request
+  host execution without subclassing a VerCOR base class or depending on a
+  private marker protocol. Component-facing runtime-field adapters and
+  runtime-store mutation helpers live in private
   `vercor.components._runtime_fields`, and component-facing required-field
   validation lives in private `vercor.components._runtime_validation`.
   Component host/scanned execution policy lives in internal
@@ -704,7 +713,7 @@ class RuntimeOptions:
     dtype: DTypePolicy
     execution: str | ExecutionBackend
     surface_masks: SurfaceMaskPolicy | None
-    year_in_seconds: float
+    model_year_seconds: float
 
 
 @dataclass(frozen=True)

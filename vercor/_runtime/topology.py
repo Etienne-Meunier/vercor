@@ -11,8 +11,8 @@ from vercor._runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
 )
+from vercor.runtime import SurfaceMaskPolicy
 from vercor.settings import Settings
-from vercor.config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -25,7 +25,7 @@ def build_exchange_topology(
     settings: Settings,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
-    surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy(),
+    surface_mask_policy: SurfaceMaskPolicy | None = None,
 ) -> ExchangeTopologyState:
     """Build exchange regridders, masks, and surface topology state."""
 

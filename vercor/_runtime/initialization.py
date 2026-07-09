@@ -20,8 +20,8 @@ from vercor._runtime.validation import (
     check_not_empty_import_export_lists,
     validate_exchange_fields_declared,
 )
+from vercor.runtime import SurfaceMaskPolicy
 from vercor.settings import Settings
-from vercor.config import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -65,7 +65,7 @@ def initialize_coupler_runtime(
     settings: Settings,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
-    surface_mask_policy: SurfaceMaskPolicy | None = SurfaceMaskPolicy(),
+    surface_mask_policy: SurfaceMaskPolicy | None = None,
 ) -> RuntimeInitializationState:
     """Initialize components, contracts, and exchange topology for a coupler."""
 

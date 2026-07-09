@@ -45,8 +45,8 @@ def time_interpolated_data_component(
             outputs=outputs,
             defaults=defaults,
             lifecycle=runtime_lifecycle,
-            import_policy=FieldImportPolicy(time_interpolation=True),
         ),
+        import_policy=FieldImportPolicy(time_interpolation=True),
     )
     component._setup_metadata["DATA_FILES"] = dict(data_files)
     return component

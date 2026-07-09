@@ -2,7 +2,14 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Component, Coupler, Exchange
+from vercor import (
+    Clock,
+    Component,
+    Coupler,
+    Exchange,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
+)
 from vercor.diagnostics import (
     ComponentMetric,
     component_vector_speed,
@@ -39,6 +46,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
     )
 
     # Exchanges

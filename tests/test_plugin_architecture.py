@@ -21,13 +21,13 @@ def test_runtime_options_own_core_runtime_configuration() -> None:
 
     runtime = RuntimeOptions(
         surface_masks=SurfaceMaskPolicy(mode="disabled"),
-        year_in_seconds=360.0,
+        model_year_seconds=360.0,
     )
 
     assert runtime.surface_masks == SurfaceMaskPolicy(mode="disabled")
     assert runtime.dtype.enable_x64 is False
     assert runtime.execution == "auto"
-    assert runtime.year_in_seconds == 360.0
+    assert runtime.model_year_seconds == 360.0
     assert vercor.RuntimeOptions is RuntimeOptions
     assert vercor.SurfaceMaskPolicy is SurfaceMaskPolicy
     assert "RuntimeOptions" in vercor.__all__
@@ -38,26 +38,24 @@ def test_runtime_options_own_core_runtime_configuration() -> None:
 
 
 @pytest.mark.fast_always
-def test_component_spec_freezes_mapping_inputs_and_exposes_import_policy() -> None:
-    from vercor.components import FieldImportPolicy
-
+def test_component_spec_freezes_mapping_inputs_and_exposes_execution_policy() -> None:
     defaults: dict[str, object] = {"temperature": 280.0}
     spec = ComponentSpec(
         inputs=("temperature", "temperature"),
         outputs=("heat_flux",),
         defaults=defaults,
-        import_policy=FieldImportPolicy(time_interpolation=True),
+        execution="host",
     )
     defaults["temperature"] = 999.0
 
     assert spec.inputs == ("temperature",)
     assert spec.defaults["temperature"] == 280.0
-    assert spec.import_policy.time_interpolation is True
-    assert spec.import_policy.daily_selection is False
+    assert spec.execution == "host"
+    assert not hasattr(spec, "import_policy")
     with pytest.raises(TypeError):
         spec.defaults["temperature"] = 281.0  # type: ignore[index]
     with pytest.raises(FrozenInstanceError):
-        spec.import_policy.time_interpolation = False  # type: ignore[misc]
+        spec.execution = "jax"  # type: ignore[misc]
 
 
 @pytest.mark.fast_always
@@ -115,7 +113,7 @@ def test_structural_component_like_runs_without_private_component_internals() ->
 @pytest.mark.fast_always
 def test_coupler_spec_builds_coupler_from_plain_recipe() -> None:
     from vercor.config import RuntimeOptions
-    from vercor.recipes import CouplerSpec
+    from vercor.coupling import CouplerSpec
 
     grid = make_test_grid(name="coupler-spec")
     forcing = vercor.DataComponent.from_fields("SRC", grid, {"flux": 2.0})
@@ -158,10 +156,12 @@ def test_runtime_options_accept_custom_execution_backend() -> None:
             self,
             state: vercor.RunState,
             *,
-            context: object,
+            context: vercor.ExecutionContext,
+            driver: vercor.RuntimeDriver,
         ) -> vercor.RunState:
+            _ = driver
             self.calls += 1
-            assert hasattr(context, "run_order")
+            assert context.run_order == ("MODEL",)
             return state.replace_fields(
                 "MODEL",
                 {"temperature": jnp.full(grid.shape, 301.0)},

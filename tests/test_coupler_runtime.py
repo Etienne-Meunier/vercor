@@ -47,6 +47,7 @@ from vercor.fields import flatten_field_items
 from vercor.forcing_index import daily_forcing_index
 from vercor.grids import RectilinearGrid
 from vercor.regridding import bilinear, conservative
+from vercor.runtime import RuntimeOptions
 from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
 from vercor._runtime.stores import FieldStore
@@ -137,11 +138,8 @@ def _make_data_component(
         name=name,
         grid=grid,
         fields=data,
-        spec=ComponentSpec(
-            import_policy=(
-                FieldImportPolicy() if import_policy is None else import_policy
-            ),
-        ),
+        spec=ComponentSpec(),
+        import_policy=FieldImportPolicy() if import_policy is None else import_policy,
     )
     component.declare_fields(inputs=receives, outputs=sends)
     return component
@@ -495,7 +493,7 @@ def _make_initialized_slab_coupler(steps: int) -> Coupler:
 def test_coupler_initialize_cascades_float32_precision_to_component_arrays() -> None:
     coupler = _make_initialized_slab_coupler(steps=1)
 
-    for component in coupler.components.values():
+    for component in coupler._runtime_components.values():
         assert component.settings.enable_x64 is False
         assert component.grid.longitude.dtype == jnp.float32
         assert component.grid.latitude.dtype == jnp.float32
@@ -799,7 +797,7 @@ def test_initialized_slab_coupler_creates_jittable_runtime_state() -> None:
 
 def test_initialized_slab_coupler_run_prefills_missing_imports() -> None:
     coupler = _make_initialized_slab_coupler(steps=1)
-    ocean = coupler.components["OCN"]
+    ocean = coupler._runtime_components["OCN"]
 
     final_state = coupler.run()
     ocean_state = final_state._component_state("OCN")
@@ -1038,8 +1036,8 @@ def test_data_forcing_components_run_inside_runtime() -> None:
             "LND",
             "ATM",
         ),
+        runtime=RuntimeOptions(model_year_seconds=12.0),
     )
-    coupler.settings.year_in_seconds = 12.0
     regridders = cast(
         Any,
         {
@@ -1106,9 +1104,8 @@ def test_public_data_component_monthly_output_validates_and_sends_runtime_slice(
         name="OCN",
         grid=grid,
         fields={"sea_surface_temperature": monthly_ocean},
-        spec=ComponentSpec(
-            import_policy=FieldImportPolicy(time_interpolation=True),
-        ),
+        spec=ComponentSpec(),
+        import_policy=FieldImportPolicy(time_interpolation=True),
     )
     atmosphere = make_slab_atmosphere(grid)
     coupler = Coupler(
@@ -1126,8 +1123,8 @@ def test_public_data_component_monthly_output_validates_and_sends_runtime_slice(
             "OCN",
             "ATM",
         ),
+        runtime=RuntimeOptions(model_year_seconds=12.0),
     )
-    coupler.settings.year_in_seconds = 12.0
     key = ("OCN", "ATM", "_identity_factory")
     replace_runtime_topology_maps(
         coupler,
@@ -1260,8 +1257,8 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
             "OCN",
             "ATM",
         ),
+        runtime=RuntimeOptions(model_year_seconds=12.0),
     )
-    coupler.settings.year_in_seconds = 12.0
     key = ("OCN", "ATM", "bilinear")
     regridder = bilinear(ocean_grid, atmosphere_grid)
     replace_runtime_topology_maps(
@@ -1607,8 +1604,8 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     )
     (left_index, left_weight), (right_index, right_weight) = get_periodic_interval(
         current_time=datetime_to_seconds_in_year(coupler.clock.start),
-        cycle_length=coupler.settings.year_in_seconds,
-        rec_spacing=coupler.settings.year_in_seconds / 12.0,
+        cycle_length=coupler.runtime.model_year_seconds,
+        rec_spacing=coupler.runtime.model_year_seconds / 12.0,
         n_rec=12,
     )
 

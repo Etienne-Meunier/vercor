@@ -5,6 +5,7 @@ from vercor.components.base import (
 )
 from vercor.components.contracts import (
     ComponentLike,
+    ComponentInfo,
     LifecycleHooks,
     ComponentCreatePayloadHook,
     FieldImportPolicy,
@@ -28,8 +29,10 @@ from vercor.components.data import (
 from vercor.components.host import (
     HostComponent,
 )
-from vercor.config import (
+from vercor.runtime import (
     ExecutionBackend,
+    ExecutionContext,
+    RuntimeDriver,
     RuntimeOptions,
     SurfaceMaskPolicy,
 )
@@ -63,10 +66,12 @@ __all__ = [
     "RunState",
     "Component",
     "ComponentLike",
+    "ComponentInfo",
     "ComponentError",
     "ComponentCreatePayloadHook",
     "ComponentState",
     "ExecutionBackend",
+    "ExecutionContext",
     "FieldImportPolicy",
     "LifecycleHooks",
     "ComponentInitializeHook",
@@ -86,6 +91,7 @@ __all__ = [
     "PrefillResult",
     "RegridderError",
     "RuntimeOptions",
+    "RuntimeDriver",
     "Settings",
     "SetupContext",
     "SnapshotContext",

@@ -6,7 +6,7 @@ import pytest
 
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
-from vercor.components import ComponentSpec, FieldImportPolicy
+from vercor.components import FieldImportPolicy
 from vercor.components.data import DataComponent
 from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy, SupportsEnableX64
@@ -102,11 +102,10 @@ def test_attribute_access_and_assignment_update_setting_values() -> None:
     settings = Settings()
 
     settings.enable_x64 = True
-    settings.year_in_seconds = 12.0
     settings.cappa = 0.287
 
     assert settings.get("enable_x64") is True
-    assert settings.get_metadata("year_in_seconds").value == 12.0
+    assert "year_in_seconds" not in settings.as_dict()
     assert settings.get_metadata("cappa") == SettingSpec(
         0.287,
         DEFAULT_SETTINGS["cappa"].description,
@@ -153,25 +152,23 @@ def test_coupler_and_components_get_independent_settings_containers() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
-    atmosphere = StaticDataComponent(name="ATM", grid=make_test_grid(name="atm"))
-    ocean = StaticDataComponent(name="OCN", grid=make_test_grid(name="ocn"))
+    atmosphere = StaticDataComponent.from_fields(
+        name="ATM",
+        grid=make_test_grid(name="atm"),
+        import_policy=FieldImportPolicy(time_interpolation=True),
+    )
+    ocean = StaticDataComponent.from_fields(
+        name="OCN",
+        grid=make_test_grid(name="ocn"),
+        import_policy=FieldImportPolicy(daily_selection=True),
+    )
 
     coupler.settings.enable_x64 = True
-    atmosphere.configure(
-        ComponentSpec(
-            import_policy=FieldImportPolicy(time_interpolation=True),
-        )
-    )
-    ocean.configure(
-        ComponentSpec(
-            import_policy=FieldImportPolicy(daily_selection=True),
-        )
-    )
 
     assert coupler.settings is not atmosphere.settings
     assert atmosphere.settings is not ocean.settings
     assert coupler.settings.enable_x64 is True
     assert atmosphere.settings.enable_x64 is False
-    assert atmosphere.spec.import_policy.time_interpolation is True
-    assert ocean.spec.import_policy.time_interpolation is False
-    assert ocean.spec.import_policy.daily_selection is True
+    assert atmosphere.import_policy.time_interpolation is True
+    assert ocean.import_policy.time_interpolation is False
+    assert ocean.import_policy.daily_selection is True

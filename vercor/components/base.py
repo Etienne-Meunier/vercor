@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
+    FieldImportPolicy,
     LifecycleHooks,
     ComponentSpec as _ComponentSpec,
     _AuthorStepCallable,
@@ -74,6 +75,11 @@ class Component(
         init=False,
         repr=False,
     )
+    _import_policy: FieldImportPolicy = field(
+        default_factory=FieldImportPolicy,
+        init=False,
+        repr=False,
+    )
     _lifecycle_hooks: LifecycleHooks = field(
         default_factory=LifecycleHooks,
         init=False,
@@ -96,6 +102,7 @@ class Component(
         self.settings = Settings() if settings is None else settings
         self._setup_metadata = {}
         self._spec = _ComponentSpec() if spec is None else spec
+        self._import_policy = FieldImportPolicy()
         self._lifecycle_hooks = self._spec.lifecycle
 
     @property
@@ -103,6 +110,12 @@ class Component(
         """Return the output extension configuration from ``spec``."""
 
         return self._spec.output
+
+    @property
+    def import_policy(self) -> FieldImportPolicy:
+        """Return this component's data import policy."""
+
+        return self._import_policy
 
     @classmethod
     def from_step(

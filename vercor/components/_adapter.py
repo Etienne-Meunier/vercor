@@ -5,6 +5,7 @@ from typing import Any
 
 from vercor.components.base import Component
 from vercor.components.contracts import ComponentLike, _ComponentStepReturn
+from vercor.components.contracts import FieldImportPolicy
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.exceptions import ComponentError
 from vercor.grids import RectilinearGrid
@@ -30,6 +31,11 @@ class _ComponentAdapter(Component):
         self.grid = self._component.grid
         self._spec = self._component.spec
         self._lifecycle_hooks = self._spec.lifecycle
+        self._import_policy = getattr(
+            self._component,
+            "import_policy",
+            FieldImportPolicy(),
+        )
         self._data = {}
         self.seed_fields(self._component.initial_fields())
 

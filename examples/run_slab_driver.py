@@ -4,7 +4,13 @@ from typing import Any, cast
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
+)
 from vercor.dtypes import jax_ones
 from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
@@ -79,6 +85,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
     )
 
     # Exchanges

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from vercor.components.contracts import (
     ComponentSpec,
+    FieldImportPolicy,
     _AuthorFieldValues,
     _ComponentStepReturn,
 )
@@ -40,6 +41,7 @@ class DataComponent(Component):
         *,
         settings: Settings | None = None,
         spec: ComponentSpec | None = None,
+        import_policy: FieldImportPolicy | None = None,
     ) -> "DataComponent":
         """Create a data-only component from user-provided grid fields.
 
@@ -60,6 +62,9 @@ class DataComponent(Component):
             )
         if fields is not None:
             component.seed_fields(fields)
+        component._import_policy = (
+            FieldImportPolicy() if import_policy is None else import_policy
+        )
         component._lifecycle_hooks = spec.lifecycle
         return component
 

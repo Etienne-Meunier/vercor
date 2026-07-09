@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Self
 
 from vercor.clock import Clock
 from vercor.components._adapter import normalize_component
+from vercor.components.contracts import ComponentInfo
 from vercor.components.setup_validation import validate_component_setup
-from vercor.config import RuntimeOptions
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.fields import VectorField
@@ -21,6 +21,7 @@ from vercor.jax_logging import (
 )
 from vercor._run_order import normalize_run_order
 import vercor._runtime.facade as _runtime_facade
+from vercor.runtime import RuntimeOptions
 from vercor.settings import Settings
 from vercor.state import RunState
 from vercor.types import RuntimeArray
@@ -73,7 +74,6 @@ class Coupler:
         self.runtime = RuntimeOptions() if runtime is None else runtime
         self.settings = Settings(
             enable_x64=self.runtime.dtype.enable_x64,
-            year_in_seconds=self.runtime.year_in_seconds,
         )
         self._components: dict[str, Component] = {}
         self._components_view: MappingProxyType[str, Component] = MappingProxyType(
@@ -113,8 +113,23 @@ class Coupler:
         self._runtime_initialized = False
 
     @property
-    def components(self) -> MappingProxyType[str, "Component"]:
-        """Return a read-only view of registered components by name."""
+    def components(self) -> MappingProxyType[str, ComponentInfo]:
+        """Return read-only public descriptions of registered components."""
+
+        return MappingProxyType(
+            {
+                name: ComponentInfo(
+                    name=component.name,
+                    grid=component.grid,
+                    spec=component.spec,
+                )
+                for name, component in self._components.items()
+            }
+        )
+
+    @property
+    def _runtime_components(self) -> MappingProxyType[str, "Component"]:
+        """Return normalized component adapters for private runtime use."""
 
         return self._components_view
 
@@ -138,7 +153,7 @@ class Coupler:
 
         normalized_component = normalize_component(component)
         validate_component_setup(normalized_component)
-        if normalized_component.name in self.components:
+        if normalized_component.name in self._components:
             raise CouplerError(
                 f"Component {normalized_component.name} already registered"
             )
@@ -182,7 +197,7 @@ class Coupler:
 
         normalized_run_order = normalize_run_order(run_order)
         for cname in normalized_run_order:
-            if cname not in self.components.keys():
+            if cname not in self._components:
                 raise CouplerError(f"Component {cname} not registered in coupler")
         self._run_order = normalized_run_order
         self._invalidate_runtime_resources()
@@ -195,7 +210,7 @@ class Coupler:
         """Return the repeated runtime facade input bundle for this coupler."""
 
         return _runtime_facade.RuntimeInputs(
-            self.components,
+            self._runtime_components,
             self.exchanges,
             self._runtime_resources,
             self.run_order,
@@ -230,7 +245,7 @@ class Coupler:
     def initial_state(self, *, prefill_missing: bool = True) -> RunState:
         """Create and validate the coupled runtime state."""
 
-        if self.components:
+        if self._components:
             self._initialize_runtime()
         return _runtime_facade.create_runtime_state(
             inputs=self._runtime_inputs(),
@@ -247,7 +262,7 @@ class Coupler:
     ) -> None:
         """Write final runtime fields and optional native component snapshots."""
 
-        if self.components:
+        if self._components:
             self._initialize_runtime()
         self.logger.info(" ------------ Writing coupler outputs ------------")
         _runtime_facade.finalize(
@@ -266,7 +281,7 @@ class Coupler:
             f"├── Components: "
             + ", ".join(
                 f"<{component.__class__.__name__}>({name})"
-                for name, component in self.components.items()
+                for name, component in self._components.items()
             )
             + "\n"
             f"├── Exchanges: {', '.join(exchange.label for exchange in self.exchanges)}\n"
@@ -287,7 +302,7 @@ class Coupler:
         Host-backed components run through the Python host bridge.
         """
 
-        if state is None and self.components:
+        if state is None and self._components:
             self._initialize_runtime()
         inputs = self._runtime_inputs()
         runtime_state = _runtime_facade.prepare_runtime_state(

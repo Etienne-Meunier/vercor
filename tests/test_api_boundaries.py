@@ -86,6 +86,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "AssetError",
         "Clock",
         "Component",
+        "ComponentInfo",
         "ComponentLike",
         "ComponentCreatePayloadHook",
         "ComponentError",
@@ -101,6 +102,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "DateTime365",
         "DTypePolicy",
         "ExecutionBackend",
+        "ExecutionContext",
         "Exchange",
         "ExchangeError",
         "FieldImportPolicy",
@@ -117,6 +119,7 @@ def test_root_api_is_core_only_after_boundary_redesign() -> None:
         "RectilinearGrid",
         "RegridderError",
         "RuntimeOptions",
+        "RuntimeDriver",
         "RunState",
         "Settings",
         "SetupContext",
@@ -1042,6 +1045,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert components_module.__all__ == [
         "Component",
         "ComponentLike",
+        "ComponentInfo",
         "ComponentCreatePayloadHook",
         "FieldImportPolicy",
         "LifecycleHooks",
@@ -1061,6 +1065,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     ]
     assert components_module.Component is Component
     assert components_module.ComponentLike is contracts_module.ComponentLike
+    assert components_module.ComponentInfo is contracts_module.ComponentInfo
     assert components_module.FieldImportPolicy is contracts_module.FieldImportPolicy
     assert (
         components_module.ComponentCreatePayloadHook
@@ -1386,17 +1391,15 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "def component_requires_host_runtime(" not in runtime_execution_source
     assert "def host_component_names(" in runtime_execution_source
     assert "def step_component_runtime_state(" in runtime_execution_source
-    assert "from vercor.components._protocols import" in runtime_execution_source
+    assert "from vercor.components._protocols import" not in runtime_execution_source
     assert "ComponentExecutionProtocol" not in runtime_execution_source
-    assert "HostRuntimeExecutionProtocol" in runtime_execution_source
+    assert "HostRuntimeExecutionProtocol" not in runtime_execution_source
     assert "if TYPE_CHECKING:" in runtime_execution_source
     assert "from vercor.components.base import Component" in runtime_execution_source
     assert "from vercor.components.host import HostRuntimeComponent" not in (
         runtime_execution_source
     )
-    assert "isinstance(component, HostRuntimeExecutionProtocol)" in (
-        runtime_execution_source
-    )
+    assert 'component.spec.execution == "host"' in runtime_execution_source
     assert "isinstance(component, HostRuntimeComponent)" not in (
         runtime_execution_source
     )

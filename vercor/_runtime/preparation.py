@@ -92,7 +92,11 @@ def create_runtime_state(
             runtime_state,
             tuple(run_order),
             dispatch_context=dispatch_context,
-            step_info=initial_runtime_step_info(inputs.clock, inputs.settings),
+            step_info=initial_runtime_step_info(
+                inputs.clock,
+                inputs.settings,
+                model_year_seconds=inputs.runtime.model_year_seconds,
+            ),
         )
     validate_runtime_state(
         runtime_state,

@@ -3,6 +3,7 @@ from vercor.components.base import (
 )
 from vercor.components.contracts import (
     ComponentLike,
+    ComponentInfo,
     LifecycleHooks,
     ComponentCreatePayloadHook,
     FieldImportPolicy,
@@ -30,6 +31,7 @@ from vercor.components.host import (
 __all__ = [
     "Component",
     "ComponentLike",
+    "ComponentInfo",
     "ComponentCreatePayloadHook",
     "FieldImportPolicy",
     "LifecycleHooks",

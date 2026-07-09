@@ -12,7 +12,7 @@ from vercor.calendar import ModelDateTime
 from vercor.jax_logging import LoggerLike
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components.contracts import ComponentInfo
     from vercor.state import ComponentState
 
 OutputFrequency: TypeAlias = Literal["step", "day", "month", "year"]
@@ -51,7 +51,7 @@ class PeriodOutput:
 class SnapshotContext:
     """Public payload passed to component snapshot writers."""
 
-    component: "Component"
+    component: "ComponentInfo"
     state: "ComponentState"
     payload: Any | None
     output_path: Path

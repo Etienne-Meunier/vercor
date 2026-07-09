@@ -12,12 +12,14 @@ from vercor import (
     DataComponent,
     ComponentSpec,
     Exchange,
+    ExecutionContext,
     HostComponent,
     RectilinearGrid,
+    RuntimeDriver,
+    RunState,
     StepContext,
     StepResult,
     RuntimeOptions,
-    SurfaceMaskPolicy,
 )
 from vercor.dtypes import as_jax_real_array
 
@@ -114,6 +116,59 @@ def make_host_model(grid: RectilinearGrid) -> HostComponent:
     )
 
 
+@dataclass
+class StructuralFluxModel:
+    """Small structural component using the public ComponentLike contract."""
+
+    grid: RectilinearGrid
+    name: str = "MODEL"
+    spec: ComponentSpec = ComponentSpec(
+        inputs=("custom_flux",),
+        outputs=("custom_flux",),
+        defaults={"custom_flux": 0.0},
+        execution="host",
+    )
+
+    def initial_fields(self) -> Mapping[str, Any]:
+        """Return setup-time field seeds."""
+
+        return {}
+
+    def initialize(self, context: Any) -> None:
+        """Perform setup-time initialization."""
+
+        _ = context
+
+    def step(
+        self,
+        fields: Mapping[str, Any],
+        context: StepContext,
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        """Update the custom flux on the host runtime path."""
+
+        _ = payload
+        return {"custom_flux": fields["custom_flux"] + context.step}
+
+
+class SequentialBackend:
+    """Minimal custom backend that delegates component stepping to RuntimeDriver."""
+
+    def run(
+        self,
+        state: RunState,
+        *,
+        context: ExecutionContext,
+        driver: RuntimeDriver,
+    ) -> RunState:
+        """Run components sequentially for every clock step."""
+
+        for step, _, _ in context.clock.iter():
+            for component in context.run_order:
+                state = driver.step_component(state, component, step=step)
+        return state
+
+
 def make_custom_coupler(grid: RectilinearGrid) -> Coupler:
     """Assemble custom-named components without the built-in surface-mask policy."""
 
@@ -123,25 +178,13 @@ def make_custom_coupler(grid: RectilinearGrid) -> Coupler:
         fields={"custom_flux": 1.0},
     )
 
-    def step(fields: Mapping[str, Any], context: StepContext) -> Mapping[str, Any]:
-        return {"custom_flux": fields["custom_flux"] + context.step}
-
-    model = Component.from_step(
-        name="MODEL",
-        grid=grid,
-        step=step,
-        spec=ComponentSpec(
-            inputs=("custom_flux",),
-            outputs=("custom_flux",),
-            defaults={"custom_flux": 0.0},
-        ),
-    )
+    model = StructuralFluxModel(grid)
     return Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=3),
         components=(source, model),
         exchanges=(Exchange("FORCING", "MODEL", ("custom_flux",)),),
         run_order=("FORCING", "MODEL"),
-        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy(mode="disabled")),
+        runtime=RuntimeOptions(execution=SequentialBackend()),
     )
 
 

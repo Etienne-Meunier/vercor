@@ -98,18 +98,29 @@ def runtime_step_info_from_times(
     )
 
 
-def build_runtime_step_info(clock: Clock, settings: Settings) -> RuntimeStepInfo:
+def build_runtime_step_info(
+    clock: Clock,
+    settings: Settings,
+    *,
+    model_year_seconds: float,
+) -> RuntimeStepInfo:
     """Build scanned-runtime time metadata for every clock step."""
 
+    _ = settings
     times = [time for _, time, _ in clock.iter()]
     return runtime_step_info_from_times(
         times,
         forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),
-        year_in_seconds=settings.year_in_seconds,
+        year_in_seconds=model_year_seconds,
     )
 
 
-def initial_runtime_step_info(clock: Clock, settings: Settings) -> RuntimeStepInfo:
+def initial_runtime_step_info(
+    clock: Clock,
+    settings: Settings,
+    *,
+    model_year_seconds: float,
+) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for the first clock step."""
 
     clock_iter = clock.iter()
@@ -117,20 +128,28 @@ def initial_runtime_step_info(clock: Clock, settings: Settings) -> RuntimeStepIn
         _, first_time, _ = next(clock_iter)
     except StopIteration:
         first_time = clock.start
-    return scalar_runtime_step_info(first_time, clock, settings)
+    return scalar_runtime_step_info(
+        first_time,
+        clock,
+        settings,
+        model_year_seconds=model_year_seconds,
+    )
 
 
 def scalar_runtime_step_info(
     time: datetime | ModelDateTime,
     clock: Clock,
     settings: Settings,
+    *,
+    model_year_seconds: float,
 ) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for one clock timestamp."""
 
+    _ = settings
     batched_step_info = runtime_step_info_from_times(
         [time],
         forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),
-        year_in_seconds=settings.year_in_seconds,
+        year_in_seconds=model_year_seconds,
     )
     return cast(
         RuntimeStepInfo,

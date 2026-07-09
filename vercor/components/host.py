@@ -26,10 +26,23 @@ if TYPE_CHECKING:
 class HostComponent(Component):
     """Base class for host-backed adapters that cannot run inside JAX scan."""
 
-    def _requires_host_runtime(self) -> bool:
-        """Return whether this component requires the host runtime path."""
+    def __init__(
+        self,
+        name: str,
+        grid: RectilinearGrid,
+        *,
+        settings: Settings | None = None,
+        spec: ComponentSpec | None = None,
+    ) -> None:
+        """Create a host-backed component configuration shell."""
 
-        return True
+        Component.__init__(
+            self,
+            name=name,
+            grid=grid,
+            settings=settings,
+            spec=_host_execution_spec(ComponentSpec() if spec is None else spec),
+        )
 
     @classmethod
     def from_step(
@@ -46,7 +59,7 @@ class HostComponent(Component):
 
         options = callable_component_options(
             step,
-            spec=spec,
+            spec=_host_execution_spec(ComponentSpec() if spec is None else spec),
             payload=payload,
         )
         return _CallableHostRuntimeComponent(
@@ -88,20 +101,17 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         spec: ComponentSpec,
         lifecycle_hooks: LifecycleHooks,
     ) -> None:
-        if settings is None:
-            Component.__init__(self, name=name, grid=grid, spec=spec)
-        else:
-            Component.__init__(
-                self,
-                name=name,
-                grid=grid,
-                settings=settings,
-                spec=spec,
-            )
+        HostComponent.__init__(
+            self,
+            name=name,
+            grid=grid,
+            settings=settings,
+            spec=spec,
+        )
         self._initialize_callable_runtime(
             step=step,
             payload=payload,
-            spec=spec,
+            spec=self.spec,
             lifecycle_hooks=lifecycle_hooks,
         )
 
@@ -114,6 +124,21 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         """Return field updates from the callable-backed host component step."""
 
         return self._step(fields, context, payload)
+
+
+def _host_execution_spec(spec: ComponentSpec) -> ComponentSpec:
+    """Return ``spec`` with host execution selected."""
+
+    if spec.execution == "host":
+        return spec
+    return ComponentSpec(
+        inputs=spec.inputs,
+        outputs=spec.outputs,
+        defaults=spec.defaults,
+        execution="host",
+        lifecycle=spec.lifecycle,
+        output=spec.output,
+    )
 
 
 __all__ = ["HostComponent"]

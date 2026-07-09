@@ -37,8 +37,9 @@ class _RuntimeSendComponent(DataComponent):
         super().__init__(
             "DATA",
             make_test_grid(name="runtime-send"),
-            spec=ComponentSpec(import_policy=import_policy),
+            spec=ComponentSpec(),
         )
+        self._import_policy = import_policy
 
     def initialize(self, context: SetupContext) -> None:
         _ = context
@@ -218,7 +219,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     assert "def host_component_names(" in component_runtime_execution_source
     assert "def step_component_runtime_state(" in component_runtime_execution_source
-    assert "from vercor.components._protocols import" in (
+    assert "from vercor.components._protocols import" not in (
         component_runtime_execution_source
     )
     assert "if TYPE_CHECKING:" in component_runtime_execution_source
@@ -228,11 +229,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor.components.host import HostComponent" not in (
         component_runtime_execution_source
     )
-    assert "HostRuntimeExecutionProtocol" in component_runtime_execution_source
-    assert (
-        "isinstance(component, HostRuntimeExecutionProtocol)"
-        in component_runtime_execution_source
-    )
+    assert "HostRuntimeExecutionProtocol" not in component_runtime_execution_source
+    assert 'component.spec.execution == "host"' in component_runtime_execution_source
     assert (
         "isinstance(component, HostComponent)" not in component_runtime_execution_source
     )

@@ -6,6 +6,8 @@ from vercor import (
     Exchange,
     OutputConfig,
     PeriodOutput,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
 )
 from vercor.setups import CAMulatorConfig, Spinup, VerosConfig, make_camulator_gcm
 from vercor.setups import make_camulator_land
@@ -70,6 +72,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
     )
 
     # Exchanges

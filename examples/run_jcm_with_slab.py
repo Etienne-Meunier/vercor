@@ -3,7 +3,14 @@ from datetime import datetime
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange, RectilinearGrid
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RectilinearGrid,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
+)
 from vercor.setups import (
     JAXGCMConfig,
     load_jcm_inputs,
@@ -79,6 +86,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
     )
 
     # Exchanges

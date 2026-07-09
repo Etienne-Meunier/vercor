@@ -27,6 +27,7 @@ from vercor._runtime.progress import (
     runtime_step_progress_messages,
 )
 from vercor._runtime.run_context import RuntimeRunContext
+from vercor.runtime import ExecutionBackend
 from vercor.state import RunState
 from vercor._runtime.time import build_runtime_step_info, scalar_runtime_step_info
 from vercor.settings import Settings
@@ -43,7 +44,7 @@ def run_coupler_runtime(
     with context.interrupts.signal_scope():
         if not isinstance(context.execution, str):
             return run_custom_backend(
-                context.execution,
+                cast(ExecutionBackend, context.execution),
                 runtime_state,
                 context=context,
             )
@@ -91,6 +92,7 @@ def _run_compiled_scanned_runtime(
                 run_order=context.run_order,
                 clock=context.clock,
                 settings=context.dispatch_context.settings,
+                model_year_seconds=context.options.model_year_seconds,
                 logger=context.logger,
                 dispatch_context=context.dispatch_context,
                 interrupts=context.interrupts,
@@ -127,6 +129,7 @@ def run_host_runtime(
     run_order: Sequence[str],
     clock: Clock,
     settings: Settings,
+    model_year_seconds: float,
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
     interrupts: RuntimeInterruptController,
@@ -136,7 +139,12 @@ def run_host_runtime(
     for n, time, dt in clock.iter():
         interrupts.checkpoint("host runtime step")
         logger.info(runtime_step_progress_message(n, time, dt))
-        step_info = scalar_runtime_step_info(time, clock, settings)
+        step_info = scalar_runtime_step_info(
+            time,
+            clock,
+            settings,
+            model_year_seconds=model_year_seconds,
+        )
 
         for cname in run_order:
             interrupts.checkpoint(f"host runtime component {cname}")
@@ -163,13 +171,18 @@ def run_scanned_runtime(
     run_order: Sequence[str],
     clock: Clock,
     settings: Settings,
+    model_year_seconds: float,
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
     interrupts: RuntimeInterruptController,
 ) -> RunState:
     """Run the unified runtime path under ``jax.lax.scan`` and return state."""
 
-    step_infos = build_runtime_step_info(clock, settings)
+    step_infos = build_runtime_step_info(
+        clock,
+        settings,
+        model_year_seconds=model_year_seconds,
+    )
     step_indices = as_jax_index_array(range(clock.steps))
     step_progress_messages = runtime_step_progress_messages(clock)
 

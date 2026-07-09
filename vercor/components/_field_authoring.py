@@ -59,9 +59,9 @@ class ComponentFieldAuthoringMixin:
                 policy=self.settings,
             )
             or {},
+            execution=self._spec.execution,
             lifecycle=self._spec.lifecycle,
             output=self._spec.output,
-            import_policy=self._spec.import_policy,
         )
         return self
 

@@ -609,19 +609,17 @@ def test_base_initialize_seeds_declared_defaults() -> None:
 
 
 @pytest.mark.fast_always
-def test_configure_import_policy_is_chainable() -> None:
-    component = _RuntimeOnlyComponent(name="ATM", grid=make_test_grid())
-
-    returned = component.configure(
-        contracts_module.ComponentSpec(
-            import_policy=contracts_module.FieldImportPolicy(
-                time_interpolation=True,
-            ),
-        )
+def test_data_component_import_policy_is_declared_at_component_boundary() -> None:
+    component = data_module.DataComponent.from_fields(
+        name="ATM",
+        grid=make_test_grid(),
+        import_policy=contracts_module.FieldImportPolicy(
+            time_interpolation=True,
+        ),
     )
 
-    assert returned is component
-    assert component.spec.import_policy.time_interpolation
+    assert component.import_policy.time_interpolation
+    assert not hasattr(component.spec, "import_policy")
 
 
 @pytest.mark.fast_always
@@ -1580,7 +1578,6 @@ def test_coupler_register_validates_component_setup_before_name_lookup() -> None
 def test_coupler_initialize_validates_component_setup_before_precision_sync() -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
     coupler._components["ATM"] = cast(Any, _MissingSetupComponent())
-    coupler._components_view = coupler.components
     coupler.set_run_order(("ATM",))
 
     with pytest.raises(
@@ -1843,17 +1840,20 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component.configure(
         contracts_module.ComponentSpec(
             outputs=("temperature",),
-            import_policy=contracts_module.FieldImportPolicy(
-                time_interpolation=True,
-            ),
         )
+    )
+    component._import_policy = contracts_module.FieldImportPolicy(
+        time_interpolation=True,
     )
     component._data["temperature"] = monthly
     component_state = send_runtime_fields(
         component,
         create_runtime_component_state(component, contract=ExchangeContract()),
         scalar_runtime_step_info(
-            timestamp, runtime_coupler.clock, runtime_coupler.settings
+            timestamp,
+            runtime_coupler.clock,
+            runtime_coupler.settings,
+            model_year_seconds=runtime_coupler.runtime.model_year_seconds,
         ),
         contract=contract,
     )
@@ -1869,10 +1869,10 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
     component.configure(
         contracts_module.ComponentSpec(
             outputs=("temperature",),
-            import_policy=contracts_module.FieldImportPolicy(
-                daily_selection=True,
-            ),
         )
+    )
+    component._import_policy = contracts_module.FieldImportPolicy(
+        daily_selection=True,
     )
     component._data["temperature"] = daily
     component_state = send_runtime_fields(
@@ -1882,6 +1882,7 @@ def test_send_runtime_fields_updates_outgoing_store() -> None:
             runtime_coupler.clock.start,
             runtime_coupler.clock,
             runtime_coupler.settings,
+            model_year_seconds=runtime_coupler.runtime.model_year_seconds,
         ),
         contract=contract,
     )

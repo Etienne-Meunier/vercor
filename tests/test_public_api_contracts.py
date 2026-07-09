@@ -348,7 +348,11 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     coupler.write_outputs(final_state, output_dir=tmp_path)
 
     assert len(contexts) == 1
-    assert contexts[0].component is component
+    assert contexts[0].component == vercor.ComponentInfo(
+        name=component.name,
+        grid=component.grid,
+        spec=component.spec,
+    )
     assert isinstance(contexts[0].state, vercor.ComponentState)
     assert contexts[0].payload is not None
     assert float(contexts[0].payload) == 7.0

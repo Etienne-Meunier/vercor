@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    OutputConfig,
+    PeriodOutput,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
+)
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import VerosConfig, make_veros_gcm
@@ -50,6 +58,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
     )
 
     # Exchanges

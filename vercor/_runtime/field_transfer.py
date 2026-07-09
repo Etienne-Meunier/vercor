@@ -39,7 +39,7 @@ def _select_runtime_field_for_send(
     if step_info is None:
         return field
 
-    import_policy = component.spec.import_policy
+    import_policy = component.import_policy
 
     if import_policy.time_interpolation:
         arr = jnp.asarray(field)

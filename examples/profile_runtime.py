@@ -8,7 +8,13 @@ from typing import Any, Sequence
 
 import jax
 
-from vercor import Clock, Coupler, Exchange
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
+)
 from vercor.dtypes import jax_ones
 from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
@@ -121,6 +127,7 @@ def build_slab_coupler(
             make_slab_seaice(ice_grid),
         ),
         run_order=("OCN", "ATM", "LND", "ICE"),
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
         log_level=log_level,
     )
     coupler.add_exchanges(

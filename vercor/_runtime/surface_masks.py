@@ -16,7 +16,7 @@ from vercor.jax_logging import LoggerLike
 from vercor._regridders.conservative import ConservativeRectilinearRegridder
 from vercor._runtime.component_topology import require_component
 from vercor._runtime.topology_state import RuntimeTopologyMaps, SurfaceExchangeMasks
-from vercor.config import SurfaceMaskPolicy
+from vercor.runtime import SurfaceMaskPolicy
 
 if TYPE_CHECKING:
     from vercor.components.base import Component

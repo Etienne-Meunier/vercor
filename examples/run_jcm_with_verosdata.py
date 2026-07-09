@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange, OutputConfig, PeriodOutput
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    OutputConfig,
+    PeriodOutput,
+    RuntimeOptions,
+    SurfaceMaskPolicy,
+)
 from vercor.setups import make_erainterim_ocean
 from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
@@ -49,6 +57,7 @@ if __name__ == "__main__":
         clock=clock,
         components=components,
         run_order=run_order,
+        runtime=RuntimeOptions(surface_masks=SurfaceMaskPolicy()),
     )
 
     # Exchanges
