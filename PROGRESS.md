@@ -9,6 +9,15 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local expired exchange exception alias cleanup validation passed as of
+  2026-07-09 using the direct `scipy` environment executable: focused
+  API-boundary pytest, full fast pytest, Black, flake8, mypy, full pytest,
+  coverage pytest at 90% total, and `git diff --check`. The cleanup removes
+  the expired module-level `vercor.exceptions.ExchangerError` alias so only
+  `ExchangeError` remains on the root and exception-module public surfaces.
+  Black emitted the recurring Python 3.13/target-3.14 warning; full
+  pytest/coverage emitted only the existing external JAX dtype-promotion
+  `FutureWarning` and xarray merge `FutureWarning` in JAXGCM coverage.
 - Latest local VerCOR 0.7 API cleanup validation passed as of 2026-07-08 using
   the direct `scipy` environment executable: focused public API/boundary/output
   pytest, affected runtime/external fast pytest, full fast pytest, full pytest,
@@ -17,8 +26,8 @@ historical commands, failure messages, or detailed validation notes.
   `vercor.output`, makes `OutputConfig.period is None` mean disabled and
   `PeriodOutput(frequency="step")` mean every-step output, hides output
   implementation helpers behind underscore modules, renames `JaxGCMConfig` to
-  `JAXGCMConfig`, renames root `ExchangerError` to `ExchangeError` while
-  keeping the one-release `vercor.exceptions.ExchangerError` alias, makes
+  `JAXGCMConfig`, completes the exchange exception rename to `ExchangeError`
+  with the expired module-level alias now removed, makes
   `RectilinearGrid` coordinates keyword-only, renames slab-ocean `H` to
   `mixed_layer_depth`, removes duplicate JCM setup helper wrappers, and keeps
   internal component author-normalization aliases private. Black emitted the
@@ -540,6 +549,22 @@ historical commands, failure messages, or detailed validation notes.
   are no longer public.
 
 ## Recent Work
+
+### 2026-07-09: Expired Exchange Exception Alias Cleanup
+
+- Removed the expired `vercor.exceptions.ExchangerError` compatibility alias;
+  `ExchangeError` is now the only supported exchange exception import path.
+- Strengthened API-boundary tests so both root and exception-module surfaces
+  keep `ExchangerError` absent, and the source-level deprecation-residue guard
+  rejects future reintroduction of the alias or temporary compatibility
+  wording.
+- Validation run for this change: focused red/green boundary tests, full fast
+  pytest, Black, flake8, mypy, full pytest, coverage pytest at 90% total, and
+  `git diff --check` passed using
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python`. Black emitted the
+  recurring Python 3.13/target-3.14 warning; full pytest/coverage emitted only
+  the existing external JAX dtype-promotion `FutureWarning` and xarray merge
+  `FutureWarning` in JAXGCM coverage.
 
 ### 2026-07-08: v1 Deprecation Cleanup
 

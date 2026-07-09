@@ -14,6 +14,7 @@ import pytest
 
 import vercor
 import vercor._runtime.facade as _runtime_facade
+import vercor.exceptions as exceptions_module
 import vercor.components as components_module
 import vercor.components.base as base_module
 import vercor.components.contexts as component_contexts_module
@@ -341,6 +342,8 @@ def test_vercor_warning_wrappers_are_absent_from_source() -> None:
         "def step_runtime_state(",
         "def with_component_fields(",
         "def iter_store_fields(",
+        "Temporary compatibility alias",
+        "ExchangerError",
     )
 
     for path in Path("vercor").rglob("*.py"):
@@ -449,6 +452,8 @@ def test_top_level_exports_public_exceptions() -> None:
     assert issubclass(AssetError, Exception)
     assert "ExchangeError" in vercor.__all__
     assert not hasattr(vercor, "ExchangerError")
+    assert exceptions_module.ExchangeError is ExchangeError
+    assert not hasattr(exceptions_module, "ExchangerError")
 
 
 @pytest.mark.fast_always
