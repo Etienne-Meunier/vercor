@@ -19,7 +19,7 @@ from vercor.output import SnapshotContext
 from vercor.output._dataset import time_coordinate_variable, used_dimension_names
 from vercor.output._period import TIME_NAME
 from vercor.output import OutputVariable
-from vercor.setups.external.veros_runtime_settings import configure_veros_runtime
+from vercor.setups._external.veros_runtime_settings import configure_veros_runtime
 
 configure_veros_runtime()
 

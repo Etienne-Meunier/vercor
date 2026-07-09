@@ -7,8 +7,8 @@ from typing import Any
 import torch
 
 from vercor.jax_logging import get_default_logger
-from vercor.setups.external import camulator_imports
-from vercor.setups.external.camulator_wind_filter import post_process_wind_artifacts
+from vercor.setups._external import camulator_imports
+from vercor.setups._external.camulator_wind_filter import post_process_wind_artifacts
 
 logger = get_default_logger()
 

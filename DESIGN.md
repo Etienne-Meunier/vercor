@@ -85,7 +85,7 @@ encoding, dataset coordinate helpers, accumulation, variable containers,
 mean-output conversion, single-record snapshot storage, period-file write
 lifecycle, and NetCDF writing live in `vercor.output`;
 model-specific output helpers live beside their setup adapters in
-`vercor.setups.external` and adapt native model objects into that shared output
+`vercor.setups._external` and adapt native model objects into that shared output
 boundary. Setup-state constructors instantiate the private
 `_ComponentOutputAdapter` directly from model-specific output constants and
 helpers; output modules do not keep one-case adapter factories.
@@ -351,10 +351,11 @@ immutable runtime containers used during traced integration.
   of direct `Coupler` imports of runtime implementation helpers.
   Runtime component metadata and read-only field resolution for
   diagnostics/output live in `vercor.state`. `ComponentState.field(...)`,
-  `ComponentState.fields(...)`, and `ComponentState.field_candidates(...)` own
-  state/received/sent lookup for explicit views while private helpers keep
-  runtime containers out of public diagnostics/output APIs. `Coupler` exposes
-  `initial_state()` and `run()` for runtime-state creation.
+  `ComponentState.fields(...)`, and `ComponentState.iter_fields(...)` own
+  explicit state/received/sent views while diagnostics keep any candidate-order
+  selection private. Private helpers keep runtime containers out of public
+  diagnostics/output APIs. `Coupler` exposes `initial_state()` and `run()` for
+  runtime-state creation.
   `RunState.component(...)` and `RunState.components(...)` are the only public
   component-view factories.
   Final runtime output iteration, output-mask naming/selection, and
@@ -384,18 +385,19 @@ boundary instead of importing runtime context/store internals directly.
 The public setup facade exports concrete factory functions and the
 `JCMInputs`/`load_jcm_inputs(...)` loader for reusable JCM coordinate, terrain,
 and forcing inputs; setup subpackages no longer advertise lazy module objects in
-their `__all__` lists. Deep adapter modules remain importable for
+their `__all__` lists. Deep adapter modules live under underscore packages for
 package-internal tests and optional-dependency boundaries, but supported user
-workflows should enter through `vercor.setups`.
+workflows enter through `vercor.setups`.
 Examples and setup factories assemble runs through `Coupler(...)`,
 `Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
 `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
 field recipes live in `vercor.recipes` with `*_FIELDS` names. Short recipe aliases and setup orchestration helpers
 such as `ExchangeSpec`, `build_coupler()`, `build_exchanges()`, and
 `add_exchange_specs()` have been removed. Public exchange configuration types,
-including `ExchangeField`, are reexported beside `Exchange` from
-`vercor.exchanges`. Public regridding protocols, including `Regridder` and
-`RegridderFactory`, are owned by `vercor.regridding`; concrete
+including `ExchangeField`, are owned by `vercor.fields`; `vercor.exchanges`
+exports only the public `Exchange` class. Public regridding protocols,
+including `Regridder` and `RegridderFactory`, are owned by
+`vercor.regridding`; concrete
 bilinear/conservative regridder classes remain private implementation details.
 Regridders expose explicit `regrid(field)` and `regrid_vector(u, v)` methods
 and are not callable.
@@ -405,31 +407,32 @@ model-calendar datetime values, leap-year logic, and month/day conversion live
 in `vercor.calendar`. Daily forcing-index policy, including noleap and 360-day
 calendar mapping to forcing-file day indexes, lives in `vercor.forcing_index`.
 The canonical exchange field vocabulary lives in `vercor.fields` as
-`VALID_FIELD_NAMES`.
+`COMMON_FIELD_NAMES`.
 Rectilinear grid construction, center-to-edge geometry, and grid identity checks
 live in `vercor.grid_geometry`; mask math lives in `vercor.grid_masks`, while
 default component-topology name validation and lookup are private to
 `vercor._runtime.component_topology`. Generic hybrid/sigma-coordinate pressure
 and altitude helpers live in `vercor.fluxes.vertical_coordinates`, and generic
 JAXGCM PyTree transforms live beside that adapter in private
-`vercor.setups.external._jax_gcm_pytree`. Flux helper modules keep local JAX
+`vercor.setups._external._jax_gcm_pytree`. Flux helper modules keep local JAX
 array normalization helpers explicitly named as JAX conversion boundaries so
 they are not confused with host-array or NumPy transfer helpers.
 Adapter-specific runtime and file-output policy lives beside adapters in focused
 helpers instead of in factory/bootstrap modules. Exported adapter helpers use
-plain public package-internal names in their owner modules; underscored helpers
+plain package-internal names in their owner modules; underscored helpers
 remain local implementation details and are not listed in external adapter
-`__all__` exports. JAXGCM runtime payload, prefill, validation, stepping, and
+`__all__` exports. User code reaches these adapters through the
+`vercor.setups` factory facade. JAXGCM runtime payload, prefill, validation, stepping, and
 host recording live in
-`vercor.setups.external.jax_gcm_runtime`, which consumes the setup object through
+`vercor.setups._external.jax_gcm_runtime`, which consumes the setup object through
 concrete setup-state annotations rather than a duplicate local protocol.
-`vercor.setups.external.jax_gcm_state` owns JAXGCM setup-time model resources,
+`vercor.setups._external.jax_gcm_state` owns JAXGCM setup-time model resources,
 spinup policy, initialization, and the canonical `JCMState` bundle.
-`vercor.setups.external.jax_gcm` remains a thin public factory that constructs
-setup state and binds runtime-owned lifecycle hooks directly without
+`vercor.setups._external.jax_gcm` remains a private factory implementation that
+constructs setup state and binds runtime-owned lifecycle hooks directly without
 reexporting state bundles or owning runtime payload/setup-state internals.
 JAXGCM output extraction, coordinate adaptation, and unit metadata live in
-`vercor.setups.external.jax_gcm_output`; `JAXGCMSetupState` owns a private
+`vercor.setups._external.jax_gcm_output`; `JAXGCMSetupState` owns a private
 `_ComponentOutputAdapter` that streams prediction objects into the shared
 JAX-backed sum/count period accumulator instead of retaining all period samples
 or calling xarray adapters. JAXGCM-specific output helpers construct the
@@ -450,19 +453,19 @@ orchestration, and direct `h5netcdf` writing live in private
 `vercor.output._component_adapter`, `vercor.output._period_files`, and
 `vercor.output._netcdf`.
 Surface-temperature cleanup and output-field mapping live in
-`vercor.setups.external.jax_gcm_fields`. Veros host-runtime flux application and
-substep orchestration live in `vercor.setups.external.veros_runtime` with
+`vercor.setups._external.jax_gcm_fields`. Veros host-runtime flux application and
+substep orchestration live in `vercor.setups._external.veros_runtime` with
 concrete setup-state annotations.
-`vercor.setups.external.veros_gcm_state` owns Veros setup-time model resources,
+`vercor.setups._external.veros_gcm_state` owns Veros setup-time model resources,
 spinup policy, grid derivation, and lifecycle callbacks, while
-`vercor.setups.external.veros_gcm` remains the thin public factory.
+`vercor.setups._external.veros_gcm` remains the private factory implementation.
 The shared output-period accumulator stores one running sum plus one
 finite-value count array per variable as JAX arrays, preserving current
 `nanmean` semantics without retaining every timestep. Opt-in Veros period-output
 extraction, native Veros variable metadata handling, ghost-cell removal, and
 write-time native Veros spatial-axis ordering policy live in
-`vercor.setups.external.veros_output`; `VerosGCMSetupState` owns the same
-private `_ComponentOutputAdapter`, and `vercor.setups.external.veros_runtime`
+`vercor.setups._external.veros_output`; `VerosGCMSetupState` owns the same
+private `_ComponentOutputAdapter`, and `vercor.setups._external.veros_runtime`
 streams selected snapshots through the Veros output helper, which delegates
 accumulation, cadence checks, and file writes to the shared adapter record
 boundary with the same day/month/year cadence policy used by JAXGCM. Veros
@@ -475,27 +478,27 @@ than reducing horizontal or vertical axes. Private Veros output helpers keep
 variable and coordinate extraction names parallel to make data-variable versus
 coordinate-variable responsibilities explicit.
 Veros host-state mutation helpers and the named tuple-compatible
-`VerosForcingFields` container live in `vercor.setups.external.veros_state`.
+`VerosForcingFields` container live in `vercor.setups._external.veros_state`.
 Veros backend settings are imported only inside the explicit configuration
 function so setup modules preserve lazy optional-dependency boundaries. CAMulator
 prediction-block and runtime step orchestration live in
-`vercor.setups.external.camulator_runtime` with concrete setup-state
+`vercor.setups._external.camulator_runtime` with concrete setup-state
 annotations, with tensor staging in
-`vercor.setups.external.camulator_tensors` and field mapping in
-`vercor.setups.external.camulator_fields`. CAMulator wind
+`vercor.setups._external.camulator_tensors` and field mapping in
+`vercor.setups._external.camulator_fields`. CAMulator wind
 artifact filtering keeps public configuration and log-and-skip failure policy in
-`vercor.setups.external.camulator_wind_filter`, while private PyTorch
+`vercor.setups._external.camulator_wind_filter`, while private PyTorch
 mask/kernel construction and selected tensor mutation live in
-`vercor.setups.external._camulator_wind_filtering`.
-`vercor.setups.external.camulator_gcm_state` owns CAMulator atmosphere
+`vercor.setups._external._camulator_wind_filtering`.
+`vercor.setups._external.camulator_gcm_state` owns CAMulator atmosphere
 setup-time model resources, timestep alignment, field seeding, and lifecycle
-callbacks, while `vercor.setups.external.camulator` remains the thin public
+callbacks, while `vercor.setups._external.camulator` remains the thin public
 factory. Public external setup factories group spinup and period-output options
 as `Spinup` and `PeriodOutput` instead of parallel keyword bundles.
 CAMulator forecast-increment output remains the default when
 `PeriodOutput.frequency` is unset; when it is `day`, `month`, or `year`,
 `CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter` and
-`vercor.setups.external.camulator_runtime` streams native prediction tensors
+`vercor.setups._external.camulator_runtime` streams native prediction tensors
 through the CAMulator output helper, which delegates average accumulation,
 cadence checks, and file writes to the shared adapter record boundary.
 CAMulator records the latest native prediction as a single snapshot
@@ -503,12 +506,12 @@ record in both increment-output and period-output modes, and final snapshots
 reuse the same adapter/output builders without falling back to VerCOR runtime
 fields. CAMulator tensor reshaping, metadata handling, output filtering from
 `predict.save_vars`, average-file path/coordinate adaptation, and
-forecast-increment writing live in `vercor.setups.external.camulator_output`.
+forecast-increment writing live in `vercor.setups._external.camulator_output`.
 
 `vercor.assets` owns generic cache, download, and checksum validation only, with
 asset-specific registries and product vocabulary kept outside the generic cache
 layer. Concrete forcing product registries and `get_forcing_data(...)` defaults
-live with setup data adapters in `vercor.setups.data.assets`. `vercor.forcing_data`
+live with setup data adapters in `vercor.setups._data.assets`. `vercor.forcing_data`
 owns the NetCDF forcing-variable read boundary, including mapping-key
 resolution, variable lookup, file-to-runtime axis transpose, and optional
 latitude-axis flip.
@@ -519,19 +522,20 @@ and `vercor.diagnostics` preserving the public reexport surface.
 CAMulator runtime field contracts, optional CREDIT/postblock loading, forcing cursors,
 tensor accessors, runtime stepping, output, wind filtering, land forcing, and
 initialization are split across
-`vercor.setups.external.camulator_contracts`,
-`vercor.setups.external.camulator_imports`,
-`vercor.setups.external.camulator_forcing`,
-`vercor.setups.external.camulator_tensors`,
-`vercor.setups.external._camulator_wind_filtering`,
-`vercor.setups.external.camulator_stepper`,
-`vercor.setups.external.camulator_runtime`,
-`vercor.setups.external.camulator_output`,
-`vercor.setups.external.camulator_wind_filter`,
-`vercor.setups.external.camulator_land`, and
-`vercor.setups.external.camulator_init`. New code should import directly from
-these focused modules; the old one-hop CAMulator state and wind-filter facades
-have been removed. CAMulator tensor channel metadata is stored internally as
+`vercor.setups._external.camulator_contracts`,
+`vercor.setups._external.camulator_imports`,
+`vercor.setups._external.camulator_forcing`,
+`vercor.setups._external.camulator_tensors`,
+`vercor.setups._external._camulator_wind_filtering`,
+`vercor.setups._external.camulator_stepper`,
+`vercor.setups._external.camulator_runtime`,
+`vercor.setups._external.camulator_output`,
+`vercor.setups._external.camulator_wind_filter`,
+`vercor.setups._external.camulator_land`, and
+`vercor.setups._external.camulator_init`. Runtime adapter code may import these
+private focused modules directly; user code should use the public
+`vercor.setups` factory facade. The old one-hop CAMulator state and wind-filter
+facades have been removed. CAMulator tensor channel metadata is stored internally as
 typed `TensorVariableIndex` values in `camulator_tensors`, while
 `StateVariableAccessor.get_var_index(...)` is the canonical metadata lookup for
 callers that inspect tensor channels. CAMulator wind-filter configuration

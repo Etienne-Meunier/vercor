@@ -10,10 +10,10 @@ from jcm.physics_interface import TerrainData
 from vercor.components import Component, LifecycleHooks, ComponentSpec
 from vercor.output import OutputConfig
 from vercor.setup_config import JAXGCMConfig
-import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups.external.jax_gcm_output as _jax_gcm_output
-import vercor.setups.external.jax_gcm_runtime as _jax_gcm_runtime
-from vercor.setups.external.jax_gcm_state import JAXGCMSetupState
+import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
+import vercor.setups._external.jax_gcm_output as _jax_gcm_output
+import vercor.setups._external.jax_gcm_runtime as _jax_gcm_runtime
+from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
 
 try:
     import jcm  # noqa: F401

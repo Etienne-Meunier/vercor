@@ -23,14 +23,14 @@ from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     seed_grid_field_defaults,
 )
-import vercor.setups.external.camulator_contracts as _camulator_contracts
-from vercor.setups.external.camulator_forcing import CamulatorRuntimeCursor
-import vercor.setups.external.camulator_init as _camulator_init
-import vercor.setups.external.camulator_output as _camulator_output
-from vercor.setups.external.camulator_runtime_settings import (
+import vercor.setups._external.camulator_contracts as _camulator_contracts
+from vercor.setups._external.camulator_forcing import CamulatorRuntimeCursor
+import vercor.setups._external.camulator_init as _camulator_init
+import vercor.setups._external.camulator_output as _camulator_output
+from vercor.setups._external.camulator_runtime_settings import (
     configure_camulator_runtime,
 )
-import vercor.setups.external.camulator_tensors as _camulator_tensors
+import vercor.setups._external.camulator_tensors as _camulator_tensors
 
 configure_camulator_runtime()
 

@@ -10,24 +10,24 @@ import numpy as np
 from numpy.typing import NDArray
 import pytest
 
-import vercor.setups.data.era5_atmosphere as era5_atmosphere_module
-import vercor.setups.data.era5_land as era5_land_module
-import vercor.setups.data.era5_ocean as era5_ocean_module
-import vercor.setups.data.erainterim_ocean as erainterim_ocean_module
-import vercor.setups.data.jcm_land as jcm_land_module
+import vercor.setups._data.era5_atmosphere as era5_atmosphere_module
+import vercor.setups._data.era5_land as era5_land_module
+import vercor.setups._data.era5_ocean as era5_ocean_module
+import vercor.setups._data.erainterim_ocean as erainterim_ocean_module
+import vercor.setups._data.jcm_land as jcm_land_module
 from tests._coverage_support import CoverageCouplerStub, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.components.contexts import StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
-from vercor.setups.data.era5_atmosphere import make_era5_atmosphere
-from vercor.setups.data.era5_land import make_era5_land
-from vercor.setups.data.era5_ocean import make_era5_ocean
-from vercor.setups.data.erainterim_ocean import make_erainterim_ocean
-from vercor.setups.data.jcm_land import make_jcm_land
-from vercor.setups.slab.atmosphere import make_slab_atmosphere
-from vercor.setups.slab.land import make_slab_land
-from vercor.setups.slab.ocean import make_slab_ocean
-from vercor.setups.slab.seaice import make_slab_seaice
+from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
+from vercor.setups._data.era5_land import make_era5_land
+from vercor.setups._data.era5_ocean import make_era5_ocean
+from vercor.setups._data.erainterim_ocean import make_erainterim_ocean
+from vercor.setups._data.jcm_land import make_jcm_land
+from vercor.setups._slab.atmosphere import make_slab_atmosphere
+from vercor.setups._slab.land import make_slab_land
+from vercor.setups._slab.ocean import make_slab_ocean
+from vercor.setups._slab.seaice import make_slab_seaice
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
 from vercor.types import RuntimeArray

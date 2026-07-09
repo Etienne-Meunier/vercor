@@ -11,13 +11,13 @@ import torch
 
 from vercor.components import StepContext
 from vercor.jax_logging import LoggerLike
-import vercor.setups.external.camulator_fields as _camulator_fields
-import vercor.setups.external.camulator_output as _camulator_output
-import vercor.setups.external.camulator_tensors as _camulator_tensors
+import vercor.setups._external.camulator_fields as _camulator_fields
+import vercor.setups._external.camulator_output as _camulator_output
+import vercor.setups._external.camulator_tensors as _camulator_tensors
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.setups.external.camulator_gcm_state import CAMulatorGCMSetupState
+    from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
 
 def coerce_camulator_datetime(time_obj: Any) -> datetime:

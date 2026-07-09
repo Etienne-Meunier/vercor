@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Literal
+from typing import Any
 
 from vercor.output import OutputConfig as _OutputConfig
-
-OutputFrequency = Literal["step", "day", "month", "year"]
 
 
 @dataclass(frozen=True)
@@ -62,7 +60,6 @@ class CAMulatorConfig:
 __all__ = [
     "CAMulatorConfig",
     "JAXGCMConfig",
-    "OutputFrequency",
     "Spinup",
     "VerosConfig",
 ]

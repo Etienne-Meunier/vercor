@@ -16,20 +16,20 @@ import numpy as np
 import pytest
 import xarray as xr
 
-import vercor.setups.external.jax_gcm as jax_gcm_module
-import vercor.setups.external._jax_gcm_pytree as jax_gcm_pytree_module
-import vercor.setups.external.jax_gcm_fields as jax_gcm_fields_module
-import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
-import vercor.setups.external.jax_gcm_runtime as jax_gcm_runtime_module
-import vercor.setups.external.jax_gcm_state as jax_gcm_state_module
-import vercor.setups.external.veros_fluxes as veros_fluxes_module
-import vercor.setups.external.veros_gcm as veros_gcm_module
-import vercor.setups.external.veros_gcm_state as veros_gcm_state_module
-import vercor.setups.external.veros_output as veros_output_module
-import vercor.setups.external.veros_runtime as veros_runtime_module
-import vercor.setups.external.veros_runtime_settings as veros_runtime_settings_module
-import vercor.setups.external.veros_setup as veros_setup_module
-import vercor.setups.external.veros_state as veros_state_module
+import vercor.setups._external.jax_gcm as jax_gcm_module
+import vercor.setups._external._jax_gcm_pytree as jax_gcm_pytree_module
+import vercor.setups._external.jax_gcm_fields as jax_gcm_fields_module
+import vercor.setups._external.jax_gcm_output as jax_gcm_output_module
+import vercor.setups._external.jax_gcm_runtime as jax_gcm_runtime_module
+import vercor.setups._external.jax_gcm_state as jax_gcm_state_module
+import vercor.setups._external.veros_fluxes as veros_fluxes_module
+import vercor.setups._external.veros_gcm as veros_gcm_module
+import vercor.setups._external.veros_gcm_state as veros_gcm_state_module
+import vercor.setups._external.veros_output as veros_output_module
+import vercor.setups._external.veros_runtime as veros_runtime_module
+import vercor.setups._external.veros_runtime_settings as veros_runtime_settings_module
+import vercor.setups._external.veros_setup as veros_setup_module
+import vercor.setups._external.veros_state as veros_state_module
 from tests._coverage_support import capture_logger_output, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.calendar import DateTime360, DateTime365
@@ -1513,7 +1513,7 @@ def test_veros_prepare_surface_forcing_fields_shapes_nan_cleanup_and_qnec_gate()
 
 
 def test_veros_output_snapshot_uses_variable_metadata_and_current_timestep() -> None:
-    import vercor.setups.external.veros_output as veros_output_module
+    import vercor.setups._external.veros_output as veros_output_module
 
     state = _make_veros_output_state()
 
@@ -1552,7 +1552,7 @@ def test_veros_output_snapshot_uses_variable_metadata_and_current_timestep() -> 
 def test_veros_write_output_persists_period_mean_and_coordinates(
     tmp_path: Path,
 ) -> None:
-    import vercor.setups.external.veros_output as veros_output_module
+    import vercor.setups._external.veros_output as veros_output_module
 
     state = _make_veros_output_state()
     snapshots = [
@@ -1709,7 +1709,7 @@ def test_veros_record_period_output_accumulates_and_writes_mean_dataset(
 
 
 def test_veros_output_variables_rejects_bare_string() -> None:
-    import vercor.setups.external.veros_output as veros_output_module
+    import vercor.setups._external.veros_output as veros_output_module
 
     with pytest.raises(ValueError, match="output_variables"):
         veros_output_module.normalize_veros_output_variables(

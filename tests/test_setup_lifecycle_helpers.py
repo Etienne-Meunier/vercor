@@ -15,8 +15,10 @@ from vercor.setups._time_helpers import (
     run_logged_spinup,
     seed_grid_field_defaults,
 )
-import vercor.setups.external.camulator_forcing as camulator_forcing_module
-from vercor.setups.external.camulator_forcing import initialize_camulator_forcing_cursor
+import vercor.setups._external.camulator_forcing as camulator_forcing_module
+from vercor.setups._external.camulator_forcing import (
+    initialize_camulator_forcing_cursor,
+)
 from tests._coverage_support import make_test_grid
 from vercor.components import DataComponent
 from vercor.output import OutputConfig, PeriodOutput
@@ -132,7 +134,7 @@ def test_load_jcm_inputs_facade_returns_named_payload(
     tmp_path: Path,
 ) -> None:
     import vercor.setups as setups
-    import vercor.setups.external.jax_gcm_tools as jax_gcm_tools
+    import vercor.setups._external.jax_gcm_tools as jax_gcm_tools
 
     coords = object()
     terrain = object()
@@ -170,7 +172,7 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import vercor.setups as setups
-    import vercor.setups.jcm_setup_helpers as helper
+    import vercor.setups._jcm as helper
 
     coords = object()
     forcing = object()
@@ -311,7 +313,7 @@ def test_camulator_runtime_cursor_initializes_indexes_and_advances() -> None:
 def test_make_jcm_land_atmosphere_patches_mask_and_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import vercor.setups.jcm_setup_helpers as helper
+    import vercor.setups._jcm as helper
 
     coords = object()
     forcing = object()
@@ -386,6 +388,6 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
 
 
 def test_build_jcm_land_atmosphere_components_is_removed() -> None:
-    import vercor.setups.jcm_setup_helpers as helper
+    import vercor.setups._jcm as helper
 
     assert not hasattr(helper, "build_jcm_land_atmosphere_components")

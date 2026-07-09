@@ -39,11 +39,11 @@ from vercor.setups._time_helpers import (
     run_logged_spinup,
     seed_grid_field_defaults,
 )
-from vercor.setups.external._jax_gcm_pytree import tree_as_real_dtype, tree_mean
-import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups.external.jax_gcm_output as _jax_gcm_output
-import vercor.setups.external.jax_gcm_runtime as _jax_gcm_runtime
-from vercor.setups.external.jax_gcm_tools import change_jcm_parameter_values
+from vercor.setups._external._jax_gcm_pytree import tree_as_real_dtype, tree_mean
+import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
+import vercor.setups._external.jax_gcm_output as _jax_gcm_output
+import vercor.setups._external.jax_gcm_runtime as _jax_gcm_runtime
+from vercor.setups._external.jax_gcm_tools import change_jcm_parameter_values
 from vercor.types import RuntimeArray
 
 

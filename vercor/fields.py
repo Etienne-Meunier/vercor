@@ -29,7 +29,7 @@ class VectorField:
 ExchangeField: TypeAlias = str | VectorField
 
 
-VALID_FIELD_NAMES: tuple[str, ...] = (
+COMMON_FIELD_NAMES: tuple[str, ...] = (
     "specific_humidity",
     "temperature",
     "temperature_2m",
@@ -97,8 +97,8 @@ def flatten_field_items(fields: Sequence[ExchangeField]) -> list[str]:
 
 
 __all__ = [
+    "COMMON_FIELD_NAMES",
     "ExchangeField",
-    "VALID_FIELD_NAMES",
     "VectorField",
     "vector",
 ]

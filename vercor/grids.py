@@ -18,7 +18,7 @@ def _is_strictly_increasing(values: jax.Array) -> bool:
 
 
 @dataclass(frozen=True)
-class Grid(abc.ABC):
+class _Grid(abc.ABC):
     """Base class for public grid containers."""
 
     name: str
@@ -50,7 +50,7 @@ class Grid(abc.ABC):
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, init=False, repr=False, kw_only=True)
-class RectilinearGrid(PyTreeNodeMixin, Grid):
+class RectilinearGrid(PyTreeNodeMixin, _Grid):
     """JAX-friendly public rectilinear grid with 1D lon/lat coordinates."""
 
     pytree_children = (
@@ -109,7 +109,7 @@ class RectilinearGrid(PyTreeNodeMixin, Grid):
 
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "binary_mask", binary_mask_array)
-        Grid.__post_init__(self)
+        _Grid.__post_init__(self)
         object.__setattr__(self, "longitude", longitude_array)
         object.__setattr__(self, "latitude", latitude_array)
         object.__setattr__(self, "longitude_edges", longitude_edges_array)

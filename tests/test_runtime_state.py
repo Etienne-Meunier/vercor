@@ -19,7 +19,7 @@ from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.components.contexts import SetupContext
 from vercor.settings import Settings
-from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
+from vercor.setups._external.jax_gcm_runtime import JAXGCMRuntimePayload
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
 from vercor._runtime.field_transfer import send_runtime_fields
@@ -164,32 +164,32 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         for path in sorted(Path("vercor/diagnostics").glob("*.py"))
     )
     output_source = Path("vercor/output/_runtime.py").read_text(encoding="utf-8")
-    jax_gcm_source = Path("vercor/setups/external/jax_gcm.py").read_text(
+    jax_gcm_source = Path("vercor/setups/_external/jax_gcm.py").read_text(
         encoding="utf-8"
     )
-    veros_source = Path("vercor/setups/external/veros_gcm.py").read_text(
+    veros_source = Path("vercor/setups/_external/veros_gcm.py").read_text(
         encoding="utf-8"
     )
     veros_gcm_state_source = Path(
-        "vercor/setups/external/veros_gcm_state.py"
+        "vercor/setups/_external/veros_gcm_state.py"
     ).read_text(encoding="utf-8")
-    veros_setup_source = Path("vercor/setups/external/veros_setup.py").read_text(
+    veros_setup_source = Path("vercor/setups/_external/veros_setup.py").read_text(
         encoding="utf-8"
     )
-    camulator_source = Path("vercor/setups/external/camulator.py").read_text(
+    camulator_source = Path("vercor/setups/_external/camulator.py").read_text(
         encoding="utf-8"
     )
     camulator_gcm_state_source = Path(
-        "vercor/setups/external/camulator_gcm_state.py"
+        "vercor/setups/_external/camulator_gcm_state.py"
     ).read_text(encoding="utf-8")
-    camulator_land_source = Path("vercor/setups/external/camulator_land.py").read_text(
+    camulator_land_source = Path("vercor/setups/_external/camulator_land.py").read_text(
         encoding="utf-8"
     )
     veros_runtime_settings_source = Path(
-        "vercor/setups/external/veros_runtime_settings.py"
+        "vercor/setups/_external/veros_runtime_settings.py"
     ).read_text(encoding="utf-8")
     camulator_wind_filter_source = Path(
-        "vercor/setups/external/camulator_wind_filter.py"
+        "vercor/setups/_external/camulator_wind_filter.py"
     ).read_text(encoding="utf-8")
 
     forbidden_component_markers = (
@@ -519,13 +519,13 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def make_camulator_land" in camulator_land_source
     assert "load_camulator_forcing_context" in camulator_land_source
     assert "initialize_camulator(" not in camulator_land_source
-    assert "vercor.setups.external.camulator import" not in camulator_land_source
+    assert "vercor.setups._external.camulator import" not in camulator_land_source
     assert (
-        "from vercor.setups.external.veros_runtime_settings import *"
+        "from vercor.setups._external.veros_runtime_settings import *"
         not in veros_source
     )
     assert (
-        "from vercor.setups.external.veros_runtime_settings import configure_veros_runtime"
+        "from vercor.setups._external.veros_runtime_settings import configure_veros_runtime"
         in veros_setup_source
     )
     assert veros_setup_source.index(
@@ -550,13 +550,13 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def step_runtime_state" not in camulator_land_source
     assert "component_state.fields.to_mapping()" not in camulator_land_source
     camulator_imports_source = Path(
-        "vercor/setups/external/camulator_imports.py"
+        "vercor/setups/_external/camulator_imports.py"
     ).read_text(encoding="utf-8")
     camulator_stepper_source = Path(
-        "vercor/setups/external/camulator_stepper.py"
+        "vercor/setups/_external/camulator_stepper.py"
     ).read_text(encoding="utf-8")
     camulator_runtime_source = Path(
-        "vercor/setups/external/camulator_runtime.py"
+        "vercor/setups/_external/camulator_runtime.py"
     ).read_text(encoding="utf-8")
     assert "WINDPP_AVAILABLE" not in camulator_imports_source
     assert "load_windpp_module" not in camulator_imports_source

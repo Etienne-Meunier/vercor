@@ -6,10 +6,10 @@ from functools import partial
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
 from vercor.setup_config import VerosConfig
-import vercor.setups.external.veros_gcm_state as _veros_gcm_state
-import vercor.setups.external.veros_output as _veros_output
-import vercor.setups.external.veros_runtime as _veros_runtime
-from vercor.setups.external.veros_gcm_state import VerosGCMSetupState
+import vercor.setups._external.veros_gcm_state as _veros_gcm_state
+import vercor.setups._external.veros_output as _veros_output
+import vercor.setups._external.veros_runtime as _veros_runtime
+from vercor.setups._external.veros_gcm_state import VerosGCMSetupState
 
 try:
     import veros  # noqa: F401

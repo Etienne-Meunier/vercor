@@ -405,7 +405,7 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert "Spinup" in vercor.__all__
     assert "DTypePolicy" in vercor.__all__
     assert "OutputConfig" in vercor.__all__
-    assert "setups" in vercor.__all__
+    assert "setups" not in vercor.__all__
     assert "ComponentOutput" not in vercor.__all__
 
 

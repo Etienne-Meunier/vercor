@@ -127,7 +127,11 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
         sent={"only_outgoing": jnp.asarray(4.0)},
     )
 
-    assert [float(value) for value in view.field_candidates("shared")] == [1.0, 2.0]
+    assert [
+        float(value)
+        for _, name, value in view.iter_fields("state", "received", "sent")
+        if name == "shared"
+    ] == [1.0, 2.0]
     assert float(view.field("only_incoming")) == 3.0
     assert [
         (store_name, field_name, float(value))

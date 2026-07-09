@@ -6,8 +6,8 @@ from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.forcing_data import read_forcing as _read_forcing
 from vercor.grids import RectilinearGrid
-from vercor.setups.data.assets import get_forcing_data
-from vercor.setups.data._component_helpers import time_interpolated_data_component
+from vercor.setups._data.assets import get_forcing_data
+from vercor.setups._data._component_helpers import time_interpolated_data_component
 
 _ERA5_LAND_FIELD_NAMES = ("land_surface_temperature",)
 

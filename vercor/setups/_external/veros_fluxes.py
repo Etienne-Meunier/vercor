@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from vercor.dtypes import as_jax_real_array
 from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
 from vercor.settings import Settings
-from vercor.setups.external.veros_runtime_settings import configure_veros_runtime
+from vercor.setups._external.veros_runtime_settings import configure_veros_runtime
 from vercor.types import RuntimeArray
 
 configure_veros_runtime()

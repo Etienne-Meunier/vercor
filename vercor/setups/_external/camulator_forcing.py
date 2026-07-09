@@ -11,7 +11,7 @@ import xarray as xr
 import yaml
 
 from vercor.setups._time_helpers import runtime_forcing_index
-from vercor.setups.external import camulator_imports
+from vercor.setups._external import camulator_imports
 
 
 def load_camulator_forcing_context(config_path: str) -> dict[str, Any]:

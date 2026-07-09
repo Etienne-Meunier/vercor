@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.fields import VALID_FIELD_NAMES
+from vercor.fields import COMMON_FIELD_NAMES
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
@@ -129,8 +129,8 @@ def check_valid_exchange_field_names(
     """Check that a component's runtime contract uses supported exchange fields."""
 
     for field_name in set(contract.all_fields):
-        if field_name not in VALID_FIELD_NAMES:
+        if field_name not in COMMON_FIELD_NAMES:
             raise ComponentError(
                 f"Field name '{field_name}' in component '{component.name}' is not a recognized exchange variable.\n"
-                f"Replace field name '{field_name}' with one of the supported names: {VALID_FIELD_NAMES}"
+                f"Replace field name '{field_name}' with one of the common names: {COMMON_FIELD_NAMES}"
             )

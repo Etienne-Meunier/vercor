@@ -55,7 +55,7 @@ class Clock:
         if self.dt_seconds <= 0:
             raise ValueError("dt_seconds must be positive")
 
-        forcing_year_type = forcing_year_type_for_calendar(self.calendar)
+        forcing_year_type = _forcing_year_type_for_calendar(self.calendar)
         if forcing_year_type in ("noleap", "360"):
             self._datetime_class: (
                 type[_calendar.DateTime365] | type[_calendar.DateTime360]
@@ -75,7 +75,7 @@ class Clock:
             )
 
     def _day_of_year_for_start(self, start: datetime) -> int:
-        forcing_year_type = forcing_year_type_for_calendar(self.calendar)
+        forcing_year_type = _forcing_year_type_for_calendar(self.calendar)
         if forcing_year_type == "360":
             if start.day > 30:
                 raise ValueError(
@@ -146,7 +146,7 @@ class Clock:
         yield from self._iter_model_calendar()
 
 
-def forcing_year_type_for_calendar(calendar: CalendarType) -> YearType:
+def _forcing_year_type_for_calendar(calendar: CalendarType) -> YearType:
     """Return the forcing-index year policy for a public clock calendar."""
 
     if calendar == "gregorian":

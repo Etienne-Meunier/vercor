@@ -5,10 +5,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-from vercor.fields import ExchangeField, normalize_field_items
-from vercor.regridding import RegridderFactory, bilinear
+from vercor.fields import normalize_field_items
+from vercor.regridding import bilinear as _bilinear
+
+if TYPE_CHECKING:
+    from vercor.fields import ExchangeField
+    from vercor.regridding import RegridderFactory
 
 
 def _regridder_factory_name(regridder_factory: Callable[..., object]) -> str:
@@ -43,7 +47,7 @@ class Exchange:
         target: str,
         fields: Sequence[ExchangeField],
         *,
-        regrid: RegridderFactory = bilinear,
+        regrid: RegridderFactory = _bilinear,
         label: str | None = None,
     ) -> None:
         """Create an exchange declaration."""
@@ -80,6 +84,4 @@ class Exchange:
 
 __all__ = [
     "Exchange",
-    "ExchangeField",
-    "RegridderFactory",
 ]

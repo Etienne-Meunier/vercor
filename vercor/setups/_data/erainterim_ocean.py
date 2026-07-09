@@ -9,9 +9,9 @@ from vercor.components import DataComponent
 from vercor.dtypes import as_jax_real_array, jax_arange
 from vercor.forcing_data import read_forcing as _read_forcing
 from vercor.grids import RectilinearGrid
-from vercor.setups.data.assets import get_forcing_data
-from vercor.setups.data._component_helpers import time_interpolated_data_component
-from vercor.setups.data._field_helpers import (
+from vercor.setups._data.assets import get_forcing_data
+from vercor.setups._data._component_helpers import time_interpolated_data_component
+from vercor.setups._data._field_helpers import (
     mask_time_last_surface_field,
     positive_binary_mask,
 )

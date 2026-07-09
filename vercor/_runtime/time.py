@@ -8,7 +8,7 @@ from typing import cast
 import jax
 
 from vercor.calendar import ModelDateTime
-from vercor.clock import Clock, forcing_year_type_for_calendar
+from vercor.clock import Clock, _forcing_year_type_for_calendar
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.forcing_index import daily_forcing_index
 from vercor.pytree import PyTreeNodeMixin
@@ -104,7 +104,7 @@ def build_runtime_step_info(clock: Clock, settings: Settings) -> RuntimeStepInfo
     times = [time for _, time, _ in clock.iter()]
     return runtime_step_info_from_times(
         times,
-        forcing_year_type=forcing_year_type_for_calendar(clock.calendar),
+        forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),
         year_in_seconds=settings.year_in_seconds,
     )
 
@@ -129,7 +129,7 @@ def scalar_runtime_step_info(
 
     batched_step_info = runtime_step_info_from_times(
         [time],
-        forcing_year_type=forcing_year_type_for_calendar(clock.calendar),
+        forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),
         year_in_seconds=settings.year_in_seconds,
     )
     return cast(

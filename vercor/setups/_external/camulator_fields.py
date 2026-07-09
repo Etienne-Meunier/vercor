@@ -10,8 +10,8 @@ from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
 from vercor.fluxes.vertical_coordinates import compute_hybrid_sigma_full_level_altitudes
 from vercor.host_arrays import runtime_array_to_host
 from vercor.settings import Settings
-from vercor.setups.external.camulator_contracts import CAMULATOR_RUNTIME_FIELD_NAMES
-from vercor.setups.external.camulator_tensors import StateVariableAccessor
+from vercor.setups._external.camulator_contracts import CAMULATOR_RUNTIME_FIELD_NAMES
+from vercor.setups._external.camulator_tensors import StateVariableAccessor
 
 
 def initialize_camulator_runtime_fields(

@@ -9,7 +9,7 @@ from typing import Any
 import torch
 
 from vercor.jax_logging import get_default_logger
-import vercor.setups.external._camulator_wind_filtering as _wind_filtering
+import vercor.setups._external._camulator_wind_filtering as _wind_filtering
 
 
 @dataclass

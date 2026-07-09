@@ -10,7 +10,7 @@ import pytest
 
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.clock import Clock, forcing_year_type_for_calendar
+from vercor.clock import Clock, _forcing_year_type_for_calendar
 from vercor.components import (
     Component,
     LifecycleHooks,
@@ -19,23 +19,23 @@ from vercor.components import (
     HostComponent,
     SetupContext,
 )
-from vercor.setups.data.era5_atmosphere import make_era5_atmosphere
-from vercor.setups.data.era5_land import make_era5_land
-from vercor.setups.data.era5_ocean import make_era5_ocean
-from vercor.setups.data.erainterim_ocean import make_erainterim_ocean
-from vercor.setups.data.jcm_land import make_jcm_land
-from vercor.setups.external.jax_gcm_fields import JAXGCM_OUTPUT_GRID_FIELD_NAMES
-import vercor.setups.external.jax_gcm_runtime as jax_gcm_runtime_module
-import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
-import vercor.setups.external.jax_gcm_state as jax_gcm_state_module
+from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
+from vercor.setups._data.era5_land import make_era5_land
+from vercor.setups._data.era5_ocean import make_era5_ocean
+from vercor.setups._data.erainterim_ocean import make_erainterim_ocean
+from vercor.setups._data.jcm_land import make_jcm_land
+from vercor.setups._external.jax_gcm_fields import JAXGCM_OUTPUT_GRID_FIELD_NAMES
+import vercor.setups._external.jax_gcm_runtime as jax_gcm_runtime_module
+import vercor.setups._external.jax_gcm_output as jax_gcm_output_module
+import vercor.setups._external.jax_gcm_state as jax_gcm_state_module
 from vercor.output._component_adapter import (
     _ComponentOutputAdapter as ComponentOutputAdapter,
 )
-from vercor.setups.external.jax_gcm_state import JCMState
-from vercor.setups.slab.atmosphere import make_slab_atmosphere
-from vercor.setups.slab.land import make_slab_land
-from vercor.setups.slab.ocean import make_slab_ocean
-from vercor.setups.slab.seaice import make_slab_seaice
+from vercor.setups._external.jax_gcm_state import JCMState
+from vercor.setups._slab.atmosphere import make_slab_atmosphere
+from vercor.setups._slab.land import make_slab_land
+from vercor.setups._slab.ocean import make_slab_ocean
+from vercor.setups._slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchanges import Exchange
@@ -1498,7 +1498,7 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
     _, runtime_time, _ = next(coupler.clock.iter())
     expected_index = daily_forcing_index(
         runtime_time,
-        year_type=forcing_year_type_for_calendar(coupler.clock.calendar),
+        year_type=_forcing_year_type_for_calendar(coupler.clock.calendar),
         no_leap=True,
     )
     expected_slice = forcing[expected_index]

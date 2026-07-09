@@ -1,6 +1,6 @@
 """Bundled exchange field recipes for common VerCOR component pairings."""
 
-from vercor.setups.exchange_recipes import (
+from vercor._exchange_recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     ATMOSPHERE_TO_LAND_BASIC_FIELDS,

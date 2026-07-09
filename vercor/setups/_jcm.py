@@ -39,7 +39,7 @@ def load_jcm_inputs(
 ) -> JCMInputs:
     """Load JCM coordinate, terrain, and forcing inputs."""
 
-    from vercor.setups.external.jax_gcm_tools import load_jcm_coords_terrain_forcing
+    from vercor.setups._external.jax_gcm_tools import load_jcm_coords_terrain_forcing
 
     coords, terrain, forcing = load_jcm_coords_terrain_forcing(
         resolution=resolution,
@@ -54,8 +54,8 @@ def _load_jcm_factories() -> tuple[
 ]:
     """Return optional JCM setup factories from their owning modules."""
 
-    from vercor.setups.data.jcm_land import make_jcm_land
-    from vercor.setups.external.jax_gcm import make_jax_gcm
+    from vercor.setups._data.jcm_land import make_jcm_land
+    from vercor.setups._external.jax_gcm import make_jax_gcm
 
     return make_jcm_land, make_jax_gcm
 

@@ -13,10 +13,10 @@ from tests._runtime_helpers import (
     replace_runtime_topology_maps,
 )
 from vercor.clock import Clock
-from vercor.setups.slab.atmosphere import make_slab_atmosphere
-from vercor.setups.slab.land import make_slab_land
-from vercor.setups.slab.ocean import make_slab_ocean
-from vercor.setups.slab.seaice import make_slab_seaice
+from vercor.setups._slab.atmosphere import make_slab_atmosphere
+from vercor.setups._slab.land import make_slab_land
+from vercor.setups._slab.ocean import make_slab_ocean
+from vercor.setups._slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor._runtime.state import ComponentRuntimeState

@@ -9,6 +9,19 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Latest local boundary-first API redesign validation passed as of 2026-07-09
+  using the direct `scipy` environment executable: focused
+  API-boundary/public-contract pytest, full fast pytest, Black, flake8, mypy,
+  full pytest, coverage pytest at 90% total, example `compileall`, and
+  `git diff --check`. The breaking `0.7.0` cleanup keeps the root package
+  core-only, moves setup implementations behind `_data`, `_external`, `_slab`,
+  and `_jcm`, exposes setup factories only through `vercor.setups`, removes
+  `ComponentState.field_candidates()`, moves common field vocabulary to
+  `COMMON_FIELD_NAMES`, keeps exchange/regridding helper APIs in their owner
+  modules, and removes the duplicate `setup_config.OutputFrequency` export.
+  Black emitted the recurring Python 3.13/target-3.14 warning; full
+  pytest/coverage emitted only the existing external JAX dtype-promotion
+  `FutureWarning` and xarray merge `FutureWarning` in JAXGCM coverage.
 - Latest local expired exchange exception alias cleanup validation passed as of
   2026-07-09 using the direct `scipy` environment executable: focused
   API-boundary pytest, full fast pytest, Black, flake8, mypy, full pytest,
@@ -904,7 +917,7 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-07-02: JAXGCM PyTree and Lifecycle Simplification
 
 - Removed the public `vercor.pytree_utils` helper module and moved its PyTree
-  leaf transforms into private `vercor.setups.external._jax_gcm_pytree`, the
+  leaf transforms into private `vercor.setups._external._jax_gcm_pytree`, the
   only production owner that needed them.
 - Simplified component lifecycle hook setup by deleting the private owner
   protocol, hook merge method, and installer helper. Constructors now build one
@@ -1336,13 +1349,13 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-06-12: External Output Adapter Ownership Boundary
 
 - Moved JAXGCM and Veros-specific period-output adapters from `vercor.output`
-  to `vercor.setups.external`, leaving `vercor.output` as the shared
+  to `vercor.setups._external`, leaving `vercor.output` as the shared
   setup-agnostic output primitive package.
 - Updated JAXGCM/Veros runtime and setup-state imports, boundary tests,
   functional output tests, `DESIGN.md`, and `DEPENDENCIES.md` for the clean
   break from `vercor.output.jax_gcm` and `vercor.output.veros`.
 - Red/green notes: focused external/API tests first failed with missing
-  `vercor.setups.external.jax_gcm_output` before the move, then passed after
+  `vercor.setups._external.jax_gcm_output` before the move, then passed after
   moving modules and rewiring imports. A pre-existing period-file log-message
   test drift on this branch was aligned with the current
   `Writing output file:  ...` message.
@@ -1585,9 +1598,9 @@ historical commands, failure messages, or detailed validation notes.
   accumulation/time/variable/NetCDF helpers live in focused `vercor.output`
   modules, and model-specific period-output adaptation lives in
   `vercor.output.jax_gcm` and `vercor.output.veros`.
-- Removed `vercor.setups.external.jax_gcm_output`,
-  `vercor.setups.external.period_averages`, and
-  `vercor.setups.external.veros_output` without compatibility wrappers. Updated
+- Removed `vercor.setups._external.jax_gcm_output`,
+  `vercor.setups._external.period_averages`, and
+  `vercor.setups._external.veros_output` without compatibility wrappers. Updated
   JAXGCM/Veros setup and runtime imports plus architecture tests to enforce the
   hard move and centralized `h5netcdf` ownership in `vercor.output.netcdf`.
 - Updated `DESIGN.md` and `DEPENDENCIES.md` to record the new output ownership
@@ -1649,7 +1662,7 @@ historical commands, failure messages, or detailed validation notes.
   the 3-argument callable adapter in
   `vercor.components._callable_wrappers.normalize_component_step_callable()`
   is now `step_fields_context_and_payload()`, and
-  `vercor.setups.external.veros_output._coordinate_variable()` is now
+  `vercor.setups._external.veros_output._coordinate_variable()` is now
   `_extract_coordinate_variable()`.
 - Left intentionally parallel names unchanged: JAX/NumPy dtype helpers,
   runtime-cache owner versus resource-facade methods,
@@ -1694,7 +1707,7 @@ historical commands, failure messages, or detailed validation notes.
   failed as expected because the accumulator/snapshots were still NumPy-backed
   and the output modules still imported NumPy. After implementation,
   `conda run -n scipy pytest tests/test_period_averages.py tests/test_external_components_coverage.py::test_jax_gcm_write_output_persists_mean_dataset tests/test_external_components_coverage.py::test_veros_output_snapshot_uses_variable_metadata_and_current_timestep tests/test_external_components_coverage.py::test_veros_write_output_persists_period_mean_and_coordinates tests/test_production_numpy_boundaries.py -q --tb=short`,
-  `conda run -n scipy mypy vercor/host_arrays.py vercor/setups/external/period_averages.py vercor/setups/external/jax_gcm_output.py vercor/setups/external/veros_output.py tests/test_period_averages.py tests/test_external_components_coverage.py tests/test_production_numpy_boundaries.py`,
+  `conda run -n scipy mypy vercor/host_arrays.py vercor/setups/_external/period_averages.py vercor/setups/_external/jax_gcm_output.py vercor/setups/_external/veros_output.py tests/test_period_averages.py tests/test_external_components_coverage.py tests/test_production_numpy_boundaries.py`,
   `conda run -n scipy black vercor examples tests`,
   `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`,
   `conda run -n scipy mypy vercor examples tests`,
@@ -1793,7 +1806,7 @@ historical commands, failure messages, or detailed validation notes.
 - Validation run for this change:
   focused red
   `conda run -n scipy pytest tests/test_period_averages.py -q --tb=short`
-  failed as expected on missing `vercor.setups.external.period_averages`.
+  failed as expected on missing `vercor.setups._external.period_averages`.
   After implementation,
   `conda run -n scipy pytest tests/test_period_averages.py -q --tb=short`,
   `conda run -n scipy pytest tests/test_period_averages.py tests/test_external_components_coverage.py::test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up tests/test_external_components_coverage.py::test_jax_gcm_step_maps_outputs_and_respects_output_gate tests/test_external_components_coverage.py::test_jax_gcm_write_output_persists_mean_dataset tests/test_external_components_coverage.py::test_jax_gcm_write_output_preserves_model_calendar_attrs tests/test_external_components_coverage.py::test_veros_write_output_persists_period_mean_and_coordinates tests/test_external_components_coverage.py::test_veros_step_records_selected_outputs_and_writes_on_gate tests/test_external_components_coverage.py::test_veros_step_skips_output_when_no_variables_selected -q --tb=short`,
@@ -1822,7 +1835,7 @@ historical commands, failure messages, or detailed validation notes.
   Selected Veros variables are extracted with native Veros metadata, current
   timestep selection, ghost-cell removal, and native dimension order, then
   written as period means to `veros.averages.YYYY-MM-DD.nc` via `h5netcdf`.
-- Kept output file I/O in the new `vercor.setups.external.veros_output` host
+- Kept output file I/O in the new `vercor.setups._external.veros_output` host
   boundary. Veros runtime now records selected snapshots and flushes through the
   existing JAXGCM day/month/year cadence helper, leaving the SST exchange output
   unchanged when no output variables are selected.
@@ -1928,10 +1941,10 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-06-02: CAMulator Wind-Filter Boundary Refactor
 
 - Split CAMulator wind artifact tensor mechanics into private
-  `vercor.setups.external._camulator_wind_filtering`, which now owns PyTorch
+  `vercor.setups._external._camulator_wind_filtering`, which now owns PyTorch
   mask/kernel artifact construction, field filtering, and selected in-place
   tensor updates.
-- Kept `vercor.setups.external.camulator_wind_filter` as the public facade for
+- Kept `vercor.setups._external.camulator_wind_filter` as the public facade for
   configuration loading/validation, compatibility functions, and the existing
   log-and-skip failure policy used during optional post-processing.
 - Added focused behavior and architecture coverage for shape-stable wind-filter
@@ -1942,7 +1955,7 @@ historical commands, failure messages, or detailed validation notes.
   focused red
   `conda run -n scipy pytest tests/test_camulator_component_kernels.py tests/test_api_boundaries.py -q --fast --tb=short`
   failed as expected on missing
-  `vercor.setups.external._camulator_wind_filtering` and the missing private
+  `vercor.setups._external._camulator_wind_filtering` and the missing private
   boundary file assertion. Focused green with the same command passed after
   implementation. Then `conda run -n scipy black vercor examples tests`,
   focused post-format pytest with the same command,
@@ -1958,11 +1971,11 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-06-02: External Adapter Factory/Setup-State Boundary Refactor
 
 - Removed the public `JCMState` compatibility aliases from
-  `vercor.setups.external` and `vercor.setups.external.jax_gcm`; the canonical
-  state bundle owner is now only `vercor.setups.external.jax_gcm_state`.
+  `vercor.setups._external` and `vercor.setups._external.jax_gcm`; the canonical
+  state bundle owner is now only `vercor.setups._external.jax_gcm_state`.
 - Split CAMulator atmosphere setup-state ownership into
-  `vercor.setups.external.camulator_gcm_state.CAMulatorGCMSetupState`, leaving
-  `vercor.setups.external.camulator` as a thin `make_camulator_gcm(...)`
+  `vercor.setups._external.camulator_gcm_state.CAMulatorGCMSetupState`, leaving
+  `vercor.setups._external.camulator` as a thin `make_camulator_gcm(...)`
   factory that binds the host-component lifecycle methods.
 - Updated boundary/runtime tests, `DESIGN.md`, and `DEPENDENCIES.md` for the
   stricter JAXGCM public surface and CAMulator setup-state owner.
@@ -1997,7 +2010,7 @@ historical commands, failure messages, or detailed validation notes.
 - Refactored `vercor.assets` so the generic asset cache/download/checksum layer
   uses private normalized asset helpers and no longer embeds forcing-specific
   error wording. Concrete forcing registries remain in
-  `vercor.setups.data.assets`.
+  `vercor.setups._data.assets`.
 - Split `vercor.forcing_data.read_forcing()` into private path-resolution,
   NetCDF variable lookup, legacy transpose, and latitude-flip helpers while
   preserving successful array behavior. Missing mapping keys and missing
@@ -2134,12 +2147,12 @@ historical commands, failure messages, or detailed validation notes.
 
 ### 2026-06-01: External Adapter Setup-State Boundary Refactor
 
-- Added `vercor.setups.external.jax_gcm_state` as the owner for JAXGCM setup
+- Added `vercor.setups._external.jax_gcm_state` as the owner for JAXGCM setup
   state, model construction, spinup, and lifecycle callback wiring; the public
   `jax_gcm.py` module now stays focused on the `make_jax_gcm(...)` factory and
   then-existing `JCMState` reexport, which was later removed in the 2026-06-02
   external adapter factory/setup-state boundary refactor.
-- Added `vercor.setups.external.veros_gcm_state` as the owner for Veros setup
+- Added `vercor.setups._external.veros_gcm_state` as the owner for Veros setup
   state, grid derivation, spinup, and host step delegation; the public
   `veros_gcm.py` module now stays focused on `make_veros_gcm(...)`.
 - Added the named tuple-compatible `VerosForcingFields` container so Veros
@@ -2561,7 +2574,7 @@ historical commands, failure messages, or detailed validation notes.
   grouped internal runtime input bundle into facade helpers instead of repeated
   component/exchange/resource parameter clumps.
 - Added lightweight CAMulator runtime field contract ownership in
-  `vercor.setups.external.camulator_contracts`, leaving tensor/field mapping
+  `vercor.setups._external.camulator_contracts`, leaving tensor/field mapping
   code focused on runtime arrays.
 - Split reusable architecture-test helpers out of `tests/test_api_boundaries.py`
   and added focused tests for field layout, component boundaries, runtime facade
@@ -2612,7 +2625,7 @@ historical commands, failure messages, or detailed validation notes.
   paths and shim modules while leaving the historical archive untouched.
 - Confirmed the removed facade modules and shim paths remain absent from the
   live tree; remaining runtime-payload references use the canonical
-  `vercor.setups.external.jax_gcm_runtime` owner or boundary tests that assert
+  `vercor.setups._external.jax_gcm_runtime` owner or boundary tests that assert
   removed reexports stay removed.
 - Tightened API-boundary coverage so active `PROGRESS.md` no longer advertises
   removed compatibility surfaces as current preserved API, then refreshed stale
@@ -2634,7 +2647,7 @@ historical commands, failure messages, or detailed validation notes.
   examples, and tests now import runtime contracts, state containers, stores,
   step metadata, and exchange dispatch from their focused owner modules.
 - Removed obsolete compatibility aliases and methods:
-  `vercor.setups.external.jax_gcm.JAXGCMRuntimePayload`,
+  `vercor.setups._external.jax_gcm.JAXGCMRuntimePayload`,
   the external setup lazy payload export, `ComponentSettings`,
   `ComponentForcingData._read_forcing()`, CAMulator dictionary metadata
   accessors, and private `Coupler` runtime resource/scanned-run shims.
@@ -2990,9 +3003,9 @@ historical commands, failure messages, or detailed validation notes.
 ### 2026-05-27: Deprecated Compatibility Import Facade Removal
 
 - Removed obsolete one-hop compatibility modules:
-  `vercor._runtime.components`, `vercor.setups.data.camulator_land`,
-  `vercor.setups.data.forcing`, `vercor.setups.external.camulator_state`,
-  `vercor.setups.external.windpp`, and `vercor.setups.jax_array_helpers`.
+  `vercor._runtime.components`, `vercor.setups._data.camulator_land`,
+  `vercor.setups._data.forcing`, `vercor.setups._external.camulator_state`,
+  `vercor.setups._external.windpp`, and `vercor.setups.jax_array_helpers`.
 - Routed remaining imports to canonical owners: runtime component-state,
   field-transfer, and validation helpers; `vercor.forcing_data.read_forcing`;
   calendar datetime classes; vertical-coordinate helpers; grid identity; and
@@ -3004,7 +3017,7 @@ historical commands, failure messages, or detailed validation notes.
   cleanup.
 - Updated boundary tests, `DESIGN.md`, and `DEPENDENCIES.md` for canonical
   ownership. During full validation, corrected a stale Veros runtime-settings
-  boundary assertion to point at `vercor.setups.external.veros_setup`.
+  boundary assertion to point at `vercor.setups._external.veros_setup`.
 - Validation run for this change:
   `conda run -n scipy black vercor examples tests`,
   `conda run -n scipy flake8 . --count --exit-zero --max-line-length=120 --statistics`,
@@ -3030,9 +3043,9 @@ historical commands, failure messages, or detailed validation notes.
   `veros_state.py` own Veros setup, flux, and host-state helpers.
 - Kept adapter factory/state compatibility while removing moved helper symbols
   from old external adapter facades; narrowed
-  `vercor.setups.data.camulator_land` to the public land factory only.
+  `vercor.setups._data.camulator_land` to the public land factory only.
 - Centralized common example exchange field lists in
-  `vercor.setups.exchange_recipes`, added slab land/ocean recipe separation,
+  `vercor._exchange_recipes`, added slab land/ocean recipe separation,
   and widened `Exchange.field_names` to accept immutable recipe sequences.
 - Updated `DEPENDENCIES.md` and ownership boundary tests for the new module map.
 - Validation run for this change:
@@ -3057,7 +3070,7 @@ historical commands, failure messages, or detailed validation notes.
   utility import aliases.
 - Moved setup helper ownership to `vercor.host_arrays` and
   `vercor.diagnostics.fields`; moved CAMulator land, CAMulator output, CAMulator
-  wind filtering, and JAXGCM output helpers under `vercor.setups.external`.
+  wind filtering, and JAXGCM output helpers under `vercor.setups._external`.
 - Updated `DESIGN.md`, `DEPENDENCIES.md`, examples, and boundary tests for the
   new ownership map.
 - Required validation passed:

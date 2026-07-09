@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from vercor.setups.external.veros_runtime_settings import configure_veros_runtime
+from vercor.setups._external.veros_runtime_settings import configure_veros_runtime
 
 configure_veros_runtime()
 

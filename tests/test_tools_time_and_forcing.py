@@ -9,13 +9,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 import vercor.assets as assets_module
-import vercor.setups.data.assets as setup_assets_module
+import vercor.setups._data.assets as setup_assets_module
 
 from tests.conftest import SelectFastCases
 from vercor.calendar import DateTime360, DateTime365
 from vercor.exceptions import AssetError
 from vercor.calendar import is_leap_year
-from vercor.setups.data.assets import get_forcing_data
+from vercor.setups._data.assets import get_forcing_data
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,

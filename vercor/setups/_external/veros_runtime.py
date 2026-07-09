@@ -7,12 +7,12 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from vercor.components import StepContext
-import vercor.setups.external.veros_fluxes as _veros_fluxes
-import vercor.setups.external.veros_output as _veros_output
-import vercor.setups.external.veros_state as _veros_state
+import vercor.setups._external.veros_fluxes as _veros_fluxes
+import vercor.setups._external.veros_output as _veros_output
+import vercor.setups._external.veros_state as _veros_state
 
 if TYPE_CHECKING:
-    from vercor.setups.external.veros_gcm_state import VerosGCMSetupState
+    from vercor.setups._external.veros_gcm_state import VerosGCMSetupState
 
 
 def step_veros_runtime(

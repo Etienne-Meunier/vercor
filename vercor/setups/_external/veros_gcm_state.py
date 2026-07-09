@@ -22,9 +22,9 @@ from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,
 )
-import vercor.setups.external.veros_output as _veros_output
-import vercor.setups.external.veros_setup as _veros_setup
-import vercor.setups.external.veros_state as _veros_state
+import vercor.setups._external.veros_output as _veros_output
+import vercor.setups._external.veros_setup as _veros_setup
+import vercor.setups._external.veros_state as _veros_state
 from vercor.types import RuntimeArray
 
 VEROS_INPUT_FIELD_NAMES = (

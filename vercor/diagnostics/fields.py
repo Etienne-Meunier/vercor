@@ -63,13 +63,26 @@ def component_plot_field(
 ) -> RuntimeArray:
     """Return a 2D field suitable for plotting when one is available."""
 
-    candidates = component.field_candidates(field_name)
+    candidates = _component_field_candidates(component, field_name)
     for candidate in candidates:
         if jnp.asarray(candidate).ndim == 2:
             return candidate
     if candidates:
         return candidates[0]
     raise KeyError(f"Field {field_name!r} not found")
+
+
+def _component_field_candidates(
+    component: ComponentState,
+    field_name: str,
+) -> list[RuntimeArray]:
+    """Return all matching fields in public scope-resolution order."""
+
+    candidates: list[RuntimeArray] = []
+    for _, name, value in component.iter_fields("state", "received", "sent"):
+        if name == field_name:
+            candidates.append(value)
+    return candidates
 
 
 def component_plot_scalar(

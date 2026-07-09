@@ -13,17 +13,17 @@ import pytest
 import torch
 import xarray as xr
 
-import vercor.setups.external.camulator_contracts as camulator_contracts_module
-import vercor.setups.external.camulator_fields as camulator_fields_module
-import vercor.setups.external.camulator_forcing as camulator_forcing_module
-import vercor.setups.external.camulator_gcm_state as camulator_gcm_state_module
-import vercor.setups.external.camulator_imports as camulator_imports_module
-import vercor.setups.external.camulator_init as camulator_init_module
-import vercor.setups.external.camulator_land as camulator_land_module
-import vercor.setups.external.camulator_output as camulator_output_module
-import vercor.setups.external.camulator_runtime as camulator_runtime_module
-import vercor.setups.external.camulator_tensors as camulator_tensors_module
-import vercor.setups.external.camulator_wind_filter as camulator_wind_filter_module
+import vercor.setups._external.camulator_contracts as camulator_contracts_module
+import vercor.setups._external.camulator_fields as camulator_fields_module
+import vercor.setups._external.camulator_forcing as camulator_forcing_module
+import vercor.setups._external.camulator_gcm_state as camulator_gcm_state_module
+import vercor.setups._external.camulator_imports as camulator_imports_module
+import vercor.setups._external.camulator_init as camulator_init_module
+import vercor.setups._external.camulator_land as camulator_land_module
+import vercor.setups._external.camulator_output as camulator_output_module
+import vercor.setups._external.camulator_runtime as camulator_runtime_module
+import vercor.setups._external.camulator_tensors as camulator_tensors_module
+import vercor.setups._external.camulator_wind_filter as camulator_wind_filter_module
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
 from vercor.components.contexts import SetupContext, StepContext
@@ -34,7 +34,7 @@ from vercor.output._component_adapter import (
 from vercor.output import OutputVariable
 from vercor.output import OutputConfig, PeriodOutput
 from vercor.setup_config import CAMulatorConfig
-from vercor.setups.external.camulator import make_camulator_gcm
+from vercor.setups._external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
 from vercor.grids import RectilinearGrid
 from vercor._runtime.contracts import ExchangeContract
@@ -139,7 +139,7 @@ def test_camulator_wind_filter_facade_exposes_only_runtime_entrypoints() -> None
 
 @pytest.mark.fast_always
 def test_wind_filter_private_owner_returns_shape_stable_artifacts() -> None:
-    import vercor.setups.external._camulator_wind_filtering as wind_filtering
+    import vercor.setups._external._camulator_wind_filtering as wind_filtering
 
     u_wind = torch.zeros(5, 5)
     v_wind = torch.zeros(5, 5)
@@ -701,13 +701,13 @@ def test_camulator_output_rejects_unsupported_credit_only_options(
 
 def test_camulator_output_wrappers_do_not_import_xarray_or_credit_output() -> None:
     camulator_output_source = Path(
-        "vercor/setups/external/camulator_output.py"
+        "vercor/setups/_external/camulator_output.py"
     ).read_text(encoding="utf-8")
     camulator_runtime_source = Path(
-        "vercor/setups/external/camulator_runtime.py"
+        "vercor/setups/_external/camulator_runtime.py"
     ).read_text(encoding="utf-8")
     camulator_imports_source = Path(
-        "vercor/setups/external/camulator_imports.py"
+        "vercor/setups/_external/camulator_imports.py"
     ).read_text(encoding="utf-8")
     output_adapters_source = Path("vercor/output/_component_adapter.py").read_text(
         encoding="utf-8"
@@ -874,7 +874,7 @@ def test_state_variable_accessor_tensor_access_uses_typed_index_path() -> None:
 
 @pytest.mark.fast_always
 def test_state_variable_accessor_uses_shared_index_map_builders() -> None:
-    source = Path("vercor/setups/external/camulator_tensors.py").read_text(
+    source = Path("vercor/setups/_external/camulator_tensors.py").read_text(
         encoding="utf-8"
     )
 

@@ -5,7 +5,7 @@ from vercor.components import DataComponent
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
-from vercor.setups.data._field_helpers import canonicalize_surface_field
+from vercor.setups._data._field_helpers import canonicalize_surface_field
 
 if TYPE_CHECKING:
     from dinosaur.coordinate_systems import CoordinateSystem

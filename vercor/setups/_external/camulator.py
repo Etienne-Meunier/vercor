@@ -7,10 +7,10 @@ from functools import partial
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
 from vercor.setup_config import CAMulatorConfig
-import vercor.setups.external.camulator_contracts as _camulator_contracts
-import vercor.setups.external.camulator_output as _camulator_output
-import vercor.setups.external.camulator_runtime as _camulator_runtime
-from vercor.setups.external.camulator_gcm_state import CAMulatorGCMSetupState
+import vercor.setups._external.camulator_contracts as _camulator_contracts
+import vercor.setups._external.camulator_output as _camulator_output
+import vercor.setups._external.camulator_runtime as _camulator_runtime
+from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
 
 def make_camulator_gcm(

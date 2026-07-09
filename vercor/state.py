@@ -202,11 +202,6 @@ class ComponentState:
         object.__setattr__(self, "_received", _field_store_from_mapping(received))
         object.__setattr__(self, "_sent", _field_store_from_mapping(sent))
 
-    def field_candidates(self, name: str) -> list[RuntimeArray]:
-        """Return all runtime fields named ``name`` in fields, received, sent order."""
-
-        return _field_candidates(self, name)
-
     def field(
         self,
         name: str,

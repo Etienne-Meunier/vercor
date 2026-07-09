@@ -8,19 +8,19 @@ from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
 from vercor.dtypes import as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
-from vercor.setups.data.era5_atmosphere import (
+from vercor.setups._data.era5_atmosphere import (
     _compute_monthly_diagnostics,
     _decode_surface_pressure,
 )
-from vercor.setups.data._field_helpers import (
+from vercor.setups._data._field_helpers import (
     canonicalize_surface_field,
     mask_time_last_surface_field,
     positive_binary_mask,
 )
-from vercor.setups.data.era5_ocean import (
+from vercor.setups._data.era5_ocean import (
     _ocean_binary_mask_from_land_fraction,
 )
-from vercor.setups.data.erainterim_ocean import (
+from vercor.setups._data.erainterim_ocean import (
     _assemble_erainterim_field,
     _assemble_erainterim_latitude,
     _binary_ocean_mask_from_salinity,

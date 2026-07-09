@@ -9,34 +9,34 @@ from vercor.setups._lazy_imports import (
     lazy_export_names,
     resolve_lazy_export,
 )
-from vercor.setups.slab import (
+from vercor.setups._slab import (
     make_slab_atmosphere,
     make_slab_land,
     make_slab_ocean,
     make_slab_seaice,
 )
-from vercor.setups.jcm_setup_helpers import (
+from vercor.setups._jcm import (
     JCMInputs,
     load_jcm_inputs,
     make_jcm_land_atmosphere,
 )
 
 _LAZY_EXPORTS = {
-    "make_camulator_gcm": LazyExport("external.camulator", "make_camulator_gcm"),
+    "make_camulator_gcm": LazyExport("_external.camulator", "make_camulator_gcm"),
     "make_camulator_land": LazyExport(
-        "external.camulator_land",
+        "_external.camulator_land",
         "make_camulator_land",
     ),
-    "make_era5_atmosphere": LazyExport("data.era5_atmosphere", "make_era5_atmosphere"),
-    "make_era5_land": LazyExport("data.era5_land", "make_era5_land"),
-    "make_era5_ocean": LazyExport("data.era5_ocean", "make_era5_ocean"),
+    "make_era5_atmosphere": LazyExport("_data.era5_atmosphere", "make_era5_atmosphere"),
+    "make_era5_land": LazyExport("_data.era5_land", "make_era5_land"),
+    "make_era5_ocean": LazyExport("_data.era5_ocean", "make_era5_ocean"),
     "make_erainterim_ocean": LazyExport(
-        "data.erainterim_ocean",
+        "_data.erainterim_ocean",
         "make_erainterim_ocean",
     ),
-    "make_jax_gcm": LazyExport("external.jax_gcm", "make_jax_gcm"),
-    "make_jcm_land": LazyExport("data.jcm_land", "make_jcm_land"),
-    "make_veros_gcm": LazyExport("external.veros_gcm", "make_veros_gcm"),
+    "make_jax_gcm": LazyExport("_external.jax_gcm", "make_jax_gcm"),
+    "make_jcm_land": LazyExport("_data.jcm_land", "make_jcm_land"),
+    "make_veros_gcm": LazyExport("_external.veros_gcm", "make_veros_gcm"),
 }
 
 __all__ = [

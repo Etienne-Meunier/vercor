@@ -36,7 +36,7 @@ from tests._coverage_support import DummyComponent, make_test_grid
 from tests._runtime_helpers import run_scanned_coupler
 from tests.assertions import assert_allclose_compact
 from vercor.forcing_data import read_forcing
-from vercor.setups.data.era5_atmosphere import make_era5_atmosphere
+from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
 from vercor.clock import Clock
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.coupler import Coupler

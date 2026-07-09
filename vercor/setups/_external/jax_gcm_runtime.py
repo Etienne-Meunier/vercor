@@ -22,16 +22,16 @@ from vercor.exceptions import ComponentError, CouplerError
 from vercor.field_layout import validate_canonical_grid_field_shape
 from vercor.pytree import PyTreeNodeMixin
 from vercor.settings import Settings
-from vercor.setups.external._jax_gcm_pytree import (
+from vercor.setups._external._jax_gcm_pytree import (
     tree_mean,
     tree_stack,
     tree_unwrap_leading_dims,
 )
-import vercor.setups.external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups.external.jax_gcm_output as _jax_gcm_output
+import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
+import vercor.setups._external.jax_gcm_output as _jax_gcm_output
 
 if TYPE_CHECKING:
-    from vercor.setups.external.jax_gcm_state import JAXGCMSetupState
+    from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
 
 JCM_REFERENCE_PRESSURE = 1.0e5
 

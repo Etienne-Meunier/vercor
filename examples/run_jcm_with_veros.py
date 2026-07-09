@@ -10,9 +10,6 @@ from vercor import (
     VerosConfig,
 )
 from vercor.setups import make_veros_gcm
-from vercor.setups.external.jax_gcm_tools import (
-    get_default_parameter_values,
-)
 from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
@@ -24,6 +21,23 @@ from vercor.regridding import bilinear
 
 from jcm.physics.speedy.params import Parameters
 
+
+def _default_jcm_parameter_values(
+    parameters: list[str],
+    default_parameters: Parameters,
+) -> dict[str, float]:
+    """Return selected default JCM parameter values for the example script."""
+
+    output = {}
+    for parameter in parameters:
+        parameter_group_name, parameter_name = parameter.split(".")
+        output[parameter] = getattr(
+            getattr(default_parameters, parameter_group_name),
+            parameter_name,
+        )
+    return output
+
+
 if __name__ == "__main__":
     optimized_parameters: list = [
         "surface_flux.vgust",
@@ -32,7 +46,7 @@ if __name__ == "__main__":
         "surface_flux.cds",
     ]
 
-    custom_jcm_parameters: dict[str, float] = get_default_parameter_values(
+    custom_jcm_parameters: dict[str, float] = _default_jcm_parameter_values(
         parameters=optimized_parameters,
         default_parameters=Parameters.default(),
     )

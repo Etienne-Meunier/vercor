@@ -10,10 +10,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-import vercor.setups.external._jax_gcm_pytree as jax_gcm_pytree_module
-import vercor.setups.external.jax_gcm_tools as jax_gcm_tools_module
-import vercor.setups.external.veros_fluxes as veros_fluxes_module
-import vercor.setups.external.veros_state as veros_state_module
+import vercor.setups._external._jax_gcm_pytree as jax_gcm_pytree_module
+import vercor.setups._external.jax_gcm_tools as jax_gcm_tools_module
+import vercor.setups._external.veros_fluxes as veros_fluxes_module
+import vercor.setups._external.veros_state as veros_state_module
 from tests.assertions import assert_allclose_compact
 from vercor.fluxes import vertical_coordinates as vertical_coordinates_module
 from vercor.settings import Settings

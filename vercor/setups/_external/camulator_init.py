@@ -10,10 +10,10 @@ import xarray as xr
 import yaml
 
 from vercor.jax_logging import LoggerLike, get_default_logger
-from vercor.setups.external import camulator_imports
-import vercor.setups.external.camulator_output as _camulator_output
-from vercor.setups.external.camulator_stepper import CAMulatorStepper
-from vercor.setups.external.camulator_tensors import prepare_static_forcing_tensor
+from vercor.setups._external import camulator_imports
+import vercor.setups._external.camulator_output as _camulator_output
+from vercor.setups._external.camulator_stepper import CAMulatorStepper
+from vercor.setups._external.camulator_tensors import prepare_static_forcing_tensor
 
 
 def add_init_noise(
