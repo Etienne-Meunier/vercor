@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,6 +60,9 @@ class _PeriodOutputSchema:
     writer: Callable[..., None] = write_period_output_netcdf
     take_initial_accumulated_variables: (
         Callable[[], Mapping[str, AccumulatedPeriodVariable]] | None
+    ) = None
+    sample_accumulator: (
+        Callable[["ComponentRuntimeState"], "_PeriodOutputAccumulator | None"] | None
     ) = None
 
 
@@ -160,6 +164,34 @@ class _PeriodOutputAccumulator(PyTreeNodeMixin):
             counts=tuple(counts),
         )
 
+    def merge(
+        self,
+        other: "_PeriodOutputAccumulator",
+    ) -> "_PeriodOutputAccumulator":
+        """Return the exact sum/count merge of two compatible accumulators."""
+
+        if self.names != other.names:
+            raise ValueError("Period output variables changed across accumulators.")
+        if self.dims != other.dims:
+            raise ValueError("Period output dimensions changed across accumulators.")
+        if tuple(value.shape for value in self.sum_values) != tuple(
+            value.shape for value in other.sum_values
+        ):
+            raise ValueError("Period output shapes changed across accumulators.")
+        return _PeriodOutputAccumulator(
+            names=self.names,
+            dims=self.dims,
+            attrs=self.attrs,
+            sum_values=tuple(
+                left + right
+                for left, right in zip(self.sum_values, other.sum_values, strict=True)
+            ),
+            counts=tuple(
+                left + right
+                for left, right in zip(self.counts, other.counts, strict=True)
+            ),
+        )
+
     def reset(self) -> "_PeriodOutputAccumulator":
         """Return an empty accumulator with the same static variable schema."""
 
@@ -201,15 +233,24 @@ class _PeriodOutputSession(PyTreeNodeMixin):
     ) -> "_PeriodOutputSession":
         """Sample every configured component from one post-step runtime state."""
 
-        return _PeriodOutputSession(
-            accumulators=tuple(
-                accumulator.add_samples(
-                    schema.sample(state._component_state(schema.component_name)),
-                    summation_dim=schema.summation_dim,
-                )
-                for schema, accumulator in zip(schemas, self.accumulators, strict=True)
+        accumulated = []
+        for schema, accumulator in zip(schemas, self.accumulators, strict=True):
+            component_state = state._component_state(schema.component_name)
+            sampled_accumulator = (
+                schema.sample_accumulator(component_state)
+                if schema.sample_accumulator is not None
+                else None
             )
-        )
+            if sampled_accumulator is not None:
+                accumulated.append(accumulator.merge(sampled_accumulator))
+            else:
+                accumulated.append(
+                    accumulator.add_samples(
+                        schema.sample(component_state),
+                        summation_dim=schema.summation_dim,
+                    )
+                )
+        return _PeriodOutputSession(accumulators=tuple(accumulated))
 
 
 @dataclass(frozen=True)
@@ -219,6 +260,7 @@ class _PeriodOutputBoundary:
     stop_step: int
     time: _Time
     due_schema_indices: tuple[int, ...]
+    output_filenames: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -248,6 +290,17 @@ def validate_period_output_run_state_not_traced(state: "RunState") -> None:
             "Period output is an I/O workflow and cannot run with traced "
             "RunState leaves. Differentiated or outer-jitted runs must "
             "disable component period output."
+        )
+
+
+def validate_period_output_execution(execution: object) -> None:
+    """Reject custom backends until they can carry an output session."""
+
+    if not isinstance(execution, str):
+        raise CouplerError(
+            "Custom execution backends do not support period output because "
+            "the public backend contract has no period-session hook. Configure "
+            "a built-in host/auto/JAX backend or disable component period output."
         )
 
 
@@ -307,8 +360,15 @@ def build_period_output_plan(
                 _PeriodOutputAccumulator.from_accumulated_variables(initial_variables)
             )
         else:
+            sampled_accumulator = (
+                schema.sample_accumulator(component_state)
+                if schema.sample_accumulator is not None
+                else None
+            )
             accumulators.append(
-                _PeriodOutputAccumulator.zeros_from_samples(
+                sampled_accumulator.reset()
+                if sampled_accumulator is not None
+                else _PeriodOutputAccumulator.zeros_from_samples(
                     schema.sample(component_state),
                     summation_dim=schema.summation_dim,
                 )
@@ -332,7 +392,11 @@ def write_period_output_boundary(
     """Write completed reductions and reset only schemas due at this boundary."""
 
     accumulators = list(session.accumulators)
-    for index in boundary.due_schema_indices:
+    for index, output_filename in zip(
+        boundary.due_schema_indices,
+        boundary.output_filenames,
+        strict=True,
+    ):
         schema = plan.schemas[index]
         accumulator = accumulators[index]
         mean_accumulator = PeriodAverageAccumulator()
@@ -344,7 +408,7 @@ def write_period_output_boundary(
             dimension_order=schema.dimension_order,
         )
         schema.writer(
-            schema.filename(boundary.time),
+            output_filename,
             mean_variables=mean_variables,
             build_coordinate_variables=lambda variables, schema=schema: (
                 schema.build_coordinate_variables(boundary.time, variables)
@@ -364,6 +428,7 @@ def _generic_period_output_schema(
     selected = tuple(period.variables) or tuple(component.spec.outputs)
     dims = {
         name: _generic_field_dims(
+            name,
             tuple(state.fields.get(name).shape),
             component.grid.shape,
         )
@@ -406,20 +471,23 @@ def _generic_period_output_schema(
 
 
 def _generic_field_dims(
+    variable_name: str,
     shape: tuple[int, ...],
     grid_shape: tuple[int, int],
 ) -> tuple[str, ...]:
     if len(shape) >= 2 and shape[-2:] == grid_shape:
-        prefix = tuple(f"dim_{index}" for index in range(len(shape) - 2))
+        prefix = tuple(
+            f"{variable_name}_dim_{index}" for index in range(len(shape) - 2)
+        )
         return (*prefix, "nlat", "nlon")
-    return tuple(f"dim_{index}" for index in range(len(shape)))
+    return tuple(f"{variable_name}_dim_{index}" for index in range(len(shape)))
 
 
 def _period_output_boundaries(
     schemas: tuple[_PeriodOutputSchema, ...],
     clock: Clock,
 ) -> tuple[_PeriodOutputBoundary, ...]:
-    boundaries: list[_PeriodOutputBoundary] = []
+    raw_boundaries: list[tuple[int, _Time, tuple[int, ...]]] = []
     last_stop = 0
     for step, time, dt in clock.iter():
         due = tuple(
@@ -429,13 +497,53 @@ def _period_output_boundaries(
         )
         if due:
             last_stop = step + 1
-            boundaries.append(_PeriodOutputBoundary(last_stop, time, due))
+            raw_boundaries.append((last_stop, time, due))
     if last_stop < clock.steps:
         final_time: _Time = clock.start
         for _, final_time, _ in clock.iter():
             pass
-        boundaries.append(_PeriodOutputBoundary(clock.steps, final_time, ()))
-    return tuple(boundaries)
+        raw_boundaries.append((clock.steps, final_time, ()))
+
+    filename_counts = Counter(
+        (index, schemas[index].filename(time))
+        for _, time, due in raw_boundaries
+        for index in due
+    )
+    return tuple(
+        _PeriodOutputBoundary(
+            stop_step=stop_step,
+            time=time,
+            due_schema_indices=due,
+            output_filenames=tuple(
+                (
+                    _disambiguated_period_filename(
+                        schemas[index].filename(time),
+                        time=time,
+                        step=stop_step - 1,
+                    )
+                    if filename_counts[(index, schemas[index].filename(time))] > 1
+                    else schemas[index].filename(time)
+                )
+                for index in due
+            ),
+        )
+        for stop_step, time, due in raw_boundaries
+    )
+
+
+def _disambiguated_period_filename(
+    filename: str,
+    *,
+    time: _Time,
+    step: int,
+) -> str:
+    """Return a deterministic sub-daily filename for a colliding date path."""
+
+    stem = filename[:-3] if filename.endswith(".nc") else filename
+    timestamp = (
+        f"{time.hour:02d}{time.minute:02d}{time.second:02d}." f"{time.microsecond:06d}"
+    )
+    return f"{stem}T{timestamp}.step{step:08d}.nc"
 
 
 __all__ = []

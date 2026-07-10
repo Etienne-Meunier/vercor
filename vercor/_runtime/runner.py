@@ -18,6 +18,7 @@ from vercor._runtime.backends import (
 from vercor.output._session import (
     build_period_output_plan,
     has_period_output,
+    validate_period_output_execution,
     validate_period_output_run_state_not_traced,
 )
 from vercor._runtime.run_context import RuntimeRunContext
@@ -34,6 +35,7 @@ def run_coupler_runtime(
         output_enabled = has_period_output(context.dispatch_context.components)
         if output_enabled:
             validate_period_output_run_state_not_traced(runtime_state)
+            validate_period_output_execution(context.execution)
 
         if not isinstance(context.execution, str):
             return run_custom_backend(

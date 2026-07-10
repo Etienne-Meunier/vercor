@@ -22,7 +22,7 @@ from vercor.output._component_adapter import (
 from vercor.output import SnapshotContext
 from vercor.output._dataset import time_coordinate_variable
 from vercor.output._period import AccumulatedPeriodVariable, TIME_NAME
-from vercor.output._session import _PeriodOutputSchema
+from vercor.output._session import _PeriodOutputAccumulator, _PeriodOutputSchema
 from vercor.output import OutputVariable
 from vercor.types import RuntimeArray
 
@@ -259,6 +259,22 @@ def jax_gcm_prediction_output_variables(
     """Return JAXGCM prediction variables ready for period accumulation."""
 
     selected_physics_module = physics_module or _default_physics_module()
+    selected_physics_module.cache_coords(coords)
+    return _jax_gcm_prediction_output_variables(
+        prediction,
+        coords=coords,
+        physics_module=selected_physics_module,
+    )
+
+
+def _jax_gcm_prediction_output_variables(
+    prediction: Any,
+    *,
+    coords: Any,
+    physics_module: _PhysicsModuleLike,
+) -> dict[str, OutputVariable]:
+    """Purely extract prediction variables after coordinate caching."""
+
     prediction_values = cast(_PredictionLike, prediction)
     dynamics_predictions = _float0s_to_nans(prediction_values.dynamics)
     physics_predictions = _float0s_to_nans(prediction_values.physics)
@@ -270,10 +286,9 @@ def jax_gcm_prediction_output_variables(
         _vertical_layers(coords),
         *tuple(coords.horizontal.nodal_shape),
     )
-    selected_physics_module.cache_coords(coords)
     data = _mapping_from_struct(dynamics_predictions)
     data.update(
-        selected_physics_module.data_struct_to_dict(
+        physics_module.data_struct_to_dict(
             physics_predictions,
             nodal_shape=nodal_shape,
         )
@@ -302,12 +317,29 @@ def jax_gcm_state_snapshot_output_variables(
 ) -> dict[str, OutputVariable]:
     """Return final JAXGCM state variables ready for snapshot output."""
 
+    selected_physics_module = physics_module or _default_physics_module()
+    selected_physics_module.cache_coords(coords)
+    return _jax_gcm_state_output_variables(
+        jcm_state,
+        coords=coords,
+        physics_module=selected_physics_module,
+    )
+
+
+def _jax_gcm_state_output_variables(
+    jcm_state: Any,
+    *,
+    coords: Any,
+    physics_module: _PhysicsModuleLike,
+) -> dict[str, OutputVariable]:
+    """Purely extract one state sample after coordinate caching."""
+
     prediction = SimpleNamespace(
         dynamics=jax.tree_util.tree_map(_with_leading_time_dim, jcm_state.prog),
         physics=jax.tree_util.tree_map(_with_leading_time_dim, jcm_state.phydata),
         times=as_jax_real_array([0.0]),
     )
-    return jax_gcm_prediction_output_variables(
+    return _jax_gcm_prediction_output_variables(
         prediction,
         coords=coords,
         physics_module=physics_module,
@@ -316,6 +348,47 @@ def jax_gcm_state_snapshot_output_variables(
 
 def _with_leading_time_dim(value: Any) -> Any:
     return jnp.asarray(value)[jnp.newaxis, ...]
+
+
+def jax_gcm_period_output_accumulator_template(
+    jcm_state: Any,
+    *,
+    coords: Any,
+    physics_module: _PhysicsModuleLike | None = None,
+) -> _PeriodOutputAccumulator:
+    """Create stable empty JAXGCM output sums/counts during preparation."""
+
+    selected_physics_module = physics_module or _default_physics_module()
+    selected_physics_module.cache_coords(coords)
+    variables = _jax_gcm_state_output_variables(
+        jcm_state,
+        coords=coords,
+        physics_module=selected_physics_module,
+    )
+    return _PeriodOutputAccumulator.zeros_from_samples(
+        variables,
+        summation_dim=JAX_GCM_TIME_DIM,
+    )
+
+
+def accumulate_jax_gcm_prediction_output(
+    accumulator: _PeriodOutputAccumulator,
+    prediction: Any,
+    *,
+    coords: Any,
+    physics_module: _PhysicsModuleLike,
+) -> _PeriodOutputAccumulator:
+    """Return exact per-prediction sums/counts using pre-cached coordinates."""
+
+    variables = _jax_gcm_prediction_output_variables(
+        prediction,
+        coords=coords,
+        physics_module=physics_module,
+    )
+    return accumulator.reset().add_samples(
+        variables,
+        summation_dim=JAX_GCM_TIME_DIM,
+    )
 
 
 def _read_units_table(path: Path) -> dict[str, dict[str, str]]:
@@ -432,7 +505,8 @@ def jax_gcm_period_output_schema(
     if period is None:
         raise ValueError("JAXGCM period schema requires configured period output.")
     coords = state.model.coords
-    physics_module = getattr(state.model, "physics", None)
+    physics_module = getattr(state.model, "physics", None) or _default_physics_module()
+    physics_module.cache_coords(coords)
     unit_metadata = jax_gcm_unit_metadata(physics_module)
 
     def sample(component_state: Any) -> dict[str, OutputVariable]:
@@ -440,11 +514,16 @@ def jax_gcm_period_output_schema(
         jcm_state = getattr(payload, "jcm_state", None)
         if jcm_state is None:
             raise ValueError("JAXGCM period output requires a post-step JCM state.")
-        return jax_gcm_state_snapshot_output_variables(
+        return _jax_gcm_state_output_variables(
             jcm_state,
             coords=coords,
             physics_module=physics_module,
         )
+
+    def sample_accumulator(
+        component_state: Any,
+    ) -> _PeriodOutputAccumulator | None:
+        return getattr(component_state.payload, "period_output", None)
 
     def coordinate_variables(
         output_time: datetime | ModelDateTime,
@@ -483,6 +562,7 @@ def jax_gcm_period_output_schema(
         dimension_order=JAX_GCM_OUTPUT_DIMENSION_ORDER,
         empty_error_message=JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE,
         take_initial_accumulated_variables=take_initial_accumulated_variables,
+        sample_accumulator=sample_accumulator,
     )
 
 
@@ -541,10 +621,12 @@ __all__ = [
     "JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE",
     "JAX_GCM_OUTPUT_DIMENSION_ORDER",
     "JAX_GCM_TIME_DIM",
+    "accumulate_jax_gcm_prediction_output",
     "jax_gcm_coordinate_variables",
     "jax_gcm_data_variables_with_unit_metadata",
     "jax_gcm_prediction_output_variables",
     "jax_gcm_period_output_schema",
+    "jax_gcm_period_output_accumulator_template",
     "jax_gcm_state_snapshot_output_variables",
     "jax_gcm_unit_metadata",
     "record_jax_gcm_period_output",

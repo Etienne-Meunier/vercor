@@ -343,6 +343,33 @@ def test_period_output_precomputes_all_frequency_boundaries_and_resets(
         assert_allclose_compact(values, np.full((1, 2, 2), mean))
 
 
+def test_subdaily_step_output_keeps_one_file_per_step(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    _make_period_output_coupler(
+        execution="jax",
+        frequency="step",
+        steps=3,
+        dt_seconds=3_600.0,
+    ).run()
+
+    paths = sorted(tmp_path.glob("model.averages.*.nc"))
+    assert [path.name for path in paths] == [
+        "model.averages.2000-01-01T000000.000000.step00000000.nc",
+        "model.averages.2000-01-01T010000.000000.step00000001.nc",
+        "model.averages.2000-01-01T020000.000000.step00000002.nc",
+    ]
+    for index, path in enumerate(paths, start=1):
+        with h5netcdf.File(path, "r") as dataset:
+            assert_allclose_compact(
+                np.asarray(dataset.variables["temperature"]),
+                np.full((1, 2, 2), float(index)),
+            )
+
+
 def test_mixed_component_period_frequencies_coexist(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -368,6 +395,61 @@ def test_mixed_component_period_frequencies_coexist(
             np.asarray(dataset.variables["temperature"]),
             np.full((1, 2, 2), 1.5),
         )
+
+
+def test_generic_period_output_qualifies_heterogeneous_leading_dimensions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    grid = make_test_grid(name="heterogeneous-period-dimensions")
+    short_values = jnp.arange(2 * 2 * 2, dtype=float).reshape((2, 2, 2))
+    long_values = jnp.arange(3 * 2 * 2, dtype=float).reshape((3, 2, 2))
+
+    def step(fields: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "short_profile": fields["short_profile"],
+            "long_profile": fields["long_profile"],
+        }
+
+    component = Component.from_step(
+        name="model",
+        grid=grid,
+        step=step,
+        spec=ComponentSpec(
+            outputs=("short_profile", "long_profile"),
+            defaults={
+                "short_profile": short_values,
+                "long_profile": long_values,
+            },
+            output=OutputConfig(period=PeriodOutput(frequency="day")),
+        ),
+    )
+    coupler = _make_period_output_coupler(
+        execution="jax",
+        steps=1,
+        component=component,
+    )
+
+    coupler.run()
+
+    with h5netcdf.File(tmp_path / "model.averages.2000-01-01.nc", "r") as dataset:
+        short_variable = dataset.variables["short_profile"]
+        long_variable = dataset.variables["long_profile"]
+        assert short_variable.dimensions == (
+            "time",
+            "short_profile_dim_0",
+            "nlat",
+            "nlon",
+        )
+        assert long_variable.dimensions == (
+            "time",
+            "long_profile_dim_0",
+            "nlat",
+            "nlon",
+        )
+        assert_allclose_compact(np.asarray(short_variable)[0], short_values)
+        assert_allclose_compact(np.asarray(long_variable)[0], long_values)
 
 
 @pytest.mark.parametrize(
@@ -433,6 +515,35 @@ def test_period_output_rejects_outer_jit_and_grad() -> None:
 
     with pytest.raises(CouplerError, match="Differentiated.*disable"):
         jax.grad(objective)(jnp.asarray(1.0))
+
+
+def test_period_output_rejects_custom_backend_before_invocation() -> None:
+    class RecordingBackend:
+        def __init__(self) -> None:
+            self.called = False
+
+        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
+            _ = context, driver
+            self.called = True
+            return state
+
+    backend = RecordingBackend()
+    component = _make_output_component(frequency="day")
+    coupler = Coupler(
+        clock=Clock(datetime(2000, 1, 1), 86_400.0, 1),
+        components=(component,),
+        run_order=("model",),
+        runtime=RuntimeOptions(execution=cast(Any, backend)),
+        log_level="WARNING",
+    )
+
+    with pytest.raises(
+        CouplerError,
+        match="Custom execution backends do not support period output.*disable",
+    ):
+        coupler.run()
+
+    assert not backend.called
 
 
 def test_snapshot_output_still_runs_with_period_output_configured(

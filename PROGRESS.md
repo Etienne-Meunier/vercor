@@ -9,6 +9,17 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 4 review follow-up implemented locally on 2026-07-10. Same-date
+  step-cadence records now receive deterministic time/step filenames without
+  changing unique daily names; generic non-grid dimensions are
+  variable-qualified; JAXGCM coordinate caching is preparation-only and its
+  payload carries exact raw-prediction sums/counts so multi-time/NaN spinup and
+  runtime weights match; configured custom backends fail before invocation.
+  Focused RED/GREEN regressions, the required output/runtime fast suite, and
+  the repository-wide fast suite pass. Black reports 224 files unchanged,
+  flake8 reports zero findings, mypy reports no issues in 224 source files,
+  and `git diff --check` passes. Detailed evidence is recorded in
+  `.superpowers/sdd/task-4-fix-report.md`.
 - Task 4 backend-consistent period output implementation completed locally on
   2026-07-10. Generic components and JAXGCM now use private static schemas plus
   immutable JAX sum/count sessions on both host and compiled backends. Cadence

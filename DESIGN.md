@@ -95,7 +95,12 @@ private `vercor.output._session` owns backend-neutral static output schemas,
 immutable JAX PyTree sessions/accumulators, generic runtime-field extraction,
 early selected-field validation, coalesced clock boundaries, and host-boundary
 writes. Generic schemas default an empty `PeriodOutput.variables` selection to
-declared outputs and write `{component}.averages.YYYY-MM-DD.nc`.
+declared outputs and write `{component}.averages.YYYY-MM-DD.nc`. If multiple
+step-cadence records for one component resolve to the same date path, every
+colliding record receives a deterministic time plus absolute-step discriminator;
+dates with one record retain the date-only filename. Non-grid dimensions use
+stable variable-qualified names because NetCDF dimensions are dataset-global,
+while `nlat` and `nlon` remain shared grid axes.
 model-specific output helpers live beside their setup adapters in
 `vercor.setups._external` and adapt native model objects into that shared output
 boundary. Setup-state constructors instantiate the private
@@ -507,12 +512,19 @@ setup-owned schema that extracts native prediction-equivalent variables from
 the post-step payload `JCMState`. Host and chunked scanned backends therefore
 share one session path while preserving `jcm.averages.YYYY-MM-DD.nc`, native
 dimension ordering, and metadata; model steps no longer perform period-file
-side effects.
+side effects. Coordinate-dependent physics cache setup occurs before JIT and
+the installed sample extractor is pure. When output is enabled, the private
+`JAXGCMRuntimePayload` also carries a shape-stable immutable per-step output
+accumulator built from raw prediction-time sums and finite counts. Session
+merging therefore weights runtime and spinup samples identically, including
+NaNs and multi-time predictions.
 Shared output extension primitives for adapter authors are exported from
 `vercor.output`: `OutputVariable`, `PeriodOutput`, `OutputConfig`,
 `SnapshotContext`, and `SnapshotWriter`. `OutputConfig.period is None`
 disables period output; `PeriodOutput(frequency="step")` requests every-step
-period output. Snapshot writers receive only public component/result views and
+period output. Custom `ExecutionBackend` objects are rejected when period
+output is configured until the public backend contract provides a
+period-session hook. Snapshot writers receive only public component/result views and
 the component payload. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
 orchestration, and direct `h5netcdf` writing live in private
