@@ -7,9 +7,9 @@ from typing import Any
 import vercor._runtime.facade as runtime_facade
 import vercor._runtime.preparation as runtime_preparation
 from vercor.coupler import Coupler
+from vercor._runtime.backends import run_scanned_runtime
 from vercor._runtime.dispatch_context import build_runtime_dispatch_context
 from vercor._runtime.prepared import PreparedCoupling
-from vercor._runtime.runner import run_scanned_runtime
 from vercor.state import RunState
 from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor.types import RuntimeArray

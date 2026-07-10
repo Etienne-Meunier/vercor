@@ -11,6 +11,7 @@ from jax.errors import JaxRuntimeError
 import numpy as np
 import pytest
 
+import vercor
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
 from vercor.components.base import Component
@@ -172,6 +173,34 @@ def test_host_runtime_signal_aborts_through_shared_controller() -> None:
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(cast(Any, _InterruptingHostComponent("ATM")),),
         run_order=("ATM",),
+    )
+
+    with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
+        coupler.run()
+
+    assert excinfo.value.signum == int(signal.SIGINT)
+
+
+@pytest.mark.fast_always
+def test_custom_backend_signal_aborts_through_shared_controller() -> None:
+    class InterruptingBackend:
+        def run(
+            self,
+            state: vercor.RunState,
+            *,
+            context: vercor.ExecutionContext,
+            driver: vercor.RuntimeDriver,
+        ) -> vercor.RunState:
+            _ = context, driver
+            signal.raise_signal(signal.SIGINT)
+            return state
+
+    component = _NoopRuntimeComponent("ATM")
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, component),),
+        run_order=("ATM",),
+        runtime=vercor.RuntimeOptions(execution=InterruptingBackend()),
     )
 
     with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:

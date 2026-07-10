@@ -9,6 +9,16 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 3 runtime backend ownership and custom contract validation completed on
+  2026-07-10. `vercor._runtime.backends` now owns compiled/pure scanned
+  execution, the Python host loop, and custom backend/driver adaptation;
+  `runner` is limited to execution selection, host compatibility/warnings,
+  signal scope, and delegation, with no backend-to-runner import. Custom
+  backends must return `RunState`, and driver calls validate state, prepared
+  component membership, concrete scalar integer steps, and clock bounds before
+  dispatch while preserving host components, requested timestamps, and
+  interrupt checkpoints. Focused and full-fast validation passed; final static
+  gates are recorded in `.superpowers/sdd/task-3-report.md`.
 - Task 2 prepared-coupling and uniform-topology implementation completed on
   2026-07-10. `Coupler` now lazily owns one frozen private `PreparedCoupling`
   and reuses its contracts, read-only topology maps, destination dispatch, and

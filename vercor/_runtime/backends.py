@@ -1,67 +1,192 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING
+from math import isfinite
+from numbers import Integral, Real
+from typing import Any, cast
 
-from vercor.runtime import ExecutionBackend, ExecutionContext
+import jax
+from jax.errors import JaxRuntimeError
+
 from vercor.calendar import ModelDateTime
+from vercor.clock import Clock
+from vercor.dtypes import as_jax_index_array
+from vercor.exceptions import CouplerError
+from vercor.jax_logging import LoggerLike
+from vercor.runtime import ExecutionBackend, ExecutionContext
+from vercor.settings import Settings
+from vercor.state import RunState
+from vercor.types import RuntimeArray
+from vercor._runtime.dispatch_context import RuntimeDispatchContext
 from vercor._runtime.driver import step_runtime_component
-from vercor._runtime.time import scalar_runtime_step_info
-
-if TYPE_CHECKING:
-    from vercor._runtime.run_context import RuntimeRunContext
-    from vercor.state import RunState
-    from vercor.types import RuntimeArray
-
-
-class _JAXScannedBackend:
-    """Private backend for the differentiable compiled scanned runtime."""
-
-    def run(
-        self,
-        state: "RunState",
-        *,
-        context: "RuntimeRunContext",
-    ) -> "RunState":
-        """Run the built-in scanned backend."""
-
-        from vercor._runtime.runner import _run_compiled_scanned_runtime
-
-        return _run_compiled_scanned_runtime(state, context=context)
+from vercor._runtime.interrupts import RuntimeInterruptController
+from vercor._runtime.progress import (
+    log_scanned_component_progress,
+    log_scanned_step_progress,
+    runtime_component_progress_message,
+    runtime_step_progress_message,
+    runtime_step_progress_messages,
+)
+from vercor._runtime.run_context import RuntimeRunContext
+from vercor._runtime.time import build_runtime_step_info, scalar_runtime_step_info
 
 
-class _HostLoopBackend:
-    """Private backend for the Python host loop runtime."""
+def run_compiled_scanned_runtime(
+    runtime_state: RunState,
+    *,
+    context: RuntimeRunContext,
+) -> RunState:
+    """Run a pure runtime state through a one-shot compiled scanned path."""
 
-    def run(
-        self,
-        state: "RunState",
-        *,
-        context: "RuntimeRunContext",
-    ) -> "RunState":
-        """Run the built-in host-loop backend."""
+    try:
 
-        from vercor._runtime.runner import run_host_runtime
+        def scanned_runtime(
+            state: RunState,
+        ) -> RunState:
+            return run_scanned_runtime(
+                state,
+                run_order=context.run_order,
+                clock=context.clock,
+                settings=context.dispatch_context.settings,
+                model_year_seconds=context.options.model_year_seconds,
+                logger=context.logger,
+                dispatch_context=context.dispatch_context,
+                interrupts=context.interrupts,
+            )
 
-        return run_host_runtime(
-            state,
-            run_order=context.run_order,
-            clock=context.clock,
-            settings=context.dispatch_context.settings,
-            model_year_seconds=context.options.model_year_seconds,
-            logger=context.logger,
-            dispatch_context=context.dispatch_context,
-            interrupts=context.interrupts,
+        compiled_runtime = cast(
+            Callable[[RunState], RunState],
+            jax.jit(scanned_runtime),
         )
+        return compiled_runtime(runtime_state)
+    except JaxRuntimeError as error:
+        context.interrupts.raise_if_jax_callback_interrupted(
+            error,
+            "compiled scanned runtime",
+        )
+
+
+def run_host_runtime(
+    runtime_state: RunState,
+    *,
+    run_order: Sequence[str],
+    clock: Clock,
+    settings: Settings,
+    model_year_seconds: float,
+    logger: LoggerLike,
+    dispatch_context: RuntimeDispatchContext,
+    interrupts: RuntimeInterruptController,
+) -> RunState:
+    """Run the host-enabled runtime path for non-differentiable adapters."""
+
+    for n, time, dt in clock.iter():
+        interrupts.checkpoint("host runtime step")
+        logger.info(runtime_step_progress_message(n, time, dt))
+        step_info = scalar_runtime_step_info(
+            time,
+            clock,
+            settings,
+            model_year_seconds=model_year_seconds,
+        )
+
+        for component_name in run_order:
+            interrupts.checkpoint(f"host runtime component {component_name}")
+            logger.info(runtime_component_progress_message(component_name))
+            runtime_state = step_runtime_component(
+                runtime_state,
+                component_name,
+                step_info,
+                dispatch_context=dispatch_context,
+                allow_host_runtime=True,
+                time=time,
+                logger=logger,
+                step=n,
+            )
+            interrupts.checkpoint(f"host runtime component {component_name}")
+        interrupts.checkpoint("host runtime step")
+
+    return runtime_state
+
+
+def run_scanned_runtime(
+    runtime_state: RunState,
+    *,
+    run_order: Sequence[str],
+    clock: Clock,
+    settings: Settings,
+    model_year_seconds: float,
+    logger: LoggerLike,
+    dispatch_context: RuntimeDispatchContext,
+    interrupts: RuntimeInterruptController,
+) -> RunState:
+    """Run the unified runtime path under ``jax.lax.scan`` and return state."""
+
+    step_infos = build_runtime_step_info(
+        clock,
+        settings,
+        model_year_seconds=model_year_seconds,
+    )
+    step_indices = as_jax_index_array(range(clock.steps))
+    step_progress_messages = runtime_step_progress_messages(clock)
+
+    def step_all_components(
+        state: RunState,
+        scan_input: tuple[RuntimeArray, Any],
+    ) -> tuple[RunState, None]:
+        step_index, step_info = scan_input
+        interrupts.scanned_checkpoint(
+            "scanned runtime step",
+            step_index,
+        )
+        log_scanned_step_progress(logger, step_index, step_progress_messages)
+        for component_name in run_order:
+            interrupts.scanned_checkpoint(
+                f"scanned runtime component {component_name}",
+                step_index,
+            )
+            log_scanned_component_progress(logger, component_name)
+            state = step_runtime_component(
+                state,
+                component_name,
+                step_info,
+                dispatch_context=dispatch_context,
+                allow_host_runtime=False,
+                logger=logger,
+                step=step_index,
+            )
+            interrupts.scanned_checkpoint(
+                f"scanned runtime component {component_name}",
+                step_index,
+            )
+        interrupts.scanned_checkpoint(
+            "scanned runtime step",
+            step_index,
+        )
+        return state, None
+
+    try:
+        final_state, _ = jax.lax.scan(
+            step_all_components,
+            runtime_state,
+            (step_indices, step_infos),
+            length=clock.steps,
+        )
+    except JaxRuntimeError as error:
+        interrupts.raise_if_jax_callback_interrupted(
+            error,
+            "scanned runtime",
+        )
+    return final_state
 
 
 def run_custom_backend(
     backend: ExecutionBackend,
-    state: "RunState",
+    state: RunState,
     *,
-    context: "RuntimeRunContext",
-) -> "RunState":
-    """Delegate runtime execution to a public custom backend."""
+    context: RuntimeRunContext,
+) -> RunState:
+    """Delegate execution to a custom backend and validate its public result."""
 
     public_context = ExecutionContext(
         clock=context.clock,
@@ -69,29 +194,42 @@ def run_custom_backend(
         options=context.options,
         logger=context.logger,
     )
-    return backend.run(
+    context.interrupts.checkpoint("custom runtime")
+    result = backend.run(
         state,
         context=public_context,
         driver=_RuntimeDriverAdapter(context),
     )
+    context.interrupts.checkpoint("custom runtime")
+    if not isinstance(result, RunState):
+        backend_name = backend.__class__.__qualname__
+        actual_type = type(result).__name__
+        raise CouplerError(
+            f"Execution backend {backend_name}.run(...) must return RunState; "
+            f"got {actual_type}."
+        )
+    return result
 
 
 class _RuntimeDriverAdapter:
-    """Public driver implementation backed by VerCOR's private runtime dispatch."""
+    """Public driver implementation backed by VerCOR's private dispatch."""
 
-    def __init__(self, context: "RuntimeRunContext") -> None:
+    def __init__(self, context: RuntimeRunContext) -> None:
         self._context = context
 
     def step_component(
         self,
-        state: "RunState",
+        state: RunState,
         component: str,
         *,
-        step: int | "RuntimeArray",
-    ) -> "RunState":
-        """Advance one component with private dispatch/regridding mechanics."""
+        step: int | RuntimeArray,
+    ) -> RunState:
+        """Advance one validated component at the requested clock step."""
 
-        step_index = _host_step_index(step)
+        self._validate_state(state)
+        self._validate_component(component)
+        step_index = _validated_step_index(step)
+        _validate_step_range(step_index, self._context.clock)
         step_time = _clock_time_at_step(self._context, step_index)
         step_info = scalar_runtime_step_info(
             step_time,
@@ -99,7 +237,9 @@ class _RuntimeDriverAdapter:
             self._context.dispatch_context.settings,
             model_year_seconds=self._context.options.model_year_seconds,
         )
-        return step_runtime_component(
+        label = f"custom runtime component {component}"
+        self._context.interrupts.checkpoint(label)
+        result = step_runtime_component(
             state,
             component,
             step_info,
@@ -109,31 +249,102 @@ class _RuntimeDriverAdapter:
             logger=self._context.logger,
             step=step,
         )
+        self._context.interrupts.checkpoint(label)
+        return result
+
+    @staticmethod
+    def _validate_state(state: RunState) -> None:
+        """Reject values outside the public runtime-state contract."""
+
+        if not isinstance(state, RunState):
+            raise CouplerError(
+                "RuntimeDriver.step_component state must be a RunState; "
+                f"got {type(state).__name__}."
+            )
+
+    def _validate_component(self, component: str) -> None:
+        """Reject names outside the prepared component dispatch mapping."""
+
+        components = self._context.dispatch_context.components
+        if isinstance(component, str) and component in components:
+            return
+        prepared_names = ", ".join(components) or "<none>"
+        raise CouplerError(
+            f"RuntimeDriver.step_component component {component!r} is not in "
+            f"prepared components: {prepared_names}."
+        )
 
 
-def _host_step_index(step: int | "RuntimeArray") -> int:
-    """Return a best-effort host integer step index for custom backends."""
+def _validated_step_index(step: int | RuntimeArray) -> int:
+    """Return a concrete scalar integer value for a custom driver step."""
 
-    try:
-        return int(step)
-    except (TypeError, ValueError):
-        return 0
+    shape = getattr(step, "shape", None)
+    if shape is not None and tuple(shape) != ():
+        raise CouplerError(
+            "RuntimeDriver.step_component step must be scalar; "
+            f"got shape {tuple(shape)}."
+        )
+
+    value: object = step
+    if shape is not None:
+        try:
+            value = step.item()  # type: ignore[union-attr]
+        except Exception as error:
+            raise CouplerError(
+                "RuntimeDriver.step_component step must be a concrete scalar "
+                f"integer value; got {type(step).__name__}."
+            ) from error
+
+    if isinstance(value, bool):
+        raise CouplerError(
+            "RuntimeDriver.step_component step must be a scalar integer index; "
+            "boolean values are not accepted."
+        )
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        numeric_value = float(value)
+        if isfinite(numeric_value) and numeric_value.is_integer():
+            return int(numeric_value)
+        raise CouplerError(
+            "RuntimeDriver.step_component step must be an integer value; "
+            f"got {value!r}."
+        )
+    raise CouplerError(
+        "RuntimeDriver.step_component step must be a concrete scalar integer "
+        f"value; got {type(value).__name__}."
+    )
+
+
+def _validate_step_range(step_index: int, clock: Clock) -> None:
+    """Reject a driver step outside the configured clock range."""
+
+    if 0 <= step_index < clock.steps:
+        return
+    raise CouplerError(
+        f"RuntimeDriver.step_component step {step_index} is outside "
+        f"[0, {clock.steps})."
+    )
 
 
 def _clock_time_at_step(
-    context: "RuntimeRunContext",
+    context: RuntimeRunContext,
     step_index: int,
 ) -> datetime | ModelDateTime:
-    """Return the model time for ``step_index`` from the runtime clock."""
+    """Return the exact model time for a validated clock step."""
 
     for index, time, _ in context.clock.iter():
         if index == step_index:
             return time
-    return context.clock.start
+    raise CouplerError(
+        f"RuntimeDriver.step_component could not resolve clock time for "
+        f"validated step {step_index}."
+    )
 
 
 __all__ = [
-    "_HostLoopBackend",
-    "_JAXScannedBackend",
+    "run_compiled_scanned_runtime",
     "run_custom_backend",
+    "run_host_runtime",
+    "run_scanned_runtime",
 ]

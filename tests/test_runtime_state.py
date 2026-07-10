@@ -71,12 +71,15 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     )
     runtime_time_source = Path("vercor/_runtime/time.py").read_text(encoding="utf-8")
     runtime_coupler_state_path = Path("vercor/_runtime/coupler_state.py")
+    runtime_backends_path = Path("vercor/_runtime/backends.py")
     runtime_runner_path = Path("vercor/_runtime/runner.py")
     assert runtime_coupler_state_path.exists()
+    assert runtime_backends_path.exists()
     assert runtime_runner_path.exists()
     runtime_coupler_state_source = runtime_coupler_state_path.read_text(
         encoding="utf-8"
     )
+    runtime_backends_source = runtime_backends_path.read_text(encoding="utf-8")
     runtime_runner_source = runtime_runner_path.read_text(encoding="utf-8")
     component_contexts_path = Path("vercor/components/contexts.py")
     runtime_contexts_path = Path("vercor/_runtime/contexts.py")
@@ -302,8 +305,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "prime_runtime_outgoing(" not in coupler_source
     assert "prime_runtime_outgoing(" in runtime_preparation_source
     assert "prime_runtime_outgoing(" not in runtime_facade_source
-    assert "def run_host_runtime(" in runtime_runner_source
-    assert "def run_scanned_runtime(" in runtime_runner_source
+    assert "def run_host_runtime(" in runtime_backends_source
+    assert "def run_scanned_runtime(" in runtime_backends_source
+    assert "def run_host_runtime(" not in runtime_runner_source
+    assert "def run_scanned_runtime(" not in runtime_runner_source
     assert "def run_coupler_runtime(" in runtime_runner_source
     assert "class RuntimeRunContext" not in runtime_runner_source
     assert "class RuntimeRunContext" in runtime_run_context_source
@@ -324,6 +329,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor._runtime.cache import" not in runtime_run_context_source
     assert "from vercor._runtime.cache import" not in runtime_prepared_source
     assert "context: RuntimeRunContext" in runtime_runner_source
+    assert "context: RuntimeRunContext" in runtime_backends_source
     assert "from vercor._runtime.run_context import" not in coupler_source
     assert "from vercor._runtime.run_context import" in runtime_facade_source
     assert "from vercor._runtime.run_context import" in runtime_runner_source

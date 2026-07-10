@@ -473,19 +473,23 @@ def test_runtime_facade_reexports_preparation_without_owning_it() -> None:
 
 
 @pytest.mark.fast_always
-def test_runtime_runner_splits_path_selection_helpers() -> None:
+def test_runtime_runner_selects_and_delegates_to_backend_owners() -> None:
     runner_source = source_for("vercor/_runtime/runner.py")
+    backend_source = source_for("vercor/_runtime/backends.py")
     run_coupler_body = runner_source.split("def run_coupler_runtime(", 1)[1].split(
-        "\ndef _run_compiled_scanned_runtime(",
-        1,
+        "\ndef _run_host_backend(", 1
     )[0]
 
-    assert "def _run_compiled_scanned_runtime(" in runner_source
+    assert "def run_compiled_scanned_runtime(" in backend_source
+    assert "def run_compiled_scanned_runtime(" not in runner_source
+    assert "def run_host_runtime(" in backend_source
+    assert "def run_scanned_runtime(" in backend_source
+    assert "vercor._runtime.runner" not in backend_source
+    assert "class _JAXScannedBackend" not in backend_source
+    assert "class _HostLoopBackend" not in backend_source
     assert "def _raise_if_donating_host_runtime(" not in runner_source
     assert "compiled_runtime_cache_key(" not in run_coupler_body
     assert "def compiled_runtime_cache_key(" not in runner_source
-    assert "compiled_scanned_runtime," not in runner_source
-    assert "return compiled_scanned_runtime(" not in runner_source
     assert "get_or_compile_for_context(" not in runner_source
     assert "context.compiled_runtime_cache_key(" not in runner_source
     assert "get_or_compile(" not in runner_source

@@ -1507,7 +1507,7 @@ def test_host_and_scanned_run_use_runtime_component_helper(
         return state
 
     monkeypatch.setattr(
-        "vercor._runtime.runner.step_runtime_component", fake_runtime_step
+        "vercor._runtime.backends.step_runtime_component", fake_runtime_step
     )
 
     host_coupler = Coupler(

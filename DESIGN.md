@@ -150,7 +150,10 @@ immutable runtime containers used during traced integration.
   setup-agnostic custom exchanges. Public custom execution backends implement
   `vercor.runtime.ExecutionBackend` and receive an `ExecutionContext` plus
   `RuntimeDriver`; the private runtime context is not part of the public
-  contract. Component lifecycle initialization runs for
+  contract. Custom backends must return `RunState`. The driver validates the
+  state, prepared component name, and concrete in-range scalar step before it
+  dispatches the normal receive/step/send pipeline; custom orchestration may
+  include host-backed components. Component lifecycle initialization runs for
   any non-empty configured component graph, including custom single-component
   or no-exchange workflows. `vercor.state.RunState` is opaque: users inspect results
   through `RunState.component(name) -> ComponentState` and
@@ -382,9 +385,11 @@ immutable runtime containers used during traced integration.
   an x64 Coupler may enable it before component arrays are normalized, while a
   float32 Coupler keeps explicit float32 VerCOR allocations even when the
   process capability is already enabled.
-  Host/scanned runtime loops, run-mode
-  selection, one-shot compiled scanned dispatch, and interrupt translation live
-  in `vercor._runtime.runner`. High-level runtime orchestration
+  Compiled and pure scanned execution, the Python host loop, custom backend
+  adaptation, and validated public driver adaptation live in
+  `vercor._runtime.backends`. `vercor._runtime.runner` owns only run-mode
+  selection, host-component compatibility and warnings, interrupt signal scope,
+  and delegation to those backend implementations. High-level runtime orchestration
   for the public `Coupler` facade lives in `vercor._runtime.facade`: prepared
   runtime-state reuse, run-context construction, host/scanned execution,
   runtime views, and final output delegation enter through this module instead
@@ -682,7 +687,8 @@ the full coupled loop is not differentiable.
 ### Runtime interruption across host and scanned integrations
 
 `Coupler.run()` provides an internal runtime interrupt controller to
-`vercor._runtime.runner`, which owns host and scanned runtime cancellation
+`vercor._runtime.runner`, which owns the signal scope, while
+`vercor._runtime.backends` owns host, scanned, and custom runtime cancellation
 checkpoints. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request graceful
 runtime cancellation and are restored to their previous handlers when the run
 exits. The host runtime checks the controller at step and component boundaries.
