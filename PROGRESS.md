@@ -19,7 +19,9 @@ historical commands, failure messages, or detailed validation notes.
   key/shape validated, duplicate topology keys are rejected, and derived
   surface masks are temporary construction values. JAX x64 is documented and
   tested as process capability separate from explicit per-Coupler allocation
-  policy. Focused and full-fast validation passed; final static gates are
+  policy. A review follow-up also validates externally supplied output states
+  against the same prepared contracts/topology before any output side effect.
+  Focused and full-fast validation passed; final static gates are
   recorded in `.superpowers/sdd/task-2-report.md`.
 - Task 1 public component contracts and structural bridge completed on
   2026-07-10. `ComponentLike` is now the validated canonical structural

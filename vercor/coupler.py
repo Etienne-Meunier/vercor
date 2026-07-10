@@ -240,6 +240,7 @@ class Coupler:
         """Write final runtime fields and optional native component snapshots."""
 
         prepared = self._ensure_prepared()
+        _runtime_facade.validate_runtime_state(state, prepared=prepared)
         self.logger.info(" ------------ Writing coupler outputs ------------")
         _runtime_facade.finalize(
             final_state=state,

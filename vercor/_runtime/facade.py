@@ -10,6 +10,7 @@ from vercor.jax_logging import LoggerLike
 from vercor._runtime.preparation import (
     create_runtime_state,
     prepare_runtime_state,
+    validate_runtime_state,
 )
 from vercor._runtime.prepared import PreparedCoupling, prepare_coupling
 from vercor._runtime.run_context import RuntimeRunContext
@@ -102,4 +103,5 @@ __all__ = [
     "prepare_coupling",
     "run",
     "prepare_runtime_state",
+    "validate_runtime_state",
 ]

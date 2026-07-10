@@ -104,6 +104,53 @@ def test_contracts_and_dispatch_are_built_once_across_public_runtime_calls(
 
 
 @pytest.mark.fast_always
+def test_write_outputs_rejects_incompatible_supplied_state_before_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1)
+    coupler = Coupler(
+        clock,
+        components=(
+            DataComponent.from_fields(
+                "MODEL",
+                make_test_grid(name="output-state-model"),
+                {"temperature": 280.0},
+            ),
+        ),
+        run_order=("MODEL",),
+    )
+    foreign_coupler = Coupler(
+        clock,
+        components=(
+            DataComponent.from_fields(
+                "FOREIGN",
+                make_test_grid(name="output-state-foreign"),
+                {"temperature": 281.0},
+            ),
+        ),
+        run_order=("FOREIGN",),
+    )
+    foreign_state = foreign_coupler.initial_state()
+    output_calls: list[str] = []
+    monkeypatch.setattr(
+        output_runtime_module,
+        "write_coupler_runtime_outputs",
+        lambda **kwargs: output_calls.append("write"),
+    )
+
+    error: CouplerError | None = None
+    try:
+        coupler.write_outputs(foreign_state, write_snapshots=False)
+    except CouplerError as exc:
+        error = exc
+
+    assert output_calls == []
+    assert error is not None
+    assert "MODEL" in str(error)
+    assert "missing from runtime state" in str(error)
+
+
+@pytest.mark.fast_always
 def test_public_mutator_invalidates_and_rebuilds_preparation() -> None:
     component = DataComponent.from_fields(
         "MODEL",
