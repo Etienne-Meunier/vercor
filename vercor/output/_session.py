@@ -504,30 +504,87 @@ def _period_output_boundaries(
             pass
         raw_boundaries.append((clock.steps, final_time, ()))
 
-    filename_counts = Counter(
-        (index, schemas[index].filename(time))
+    base_filenames = tuple(
+        tuple(schemas[index].filename(time) for index in due)
         for _, time, due in raw_boundaries
-        for index in due
     )
+    path_counts = Counter(
+        filename for filenames in base_filenames for filename in filenames
+    )
+    schema_path_counts = Counter(
+        (index, filename)
+        for (_, _, due), filenames in zip(
+            raw_boundaries,
+            base_filenames,
+            strict=True,
+        )
+        for index, filename in zip(due, filenames, strict=True)
+    )
+    schema_indices_by_path: dict[str, set[int]] = {}
+    for (_, _, due), filenames in zip(
+        raw_boundaries,
+        base_filenames,
+        strict=True,
+    ):
+        for index, filename in zip(due, filenames, strict=True):
+            schema_indices_by_path.setdefault(filename, set()).add(index)
+
+    reserved_unique_paths = {
+        filename for filename, count in path_counts.items() if count == 1
+    }
+    allocated_paths = set(reserved_unique_paths)
+    allocated_filenames: list[tuple[str, ...]] = []
+    request_index = 0
+    for (stop_step, time, due), filenames in zip(
+        raw_boundaries,
+        base_filenames,
+        strict=True,
+    ):
+        boundary_filenames = []
+        for index, filename in zip(due, filenames, strict=True):
+            if path_counts[filename] == 1:
+                allocated = filename
+            else:
+                allocated = filename
+                if schema_path_counts[(index, filename)] > 1:
+                    allocated = _disambiguated_period_filename(
+                        allocated,
+                        time=time,
+                        step=stop_step - 1,
+                    )
+                if len(schema_indices_by_path[filename]) > 1:
+                    allocated = _schema_disambiguated_period_filename(
+                        allocated,
+                        component_name=schemas[index].component_name,
+                        schema_index=index,
+                    )
+                collision_index = 0
+                candidate = allocated
+                while candidate in allocated_paths:
+                    candidate = _record_disambiguated_period_filename(
+                        allocated,
+                        request_index=request_index,
+                        collision_index=collision_index,
+                    )
+                    collision_index += 1
+                allocated = candidate
+                allocated_paths.add(allocated)
+            boundary_filenames.append(allocated)
+            request_index += 1
+        allocated_filenames.append(tuple(boundary_filenames))
+
     return tuple(
         _PeriodOutputBoundary(
             stop_step=stop_step,
             time=time,
             due_schema_indices=due,
-            output_filenames=tuple(
-                (
-                    _disambiguated_period_filename(
-                        schemas[index].filename(time),
-                        time=time,
-                        step=stop_step - 1,
-                    )
-                    if filename_counts[(index, schemas[index].filename(time))] > 1
-                    else schemas[index].filename(time)
-                )
-                for index in due
-            ),
+            output_filenames=filenames,
         )
-        for stop_step, time, due in raw_boundaries
+        for (stop_step, time, due), filenames in zip(
+            raw_boundaries,
+            allocated_filenames,
+            strict=True,
+        )
     )
 
 
@@ -544,6 +601,46 @@ def _disambiguated_period_filename(
         f"{time.hour:02d}{time.minute:02d}{time.second:02d}." f"{time.microsecond:06d}"
     )
     return f"{stem}T{timestamp}.step{step:08d}.nc"
+
+
+def _schema_disambiguated_period_filename(
+    filename: str,
+    *,
+    component_name: str,
+    schema_index: int,
+) -> str:
+    """Add a path-safe component/schema discriminator to a filename."""
+
+    stem = filename[:-3] if filename.endswith(".nc") else filename
+    component_token = _sanitize_period_filename_token(component_name)
+    return f"{stem}.component-{component_token}.schema{schema_index:04d}.nc"
+
+
+def _record_disambiguated_period_filename(
+    filename: str,
+    *,
+    request_index: int,
+    collision_index: int,
+) -> str:
+    """Resolve a generated-name collision with a stable record discriminator."""
+
+    stem = filename[:-3] if filename.endswith(".nc") else filename
+    return f"{stem}.record{request_index:08d}.collision{collision_index:04d}.nc"
+
+
+def _sanitize_period_filename_token(value: str) -> str:
+    """Return an ASCII filename token without path separators."""
+
+    characters: list[str] = []
+    replacing = False
+    for character in value:
+        if character.isascii() and (character.isalnum() or character in "-_"):
+            characters.append(character)
+            replacing = False
+        elif not replacing:
+            characters.append("-")
+            replacing = True
+    return "".join(characters).strip("-_") or "component"
 
 
 __all__ = []

@@ -9,6 +9,17 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 4 final collision review follow-up implemented locally on 2026-07-10.
+  Period output paths are now allocated globally across all schemas and
+  boundaries before stepping. Globally unique paths remain unchanged,
+  same-schema sub-daily paths retain their time/step discriminator, and
+  cross-schema collisions receive sanitized component/schema discriminators so
+  every real NetCDF payload survives. The strict RED/GREEN regression, nine
+  focused naming/cadence/backend compatibility checks, the seven-file
+  output/runtime fast suite, and repository-wide fast suite pass. Black reports
+  224 files unchanged, flake8 reports zero findings, mypy reports no issues in
+  224 source files, and `git diff --check` passes. Detailed evidence is recorded
+  in `.superpowers/sdd/task-4-collision-report.md`.
 - Task 4 review follow-up implemented locally on 2026-07-10. Same-date
   step-cadence records now receive deterministic time/step filenames without
   changing unique daily names; generic non-grid dimensions are

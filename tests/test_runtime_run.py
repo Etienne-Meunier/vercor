@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from datetime import datetime
 import inspect
 import importlib
@@ -28,6 +29,7 @@ from vercor.setups._slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.output import OutputConfig, PeriodOutput
+import vercor.output._session as output_session_module
 from vercor.runtime import RuntimeOptions
 from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
@@ -367,6 +369,74 @@ def test_subdaily_step_output_keeps_one_file_per_step(
             assert_allclose_compact(
                 np.asarray(dataset.variables["temperature"]),
                 np.full((1, 2, 2), float(index)),
+            )
+
+
+def test_period_output_paths_are_unique_across_schemas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    def make_component(name: str, initial_value: float) -> Component:
+        grid = make_test_grid(name=f"shared-output-{name}")
+
+        def step(fields: Mapping[str, Any]) -> dict[str, Any]:
+            return {"temperature": fields["temperature"] + 1.0}
+
+        component = Component.from_step(
+            name=name,
+            grid=grid,
+            step=step,
+            spec=ComponentSpec(
+                outputs=("temperature",),
+                defaults={
+                    "temperature": jnp.full(grid.shape, initial_value),
+                },
+                output=OutputConfig(period=PeriodOutput(frequency="day")),
+            ),
+        )
+
+        def shared_path_schema(
+            selected_component: Component,
+            state: ComponentRuntimeState,
+        ) -> Any:
+            period = selected_component.spec.output.period
+            assert period is not None
+            schema = output_session_module._generic_period_output_schema(
+                selected_component,
+                state,
+                period,
+            )
+            return replace(
+                schema,
+                filename=lambda time: "shared.averages.2000-01-01.nc",
+            )
+
+        cast(Any, component)._period_output_schema_factory = shared_path_schema
+        return component
+
+    first = make_component("first/model", 10.0)
+    second = make_component("second model", 20.0)
+    Coupler(
+        clock=Clock(datetime(2000, 1, 1), 86_400.0, 1),
+        components=(first, second),
+        run_order=(first.name, second.name),
+        runtime=RuntimeOptions(execution="jax"),
+        log_level="WARNING",
+    ).run()
+
+    expected = {
+        "shared.averages.2000-01-01.component-first-model.schema0000.nc": 11.0,
+        "shared.averages.2000-01-01.component-second-model.schema0001.nc": 21.0,
+    }
+    paths = sorted(tmp_path.glob("shared.averages.*.nc"))
+    assert [path.name for path in paths] == sorted(expected)
+    for path in paths:
+        with h5netcdf.File(path, "r") as dataset:
+            assert_allclose_compact(
+                np.asarray(dataset.variables["temperature"]),
+                np.full((1, 2, 2), expected[path.name]),
             )
 
 

@@ -95,12 +95,15 @@ private `vercor.output._session` owns backend-neutral static output schemas,
 immutable JAX PyTree sessions/accumulators, generic runtime-field extraction,
 early selected-field validation, coalesced clock boundaries, and host-boundary
 writes. Generic schemas default an empty `PeriodOutput.variables` selection to
-declared outputs and write `{component}.averages.YYYY-MM-DD.nc`. If multiple
-step-cadence records for one component resolve to the same date path, every
-colliding record receives a deterministic time plus absolute-step discriminator;
-dates with one record retain the date-only filename. Non-grid dimensions use
-stable variable-qualified names because NetCDF dimensions are dataset-global,
-while `nlat` and `nlon` remain shared grid axes.
+declared outputs and write `{component}.averages.YYYY-MM-DD.nc`. The static
+boundary plan allocates filenames globally across every schema and boundary.
+A path requested once remains unchanged; repeated records from one schema use a
+deterministic time plus absolute-step discriminator, while paths shared by
+multiple schemas also use a path-safe component token plus stable schema index.
+Thus unique date-only and existing sub-daily names remain compatible without
+allowing one schema to overwrite another. Non-grid dimensions use stable
+variable-qualified names because NetCDF dimensions are dataset-global, while
+`nlat` and `nlon` remain shared grid axes.
 model-specific output helpers live beside their setup adapters in
 `vercor.setups._external` and adapt native model objects into that shared output
 boundary. Setup-state constructors instantiate the private
