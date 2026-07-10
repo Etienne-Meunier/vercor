@@ -9,9 +9,16 @@ from vercor.jax_logging import LoggerLike
 from vercor.runtime import ExecutionBackend
 from vercor.state import RunState
 from vercor._runtime.backends import (
+    run_compiled_period_output_runtime,
     run_compiled_scanned_runtime,
     run_custom_backend,
+    run_host_period_output_runtime,
     run_host_runtime,
+)
+from vercor.output._session import (
+    build_period_output_plan,
+    has_period_output,
+    validate_period_output_run_state_not_traced,
 )
 from vercor._runtime.run_context import RuntimeRunContext
 
@@ -24,6 +31,10 @@ def run_coupler_runtime(
     """Select a validated runtime execution mode and delegate to its backend."""
 
     with context.interrupts.signal_scope():
+        output_enabled = has_period_output(context.dispatch_context.components)
+        if output_enabled:
+            validate_period_output_run_state_not_traced(runtime_state)
+
         if not isinstance(context.execution, str):
             return run_custom_backend(
                 cast(ExecutionBackend, context.execution),
@@ -32,11 +43,26 @@ def run_coupler_runtime(
             )
 
         host_names = host_component_names(context.dispatch_context.components)
+        output_plan = (
+            build_period_output_plan(
+                context.dispatch_context.components,
+                runtime_state,
+                context.clock,
+            )
+            if output_enabled
+            else None
+        )
         if context.execution == "jax":
             if host_names:
                 raise ComponentError(
                     "RuntimeOptions(execution='jax') cannot run host-backed "
                     f"component(s): {', '.join(host_names)}"
+                )
+            if output_plan is not None:
+                return run_compiled_period_output_runtime(
+                    runtime_state,
+                    context=context,
+                    output_plan=output_plan,
                 )
             return run_compiled_scanned_runtime(runtime_state, context=context)
 
@@ -46,14 +72,32 @@ def run_coupler_runtime(
                     context.logger,
                     host_names,
                 )
+            if output_plan is not None:
+                return run_host_period_output_runtime(
+                    runtime_state,
+                    context=context,
+                    output_plan=output_plan,
+                )
             return _run_host_backend(runtime_state, context=context)
 
         if not host_names:
+            if output_plan is not None:
+                return run_compiled_period_output_runtime(
+                    runtime_state,
+                    context=context,
+                    output_plan=output_plan,
+                )
             return run_compiled_scanned_runtime(runtime_state, context=context)
         _warn_non_differentiable_host_runtime(
             context.logger,
             host_names,
         )
+        if output_plan is not None:
+            return run_host_period_output_runtime(
+                runtime_state,
+                context=context,
+                output_plan=output_plan,
+            )
         return _run_host_backend(runtime_state, context=context)
 
 

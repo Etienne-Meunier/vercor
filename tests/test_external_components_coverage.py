@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,6 +34,8 @@ import vercor.setups._external.veros_state as veros_state_module
 from tests._coverage_support import capture_logger_output, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.calendar import DateTime360, DateTime365
+from vercor.clock import Clock
+from vercor.components import Component, ComponentSpec, StepResult
 from vercor.components.contracts import PrefillContext
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
@@ -42,11 +45,14 @@ from vercor.output._component_adapter import (
 from vercor.output import SnapshotContext
 from vercor.output import OutputVariable
 from vercor.output import OutputConfig, PeriodOutput
+from vercor.output._session import build_period_output_plan
+from vercor.coupler import Coupler
+from vercor.runtime import RuntimeOptions
 from vercor.setups import VerosConfig
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
 from vercor.settings import Settings
-from vercor.state import ComponentState
+from vercor.state import ComponentState, RunState
 
 
 class _RecordingLogger:
@@ -994,16 +1000,219 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         * (coupler.settings.p0 / 80000.0) ** coupler.settings.cappa,
     )
     assert_allclose_compact(data.get("model_level_height"), np.full((2, 2), 150.0))
-    assert written["accumulated_prediction"] is prediction
-    assert written["accumulated_coords"] is component.model.coords
-    assert written["accumulated_physics_module"] is component.model.physics
-    assert written["adapter"] is component.output_adapter
-    assert_allclose_compact(written["counts"], np.asarray([1]))
-    assert written["path"] == "jcm.averages.2000-01-02.nc"
-    assert written["output_time"] == datetime(2000, 1, 2)
-    assert written["dt"] == timedelta(days=1)
-    assert written["output_frequency"] == "day"
+    assert not written
     assert component.output_adapter.empty
+
+
+def test_jax_gcm_period_schema_samples_post_step_payload() -> None:
+    coords = _make_jax_gcm_output_coords()
+    temperature = np.arange(3 * 2 * 3, dtype=float).reshape((3, 2, 3))
+    physics_module = _FakePhysicsModule()
+    setup_state = SimpleNamespace(
+        model=SimpleNamespace(coords=coords, physics=physics_module),
+    )
+    component = Component.from_step(
+        name="ATM",
+        grid=make_test_grid(name="atm-output-schema"),
+        step=lambda fields: fields,
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            output=OutputConfig(period=PeriodOutput(frequency="day")),
+        ),
+    )
+    jcm_state = jax_gcm_state_module.JCMState(
+        prog={"temperature": temperature, "u_wind": np.ones_like(temperature)},
+        phydata={},
+        metadata=jnp.asarray(0.0),
+    )
+    runtime_state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping({"temperature": jnp.zeros((2, 2))}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+        payload=jax_gcm_runtime_module.JAXGCMRuntimePayload(
+            jcm_state=jcm_state,
+            forcing=None,
+        ),
+    )
+
+    schema = jax_gcm_output_module.jax_gcm_period_output_schema(
+        setup_state,
+        component,
+        runtime_state,
+    )
+    variables = schema.sample(runtime_state)
+
+    assert schema.component_name == "ATM"
+    assert schema.filename(datetime(2000, 1, 2)) == "jcm.averages.2000-01-02.nc"
+    assert variables["temperature"].dims == ("time", "level", "lon", "lat")
+    assert_allclose_compact(variables["temperature"].values[0], temperature)
+
+
+def test_jax_gcm_period_schema_seeds_and_consumes_spinup_accumulator() -> None:
+    coords = _make_jax_gcm_output_coords()
+    physics_module = _FakePhysicsModule()
+    output_adapter = _make_jax_gcm_output_adapter()
+    setup_state = SimpleNamespace(
+        model=SimpleNamespace(coords=coords, physics=physics_module),
+        output_adapter=output_adapter,
+    )
+    component = Component.from_step(
+        name="ATM",
+        grid=make_test_grid(name="atm-spinup-output-schema"),
+        step=lambda fields: fields,
+        spec=ComponentSpec(
+            outputs=("surface_temperature",),
+            defaults={"surface_temperature": 280.0},
+            output=OutputConfig(period=PeriodOutput(frequency="day")),
+        ),
+    )
+    cast(Any, component)._period_output_schema_factory = partial(
+        jax_gcm_output_module.jax_gcm_period_output_schema,
+        setup_state,
+    )
+
+    def jcm_state(value: float) -> Any:
+        return jax_gcm_state_module.JCMState(
+            prog={
+                "temperature": jnp.full((3, 2, 3), value),
+                "u_wind": jnp.full((3, 2, 3), value + 10.0),
+            },
+            phydata={},
+            metadata=jnp.asarray(value),
+        )
+
+    output_adapter.accumulate(
+        jax_gcm_output_module.jax_gcm_state_snapshot_output_variables(
+            jcm_state(4.0),
+            coords=coords,
+            physics_module=physics_module,
+        ),
+        summation_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+    )
+    component_state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping(
+            {"surface_temperature": jnp.full((2, 2), 280.0)}
+        ),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+        payload=jax_gcm_runtime_module.JAXGCMRuntimePayload(
+            jcm_state=jcm_state(0.0),
+            forcing=jnp.asarray(0.0),
+        ),
+    )
+    run_state = RunState._from_runtime(
+        component_names=("ATM",),
+        components=(component_state,),
+        fractional_masks=FieldStore.empty(),
+    )
+
+    plan = build_period_output_plan(
+        {"ATM": component},
+        run_state,
+        Clock(datetime(2000, 1, 1), 86_400.0, 1),
+    )
+
+    assert_allclose_compact(
+        plan.initial_session.accumulators[0].mean_samples()["temperature"].values,
+        np.full((3, 2, 3), 4.0),
+    )
+    assert output_adapter.empty
+
+
+def test_jax_gcm_period_schema_writes_matching_host_and_scanned_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coords = _make_jax_gcm_output_coords()
+    physics_module = _FakePhysicsModule()
+    setup_state = SimpleNamespace(
+        model=SimpleNamespace(coords=coords, physics=physics_module),
+    )
+
+    def make_component() -> Component:
+        initial_jcm_state = jax_gcm_state_module.JCMState(
+            prog={
+                "temperature": jnp.zeros((3, 2, 3)),
+                "u_wind": jnp.zeros((3, 2, 3)),
+            },
+            phydata={},
+            metadata=jnp.asarray(0.0),
+        )
+
+        def step(
+            fields: Mapping[str, Any],
+            context: StepContext,
+            payload: Any,
+        ) -> StepResult:
+            value = jnp.asarray(context.step, dtype=float) + 1.0
+            jcm_state = jax_gcm_state_module.JCMState(
+                prog={
+                    "temperature": jnp.full((3, 2, 3), value),
+                    "u_wind": jnp.full((3, 2, 3), value + 10.0),
+                },
+                phydata={},
+                metadata=value,
+            )
+            return StepResult(
+                fields={"surface_temperature": fields["surface_temperature"]},
+                payload=jax_gcm_runtime_module.JAXGCMRuntimePayload(
+                    jcm_state=jcm_state,
+                    forcing=payload.forcing,
+                ),
+            )
+
+        component = Component.from_step(
+            name="ATM",
+            grid=make_test_grid(name="fake-jax-gcm"),
+            step=step,
+            payload=jax_gcm_runtime_module.JAXGCMRuntimePayload(
+                jcm_state=initial_jcm_state,
+                forcing=jnp.asarray(0.0),
+            ),
+            spec=ComponentSpec(
+                outputs=("surface_temperature",),
+                defaults={"surface_temperature": 280.0},
+                output=OutputConfig(period=PeriodOutput(frequency="day")),
+            ),
+        )
+        cast(Any, component)._period_output_schema_factory = partial(
+            jax_gcm_output_module.jax_gcm_period_output_schema,
+            setup_state,
+        )
+        return component
+
+    observed: dict[str, list[tuple[tuple[str, ...], np.ndarray, str]]] = {}
+    for execution in ("host", "jax"):
+        output_dir = tmp_path / execution
+        output_dir.mkdir()
+        monkeypatch.chdir(output_dir)
+        coupler = Coupler(
+            Clock(datetime(2000, 1, 1), 86_400.0, 2),
+            components=(make_component(),),
+            run_order=("ATM",),
+            runtime=RuntimeOptions(execution=cast(Any, execution)),
+            log_level="WARNING",
+        )
+        coupler.run()
+        records = []
+        for path in sorted(output_dir.glob("jcm.averages.*.nc")):
+            with h5netcdf.File(path, "r") as dataset:
+                variable = dataset.variables["temperature"]
+                records.append(
+                    (
+                        variable.dimensions,
+                        np.asarray(variable),
+                        variable.attrs["units"],
+                    )
+                )
+        observed[execution] = records
+
+    assert len(observed["host"]) == 2
+    assert len(observed["jax"]) == 2
+    for host_record, jax_record in zip(observed["host"], observed["jax"], strict=True):
+        assert host_record[0] == jax_record[0] == ("time", "level", "lat", "lon")
+        assert_allclose_compact(host_record[1], jax_record[1])
+        assert host_record[2] == jax_record[2]
 
 
 def test_jax_gcm_write_output_persists_mean_dataset(tmp_path: Path) -> None:

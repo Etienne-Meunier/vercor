@@ -14,6 +14,7 @@ from vercor.output._period import (
     period_mean_output_variables,
     period_mean_sample_to_output_variable,
 )
+from vercor.output._session import _PeriodOutputAccumulator, _PeriodOutputSession
 
 
 def test_period_average_public_api_uses_output_variable_directly() -> None:
@@ -26,6 +27,28 @@ def test_period_average_public_api_uses_output_variable_directly() -> None:
     assert removed_names.isdisjoint(set(period_averages_module.__all__))
     for name in removed_names:
         assert not hasattr(period_averages_module, name)
+
+
+def test_runtime_period_accumulator_and_session_are_immutable_jax_pytrees() -> None:
+    accumulator = _PeriodOutputAccumulator.zeros_from_samples(
+        {"temp": OutputVariable(("x",), jnp.asarray([0.0, 0.0]))},
+        summation_dim=None,
+    )
+    session = _PeriodOutputSession((accumulator,))
+
+    updated = jax.jit(
+        lambda value: value.add_samples(
+            {"temp": OutputVariable(("x",), jnp.asarray([1.0, 3.0]))},
+            summation_dim=None,
+        )
+    )(accumulator)
+
+    assert all(
+        isinstance(leaf, jax.Array) for leaf in jax.tree_util.tree_leaves(session)
+    )
+    assert_allclose_compact(updated.mean_samples()["temp"].values, [1.0, 3.0])
+    with pytest.raises(AttributeError):
+        updated.names = ("changed",)  # type: ignore[misc]
 
 
 def test_period_average_accumulator_preserves_nanmean_counts() -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Any, cast
 
 from dinosaur.coordinate_systems import CoordinateSystem
 from jcm.physics_interface import TerrainData
@@ -82,6 +83,10 @@ def make_jax_gcm(
                 period=config.output.period,
             ),
         ),
+    )
+    cast(Any, component)._period_output_schema_factory = partial(
+        _jax_gcm_output.jax_gcm_period_output_schema,
+        state,
     )
     return component
 

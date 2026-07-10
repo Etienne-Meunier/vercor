@@ -33,9 +33,37 @@ def write_period_average_netcdf(
 ) -> None:
     """Write one period-average NetCDF file and clear accumulated samples."""
 
-    log = logger if logger is not None else get_default_logger()
-
     mean_variables = build_mean_variables(accumulator)
+    write_period_output_netcdf(
+        output,
+        mean_variables=mean_variables,
+        build_coordinate_variables=build_coordinate_variables,
+        build_data_variables=build_data_variables,
+        logger=logger,
+    )
+    accumulator.clear()
+
+
+def write_period_output_netcdf(
+    output: str,
+    *,
+    mean_variables: Mapping[str, OutputVariable],
+    build_coordinate_variables: Callable[
+        [Mapping[str, OutputVariable]],
+        Mapping[str, OutputVariable],
+    ],
+    build_data_variables: (
+        Callable[
+            [Mapping[str, OutputVariable]],
+            Mapping[str, OutputVariable],
+        ]
+        | None
+    ) = None,
+    logger: LoggerLike | None = None,
+) -> None:
+    """Write already-reduced period variables through the shared file boundary."""
+
+    log = logger if logger is not None else get_default_logger()
     data_variables = (
         build_data_variables(mean_variables)
         if build_data_variables is not None
@@ -47,7 +75,6 @@ def write_period_average_netcdf(
         data_variables=data_variables,
         logger=log,
     )
-    accumulator.clear()
 
 
-__all__ = ["write_period_average_netcdf"]
+__all__ = ["write_period_average_netcdf", "write_period_output_netcdf"]

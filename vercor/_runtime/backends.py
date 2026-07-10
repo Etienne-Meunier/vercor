@@ -30,6 +30,11 @@ from vercor._runtime.progress import (
 )
 from vercor._runtime.run_context import RuntimeRunContext
 from vercor._runtime.time import build_runtime_step_info, scalar_runtime_step_info
+from vercor.output._session import (
+    _PeriodOutputPlan,
+    _PeriodOutputSession,
+    write_period_output_boundary,
+)
 
 
 def run_compiled_scanned_runtime(
@@ -107,6 +112,171 @@ def run_host_runtime(
         interrupts.checkpoint("host runtime step")
 
     return runtime_state
+
+
+def run_host_period_output_runtime(
+    runtime_state: RunState,
+    *,
+    context: RuntimeRunContext,
+    output_plan: _PeriodOutputPlan,
+) -> RunState:
+    """Run host steps through the shared immutable period-output session."""
+
+    session = output_plan.initial_session
+    boundaries = {boundary.stop_step: boundary for boundary in output_plan.boundaries}
+    for n, time, dt in context.clock.iter():
+        context.interrupts.checkpoint("host runtime step")
+        context.logger.info(runtime_step_progress_message(n, time, dt))
+        step_info = scalar_runtime_step_info(
+            time,
+            context.clock,
+            context.dispatch_context.settings,
+            model_year_seconds=context.options.model_year_seconds,
+        )
+        for component_name in context.run_order:
+            context.interrupts.checkpoint(f"host runtime component {component_name}")
+            context.logger.info(runtime_component_progress_message(component_name))
+            runtime_state = step_runtime_component(
+                runtime_state,
+                component_name,
+                step_info,
+                dispatch_context=context.dispatch_context,
+                allow_host_runtime=True,
+                time=time,
+                logger=context.logger,
+                step=n,
+            )
+            context.interrupts.checkpoint(f"host runtime component {component_name}")
+        session = session.accumulate(output_plan.schemas, runtime_state)
+        boundary = boundaries.get(n + 1)
+        if boundary is not None:
+            session = write_period_output_boundary(
+                output_plan,
+                session,
+                boundary,
+                logger=context.logger,
+            )
+        context.interrupts.checkpoint("host runtime step")
+    return runtime_state
+
+
+def run_compiled_period_output_runtime(
+    runtime_state: RunState,
+    *,
+    context: RuntimeRunContext,
+    output_plan: _PeriodOutputPlan,
+) -> RunState:
+    """Run compiled scan chunks and write only completed reductions on host."""
+
+    step_infos = build_runtime_step_info(
+        context.clock,
+        context.dispatch_context.settings,
+        model_year_seconds=context.options.model_year_seconds,
+    )
+    step_indices = as_jax_index_array(range(context.clock.steps))
+    step_progress_messages = runtime_step_progress_messages(context.clock)
+
+    @jax.jit
+    def compiled_chunk(
+        state: RunState,
+        session: _PeriodOutputSession,
+        chunk_indices: RuntimeArray,
+        chunk_infos: Any,
+    ) -> tuple[RunState, _PeriodOutputSession]:
+        return _run_period_output_scanned_chunk(
+            state,
+            session,
+            chunk_indices,
+            chunk_infos,
+            context=context,
+            output_plan=output_plan,
+            step_progress_messages=step_progress_messages,
+        )
+
+    session = output_plan.initial_session
+    start = 0
+    try:
+        for boundary in output_plan.boundaries:
+            stop = boundary.stop_step
+            chunk_infos = jax.tree_util.tree_map(
+                lambda value: value[start:stop],
+                step_infos,
+            )
+            runtime_state, session = compiled_chunk(
+                runtime_state,
+                session,
+                step_indices[start:stop],
+                chunk_infos,
+            )
+            session = write_period_output_boundary(
+                output_plan,
+                session,
+                boundary,
+                logger=context.logger,
+            )
+            start = stop
+    except JaxRuntimeError as error:
+        context.interrupts.raise_if_jax_callback_interrupted(
+            error,
+            "compiled period-output runtime",
+        )
+    return runtime_state
+
+
+def _run_period_output_scanned_chunk(
+    runtime_state: RunState,
+    session: _PeriodOutputSession,
+    step_indices: RuntimeArray,
+    step_infos: Any,
+    *,
+    context: RuntimeRunContext,
+    output_plan: _PeriodOutputPlan,
+    step_progress_messages: Sequence[str],
+) -> tuple[RunState, _PeriodOutputSession]:
+    """Scan one chunk without period-output callbacks or file I/O."""
+
+    def step_all_components(
+        carry: tuple[RunState, _PeriodOutputSession],
+        scan_input: tuple[RuntimeArray, Any],
+    ) -> tuple[tuple[RunState, _PeriodOutputSession], None]:
+        state, output_session = carry
+        step_index, step_info = scan_input
+        context.interrupts.scanned_checkpoint("scanned runtime step", step_index)
+        log_scanned_step_progress(
+            context.logger,
+            step_index,
+            step_progress_messages,
+        )
+        for component_name in context.run_order:
+            context.interrupts.scanned_checkpoint(
+                f"scanned runtime component {component_name}",
+                step_index,
+            )
+            log_scanned_component_progress(context.logger, component_name)
+            state = step_runtime_component(
+                state,
+                component_name,
+                step_info,
+                dispatch_context=context.dispatch_context,
+                allow_host_runtime=False,
+                logger=context.logger,
+                step=step_index,
+            )
+            context.interrupts.scanned_checkpoint(
+                f"scanned runtime component {component_name}",
+                step_index,
+            )
+        output_session = output_session.accumulate(output_plan.schemas, state)
+        context.interrupts.scanned_checkpoint("scanned runtime step", step_index)
+        return (state, output_session), None
+
+    (final_state, final_session), _ = jax.lax.scan(
+        step_all_components,
+        (runtime_state, session),
+        (step_indices, step_infos),
+        length=step_indices.shape[0],
+    )
+    return final_state, final_session
 
 
 def run_scanned_runtime(
@@ -344,7 +514,9 @@ def _clock_time_at_step(
 
 __all__ = [
     "run_compiled_scanned_runtime",
+    "run_compiled_period_output_runtime",
     "run_custom_backend",
+    "run_host_period_output_runtime",
     "run_host_runtime",
     "run_scanned_runtime",
 ]

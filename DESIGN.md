@@ -49,6 +49,13 @@ Each function takes explicit inputs and returns explicit outputs, which can be e
 Pure differentiable coupled runs use a one-shot `jax.jit` wrapper around the
 scanned runtime. VerCOR does not own a persistent compiled-runtime cache and
 does not expose state-buffer donation controls through `Coupler.run()`.
+That single-scan path remains unchanged when no component configures period
+output. Configured period output precomputes all component cadence boundaries,
+coalesces them into ordered scan chunks, and carries immutable JAX sum/count
+accumulators between chunks. Completed reductions cross to the host writer only
+between chunks; model state remains JAX-backed. Because period output is an I/O
+workflow, traced `RunState` leaves are rejected when it is enabled, while
+output-free runs remain differentiable.
 Configuration objects still need stable shapes and PyTree structures because
 JAX traces the scanned runtime at the run boundary.
 
@@ -84,6 +91,11 @@ period-output adapter state, record/write orchestration, cadence, calendar time
 encoding, dataset coordinate helpers, accumulation, variable containers,
 mean-output conversion, single-record snapshot storage, period-file write
 lifecycle, and NetCDF writing live in `vercor.output`;
+private `vercor.output._session` owns backend-neutral static output schemas,
+immutable JAX PyTree sessions/accumulators, generic runtime-field extraction,
+early selected-field validation, coalesced clock boundaries, and host-boundary
+writes. Generic schemas default an empty `PeriodOutput.variables` selection to
+declared outputs and write `{component}.averages.YYYY-MM-DD.nc`.
 model-specific output helpers live beside their setup adapters in
 `vercor.setups._external` and adapt native model objects into that shared output
 boundary. Setup-state constructors instantiate the private
@@ -490,6 +502,12 @@ builders, accumulation, cadence checks, and file writes through the shared
 adapter record boundary. Final JAXGCM snapshots are registered by the external
 factory and are written from the final runtime payload's `JCMState`, not from
 runtime data fields or declared component outputs.
+For coupled `run()` period output, the JAXGCM factory installs a private
+setup-owned schema that extracts native prediction-equivalent variables from
+the post-step payload `JCMState`. Host and chunked scanned backends therefore
+share one session path while preserving `jcm.averages.YYYY-MM-DD.nc`, native
+dimension ordering, and metadata; model steps no longer perform period-file
+side effects.
 Shared output extension primitives for adapter authors are exported from
 `vercor.output`: `OutputVariable`, `PeriodOutput`, `OutputConfig`,
 `SnapshotContext`, and `SnapshotWriter`. `OutputConfig.period is None`
@@ -499,7 +517,8 @@ the component payload. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
 orchestration, and direct `h5netcdf` writing live in private
 `vercor.output._period`, `vercor.output._dataset`,
-`vercor.output._component_adapter`, `vercor.output._period_files`, and
+`vercor.output._component_adapter`, `vercor.output._session`,
+`vercor.output._period_files`, and
 `vercor.output._netcdf`.
 Surface-temperature cleanup and output-field mapping live in
 `vercor.setups._external.jax_gcm_fields`. Veros host-runtime flux application and

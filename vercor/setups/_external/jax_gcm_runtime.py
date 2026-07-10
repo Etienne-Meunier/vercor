@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import jax
@@ -28,7 +27,6 @@ from vercor.setups._external._jax_gcm_pytree import (
     tree_unwrap_leading_dims,
 )
 import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups._external.jax_gcm_output as _jax_gcm_output
 
 if TYPE_CHECKING:
     from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
@@ -282,18 +280,7 @@ def record_jax_gcm_host_step(
             jnp.sum(cold_surface_cells),
         )
 
-    time = context.time
-    if time is not None:
-        _jax_gcm_output.record_jax_gcm_period_output(
-            state.output_adapter,
-            prediction,
-            coords=state.model.coords,
-            physics_module=getattr(state.model, "physics", None),
-            output_time=time,
-            dt=timedelta(seconds=context.dt_seconds),
-            output_frequency=state.output_frequency,
-            logger=logger,
-        )
+    _ = prediction
 
 
 def step_jax_gcm_component(

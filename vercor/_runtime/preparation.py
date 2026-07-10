@@ -10,6 +10,7 @@ from vercor._runtime.state_validation import (
 )
 from vercor.state import RunState
 from vercor._runtime.time import initial_runtime_step_info
+from vercor.output._session import validate_period_output_component_state
 
 
 def runtime_state_from_components(
@@ -45,6 +46,11 @@ def validate_runtime_state(
         contracts=prepared.contracts,
         run_order=prepared.run_order,
     )
+    for name, component in prepared.components.items():
+        validate_period_output_component_state(
+            component,
+            runtime_state._component_state(name),
+        )
     return None
 
 

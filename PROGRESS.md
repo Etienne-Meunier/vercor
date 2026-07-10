@@ -9,6 +9,17 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 4 backend-consistent period output implementation completed locally on
+  2026-07-10. Generic components and JAXGCM now use private static schemas plus
+  immutable JAX sum/count sessions on both host and compiled backends. Cadence
+  is precomputed into coalesced scan chunks, completed reductions are written
+  only between chunks, unknown generic fields fail during state creation, and
+  traced I/O-enabled runs are rejected while the no-output single-scan path is
+  unchanged. Required focused parity/cadence, JAXGCM-native, snapshot, tracer,
+  and source-boundary checks, full-fast pytest, Black, flake8, focused mypy,
+  and whitespace checks passed. The first full-fast pass exposed an inline
+  runner tracer error that violated backend delegation ownership; validation
+  moved to the private output-session owner and the regression passed.
 - Task 3 runtime backend ownership and custom contract validation completed on
   2026-07-10. `vercor._runtime.backends` now owns compiled/pure scanned
   execution, the Python host loop, and custom backend/driver adaptation;

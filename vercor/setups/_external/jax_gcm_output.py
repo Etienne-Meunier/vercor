@@ -21,7 +21,8 @@ from vercor.output._component_adapter import (
 )
 from vercor.output import SnapshotContext
 from vercor.output._dataset import time_coordinate_variable
-from vercor.output._period import TIME_NAME
+from vercor.output._period import AccumulatedPeriodVariable, TIME_NAME
+from vercor.output._session import _PeriodOutputSchema
 from vercor.output import OutputVariable
 from vercor.types import RuntimeArray
 
@@ -420,6 +421,71 @@ def record_jax_gcm_period_output(
     )
 
 
+def jax_gcm_period_output_schema(
+    state: Any,
+    component: Any,
+    runtime_state: Any,
+) -> _PeriodOutputSchema:
+    """Return the private runtime schema for native JAXGCM period output."""
+
+    period = component.spec.output.period
+    if period is None:
+        raise ValueError("JAXGCM period schema requires configured period output.")
+    coords = state.model.coords
+    physics_module = getattr(state.model, "physics", None)
+    unit_metadata = jax_gcm_unit_metadata(physics_module)
+
+    def sample(component_state: Any) -> dict[str, OutputVariable]:
+        payload = component_state.payload
+        jcm_state = getattr(payload, "jcm_state", None)
+        if jcm_state is None:
+            raise ValueError("JAXGCM period output requires a post-step JCM state.")
+        return jax_gcm_state_snapshot_output_variables(
+            jcm_state,
+            coords=coords,
+            physics_module=physics_module,
+        )
+
+    def coordinate_variables(
+        output_time: datetime | ModelDateTime,
+        mean_variables: Mapping[str, OutputVariable],
+    ) -> dict[str, OutputVariable]:
+        _ = mean_variables
+        return jax_gcm_coordinate_variables(
+            coords=coords,
+            output_time=output_time,
+        )
+
+    def take_initial_accumulated_variables() -> Mapping[str, AccumulatedPeriodVariable]:
+        adapter = getattr(state, "output_adapter", None)
+        if adapter is None:
+            return {}
+        variables = dict(adapter.variables)
+        adapter.accumulator.clear()
+        return variables
+
+    representative_variables = sample(runtime_state)
+    return _PeriodOutputSchema(
+        component_name=component.name,
+        period=period,
+        variable_names=tuple(representative_variables),
+        variable_dims=tuple(
+            variable.dims for variable in representative_variables.values()
+        ),
+        sample=sample,
+        build_coordinate_variables=coordinate_variables,
+        decorate_data_variables=lambda variables: (
+            jax_gcm_data_variables_with_unit_metadata(variables, unit_metadata)
+        ),
+        filename=lambda time: f"jcm.averages.{time.strftime('%Y-%m-%d')}.nc",
+        summation_dim=JAX_GCM_TIME_DIM,
+        time_dim=JAX_GCM_TIME_DIM,
+        dimension_order=JAX_GCM_OUTPUT_DIMENSION_ORDER,
+        empty_error_message=JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE,
+        take_initial_accumulated_variables=take_initial_accumulated_variables,
+    )
+
+
 def write_jax_gcm_snapshot_output(
     state: Any,
     context: SnapshotContext,
@@ -478,6 +544,7 @@ __all__ = [
     "jax_gcm_coordinate_variables",
     "jax_gcm_data_variables_with_unit_metadata",
     "jax_gcm_prediction_output_variables",
+    "jax_gcm_period_output_schema",
     "jax_gcm_state_snapshot_output_variables",
     "jax_gcm_unit_metadata",
     "record_jax_gcm_period_output",
