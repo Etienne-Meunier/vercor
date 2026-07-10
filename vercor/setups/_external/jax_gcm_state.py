@@ -227,7 +227,7 @@ class JAXGCMSetupState:
 
         self.output_adapter.reset()
 
-        if self.do_spinup and "OCN" in context.run_order:
+        if self.do_spinup:
 
             def spinup_step(step_number: int) -> None:
                 _ = step_number

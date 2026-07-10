@@ -75,3 +75,11 @@ coupler = Coupler(
 )
 final_state = coupler.run()
 ```
+
+## Optional bundled setups
+
+Install the `jcm` or `veros` extra to use those bundled external-model
+factories. CAMulator additionally requires NCAR's
+[MILES-CREDIT](https://github.com/NCAR/miles-credit). CREDIT is intentionally
+not a VerCOR package dependency and remains unpinned until a compatible release
+has been verified.

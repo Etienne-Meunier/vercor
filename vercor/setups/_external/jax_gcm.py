@@ -3,35 +3,37 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Any, cast
-
-from dinosaur.coordinate_systems import CoordinateSystem
-from jcm.physics_interface import TerrainData
+from typing import TYPE_CHECKING, Any, cast
 
 from vercor.components import Component, LifecycleHooks, ComponentSpec
 from vercor.output import OutputConfig
 from vercor.setups.config import JAXGCMConfig
-import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups._external.jax_gcm_output as _jax_gcm_output
-import vercor.setups._external.jax_gcm_runtime as _jax_gcm_runtime
-from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
 
-try:
-    import jcm  # noqa: F401
-except ImportError:
-    raise ImportError(
-        "The JAXGCM component requires the jcm package. Please install it with "
-        "`pip install jcm`."
-    )
+if TYPE_CHECKING:
+    from dinosaur.coordinate_systems import CoordinateSystem
+    from jcm.physics_interface import TerrainData
 
 
 def make_jax_gcm(
-    coords: CoordinateSystem,
-    terrain: TerrainData,
+    coords: "CoordinateSystem",
+    terrain: "TerrainData",
     *,
     config: JAXGCMConfig | None = None,
 ) -> Component:
     """Return a differentiable JAXGCM/JCM atmosphere component."""
+
+    try:
+        import jcm  # noqa: F401
+    except ImportError as error:
+        raise ImportError(
+            "The JAXGCM component requires the jcm package. Please install it with "
+            "`pip install jcm`."
+        ) from error
+
+    import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
+    import vercor.setups._external.jax_gcm_output as _jax_gcm_output
+    import vercor.setups._external.jax_gcm_runtime as _jax_gcm_runtime
+    from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
 
     config = JAXGCMConfig() if config is None else config
     period_output = config.output.period

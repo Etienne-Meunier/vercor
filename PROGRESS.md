@@ -9,6 +9,26 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 5 bundled setup/packaging boundary hardening completed locally on
+  2026-07-10. `vercor.setups` is the sole lazy factory registry; public import,
+  config, and factory-attribute access remain free of JCM/Dinosaur, Veros, and
+  CREDIT/Torch/TensorFlow imports and setup-owned environment mutation. Factory
+  invocation owns optional imports/configuration; JAXGCM/Veros spinup follows
+  only `Spinup.enabled`; unsupported CAMulator spinup fails before setup; paired
+  JCM forcing uses `dataclasses.replace`; and the ERA5/JCM example is injectable
+  with short/initial-state-only modes. Runtime metadata now separates test/dev
+  tools, wheel/sdist carry `vercor/py.typed`, and the independently packaged
+  public plugin exercises structural JAX/host components, original-object
+  lifecycle hooks, a sequential backend, topology policy, and snapshots against
+  an installed wheel. New setup boundary tests pass 12/12, example tests 6/6,
+  distribution tests 5/5, and the full fast suite passes 374/374. Offline local
+  artifact verification used cached Conda `build`, `flit_core`, and
+  `pyproject_hooks`; direct
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python` remains the fallback
+  for the known Conda/Rattler launcher panic. JCM 1.1.1 and Veros 1.6.2 were
+  available locally; CREDIT was absent, so CAMulator model execution was not
+  exercised. Compileall, Black (232 unchanged), flake8 (zero findings), full
+  mypy (232 files), artifact install/smoke/mypy, and whitespace checks pass.
 - Task 4 final collision review follow-up implemented locally on 2026-07-10.
   Period output paths are now allocated globally across all schemas and
   boundaries before stepping. Globally unique paths remain unchanged,

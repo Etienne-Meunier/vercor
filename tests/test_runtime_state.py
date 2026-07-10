@@ -407,7 +407,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         in (runtime_initialization_source)
     )
     assert "from vercor._runtime.initialization import" not in coupler_source
-    assert "from vercor._runtime.initialization import" in runtime_facade_source
+    assert (
+        "from vercor._runtime.prepared import PreparedCoupling, prepare_coupling"
+        in runtime_facade_source
+    )
     assert "def _apply_run_precision_to_component(" not in coupler_source
     assert "from vercor.components._validation import" not in coupler_source
     for source in (
@@ -535,14 +538,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         "from vercor.setups._external.veros_runtime_settings import *"
         not in veros_source
     )
-    assert (
-        "from vercor.setups._external.veros_runtime_settings import configure_veros_runtime"
-        in veros_setup_source
-    )
-    assert veros_setup_source.index(
-        "configure_veros_runtime()"
-    ) < veros_setup_source.index(
-        "from veros.setups.global_4deg import GlobalFourDegreeSetup"
+    assert "configure_veros_runtime" not in veros_setup_source
+    assert "configure_veros_runtime()" in veros_source
+    assert veros_source.index("configure_veros_runtime()") < veros_source.index(
+        "import vercor.setups._external.veros_gcm_state"
     )
     assert "def configure_veros_runtime" in veros_runtime_settings_source
     assert "target_levels: Sequence = range(" not in camulator_wind_filter_source

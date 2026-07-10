@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -247,6 +248,65 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
             ),
         },
     )
+
+
+def test_make_jcm_land_atmosphere_replaces_only_missing_forcing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vercor.setups._jcm as helper
+
+    extension_token = object()
+    caller_forcing = object()
+
+    @dataclass(frozen=True)
+    class ExtendedJAXGCMConfig(JAXGCMConfig):
+        extension: object = extension_token
+
+    atmosphere_config = ExtendedJAXGCMConfig(
+        forcing_data=caller_forcing,
+        spinup=Spinup(enabled=False),
+    )
+    inputs = helper.JCMInputs(
+        coords=object(),
+        terrain=SimpleNamespace(fmask=None),
+        forcing=object(),
+    )
+    ocean_grid = make_test_grid(name="jcm-replace-ocean")
+    land = SimpleNamespace(
+        grid=SimpleNamespace(binary_mask=jnp.ones(ocean_grid.shape)),
+    )
+    captured: dict[str, JAXGCMConfig] = {}
+
+    def fake_make_jcm_land(*args: object, **kwargs: object) -> object:
+        _ = args, kwargs
+        return land
+
+    def fake_make_jax_gcm(
+        coords: object,
+        terrain: object,
+        *,
+        config: JAXGCMConfig,
+    ) -> object:
+        _ = coords, terrain
+        captured["config"] = config
+        return object()
+
+    monkeypatch.setattr(
+        helper,
+        "_load_jcm_factories",
+        lambda: (fake_make_jcm_land, fake_make_jax_gcm),
+    )
+
+    helper.make_jcm_land_atmosphere(
+        ocean_grid,
+        inputs=inputs,
+        config=JCMLandAtmosphereConfig(atmosphere=atmosphere_config),
+    )
+
+    replaced = captured["config"]
+    assert isinstance(replaced, ExtendedJAXGCMConfig)
+    assert replaced.extension is extension_token
+    assert replaced.forcing_data is caller_forcing
 
 
 def test_initialize_camulator_forcing_cursor_returns_index_and_warns_on_mismatch() -> (

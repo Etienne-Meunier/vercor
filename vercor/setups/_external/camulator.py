@@ -7,10 +7,6 @@ from functools import partial
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
 from vercor.setups.config import CAMulatorConfig
-import vercor.setups._external.camulator_contracts as _camulator_contracts
-import vercor.setups._external.camulator_output as _camulator_output
-import vercor.setups._external.camulator_runtime as _camulator_runtime
-from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
 
 def make_camulator_gcm(
@@ -18,6 +14,22 @@ def make_camulator_gcm(
     config: CAMulatorConfig,
 ) -> HostComponent:
     """Return a host-backed CAMulator atmosphere component."""
+
+    if config.spinup.enabled:
+        raise ValueError(
+            "CAMulator spinup is not implemented; set Spinup(enabled=False)."
+        )
+
+    from vercor.setups._external.camulator_runtime_settings import (
+        configure_camulator_runtime,
+    )
+
+    configure_camulator_runtime()
+
+    import vercor.setups._external.camulator_contracts as _camulator_contracts
+    import vercor.setups._external.camulator_output as _camulator_output
+    import vercor.setups._external.camulator_runtime as _camulator_runtime
+    from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
     period_output = config.output.period
     state = CAMulatorGCMSetupState(

@@ -1241,11 +1241,10 @@ def test_removed_api_surfaces_stay_absent() -> None:
 
     assert not hasattr(jax_gcm_module, "JAXGCMRuntimePayload")
     assert "JAXGCMRuntimePayload" not in external_module.__all__
-    assert "JAXGCMRuntimePayload" not in external_module._LAZY_EXPORTS
+    assert not hasattr(external_module, "_LAZY_EXPORTS")
     assert not hasattr(jax_gcm_module, "JCMState")
     assert "JCMState" not in getattr(jax_gcm_module, "__all__", [])
     assert "JCMState" not in external_module.__all__
-    assert "JCMState" not in external_module._LAZY_EXPORTS
 
     assert not hasattr(settings_module, "ComponentSettings")
     assert not hasattr(forcing_data_module, "ComponentForcingData")
@@ -2117,34 +2116,18 @@ def test_removed_field_names_module_stays_absent() -> None:
 
 
 @pytest.mark.fast_always
-def test_setup_lazy_exports_advertise_public_factories_only() -> None:
+def test_setup_lazy_exports_have_one_public_registry() -> None:
     import vercor.setups as setups_module
     import vercor.setups._data as data_setups_module
     import vercor.setups._external as external_setups_module
 
     assert {"JCMInputs", "load_jcm_inputs"}.issubset(set(setups_module.__all__))
 
-    for module_name in (
-        "era5_atmosphere",
-        "era5_land",
-        "era5_ocean",
-        "erainterim_ocean",
-        "jcm_land",
-    ):
-        assert module_name not in data_setups_module.__all__
-
-    for module_name in ("camulator_land", "jax_gcm"):
-        assert module_name not in external_setups_module.__all__
-
-    assert {
-        "make_era5_land",
-        "make_jcm_land",
-    }.issubset(set(data_setups_module.__all__))
-    assert {
-        "make_camulator_land",
-        "make_jax_gcm",
-        "make_veros_gcm",
-    }.issubset(set(external_setups_module.__all__))
+    assert hasattr(setups_module, "_LAZY_EXPORTS")
+    for private_package in (data_setups_module, external_setups_module):
+        assert private_package.__all__ == []
+        assert not hasattr(private_package, "_LAZY_EXPORTS")
+        assert "__getattr__" not in vars(private_package)
 
 
 @pytest.mark.fast_always
@@ -2562,7 +2545,7 @@ def test_setup_helper_and_external_output_ownership_boundaries() -> None:
     assert "_veros_state._advance_veros_substeps(" not in veros_runtime_source
     import vercor.setups._external as external_module
 
-    assert "JAXGCMRuntimePayload" not in external_module._LAZY_EXPORTS
+    assert not hasattr(external_module, "_LAZY_EXPORTS")
 
 
 @pytest.mark.fast_always
@@ -2961,7 +2944,6 @@ def test_data_and_host_factories_return_core_contract_instances() -> None:
         "from vercor.setups._external import __all__",
         "from vercor.setups._data import __all__",
         "import vercor.setups._data.era5_land",
-        "from vercor.setups._data import make_era5_land",
     ),
 )
 def test_unrelated_setup_imports_do_not_initialize_optional_adapters(

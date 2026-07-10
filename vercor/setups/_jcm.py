@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from vercor.host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
 from vercor.grids import RectilinearGrid
-from vercor.setups.config import JAXGCMConfig, JCMLandAtmosphereConfig
+from vercor.setups.config import JCMLandAtmosphereConfig
 
 
 @dataclass(frozen=True)
@@ -85,19 +85,13 @@ def make_jcm_land_atmosphere(
     atmosphere = make_jax_gcm(
         coords,
         terrain,
-        config=JAXGCMConfig(
-            name=atmosphere_config.name,
-            custom_parameters=atmosphere_config.custom_parameters,
-            model_timestep=atmosphere_config.model_timestep,
-            save_interval=atmosphere_config.save_interval,
+        config=replace(
+            atmosphere_config,
             forcing_data=(
                 forcing
                 if atmosphere_config.forcing_data is None
                 else atmosphere_config.forcing_data
             ),
-            spinup=atmosphere_config.spinup,
-            output=atmosphere_config.output,
-            jitted=atmosphere_config.jitted,
         ),
     )
     return JCMLandAtmosphereSetup(

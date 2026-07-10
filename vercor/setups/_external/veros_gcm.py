@@ -3,20 +3,10 @@
 from __future__ import annotations
 
 from functools import partial
+
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
 from vercor.setups.config import VerosConfig
-import vercor.setups._external.veros_gcm_state as _veros_gcm_state
-import vercor.setups._external.veros_output as _veros_output
-import vercor.setups._external.veros_runtime as _veros_runtime
-from vercor.setups._external.veros_gcm_state import VerosGCMSetupState
-
-try:
-    import veros  # noqa: F401
-except ImportError:
-    raise ImportError(
-        "The VerosGCM component requires the Veros package. Please install it with `pip install veros`."
-    )
 
 
 def make_veros_gcm(
@@ -24,6 +14,25 @@ def make_veros_gcm(
     config: VerosConfig | None = None,
 ) -> HostComponent:
     """Return a host-backed Veros GCM component."""
+
+    try:
+        import veros  # noqa: F401
+    except ImportError as error:
+        raise ImportError(
+            "The VerosGCM component requires the Veros package. Please install it "
+            "with `pip install veros`."
+        ) from error
+
+    from vercor.setups._external.veros_runtime_settings import (
+        configure_veros_runtime,
+    )
+
+    configure_veros_runtime()
+
+    import vercor.setups._external.veros_gcm_state as _veros_gcm_state
+    import vercor.setups._external.veros_output as _veros_output
+    import vercor.setups._external.veros_runtime as _veros_runtime
+    from vercor.setups._external.veros_gcm_state import VerosGCMSetupState
 
     config = VerosConfig() if config is None else config
     period_output = config.output.period

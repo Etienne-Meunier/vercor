@@ -170,7 +170,6 @@ def build_slab_coupler(
             ),
         ),
     )
-    coupler.initial_state()
     return coupler
 
 

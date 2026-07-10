@@ -453,7 +453,11 @@ configuration dataclasses (`Spinup`, `JAXGCMConfig`, `VerosConfig`,
 `JCMInputs`/`load_jcm_inputs(...)` loader for reusable JCM coordinate, terrain,
 and forcing inputs. The root package stays core-only and does not reexport
 bundled setup configuration. Setup subpackages no longer advertise lazy module
-objects in their `__all__` lists. Deep adapter modules live under underscore
+objects in their `__all__` lists or maintain parallel lazy registries:
+`vercor.setups` is the sole lazy export table. Resolving a factory attribute
+loads only its lightweight factory module. JCM/Dinosaur, Veros, and
+CREDIT/Torch/TensorFlow imports plus Veros/CAMulator runtime configuration begin
+only when that factory is invoked. Deep adapter modules live under underscore
 packages for package-internal tests and optional-dependency boundaries, but
 supported user workflows enter through `vercor.setups`.
 Examples and setup factories assemble runs through `Coupler(...)`,
@@ -496,7 +500,9 @@ host recording live in
 `vercor.setups._external.jax_gcm_runtime`, which consumes the setup object through
 concrete setup-state annotations rather than a duplicate local protocol.
 `vercor.setups._external.jax_gcm_state` owns JAXGCM setup-time model resources,
-spinup policy, initialization, and the canonical `JCMState` bundle.
+spinup policy, initialization, and the canonical `JCMState` bundle. JAXGCM and
+Veros spinup are controlled only by `Spinup.enabled`, independent of component
+names, run order, or whether a counterpart component is present.
 `vercor.setups._external.jax_gcm` remains a private factory implementation that
 constructs setup state and binds runtime-owned lifecycle hooks directly without
 reexporting state bundles or owning runtime payload/setup-state internals.
@@ -563,7 +569,8 @@ coordinate-variable responsibilities explicit.
 Veros host-state mutation helpers and the named tuple-compatible
 `VerosForcingFields` container live in `vercor.setups._external.veros_state`.
 Veros backend settings are imported only inside the explicit configuration
-function so setup modules preserve lazy optional-dependency boundaries. CAMulator
+function called once by the invoked factory; implementation-module imports do
+not configure the runtime. CAMulator
 prediction-block and runtime step orchestration live in
 `vercor.setups._external.camulator_runtime` with concrete setup-state
 annotations, with tensor staging in
@@ -576,11 +583,17 @@ mask/kernel construction and selected tensor mutation live in
 `vercor.setups._external.camulator_gcm_state` owns CAMulator atmosphere
 setup-time model resources, timestep alignment, field seeding, and lifecycle
 callbacks, while `vercor.setups._external.camulator` remains the thin public
-factory. Public external setup factories group spinup and period-output options
+factory. CAMulator runtime environment defaults are applied at that invoked
+factory boundary before heavy imports, and enabled CAMulator spinup is rejected
+there because no spinup path is implemented. Public external setup factories group spinup and period-output options
 as `Spinup` and `PeriodOutput` instead of parallel keyword bundles. The paired
 JCM land/atmosphere helper takes a single `JCMLandAtmosphereConfig`, whose
 `atmosphere` field carries the `JAXGCMConfig`; legacy parallel JCM setup
-keywords are not public API.
+keywords are not public API. It uses `dataclasses.replace` so generated forcing
+replaces only a missing forcing value while preserving caller config subclasses
+and explicit forcing objects. The ERA5/JCM example accepts injected ocean,
+JCM-input, and clock objects and provides short-run and initial-state-only CLI
+modes without changing its default workflow.
 CAMulator forecast-increment output remains the default when
 `PeriodOutput.frequency` is unset; when it is `day`, `month`, or `year`,
 `CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter` and
@@ -593,6 +606,19 @@ reuse the same adapter/output builders without falling back to VerCOR runtime
 fields. CAMulator tensor reshaping, metadata handling, output filtering from
 `predict.save_vars`, average-file path/coordinate adaptation, and
 forecast-increment writing live in `vercor.setups._external.camulator_output`.
+
+### Distribution and external plugin boundary
+
+Runtime metadata excludes test tooling; `test` and `dev` extras own pytest,
+formatting, lint, typing, and build dependencies. `vercor/py.typed` marks the
+wheel and sdist as PEP 561 typed packages. The independently packaged fixture
+under `tests/fixtures/public_plugin` imports only public VerCOR modules and
+exercises structural JAX/host components, original-object lifecycle hooks, a
+custom sequential backend, a custom topology policy, and snapshot output
+against an installed wheel. CI builds wheel/sdist once, then tests installed
+base, JCM, and Veros environments on Python 3.12 and 3.13. CAMulator is omitted
+from the install matrix until a compatible NCAR MILES-CREDIT release is
+verified.
 
 `vercor.assets` owns generic cache, download, and checksum validation only, with
 asset-specific registries and product vocabulary kept outside the generic cache

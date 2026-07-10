@@ -121,7 +121,6 @@ if __name__ == "__main__":
         ),
     )
 
-    cpl.initial_state()
     final_state = cpl.run()
     cpl.write_outputs(final_state)
     views = final_state.components(("ATM", "OCN", "LND"))

@@ -622,7 +622,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     component.model_timestep = timedelta(hours=1)
     component.jitted = False
     component.do_spinup = True
-    component.name = "ATM"
+    component.name = "CUSTOM_ATMOSPHERE"
     component.grid = make_test_grid()
     component.data = {}
     component.settings = Settings()
@@ -680,11 +680,14 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     )
 
     hook_component = DataComponent.from_fields(
-        name="ATM",
+        name="CUSTOM_ATMOSPHERE",
         grid=component.grid,
         settings=component.settings,
     )
-    coupler = _make_coupler(dt_seconds=3600.0, run_order=["OCN"])
+    coupler = _make_coupler(
+        dt_seconds=3600.0,
+        run_order=["CUSTOM_ATMOSPHERE"],
+    )
     component.initialize(cast(Any, hook_component), coupler)
 
     assert component.coupling_timestep == timedelta(hours=1)
@@ -733,6 +736,12 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
             return {"shape": shape, "layers": layers}
 
     forcing = _FakeForcing()
+    step_calls = {"count": 0}
+
+    def disabled_spinup_step(state: Any, forcing_data: Any) -> tuple[Any, str]:
+        _ = forcing_data
+        step_calls["count"] += 1
+        return state, "unused"
 
     monkeypatch.setattr(jax_gcm_state_module, "PhysicsData", _FakePhysicsData)
     monkeypatch.setattr(
@@ -751,7 +760,7 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
     monkeypatch.setattr(
         component,
         "_generate_step_function",
-        lambda jitted: (lambda state, forcing_data: (state, "unused")),
+        lambda jitted: disabled_spinup_step,
     )
 
     hook_component = DataComponent.from_fields(
@@ -766,6 +775,7 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
 
     assert component.forcing is forcing
     assert forcing.copy_calls == [{"lfluxland": True}]
+    assert step_calls["count"] == 0
 
 
 def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
@@ -2189,16 +2199,20 @@ def test_veros_initialize_validates_timestep_multiple() -> None:
         )
 
 
-def test_veros_initialize_can_spin_up_and_extract_surface_temperature() -> None:
+@pytest.mark.parametrize(("do_spinup", "expected_steps"), ((True, 2), (False, 0)))
+def test_veros_initialize_spinup_follows_enabled_only(
+    do_spinup: bool,
+    expected_steps: int,
+) -> None:
     component = veros_gcm_state_module.VerosGCMSetupState.__new__(
         veros_gcm_state_module.VerosGCMSetupState
     )
     component.dt_tracer = 10.0
-    component.do_spinup = True
+    component.do_spinup = do_spinup
     component.spinup_time = timedelta(seconds=20.0)
     component.spinup_steps = 2
     component._veros_state = _make_fake_veros_state(surface_temperature=10.0)
-    component.name = "OCN"
+    component.name = "CUSTOM_OCEAN"
     component.grid = make_test_grid(
         name="ocn",
         longitude=np.arange(4.0),
@@ -2217,15 +2231,15 @@ def test_veros_initialize_can_spin_up_and_extract_surface_temperature() -> None:
     component._step_function = fake_step_function
 
     hook_component = DataComponent.from_fields(
-        name="OCN",
+        name="CUSTOM_OCEAN",
         grid=component.grid,
         settings=component.settings,
     )
-    coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
+    coupler = _make_coupler(dt_seconds=20.0, run_order=["CUSTOM_OCEAN"])
     component.initialize(cast(Any, hook_component), coupler)
 
     assert component.model_substeps == 2
-    assert step_calls["count"] == 2
+    assert step_calls["count"] == expected_steps
     assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
         hook_component._data["sea_surface_temperature"],

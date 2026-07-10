@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from vercor.setups._external.veros_runtime_settings import configure_veros_runtime
-
-configure_veros_runtime()
-
-from veros.core.operators import numpy as npx, update, at  # noqa: E402
-from veros.routines import veros_kernel, veros_routine  # noqa: E402
-from veros.state import KernelOutput  # noqa: E402
-from veros.setups.global_4deg import GlobalFourDegreeSetup  # noqa: E402
-from veros.tools import get_periodic_interval  # noqa: E402
+from veros.core.operators import numpy as npx, update, at
+from veros.routines import veros_kernel, veros_routine
+from veros.state import KernelOutput
+from veros.setups.global_4deg import GlobalFourDegreeSetup
+from veros.tools import get_periodic_interval
 
 
 class CustomGlobalFourDegree(GlobalFourDegreeSetup):

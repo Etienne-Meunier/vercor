@@ -90,6 +90,5 @@ if __name__ == "__main__":
         ),
     )
 
-    cpl.initial_state()
     final_state = cpl.run()
     cpl.write_outputs(final_state)
