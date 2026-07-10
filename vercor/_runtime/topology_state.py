@@ -1,18 +1,39 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from vercor.types import RuntimeArray
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class RuntimeTopologyMaps:
-    """Grouped exchange topology maps used by runtime setup and dispatch."""
+    """Read-only grouped exchange topology maps used by runtime dispatch."""
 
-    regridders: dict[tuple[str, str, str], Any]
-    binary_masks: dict[tuple[str, str, str], RuntimeArray]
-    fractional_masks: dict[tuple[str, str, str], RuntimeArray]
+    regridders: Mapping[tuple[str, str, str], Any]
+    binary_masks: Mapping[tuple[str, str, str], RuntimeArray]
+    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray]
+
+    def __post_init__(self) -> None:
+        """Copy and freeze topology mappings at the runtime boundary."""
+
+        object.__setattr__(
+            self,
+            "regridders",
+            MappingProxyType(dict(self.regridders)),
+        )
+        object.__setattr__(
+            self,
+            "binary_masks",
+            MappingProxyType(dict(self.binary_masks)),
+        )
+        object.__setattr__(
+            self,
+            "fractional_masks",
+            MappingProxyType(dict(self.fractional_masks)),
+        )
 
     @classmethod
     def empty(cls) -> "RuntimeTopologyMaps":
@@ -26,24 +47,13 @@ class RuntimeTopologyMaps:
 
 
 @dataclass(frozen=True)
-class SurfaceExchangeMasks:
-    """Derived ATM-grid masks for the coupled ocean/land surface policy."""
-
-    ocn_fmask_on_atm_grid: RuntimeArray
-    lnd_fmask_on_atm_grid: RuntimeArray
-    lnd_bmask_on_atm_grid: RuntimeArray
-
-
-@dataclass(frozen=True)
 class ExchangeTopologyState:
-    """Exchange topology maps and derived surface-exchange masks."""
+    """Prepared exchange topology maps."""
 
     topology_maps: RuntimeTopologyMaps
-    surface_masks: SurfaceExchangeMasks | None
 
 
 __all__ = [
     "ExchangeTopologyState",
     "RuntimeTopologyMaps",
-    "SurfaceExchangeMasks",
 ]

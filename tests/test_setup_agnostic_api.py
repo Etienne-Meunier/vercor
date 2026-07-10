@@ -89,6 +89,40 @@ def test_custom_named_components_can_exchange_custom_fields_without_surface_mask
 
 
 @pytest.mark.fast_always
+def test_duplicate_exchange_topology_key_requires_merged_fields_or_distinct_factory() -> (
+    None
+):
+    grid = make_test_grid(name="duplicate-topology-key")
+    source = DataComponent.from_fields(
+        "SRC",
+        grid,
+        {"temperature": 280.0, "humidity": 0.5},
+    )
+    target = DataComponent.from_fields(
+        "DST",
+        grid,
+        {"temperature": 0.0, "humidity": 0.0},
+        spec=ComponentSpec(inputs=("temperature", "humidity")),
+    )
+    coupler = Coupler(
+        clock=_clock(),
+        components=(source, target),
+        exchanges=(
+            Exchange("SRC", "DST", ("temperature",)),
+            Exchange("SRC", "DST", ("humidity",)),
+        ),
+        run_order=("SRC", "DST"),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+    with pytest.raises(
+        CouplerError,
+        match="Duplicate exchange topology key.*merge field declarations.*distinct regrid factories",
+    ):
+        coupler.initial_state()
+
+
+@pytest.mark.fast_always
 def test_exchanged_fields_must_be_declared_by_receiving_component() -> None:
     grid = make_test_grid(name="undeclared-grid")
     source = DataComponent.from_fields(

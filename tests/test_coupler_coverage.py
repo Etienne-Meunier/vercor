@@ -5,8 +5,6 @@ from datetime import datetime
 import inspect
 import logging
 from pathlib import Path
-import sys
-from types import SimpleNamespace
 from typing import Any, cast
 
 import jax
@@ -54,7 +52,6 @@ from vercor.output._runtime import output_masks_for_component
 from vercor.output import OutputConfig, SnapshotContext
 from vercor.runtime import RuntimeOptions
 from vercor._runtime.surface_masks import (
-    apply_surface_exchange_masks,
     create_surface_exchange_masks,
     validate_land_mask_consistency,
 )
@@ -63,7 +60,6 @@ from vercor._runtime.topology import build_exchange_topology
 from vercor._runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
-    SurfaceExchangeMasks,
 )
 from vercor.settings import Settings
 from vercor.topology import SurfaceMaskPolicy
@@ -224,7 +220,7 @@ def _dispatch_runtime_fields(
         runtime_state,
         component_name,
         coupler.exchanges,
-        coupler._runtime_resources.topology_maps.regridders,
+        coupler._ensure_prepared().topology_maps.regridders,
     )
 
 
@@ -390,6 +386,7 @@ def test_coupler_wraps_injected_python_logger_for_scanned_runtime() -> None:
         logger=logging.getLogger(logger_name),
         log_level="INFO",
     )
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -430,6 +427,7 @@ def test_scanned_runtime_passes_callback_logger_to_components() -> None:
         log_level="INFO",
     )
     coupler.logger = setup_logger(level="INFO", name=logger_name)
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -454,6 +452,7 @@ def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
         log_level="INFO",
     )
     coupler.logger = setup_logger(level="INFO", name=logger_name)
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -482,6 +481,7 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
         log_level="WARNING",
     )
     coupler.logger = setup_logger(level="WARNING", name=logger_name)
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
@@ -626,13 +626,7 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         Exchange(
             source="OCN",
             target="ATM",
-            fields=["temperature"],
-            regrid=bilinear_recording,
-        ),
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["specific_humidity"],
+            fields=["temperature", "specific_humidity"],
             regrid=bilinear_recording,
         ),
         Exchange(
@@ -669,14 +663,12 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     for exchange in exchanges:
         coupler.add_exchange(exchange)
 
-    def fake_create_surface_exchange_masks(
-        *args: Any, **kwargs: Any
-    ) -> SurfaceExchangeMasks:
+    def fake_create_surface_exchange_masks(*args: Any, **kwargs: Any) -> Any:
         _ = args, kwargs
-        return SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.full((2, 2), 0.4),
-            lnd_fmask_on_atm_grid=np.full((2, 2), 0.6),
-            lnd_bmask_on_atm_grid=lnd_mask,
+        return (
+            np.full((2, 2), 0.4),
+            np.full((2, 2), 0.6),
+            lnd_mask,
         )
 
     monkeypatch.setattr(
@@ -684,26 +676,14 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         "create_surface_exchange_masks",
         fake_create_surface_exchange_masks,
     )
-    jax_calls: list[tuple[str, bool]] = []
-    monkeypatch.setitem(
-        sys.modules,
-        "jax",
-        SimpleNamespace(
-            config=SimpleNamespace(
-                update=lambda key, value: jax_calls.append((key, value))
-            )
-        ),
-    )
-
     coupler.settings.enable_x64 = True
     coupler._initialize_runtime()
 
     assert coupler.settings.enable_x64 is True
-    assert jax_calls == [("jax_enable_x64", True)]
     assert len(created_keys) == 6
-    topology_maps = coupler._runtime_resources.topology_maps
+    assert coupler._prepared is not None
+    topology_maps = coupler._prepared.topology_maps
     assert len(topology_maps.regridders) == 6
-    assert any("already exists" in message for message in logger.warning_messages)
     assert isinstance(
         topology_maps.binary_masks[("ATM", "OCN", "conservative")],
         jax.Array,
@@ -712,7 +692,7 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         topology_maps.fractional_masks[("ATM", "OCN", "conservative")],
         jax.Array,
     )
-    assert coupler._runtime_resources.runtime_contracts["ATM"] == ExchangeContract(
+    assert coupler._prepared.contracts["ATM"] == ExchangeContract(
         receives=(
             "temperature",
             "specific_humidity",
@@ -752,10 +732,10 @@ def test_build_exchange_topology_returns_explicit_patched_state(
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
-        lambda *args, **kwargs: SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.full((2, 2), 0.4),
-            lnd_fmask_on_atm_grid=np.full((2, 2), 0.6),
-            lnd_bmask_on_atm_grid=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+        lambda *args, **kwargs: (
+            np.full((2, 2), 0.4),
+            np.full((2, 2), 0.6),
+            np.asarray([[1.0, 0.0], [0.0, 1.0]]),
         ),
     )
 
@@ -773,17 +753,11 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         state.topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
         np.full((2, 2), 0.4),
     )
-    assert state.surface_masks is not None
-    assert_allclose_compact(
-        state.surface_masks.lnd_bmask_on_atm_grid,
-        np.asarray([[1.0, 0.0], [0.0, 1.0]]),
-    )
+    assert not hasattr(state, "surface_masks")
 
 
 @pytest.mark.fast_always
-def test_build_exchange_topology_preserves_duplicate_regridder_warning(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_exchange_topology_rejects_duplicate_topology_keys() -> None:
     components = _topology_components()
     logger = _RecordingLogger()
     exchanges = (
@@ -800,25 +774,66 @@ def test_build_exchange_topology_preserves_duplicate_regridder_warning(
             regrid=bilinear,
         ),
     )
+    with pytest.raises(
+        CouplerError,
+        match="Duplicate exchange topology key.*merge field declarations.*distinct regrid factories",
+    ):
+        build_exchange_topology(
+            components=cast(Any, components),
+            exchanges=exchanges,
+            settings=Settings(),
+            logger=cast(Any, logger),
+        )
+
+
+@pytest.mark.fast_always
+def test_surface_mask_policy_uses_uniform_applies_then_build_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    components = _topology_components()
+    exchange = Exchange(
+        source="OCN",
+        target="ATM",
+        fields=["temperature"],
+        regrid=bilinear,
+    )
+    events: list[str] = []
+    original_applies = SurfaceMaskPolicy.applies
+    original_build = SurfaceMaskPolicy.build
+
+    def recording_applies(self: SurfaceMaskPolicy, context: Any) -> bool:
+        events.append("applies")
+        return original_applies(self, context)
+
+    def recording_build(self: SurfaceMaskPolicy, context: Any) -> Any:
+        events.append("build")
+        return original_build(self, context)
+
+    monkeypatch.setattr(SurfaceMaskPolicy, "applies", recording_applies)
+    monkeypatch.setattr(SurfaceMaskPolicy, "build", recording_build)
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
-        lambda *args, **kwargs: SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.ones((2, 2)),
-            lnd_fmask_on_atm_grid=np.zeros((2, 2)),
-            lnd_bmask_on_atm_grid=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+        lambda *args, **kwargs: (
+            np.full((2, 2), 0.4),
+            np.full((2, 2), 0.6),
+            np.asarray([[1.0, 0.0], [0.0, 1.0]]),
         ),
     )
 
     state = build_exchange_topology(
         components=cast(Any, components),
-        exchanges=exchanges,
+        exchanges=(exchange,),
         settings=Settings(),
-        logger=cast(Any, logger),
+        topology_policy=SurfaceMaskPolicy(),
+        logger=cast(Any, _RecordingLogger()),
     )
 
-    assert len(state.topology_maps.regridders) == 1
-    assert any("already exists" in message for message in logger.warning_messages)
+    assert events == ["applies", "build"]
+    assert_allclose_compact(
+        state.topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
+        np.full((2, 2), 0.4),
+    )
 
 
 @pytest.mark.fast_always
@@ -838,10 +853,10 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
-        lambda *args, **kwargs: SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.zeros((2, 2)),
-            lnd_fmask_on_atm_grid=np.full((2, 2), 0.75),
-            lnd_bmask_on_atm_grid=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+        lambda *args, **kwargs: (
+            np.zeros((2, 2)),
+            np.full((2, 2), 0.75),
+            np.asarray([[1.0, 0.0], [0.0, 1.0]]),
         ),
     )
 
@@ -868,59 +883,6 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
     )
 
 
-def test_apply_surface_exchange_masks_updates_only_expected_bilinear_pairs() -> None:
-    coupler = make_coupler()
-    ocn_key = ("OCN", "ATM", "bilinear")
-    lnd_key = ("LND", "ATM", "bilinear")
-    other_key = ("OCN", "ATM", "conservative")
-
-    binary_masks = {
-        ocn_key: np.zeros((2, 2)),
-        lnd_key: np.zeros((2, 2)),
-        other_key: np.full((2, 2), 9.0),
-    }
-    fractional_masks = {
-        ocn_key: np.zeros((2, 2)),
-        lnd_key: np.zeros((2, 2)),
-        other_key: np.full((2, 2), 7.0),
-    }
-    replace_runtime_topology_maps(
-        coupler,
-        regridders={},
-        binary_masks=binary_masks,
-        fractional_masks=fractional_masks,
-    )
-    ocn_fmask_on_atm_grid = np.full((2, 2), 0.25)
-    lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
-    lnd_fmask_on_atm_grid = np.full((2, 2), 0.75)
-
-    topology_maps = coupler._runtime_resources.topology_maps
-    apply_surface_exchange_masks(
-        topology_maps,
-        surface_masks=SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=ocn_fmask_on_atm_grid,
-            lnd_fmask_on_atm_grid=lnd_fmask_on_atm_grid,
-            lnd_bmask_on_atm_grid=lnd_bmask_on_atm_grid,
-        ),
-        policy=SurfaceMaskPolicy(),
-    )
-
-    assert_allclose_compact(
-        topology_maps.fractional_masks[ocn_key], np.full((2, 2), 0.25)
-    )
-    assert_allclose_compact(
-        topology_maps.binary_masks[lnd_key],
-        np.asarray([[1.0, 0.0], [0.0, 1.0]]),
-    )
-    assert_allclose_compact(
-        topology_maps.fractional_masks[lnd_key], np.full((2, 2), 0.75)
-    )
-    assert_allclose_compact(topology_maps.binary_masks[other_key], np.full((2, 2), 9.0))
-    assert_allclose_compact(
-        topology_maps.fractional_masks[other_key], np.full((2, 2), 7.0)
-    )
-
-
 def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> None:
     shape_coupler = make_coupler(
         components=(
@@ -938,11 +900,7 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
     with pytest.raises(CouplerError, match="does not match atmospheric grid shape"):
         validate_land_mask_consistency(
             shape_coupler._runtime_components,
-            SurfaceExchangeMasks(
-                ocn_fmask_on_atm_grid=np.zeros((2, 2)),
-                lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=shape_lnd_bmask_on_atm_grid,
-            ),
+            shape_lnd_bmask_on_atm_grid,
             policy=SurfaceMaskPolicy(),
         )
 
@@ -965,11 +923,7 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
     with pytest.raises(CouplerError, match="mismatched points: 2"):
         validate_land_mask_consistency(
             value_coupler._runtime_components,
-            SurfaceExchangeMasks(
-                ocn_fmask_on_atm_grid=np.zeros((2, 2)),
-                lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=value_lnd_bmask_on_atm_grid,
-            ),
+            value_lnd_bmask_on_atm_grid,
             policy=SurfaceMaskPolicy(),
         )
 
@@ -1047,20 +1001,13 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
         ("OCN", "ATM", "bilinear"): np.full((2, 2), 0.25),
         ("LND", "ATM", "bilinear"): np.full((2, 2), 0.75),
     }
-    replace_runtime_topology_maps(
-        coupler,
-        regridders={},
-        binary_masks=binary_masks,
-        fractional_masks=fractional_masks,
-    )
-
     assert not hasattr(coupler, "_output_masks_for_component")
 
     masks = output_masks_for_component(
         "ATM",
         coupler.exchanges,
-        coupler._runtime_resources.topology_maps.binary_masks,
-        coupler._runtime_resources.topology_maps.fractional_masks,
+        binary_masks,
+        fractional_masks,
     )
 
     assert set(masks) == {
@@ -1282,11 +1229,11 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     assert captured_runtime["exchanges"] is coupler.exchanges
     assert (
         captured_runtime["binary_masks"]
-        is coupler._runtime_resources.topology_maps.binary_masks
+        is coupler._ensure_prepared().topology_maps.binary_masks
     )
     assert (
         captured_runtime["fractional_masks"]
-        is coupler._runtime_resources.topology_maps.fractional_masks
+        is coupler._ensure_prepared().topology_maps.fractional_masks
     )
     assert captured_runtime["output_file_mask"] is None
     assert captured_runtime["output_dir"] == Path("snapshot")
@@ -1346,8 +1293,8 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
         final_state=state,
         components=coupler._runtime_components,
         exchanges=coupler.exchanges,
-        binary_masks=coupler._runtime_resources.topology_maps.binary_masks,
-        fractional_masks=coupler._runtime_resources.topology_maps.fractional_masks,
+        binary_masks=coupler._ensure_prepared().topology_maps.binary_masks,
+        fractional_masks=coupler._ensure_prepared().topology_maps.fractional_masks,
         output_file_mask=Path("snapshot"),
         logger=coupler.logger,
     )

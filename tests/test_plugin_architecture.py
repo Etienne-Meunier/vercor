@@ -15,7 +15,8 @@ from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor import Clock, ComponentSpec, Coupler, Exchange, StepContext
 from vercor.runtime import RuntimeOptions
-from vercor.topology import SurfaceMaskPolicy
+from vercor.exceptions import CouplerError
+from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyContext
 
 
 @pytest.mark.fast_always
@@ -38,6 +39,112 @@ def test_runtime_options_own_core_runtime_configuration() -> None:
         importlib.import_module("vercor.config")
     with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
         importlib.import_module("vercor.setup_config")
+
+
+class _RecordingTopologyPolicy:
+    def __init__(
+        self,
+        *,
+        applies: bool,
+        patch: ExchangeTopologyPatch | None = None,
+    ) -> None:
+        self._applies = applies
+        self._patch = ExchangeTopologyPatch() if patch is None else patch
+        self.events: list[tuple[str, TopologyContext]] = []
+
+    def applies(self, context: TopologyContext) -> bool:
+        self.events.append(("applies", context))
+        return self._applies
+
+    def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
+        self.events.append(("build", context))
+        return self._patch
+
+
+def _topology_policy_coupler(policy: _RecordingTopologyPolicy) -> Coupler:
+    grid = make_test_grid(name="topology-policy")
+    source = vercor.DataComponent.from_fields(
+        "SRC",
+        grid,
+        {"custom_flux": 1.0},
+    )
+    target = vercor.DataComponent.from_fields(
+        "DST",
+        grid,
+        {"custom_flux": 0.0},
+        spec=ComponentSpec(inputs=("custom_flux",)),
+    )
+    return Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(source, target),
+        exchanges=(Exchange("SRC", "DST", ("custom_flux",)),),
+        run_order=("SRC", "DST"),
+        runtime=RuntimeOptions(topology=policy),
+    )
+
+
+@pytest.mark.fast_always
+def test_custom_topology_policy_uses_applies_then_build_and_patches_maps() -> None:
+    key = ("SRC", "DST", "bilinear")
+    skipped = _RecordingTopologyPolicy(applies=False)
+    skipped_coupler = _topology_policy_coupler(skipped)
+
+    skipped_coupler.initial_state()
+
+    assert [event for event, _ in skipped.events] == ["applies"]
+    assert skipped_coupler._prepared is not None
+    assert_allclose_compact(
+        skipped_coupler._prepared.topology_maps.fractional_masks[key],
+        jnp.ones((2, 2)),
+    )
+
+    applied = _RecordingTopologyPolicy(
+        applies=True,
+        patch=ExchangeTopologyPatch(
+            fractional_masks={key: jnp.full((2, 2), 0.25)},
+        ),
+    )
+    applied_coupler = _topology_policy_coupler(applied)
+
+    applied_coupler.initial_state()
+
+    assert [event for event, _ in applied.events] == ["applies", "build"]
+    assert applied.events[0][1] is applied.events[1][1]
+    assert applied_coupler._prepared is not None
+    assert_allclose_compact(
+        applied_coupler._prepared.topology_maps.fractional_masks[key],
+        jnp.full((2, 2), 0.25),
+    )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("patch", "message"),
+    (
+        (
+            ExchangeTopologyPatch(
+                binary_masks={("UNKNOWN", "DST", "bilinear"): jnp.ones((2, 2))}
+            ),
+            "UNKNOWN.*configured topology key",
+        ),
+        (
+            ExchangeTopologyPatch(
+                fractional_masks={("SRC", "DST", "bilinear"): jnp.ones((1, 2))}
+            ),
+            r"\('SRC', 'DST', 'bilinear'\).*shape \(1, 2\).*expected \(2, 2\)",
+        ),
+    ),
+)
+def test_topology_policy_patch_rejects_unknown_keys_and_wrong_shapes(
+    patch: ExchangeTopologyPatch,
+    message: str,
+) -> None:
+    coupler = _topology_policy_coupler(
+        _RecordingTopologyPolicy(applies=True, patch=patch)
+    )
+
+    with pytest.raises(CouplerError, match=message):
+        coupler.initial_state()
 
 
 @pytest.mark.fast_always

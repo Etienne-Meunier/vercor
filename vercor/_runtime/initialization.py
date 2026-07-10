@@ -75,11 +75,6 @@ def initialize_coupler_runtime(
         f" Setting default precision for JAX computations: {settings.enable_x64}"
     )
 
-    if settings.enable_x64:
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
-
     for component in components.values():
         validate_component_setup(component)
 

@@ -101,8 +101,7 @@ class SurfaceMaskPolicy:
 
         from vercor._runtime.surface_masks import build_surface_mask_topology_patch
 
-        patch, _ = build_surface_mask_topology_patch(context, self)
-        return patch
+        return build_surface_mask_topology_patch(context, self)
 
 
 __all__ = [

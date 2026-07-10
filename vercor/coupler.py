@@ -21,6 +21,7 @@ from vercor.jax_logging import (
 )
 from vercor._run_order import normalize_run_order
 import vercor._runtime.facade as _runtime_facade
+from vercor._runtime.prepared import PreparedCoupling
 from vercor.runtime import RuntimeOptions
 from vercor.settings import Settings
 from vercor.state import RunState
@@ -47,8 +48,7 @@ class Coupler:
         components: mapping of component name to component instance
         exchanges: list of all Exchange instances
         settings: Settings instance for coupler settings
-        _runtime_resources: runtime-owned holder for topology maps, runtime
-            contracts, and interrupt controller.
+        _prepared: single private prepared runtime boundary, created lazily.
     """
 
     def __init__(
@@ -77,8 +77,7 @@ class Coupler:
         )
         self._exchanges: tuple[Exchange, ...] = ()
         self._run_order: tuple[str, ...] = ()
-        self._runtime_resources = _runtime_facade.create_runtime_resources()
-        self._runtime_initialized = False
+        self._prepared: PreparedCoupling | None = None
         configured_run_order = normalize_run_order(run_order)
 
         if isinstance(self.logger, logging.Logger):
@@ -99,11 +98,10 @@ class Coupler:
         if configured_run_order:
             self.set_run_order(configured_run_order)
 
-    def _invalidate_runtime_resources(self) -> None:
-        """Clear cached runtime topology and contracts after setup changes."""
+    def _invalidate_preparation(self) -> None:
+        """Clear prepared runtime resources after public setup changes."""
 
-        self._runtime_resources = _runtime_facade.create_runtime_resources()
-        self._runtime_initialized = False
+        self._prepared = None
 
     @property
     def components(self) -> MappingProxyType[str, ComponentInfo]:
@@ -152,7 +150,7 @@ class Coupler:
             )
 
         self._components[normalized_component.name] = normalized_component
-        self._invalidate_runtime_resources()
+        self._invalidate_preparation()
         self.logger.info(f" Registered component {normalized_component.name}")
         return self
 
@@ -165,7 +163,7 @@ class Coupler:
         """
 
         self._exchanges = (*self._exchanges, exchange)
-        self._invalidate_runtime_resources()
+        self._invalidate_preparation()
         formatted_field_names = ", ".join(
             ", ".join((item.u, item.v)) if isinstance(item, VectorField) else item
             for item in exchange.fields
@@ -193,45 +191,41 @@ class Coupler:
             if cname not in self._components:
                 raise CouplerError(f"Component {cname} not registered in coupler")
         self._run_order = normalized_run_order
-        self._invalidate_runtime_resources()
+        self._invalidate_preparation()
         self.logger.info(
             f" Set coupler components run order: {', '.join(self.run_order)}"
         )
         return self
 
-    def _runtime_inputs(self) -> _runtime_facade.RuntimeInputs:
-        """Return the repeated runtime facade input bundle for this coupler."""
+    def _ensure_prepared(self) -> PreparedCoupling:
+        """Return the one prepared runtime boundary for this configuration."""
 
-        return _runtime_facade.RuntimeInputs(
-            self._runtime_components,
-            self.exchanges,
-            self._runtime_resources,
-            self.run_order,
-            self.clock,
-            self.settings,
-            self.runtime,
-        )
-
-    def _initialize_runtime(self) -> None:
-        """Initialize components, topology, masks, and runtime contracts."""
-
-        if self._runtime_initialized:
-            return
-
-        _runtime_facade.initialize_coupler_runtime(
-            inputs=self._runtime_inputs(),
+        if self._prepared is not None:
+            self._prepared.validate_component_configuration(self._runtime_components)
+            return self._prepared
+        prepared = _runtime_facade.prepare_coupling(
+            components=self._runtime_components,
+            exchanges=self.exchanges,
+            run_order=self.run_order,
+            clock=self.clock,
+            settings=self.settings,
+            runtime=self.runtime,
             logger=self.logger,
         )
+        self._prepared = prepared
+        return prepared
 
-        self._runtime_initialized = True
+    def _initialize_runtime(self) -> None:
+        """Prepare components, topology, contracts, and runtime dispatch once."""
+
+        self._ensure_prepared()
 
     def initial_state(self, *, prefill_missing: bool = True) -> RunState:
         """Create and validate the coupled runtime state."""
 
-        if self._components:
-            self._initialize_runtime()
+        prepared = self._ensure_prepared()
         return _runtime_facade.create_runtime_state(
-            inputs=self._runtime_inputs(),
+            prepared=prepared,
             prefill_missing=prefill_missing,
         )
 
@@ -245,12 +239,11 @@ class Coupler:
     ) -> None:
         """Write final runtime fields and optional native component snapshots."""
 
-        if self._components:
-            self._initialize_runtime()
+        prepared = self._ensure_prepared()
         self.logger.info(" ------------ Writing coupler outputs ------------")
         _runtime_facade.finalize(
             final_state=state,
-            inputs=self._runtime_inputs(),
+            prepared=prepared,
             output_dir=output_dir,
             filename_template=filename_template,
             write_snapshots=write_snapshots,
@@ -285,15 +278,13 @@ class Coupler:
         Host-backed components run through the Python host bridge.
         """
 
-        if state is None and self._components:
-            self._initialize_runtime()
-        inputs = self._runtime_inputs()
+        prepared = self._ensure_prepared()
         runtime_state = _runtime_facade.prepare_runtime_state(
             state,
-            inputs=inputs,
+            prepared=prepared,
         )
         return _runtime_facade.run(
             runtime_state,
-            inputs=inputs,
+            prepared=prepared,
             logger=self.logger,
         )

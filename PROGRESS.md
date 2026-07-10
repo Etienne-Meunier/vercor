@@ -9,6 +9,18 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 2 prepared-coupling and uniform-topology implementation completed on
+  2026-07-10. `Coupler` now lazily owns one frozen private `PreparedCoupling`
+  and reuses its contracts, read-only topology maps, destination dispatch, and
+  interrupt controller across state creation, supplied-state runs, and output.
+  Public mutators invalidate preparation; direct post-preparation component
+  configuration mutation raises an actionable error. Every topology policy,
+  including `SurfaceMaskPolicy`, follows `applies` then `build`; patches are
+  key/shape validated, duplicate topology keys are rejected, and derived
+  surface masks are temporary construction values. JAX x64 is documented and
+  tested as process capability separate from explicit per-Coupler allocation
+  policy. Focused and full-fast validation passed; final static gates are
+  recorded in `.superpowers/sdd/task-2-report.md`.
 - Task 1 public component contracts and structural bridge completed on
   2026-07-10. `ComponentLike` is now the validated canonical structural
   extension contract; structural lifecycle hooks receive the original user

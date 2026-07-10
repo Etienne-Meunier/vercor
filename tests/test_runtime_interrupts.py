@@ -184,7 +184,7 @@ def test_compiled_scanned_runtime_translates_interrupt_callback_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = _make_pure_coupler()
-    interrupts = coupler._runtime_resources.interrupt_controller
+    interrupts = coupler._ensure_prepared().interrupts
     original_checkpoint = interrupts.checkpoint
     requested = False
 
@@ -211,7 +211,7 @@ def test_compiled_scanned_runtime_observes_wakeup_fd_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = _make_pure_coupler()
-    interrupts = coupler._runtime_resources.interrupt_controller
+    interrupts = coupler._ensure_prepared().interrupts
     original_checkpoint = interrupts.checkpoint
     injected = False
 

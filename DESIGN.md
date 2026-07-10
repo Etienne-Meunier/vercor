@@ -343,12 +343,17 @@ immutable runtime containers used during traced integration.
   surface-role lookup lives in `vercor._runtime.component_topology`; runtime
   topology data contracts live in
   `vercor._runtime.topology_state`, including grouped `RuntimeTopologyMaps`,
-  `SurfaceExchangeMasks`, and `ExchangeTopologyState`. Generic exchange
+  whose copied mappings are read-only, and `ExchangeTopologyState`. Generic exchange
   regridder/identity-mask map construction lives in
   `vercor._runtime.exchange_topology`; public topology policies are adapted by
-  `vercor._runtime.topology_policy`, while optional atmosphere/ocean/land
-  surface-mask creation, validation, and bilinear exchange patching live in
+  `vercor._runtime.topology_policy` through the uniform
+  `applies(context)` then `build(context)` protocol. Policy patches must target
+  configured topology keys and target-grid shapes. Duplicate exchange topology
+  keys are rejected rather than silently sharing a regridder. Optional atmosphere/ocean/land
+  surface-mask creation and validation live in
   `vercor._runtime.surface_masks` behind `vercor.topology.SurfaceMaskPolicy`.
+  Derived surface-mask values remain local to policy construction rather than
+  retained as runtime state.
   Runtime exchange
   validation checks that exchanged fields are declared by the sending and
   receiving components instead of requiring the advisory common field
@@ -357,33 +362,31 @@ immutable runtime containers used during traced integration.
   runtime facade to store. Public `RunState` carries
   component states and fractional masks through `jax.lax.scan`; binary masks
   remain in `RuntimeTopologyMaps` for final output and topology bookkeeping.
-  Setup-time component
-  precision synchronization, initialization context construction, component
+  Setup-time component precision synchronization, initialization context construction, component
   setup validation, runtime contract validation, and topology handoff live in
-  `vercor._runtime.initialization`. Runtime state preparation, contract refresh
-  for created or validated states, validation, and initial sent-store
-  priming live in `vercor._runtime.preparation`; it returns
-  `RunState` directly while refreshed contracts stay on
-  `CouplerRuntimeResources`. `vercor._runtime.facade` exposes only the
-  coupler-facing orchestration boundary for runtime resource construction,
-  initialization, state creation/preparation, execution, and final output.
+  `vercor._runtime.initialization`. `vercor._runtime.prepared.PreparedCoupling`
+  is the single frozen post-lifecycle boundary for normalized components,
+  exchanges, run order, contracts, topology maps, destination-grouped dispatch,
+  clock/settings/options, interrupts, and component configuration fingerprints.
+  Component configuration mutation after preparation is rejected instead of
+  silently rerunning lifecycle hooks. Runtime state creation, supplied-state
+  validation, and initial sent-store priming live in
+  `vercor._runtime.preparation` and reuse the prepared contracts and dispatch
+  context without rebuilding either.
   Frozen `RuntimeRunContext` execution inputs live in
   `vercor._runtime.run_context`; it carries only static execution metadata and
   shared runtime controllers, not compiled-runtime cache state.
   Shared host/scanned progress messages plus traced callbacks live in
   `vercor._runtime.progress`, and the interrupt controller lives in
-  `vercor._runtime.interrupts`. Mutable per-coupler runtime resources live in
-  `vercor._runtime.resources.CouplerRuntimeResources`, a small public-field
-  dataclass holding exchange topology maps, refreshed runtime contracts, and
-  the interrupt controller. Runtime facade and preparation code update those
-  grouped resources directly. `Coupler` passes repeated runtime inputs through
-  the internal `vercor._runtime.facade.RuntimeInputs` bundle; there are no
-  per-map private aliases for individual runtime maps.
+  `vercor._runtime.interrupts`. JAX process x64 is treated as a capability:
+  an x64 Coupler may enable it before component arrays are normalized, while a
+  float32 Coupler keeps explicit float32 VerCOR allocations even when the
+  process capability is already enabled.
   Host/scanned runtime loops, run-mode
   selection, one-shot compiled scanned dispatch, and interrupt translation live
   in `vercor._runtime.runner`. High-level runtime orchestration
-  for the public `Coupler` facade lives in `vercor._runtime.facade`: runtime-state
-  preparation, dispatch/run context construction, host/scanned execution,
+  for the public `Coupler` facade lives in `vercor._runtime.facade`: prepared
+  runtime-state reuse, run-context construction, host/scanned execution,
   runtime views, and final output delegation enter through this module instead
   of direct `Coupler` imports of runtime implementation helpers.
   Runtime component metadata and read-only field resolution for

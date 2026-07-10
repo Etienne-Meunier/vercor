@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from vercor.exchanges import Exchange
@@ -46,10 +47,12 @@ def build_runtime_dispatch_context(
 
     return RuntimeDispatchContext(
         components=components,
-        exchanges_by_destination={
-            name: tuple(destination_exchanges)
-            for name, destination_exchanges in exchanges_by_destination.items()
-        },
+        exchanges_by_destination=MappingProxyType(
+            {
+                name: tuple(destination_exchanges)
+                for name, destination_exchanges in exchanges_by_destination.items()
+            }
+        ),
         regridders=regridders,
         contracts=contracts,
         dt_seconds=dt_seconds,

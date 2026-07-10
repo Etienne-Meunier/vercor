@@ -36,7 +36,7 @@ def build_exchange_topology(
         settings=settings,
         logger=logger,
     )
-    surface_masks = _topology_policy.apply_topology_policy(
+    prepared_maps = _topology_policy.apply_topology_policy(
         initialized_maps,
         components=components,
         exchanges=exchanges,
@@ -45,8 +45,7 @@ def build_exchange_topology(
         policy=topology_policy,
     )
     return ExchangeTopologyState(
-        topology_maps=initialized_maps,
-        surface_masks=surface_masks,
+        topology_maps=prepared_maps,
     )
 
 

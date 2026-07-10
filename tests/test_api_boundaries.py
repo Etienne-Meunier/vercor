@@ -392,8 +392,9 @@ def test_runtime_internals_live_under_private_runtime_package() -> None:
     assert not hasattr(runtime_stores, "RuntimeFieldStore")
     assert hasattr(runtime_contracts, "ExchangeContract")
     assert not hasattr(runtime_contracts, "RuntimeComponentContract")
-    assert hasattr(runtime_facade, "RuntimeInputs")
-    assert not hasattr(runtime_facade, "RuntimeFacadeInputs")
+    runtime_prepared = importlib.import_module("vercor._runtime.prepared")
+    assert hasattr(runtime_prepared, "PreparedCoupling")
+    assert not hasattr(runtime_facade, "RuntimeInputs")
 
 
 @pytest.mark.fast_always
@@ -2007,7 +2008,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
         encoding="utf-8"
     )
     exchanges_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
-    runtime_resources_source = Path("vercor/_runtime/resources.py").read_text(
+    runtime_prepared_source = Path("vercor/_runtime/prepared.py").read_text(
         encoding="utf-8"
     )
     runtime_cache_path = Path("vercor/_runtime/cache.py")
@@ -2078,10 +2079,10 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     assert "from vercor.fields import ExchangeField" in exchanges_source
     assert not runtime_compilation_path.exists()
     assert not runtime_cache_path.exists()
-    assert "from vercor._runtime.compilation import" not in runtime_resources_source
-    assert "CompiledRuntime = Callable[" not in runtime_resources_source
-    assert "CompiledRuntime" not in runtime_resources_source
-    assert "RuntimeCompilationKey" not in runtime_resources_source
+    assert "from vercor._runtime.compilation import" not in runtime_prepared_source
+    assert "CompiledRuntime = Callable[" not in runtime_prepared_source
+    assert "CompiledRuntime" not in runtime_prepared_source
+    assert "RuntimeCompilationKey" not in runtime_prepared_source
     assert "def _compute_has_identical_grids(" not in regridder_base_source
     assert "grids_identical(" in regridder_base_source
     assert "BilinearRectilinearInterpolator" not in regridder_base_source

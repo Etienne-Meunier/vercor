@@ -1261,11 +1261,6 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
     )
     key = ("OCN", "ATM", "bilinear")
     regridder = bilinear(ocean_grid, atmosphere_grid)
-    replace_runtime_topology_maps(
-        coupler,
-        regridders=cast(Any, {key: regridder}),
-        fractional_masks={key: jnp.ones(atmosphere_grid.shape)},
-    )
     atmosphere._data = {
         "temperature_2m": jnp.full(atmosphere_grid.shape, 288.15, dtype=jnp.float64),
         "sensible_heat_flux": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
@@ -1274,6 +1269,11 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         "v_velocity_10m": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
         "sea_surface_temperature": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
     }
+    replace_runtime_topology_maps(
+        coupler,
+        regridders=cast(Any, {key: regridder}),
+        fractional_masks={key: jnp.ones(atmosphere_grid.shape)},
+    )
 
     initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(

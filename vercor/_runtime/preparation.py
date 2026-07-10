@@ -1,43 +1,30 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
 from vercor._runtime.coupler_state import (
     runtime_state_from_components as _runtime_state_from_components,
 )
-from vercor._runtime.dispatch_context import build_runtime_dispatch_context
 from vercor._runtime.driver import prime_runtime_outgoing
-from vercor._run_order import normalize_run_order
+from vercor._runtime.prepared import PreparedCoupling
 from vercor._runtime.state_validation import (
     validate_runtime_state as _validate_runtime_state,
 )
 from vercor.state import RunState
 from vercor._runtime.time import initial_runtime_step_info
 
-if TYPE_CHECKING:
-    from vercor._runtime.facade import RuntimeInputs
-
 
 def runtime_state_from_components(
     *,
-    inputs: "RuntimeInputs",
+    prepared: PreparedCoupling,
     prefill_missing: bool,
 ) -> RunState:
     """Build immutable runtime state from setup components and exchanges."""
 
-    runtime_contracts = build_exchange_contracts(
-        tuple(inputs.components),
-        inputs.exchanges,
-        validate_endpoints=False,
-    )
-    inputs.runtime_resources.runtime_contracts = runtime_contracts
-    topology_maps = inputs.runtime_resources.topology_maps
+    topology_maps = prepared.topology_maps
     runtime_state = _runtime_state_from_components(
-        inputs.components,
-        inputs.exchanges,
+        prepared.components,
+        prepared.exchanges,
         topology_maps.fractional_masks,
-        contracts=inputs.runtime_resources.runtime_contracts,
+        contracts=prepared.contracts,
         prefill_missing=prefill_missing,
     )
     return runtime_state
@@ -46,61 +33,47 @@ def runtime_state_from_components(
 def validate_runtime_state(
     runtime_state: RunState,
     *,
-    inputs: "RuntimeInputs",
-) -> dict[str, ExchangeContract]:
-    """Validate runtime state and return the contracts used for validation."""
+    prepared: PreparedCoupling,
+) -> None:
+    """Validate runtime state against the prepared contracts and topology."""
 
-    runtime_contracts = build_exchange_contracts(
-        tuple(inputs.components),
-        inputs.exchanges,
-        validate_endpoints=False,
-    )
-    inputs.runtime_resources.runtime_contracts = runtime_contracts
     _validate_runtime_state(
         runtime_state,
-        components=inputs.components,
-        exchanges=inputs.exchanges,
-        regridders=inputs.runtime_resources.topology_maps.regridders,
-        contracts=inputs.runtime_resources.runtime_contracts,
-        run_order=tuple(normalize_run_order(inputs.run_order)),
+        components=prepared.components,
+        exchanges=prepared.exchanges,
+        regridders=prepared.topology_maps.regridders,
+        contracts=prepared.contracts,
+        run_order=prepared.run_order,
     )
-    return inputs.runtime_resources.runtime_contracts
+    return None
 
 
 def create_runtime_state(
     *,
-    inputs: "RuntimeInputs",
+    prepared: PreparedCoupling,
     prefill_missing: bool,
 ) -> RunState:
     """Create, prime, and validate immutable runtime state."""
 
     runtime_state = runtime_state_from_components(
-        inputs=inputs,
+        prepared=prepared,
         prefill_missing=prefill_missing,
     )
-    run_order = normalize_run_order(inputs.run_order)
+    run_order = prepared.run_order
     if prefill_missing and tuple(run_order):
-        dispatch_context = build_runtime_dispatch_context(
-            inputs.components,
-            inputs.exchanges,
-            inputs.runtime_resources.topology_maps.regridders,
-            inputs.runtime_resources.runtime_contracts,
-            dt_seconds=inputs.clock.dt_seconds,
-            settings=inputs.settings,
-        )
         runtime_state = prime_runtime_outgoing(
             runtime_state,
             tuple(run_order),
-            dispatch_context=dispatch_context,
+            dispatch_context=prepared.dispatch_context,
             step_info=initial_runtime_step_info(
-                inputs.clock,
-                inputs.settings,
-                model_year_seconds=inputs.runtime.model_year_seconds,
+                prepared.clock,
+                prepared.settings,
+                model_year_seconds=prepared.runtime.model_year_seconds,
             ),
         )
     validate_runtime_state(
         runtime_state,
-        inputs=inputs,
+        prepared=prepared,
     )
     return runtime_state
 
@@ -108,20 +81,20 @@ def create_runtime_state(
 def prepare_runtime_state(
     initial_state: RunState | None,
     *,
-    inputs: "RuntimeInputs",
+    prepared: PreparedCoupling,
     validate_state: bool = True,
 ) -> RunState:
     """Return a runtime state ready for execution."""
 
     if initial_state is None:
         return create_runtime_state(
-            inputs=inputs,
+            prepared=prepared,
             prefill_missing=True,
         )
     if validate_state:
         validate_runtime_state(
             initial_state,
-            inputs=inputs,
+            prepared=prepared,
         )
     return initial_state
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from dataclasses import FrozenInstanceError
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -87,7 +88,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_exchange_dispatch_path = Path("vercor/_runtime/exchange_dispatch.py")
     runtime_dispatch_context_path = Path("vercor/_runtime/dispatch_context.py")
     runtime_run_context_path = Path("vercor/_runtime/run_context.py")
-    runtime_resources_path = Path("vercor/_runtime/resources.py")
+    runtime_prepared_path = Path("vercor/_runtime/prepared.py")
     runtime_compilation_path = Path("vercor/_runtime/compilation.py")
     runtime_cache_path = Path("vercor/_runtime/cache.py")
     runtime_progress_path = Path("vercor/_runtime/progress.py")
@@ -105,7 +106,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert runtime_exchange_dispatch_path.exists()
     assert runtime_dispatch_context_path.exists()
     assert runtime_run_context_path.exists()
-    assert runtime_resources_path.exists()
+    assert runtime_prepared_path.exists()
+    assert not Path("vercor/_runtime/resources.py").exists()
     assert not runtime_compilation_path.exists()
     assert not runtime_cache_path.exists()
     assert runtime_progress_path.exists()
@@ -127,7 +129,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         encoding="utf-8"
     )
     runtime_run_context_source = runtime_run_context_path.read_text(encoding="utf-8")
-    runtime_resources_source = runtime_resources_path.read_text(encoding="utf-8")
+    runtime_prepared_source = runtime_prepared_path.read_text(encoding="utf-8")
     runtime_progress_source = runtime_progress_path.read_text(encoding="utf-8")
     runtime_component_state_source = runtime_component_state_path.read_text(
         encoding="utf-8"
@@ -284,7 +286,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor._runtime.state_validation import" in runtime_preparation_source
     assert "import vercor._runtime.facade as _runtime_facade" in coupler_source
     assert "build_runtime_dispatch_context(" not in coupler_source
-    assert "build_runtime_dispatch_context(" in runtime_facade_source
+    assert "build_runtime_dispatch_context(" in runtime_prepared_source
     assert "def output_masks_for_component(" not in runtime_coupler_state_source
     assert "def output_masks_for_component(" in output_source
     assert "from vercor._runtime.coupler_state import" not in output_source
@@ -293,7 +295,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "refresh_runtime_contracts(" not in runtime_preparation_source
     assert "refresh_runtime_contracts(" not in runtime_facade_source
     assert "build_exchange_contracts(" not in coupler_source
-    assert "build_exchange_contracts(" in runtime_preparation_source
+    assert "build_exchange_contracts(" in runtime_initialization_source
+    assert "build_exchange_contracts(" not in runtime_preparation_source
     assert "def prime_runtime_state(" not in runtime_coupler_state_source
     assert "prime_runtime_state(" not in coupler_source
     assert "prime_runtime_outgoing(" not in coupler_source
@@ -304,7 +307,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def run_coupler_runtime(" in runtime_runner_source
     assert "class RuntimeRunContext" not in runtime_runner_source
     assert "class RuntimeRunContext" in runtime_run_context_source
-    assert "class CouplerRuntimeResources" in runtime_resources_source
+    assert "class PreparedCoupling" in runtime_prepared_source
     assert not Path("vercor/_runtime/compilation.py").exists()
     assert not Path("vercor/_runtime/cache.py").exists()
     assert "components:" not in runtime_run_context_source
@@ -317,18 +320,16 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "runtime_cache:" not in runtime_run_context_source
     assert "CompiledRuntimeCache" not in runtime_run_context_source
     assert "from vercor._runtime.compilation import" not in runtime_run_context_source
-    assert "from vercor._runtime.compilation import" not in runtime_resources_source
+    assert "from vercor._runtime.compilation import" not in runtime_prepared_source
     assert "from vercor._runtime.cache import" not in runtime_run_context_source
-    assert "from vercor._runtime.cache import" not in runtime_resources_source
+    assert "from vercor._runtime.cache import" not in runtime_prepared_source
     assert "context: RuntimeRunContext" in runtime_runner_source
     assert "from vercor._runtime.run_context import" not in coupler_source
     assert "from vercor._runtime.run_context import" in runtime_facade_source
     assert "from vercor._runtime.run_context import" in runtime_runner_source
-    assert "from vercor._runtime.resources import CouplerRuntimeResources" not in (
-        coupler_source
-    )
-    assert "create_runtime_resources()" in coupler_source
-    assert "runtime_resources: CouplerRuntimeResources" in runtime_facade_source
+    assert "from vercor._runtime.prepared import PreparedCoupling" in coupler_source
+    assert "def _ensure_prepared(" in coupler_source
+    assert "RuntimeInputs" not in runtime_facade_source
     assert "def compiled_scanned_runtime(" not in runtime_runner_source
     assert "def compiled_runtime_cache_key(" not in runtime_runner_source
     assert "compiled_runtime_cache_key(" not in runtime_run_context_source
@@ -434,7 +435,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "component_state.fields.to_mapping()" not in base_source
     assert "component_state.fields.to_mapping()" in runtime_fields_source
     assert "def merge(" not in runtime_source
-    assert "_runtime_resources" in coupler_source
+    assert "_prepared: PreparedCoupling | None" in coupler_source
     for field_marker in (
         "    _regridders:",
         "    _binary_masks:",
@@ -457,11 +458,11 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def build_exchange_topology_maps(" in runtime_exchange_topology_source
     assert "class ExchangeTopologyState" in runtime_topology_state_source
     assert "class RuntimeTopologyMaps" in runtime_topology_state_source
-    assert "class SurfaceExchangeMasks" in runtime_topology_state_source
+    assert "class SurfaceExchangeMasks" not in runtime_topology_state_source
     assert "def build_exchange_topology(" in runtime_topology_source
     assert "def create_surface_exchange_masks(" in runtime_surface_masks_source
     assert "def validate_land_mask_consistency(" in runtime_surface_masks_source
-    assert "def apply_surface_exchange_masks(" in runtime_surface_masks_source
+    assert "def apply_surface_exchange_masks(" not in runtime_surface_masks_source
     assert "def create_exchange_masks(" not in runtime_topology_source
     assert "def validate_land_mask_consistency(" not in runtime_topology_source
     assert "def initialize_regridders_and_masks(" not in runtime_topology_source
@@ -477,9 +478,8 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def get_component(" not in runtime_component_topology_source
     assert ".values()" not in runtime_component_topology_source
     assert "from vercor._runtime.topology import" not in coupler_source
-    assert "from vercor._runtime.topology_state import" in runtime_resources_source
-    assert "ExchangeTopologyState" not in runtime_resources_source
-    assert "RuntimeTopologyMaps" in runtime_resources_source
+    assert "from vercor._runtime.topology_state import" in runtime_prepared_source
+    assert "RuntimeTopologyMaps" in runtime_prepared_source
     assert "def _create_exchange_masks(" not in coupler_source
     assert "def _validate_land_mask_consistency(" not in coupler_source
     assert "def _patch_exchange_masks(" not in coupler_source
@@ -588,60 +588,71 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
         name="OCN",
         grid=make_test_grid(name="contract-ocn"),
         fields={"sea_surface_temperature": 281.0},
+        spec=ComponentSpec(inputs=("temperature", "humidity")),
     )
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
     coupler.add_component(cast(Any, atmosphere))
     coupler.add_component(cast(Any, ocean))
+
+    def temperature_regrid(source: Any, destination: Any) -> object:
+        _ = source, destination
+        return object()
+
+    def humidity_regrid(source: Any, destination: Any) -> object:
+        _ = source, destination
+        return object()
+
     coupler.add_exchange(
         Exchange(
             source="ATM",
             target="OCN",
             fields=("temperature",),
-            regrid=cast(Any, lambda source, destination: object()),
+            regrid=cast(Any, temperature_regrid),
         )
     )
 
     runtime_state_from_coupler_components(coupler, prefill_missing=True)
-    assert coupler._runtime_resources.runtime_contracts["ATM"].sends == ("temperature",)
+    assert coupler._prepared is not None
+    first_prepared = coupler._prepared
+    assert first_prepared.contracts["ATM"].sends == ("temperature",)
 
     coupler.add_exchange(
         Exchange(
             source="ATM",
             target="OCN",
             fields=("humidity",),
-            regrid=cast(Any, lambda source, destination: object()),
+            regrid=cast(Any, humidity_regrid),
         )
     )
+    assert coupler._prepared is None
     runtime_state_from_coupler_components(coupler, prefill_missing=True)
 
-    assert coupler._runtime_resources.runtime_contracts["ATM"].sends == (
+    assert coupler._prepared is not None
+    assert coupler._prepared is not first_prepared
+    assert coupler._prepared.contracts["ATM"].sends == (
         "temperature",
         "humidity",
     )
 
 
-def test_coupler_runtime_resources_store_runtime_state() -> None:
-    from vercor._runtime.resources import CouplerRuntimeResources
+def test_coupler_prepared_boundary_stores_runtime_state() -> None:
+    from vercor._runtime.prepared import PreparedCoupling
 
-    coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
-
-    assert isinstance(coupler._runtime_resources, CouplerRuntimeResources)
-    regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
-    binary_masks = cast(Any, {("ATM", "OCN", "bilinear"): jnp.ones((2, 2))})
-    fractional_masks = cast(Any, {("ATM", "OCN", "bilinear"): jnp.full((2, 2), 0.5)})
-    contracts = {"ATM": ExchangeContract(receives=("x",), sends=("y",))}
-    topology_maps = RuntimeTopologyMaps(
-        regridders=regridders,
-        binary_masks=binary_masks,
-        fractional_masks=fractional_masks,
+    component = DataComponent.from_fields(
+        "MODEL",
+        make_test_grid(name="prepared-runtime-state"),
+        {"temperature": 280.0},
     )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
 
-    coupler._runtime_resources.topology_maps = topology_maps
-    coupler._runtime_resources.runtime_contracts = contracts
-
-    assert coupler._runtime_resources.topology_maps is topology_maps
-    assert coupler._runtime_resources.runtime_contracts is contracts
-    assert coupler._runtime_resources.interrupt_controller is not None
+    assert isinstance(coupler._prepared, PreparedCoupling)
+    assert coupler._prepared.contracts["MODEL"] == ExchangeContract()
+    assert coupler._prepared.interrupts is not None
 
 
 def test_coupler_does_not_expose_runtime_cache_facade() -> None:
@@ -649,71 +660,37 @@ def test_coupler_does_not_expose_runtime_cache_facade() -> None:
 
     assert not hasattr(coupler, "clear_runtime_cache")
     assert not hasattr(coupler, "runtime_cache_entry_count")
-    assert not hasattr(coupler._runtime_resources, "runtime_cache")
+    assert not hasattr(coupler, "_runtime_resources")
+    assert importlib.util.find_spec("vercor._runtime.resources") is None
     assert importlib.util.find_spec("vercor._runtime.cache") is None
 
 
 @pytest.mark.fast_always
-def test_runtime_resources_use_public_fields_directly() -> None:
-    from vercor._runtime.resources import CouplerRuntimeResources
-
-    resources = CouplerRuntimeResources()
-    contracts = {"ATM": ExchangeContract(receives=("x",), sends=("y",))}
-    regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
-    binary_masks: dict[tuple[str, str, str], RuntimeArray] = {
-        ("ATM", "OCN", "bilinear"): jnp.ones((2, 2))
-    }
-    fractional_masks: dict[tuple[str, str, str], RuntimeArray] = {
-        ("ATM", "OCN", "bilinear"): jnp.full((2, 2), 0.5)
-    }
-    topology_maps = RuntimeTopologyMaps(
-        regridders=regridders,
-        binary_masks=binary_masks,
-        fractional_masks=fractional_masks,
+def test_prepared_runtime_fields_are_frozen_and_read_only() -> None:
+    component = DataComponent.from_fields(
+        "MODEL",
+        make_test_grid(name="prepared-read-only"),
+        {"temperature": 280.0},
     )
-
-    resources.runtime_contracts = contracts
-    resources.topology_maps = topology_maps
-
-    assert resources.runtime_contracts is contracts
-    assert resources.topology_maps is topology_maps
-    assert not hasattr(resources, "replace_contracts")
-    assert not hasattr(resources, "replace_topology_maps")
-    assert not hasattr(resources, "replace_topology")
-    assert not hasattr(resources, "runtime_cache")
-
-    replacement_regridders = cast(Any, {("OCN", "ATM", "bilinear"): object()})
-    replacement_binary_masks: dict[tuple[str, str, str], RuntimeArray] = {
-        ("OCN", "ATM", "bilinear"): jnp.ones((2, 2))
-    }
-    replacement_fractional_masks: dict[tuple[str, str, str], RuntimeArray] = {
-        ("OCN", "ATM", "bilinear"): jnp.full((2, 2), 0.25)
-    }
-    replacement_topology_maps = RuntimeTopologyMaps(
-        regridders=replacement_regridders,
-        binary_masks=replacement_binary_masks,
-        fractional_masks=replacement_fractional_masks,
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
     )
-    resources.topology_maps = replacement_topology_maps
+    coupler.initial_state()
+    prepared = coupler._prepared
 
-    assert resources.topology_maps is replacement_topology_maps
-
-    resources_source = Path("vercor/_runtime/resources.py").read_text(encoding="utf-8")
-    assert "def replace_contracts(" not in resources_source
-    assert "def replace_topology_maps(" not in resources_source
-    assert "def replace_topology(" not in resources_source
+    assert prepared is not None
+    with pytest.raises(TypeError):
+        prepared.contracts["MODEL"] = ExchangeContract()  # type: ignore[index]
+    with pytest.raises(FrozenInstanceError):
+        prepared.run_order = ()  # type: ignore[misc]
+    assert not Path("vercor/_runtime/resources.py").exists()
 
     runtime_facade_source = Path("vercor/_runtime/facade.py").read_text(
         encoding="utf-8"
     )
-    assert ".replace_topology(" not in runtime_facade_source
-    for direct_assignment in (
-        "runtime_resources.compiled_runtime_cache =",
-        "runtime_resources.runtime_cache",
-        "runtime_resources.runtime_cache_mapping",
-        "runtime_resources.interrupts =",
-    ):
-        assert direct_assignment not in runtime_facade_source
+    assert "runtime_resources" not in runtime_facade_source
 
     profile_source = Path("examples/profile_runtime.py").read_text(encoding="utf-8")
     assert "coupler._runtime_resources" not in profile_source
@@ -730,7 +707,7 @@ def test_runtime_topology_maps_copying_stays_at_exchange_topology_boundary() -> 
 
     assert "def from_mappings(" not in topology_state_source
     assert "RuntimeTopologyMaps.from_mappings" not in exchange_topology_source
-    assert "RuntimeTopologyMaps.empty()" in exchange_topology_source
+    assert "regridders = {}" in exchange_topology_source
 
     regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
     binary_masks: dict[tuple[str, str, str], RuntimeArray] = {

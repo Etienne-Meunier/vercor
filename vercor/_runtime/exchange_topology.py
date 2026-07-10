@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from vercor.dtypes import jax_ones
+from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.jax_logging import LoggerLike
@@ -24,37 +25,40 @@ def build_exchange_topology_maps(
 ) -> RuntimeTopologyMaps:
     """Build exchange regridders and identity masks for configured topology."""
 
-    if topology_maps is None:
-        initialized_maps = RuntimeTopologyMaps.empty()
-    else:
-        initialized_maps = RuntimeTopologyMaps(
-            regridders=dict(topology_maps.regridders),
-            binary_masks=dict(topology_maps.binary_masks),
-            fractional_masks=dict(topology_maps.fractional_masks),
-        )
+    regridders = {} if topology_maps is None else dict(topology_maps.regridders)
+    binary_masks = {} if topology_maps is None else dict(topology_maps.binary_masks)
+    fractional_masks = (
+        {} if topology_maps is None else dict(topology_maps.fractional_masks)
+    )
+    configured_keys: set[tuple[str, str, str]] = set()
 
     for exchange in exchanges:
         key = (exchange.source, exchange.target, exchange_regrid_key(exchange))
-
-        if key not in initialized_maps.regridders:
-            initialized_maps.regridders[key] = exchange.regrid(
+        if key in configured_keys:
+            raise CouplerError(
+                f"Duplicate exchange topology key {key!r}; merge field declarations "
+                "into one Exchange or give the exchanges distinct regrid factories."
+            )
+        configured_keys.add(key)
+        if key not in regridders:
+            regridders[key] = exchange.regrid(
                 components[exchange.source].grid,
                 components[exchange.target].grid,
             )
-            initialized_maps.binary_masks[key] = jax_ones(
+            binary_masks[key] = jax_ones(
                 components[exchange.target].grid.shape,
                 settings,
             )
-            initialized_maps.fractional_masks[key] = jax_ones(
+            fractional_masks[key] = jax_ones(
                 components[exchange.target].grid.shape,
                 settings,
-            )
-        else:
-            logger.warning(
-                f" Regridder for exchange {exchange.label} already exists, skipping creation"
             )
 
-    return initialized_maps
+    return RuntimeTopologyMaps(
+        regridders=regridders,
+        binary_masks=binary_masks,
+        fractional_masks=fractional_masks,
+    )
 
 
 __all__ = ["build_exchange_topology_maps"]
