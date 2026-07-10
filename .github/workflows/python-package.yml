@@ -68,7 +68,7 @@ jobs:
       - name: Install selected artifact environment
         run: |
           python -m pip install --upgrade pip pytest mypy pyyaml
-          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-3.0.0-py3-none-any.whl"
+          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-3.1.0-py3-none-any.whl"
           PLUGIN_WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
           python -m pip install "${WHEEL_PATH}${{ matrix.extra }}"
           python -m pip install --no-deps "${PLUGIN_WHEEL_PATH}"

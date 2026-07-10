@@ -2,6 +2,11 @@
 
 A fully differentiable coupler in JAX for different Earth system models written in JAX.
 
+The evidence-based public/private inventory, migration plan, and complete 3.1
+extension contract are maintained in
+[`docs/api-architecture-review.md`](docs/api-architecture-review.md). This file
+records implementation design; the review is the concise API stability guide.
+
 ---
 
 ## 1. Goals and Non-Goals
@@ -94,7 +99,11 @@ lifecycle, and NetCDF writing live in `vercor.output`;
 private `vercor.output._session` owns backend-neutral static output schemas,
 immutable JAX PyTree sessions/accumulators, generic runtime-field extraction,
 early selected-field validation, coalesced clock boundaries, and host-boundary
-writes. Generic schemas default an empty `PeriodOutput.variables` selection to
+writes. Period-enabled Veros and CAMulator factories privately mark their native
+host step as the period-output owner, so session validation/schema construction
+skips those adapters without disabling tracing/custom-backend I/O policy or
+mixed generic output sessions. Generic schemas default an empty
+`PeriodOutput.variables` selection to
 declared outputs and write `{component}.averages.YYYY-MM-DD.nc`. The static
 boundary plan allocates filenames globally across every schema and boundary.
 A path requested once remains unchanged; repeated records from one schema use a
@@ -324,9 +333,9 @@ immutable runtime containers used during traced integration.
   for plots, belong in diagnostics or setups. Use `HostComponent` for
   non-differentiable adapters and implement the same mapping-based `step(...)`;
   host-backed adapters must run through `Coupler.run()` so VerCOR can select the
-  Python host runtime path. Optional
-  hooks include `initialize()`, `create_runtime_payload()`,
-  `prefill_runtime_state_fields()`, and `validate_runtime_state()`. Callable
+  Python host runtime path. Optional customization is installed through
+  `LifecycleHooks(initialize=..., create_payload=..., prefill=...,
+  validate=...)`; inherited runtime-store bridge methods remain private. Callable
   wrappers may accept `(fields)`, `(fields, context)`, or
   `(fields, context, payload)` and return either a field-update mapping or
   `StepResult(fields, payload)` when the runtime payload must

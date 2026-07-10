@@ -7,7 +7,7 @@ name = "vercor-public-plugin"
 version = "0.1.0"
 description = "Installed-artifact fixture for VerCOR public extension contracts"
 requires-python = ">=3.12"
-dependencies = ["vercor>=3.0.0"]
+dependencies = ["vercor>=3.1.0"]
 
 [tool.flit.module]
 name = "vercor_public_plugin"

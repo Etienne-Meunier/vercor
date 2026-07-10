@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 from functools import partial
 import logging
 from pathlib import Path
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 from typing import Any, Literal, cast
 
 import h5netcdf
@@ -1812,11 +1813,18 @@ def test_custom_global_four_degree_set_diagnostics_populates_outputs() -> None:
     ]
 
 
-def test_configure_veros_runtime_sets_diskless_mode() -> None:
-    from veros import runtime_settings
+def test_configure_veros_runtime_sets_diskless_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_settings = SimpleNamespace()
+    fake_veros = ModuleType("veros")
+    setattr(fake_veros, "runtime_settings", runtime_settings)
+    monkeypatch.setitem(sys.modules, "veros", fake_veros)
 
     veros_runtime_settings_module.configure_veros_runtime()
 
+    assert runtime_settings.backend == "numpy"
+    assert runtime_settings.force_overwrite is True
     assert getattr(runtime_settings, "diskless_mode") is True
 
 
@@ -2340,6 +2348,11 @@ def test_veros_constructor_builds_jax_backed_grid(
     )
     monkeypatch.setattr(
         veros_state_module, "copy_state", lambda tree, jitted=True: tree
+    )
+    monkeypatch.setattr(
+        veros_runtime_settings_module,
+        "configure_veros_runtime",
+        lambda: None,
     )
 
     component = veros_gcm_module.make_veros_gcm(

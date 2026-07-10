@@ -61,6 +61,8 @@ def make_camulator_gcm(
             ),
         ),
     )
+    if period_output is not None:
+        setattr(component, "_period_output_handled_by_step", True)
     return component
 
 

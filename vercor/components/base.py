@@ -3,14 +3,13 @@ from __future__ import annotations
 from abc import ABC
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from vercor.components.contracts import (
     FieldImportPolicy,
     LifecycleHooks,
     ComponentStepReturn,
     ComponentSpec,
-    StepResult,
     _AuthorStepCallable,
 )
 from vercor.components._callable_wrappers import (
@@ -19,14 +18,11 @@ from vercor.components._callable_wrappers import (
 )
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
+from vercor.components.contexts import StepContext
 from vercor.grids import RectilinearGrid
 from vercor.output import OutputConfig
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
-
-if TYPE_CHECKING:
-    from vercor.components.contexts import StepContext
-
 
 __all__ = [
     "Component",
@@ -124,10 +120,7 @@ class Component(
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: Callable[
-            ...,
-            Mapping[str, RuntimeArray] | StepResult,
-        ],
+        step: Callable[..., ComponentStepReturn],
         *,
         spec: ComponentSpec | None = None,
         payload: Any | None = None,

@@ -172,6 +172,7 @@ def _snapshot_output_time_for_write_outputs(
     coupler.add_component(
         cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm")))
     )
+    coupler.set_run_order(("ATM",))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_snapshots: dict[str, Any] = {}
 
@@ -1022,9 +1023,14 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source._data["temperature"] = jnp.full((2, 2), 5.0)
-    source._data["u_velocity"] = np.full((2, 2), 1.0)
-    source._data["v_velocity"] = np.full((2, 2), -1.0)
+    source.seed_fields(
+        {
+            "temperature": jnp.full((2, 2), 5.0),
+            "u_velocity": np.full((2, 2), 1.0),
+            "v_velocity": np.full((2, 2), -1.0),
+        }
+    )
+    destination.declare_fields(inputs=("temperature", "u_velocity", "v_velocity"))
 
     scalar_exchange = Exchange(
         source="OCN",
@@ -1090,7 +1096,8 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
 def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source._data["temperature"] = np.full((2, 2), 5.0)
+    source.seed_field("temperature", np.full((2, 2), 5.0))
+    destination.declare_fields(inputs=("temperature",))
 
     exchange = Exchange(
         source="OCN",
@@ -1135,6 +1142,8 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
 def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> None:
     scalar_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     scalar_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
+    scalar_source.declare_fields(outputs=("temperature",))
+    scalar_destination.declare_fields(inputs=("temperature",))
     scalar_exchange = Exchange(
         source="OCN",
         target="ATM",
@@ -1164,7 +1173,9 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
 
     vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
     vector_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    vector_source._data["u_velocity"] = np.ones((2, 2))
+    vector_source.declare_fields(outputs=("u_velocity", "v_velocity"))
+    vector_source.seed_field("u_velocity", np.ones((2, 2)))
+    vector_destination.declare_fields(inputs=("u_velocity", "v_velocity"))
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
@@ -1204,7 +1215,10 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
         DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
         DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
     )
-    coupler = make_coupler(components=cast(Any, components))
+    coupler = make_coupler(
+        components=cast(Any, components),
+        run_order=tuple(component.name for component in components),
+    )
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_runtime: dict[str, Any] = {}
     captured_snapshots: dict[str, Any] = {}
@@ -1225,7 +1239,10 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     coupler.write_outputs(state, output_dir=Path("snapshot"))
 
     assert captured_runtime["final_state"] is state
-    assert captured_runtime["components"] is coupler._runtime_components
+    captured_components = captured_runtime["components"]
+    assert tuple(captured_components) == tuple(coupler._runtime_components)
+    for name, component in coupler._runtime_components.items():
+        assert captured_components[name] is component
     assert captured_runtime["exchanges"] is coupler.exchanges
     assert (
         captured_runtime["binary_masks"]
@@ -1240,7 +1257,10 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     assert captured_runtime["filename_template"] == "{component}.runtime_fields.nc"
     assert captured_runtime["logger"] is coupler.logger
     assert captured_snapshots["final_state"] is state
-    assert captured_snapshots["components"] is coupler._runtime_components
+    snapshot_components = captured_snapshots["components"]
+    assert tuple(snapshot_components) == tuple(coupler._runtime_components)
+    for name, component in coupler._runtime_components.items():
+        assert snapshot_components[name] is component
     assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 0)
     assert captured_snapshots["output_dir"] == Path("snapshot")
     assert captured_snapshots["logger"] is coupler.logger

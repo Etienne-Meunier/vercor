@@ -8,8 +8,12 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
-EXPECTED_VERSION = "3.0.0"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_VERSION = tomllib.loads(
+    (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+)["project"]["version"]
 EXPECTED_WHEEL_NAME = f"vercor-{EXPECTED_VERSION}-py3-none-any.whl"
 EXPECTED_SDIST_NAME = f"vercor-{EXPECTED_VERSION}.tar.gz"
 EXPECTED_PLUGIN_VERSION = "0.1.0"
@@ -62,13 +66,13 @@ def _existing_distributions(
         or plugin_wheel.name != EXPECTED_PLUGIN_WHEEL_NAME
     ):
         raise ValueError(
-            "expected VerCOR 3.0.0 and public plugin 0.1.0 artifacts named "
+            f"expected VerCOR {EXPECTED_VERSION} and public plugin 0.1.0 artifacts named "
             f"{EXPECTED_WHEEL_NAME!r}, {EXPECTED_SDIST_NAME!r}, and "
             f"{EXPECTED_PLUGIN_WHEEL_NAME!r}"
         )
     if not wheel.is_file() or not sdist.is_file() or not plugin_wheel.is_file():
         raise ValueError(
-            "VerCOR 3.0.0 or public plugin 0.1.0 artifacts are missing: "
+            f"VerCOR {EXPECTED_VERSION} or public plugin 0.1.0 artifacts are missing: "
             f"{wheel}, {sdist}, {plugin_wheel}"
         )
     return BuiltDistributions(
@@ -145,7 +149,7 @@ def build_distributions(
             or configured_plugin_wheel is None
         ):
             raise ValueError(
-                "VerCOR 3.0.0 wheel/sdist and public plugin 0.1.0 wheel "
+                f"VerCOR {EXPECTED_VERSION} wheel/sdist and public plugin 0.1.0 wheel "
                 "paths are all required"
             )
         return _existing_distributions(

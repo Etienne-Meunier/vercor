@@ -1185,21 +1185,22 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
             "ATM",
         ),
     )
+    atmosphere.seed_fields(
+        {
+            "temperature_2m": jnp.full(grid.shape, 288.15, dtype=jnp.float64),
+            "sensible_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "latent_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "u_velocity_10m": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "v_velocity_10m": jnp.zeros(grid.shape, dtype=jnp.float64),
+            "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
+        }
+    )
     key = ("OCN", "ATM", "bilinear")
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: bilinear(grid, grid)}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
-    atmosphere._data = {
-        "temperature_2m": jnp.full(grid.shape, 288.15, dtype=jnp.float64),
-        "sensible_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "latent_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "u_velocity_10m": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "v_velocity_10m": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
-    }
-
     initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state

@@ -26,7 +26,7 @@ import vercor.setups._external.camulator_tensors as camulator_tensors_module
 import vercor.setups._external.camulator_wind_filter as camulator_wind_filter_module
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
-from vercor._exchange_recipes import ATMOSPHERE_TO_LAND_RADIATION_FIELDS
+from vercor.recipes import ATMOSPHERE_TO_LAND_RADIATION_FIELDS
 from vercor._runtime.contracts import build_exchange_contracts
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.components import ComponentSpec, DataComponent

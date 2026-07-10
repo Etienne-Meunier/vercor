@@ -9,6 +9,48 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 3.1 API consolidation release validation completed locally on
+  2026-07-10 with the direct
+  `/Users/romannuterman/miniforge3/envs/scipy/bin/python` fallback for the known
+  Conda/Rattler launcher panic. The exact eight-section architecture review is
+  in `docs/api-architecture-review.md`; README quick starts cover the built-in,
+  structural JAX, host, custom backend, custom topology, and lifecycle/output
+  workflows using public imports only. The release owns exchange recipes
+  directly in `vercor.recipes`, uses `ComponentStepReturn` on every public step
+  callback annotation, and reports version 3.1.0. Contract tests recorded the
+  expected five-test RED before the document/version changes and now pass 5/5;
+  the native Veros/CAMulator output regression recorded two expected RED
+  failures and now passes 3/3, including a mixed native/generic plan. The first
+  full suite exposed nine stale full-only fixtures: invalid undeclared exchange
+  fields, missing run orders for validated output, direct post-preparation
+  component mutation, prepared-mapping identity assumptions, and order-dependent
+  Veros global settings. The fixtures now configure valid public contracts
+  before preparation or isolate the global setting helper; the exact nine-node
+  reproduction passes 9/9 without weakening runtime validation. Final Black
+  reports 233 files unchanged (with the recurring Python 3.13/target-3.14
+  warning), flake8 reports zero findings, mypy reports no issues in 233 files,
+  compileall passes, the injected/preloaded JCM smoke passes 9/9, the fast suite
+  passes 386/386, the full suite passes 782/782, and coverage is 90.52% (91%
+  reported) against the 90% gate. Distribution checks pass 10/10. Retained
+  artifacts at
+  `/private/tmp/vercor-release-3.1-final.VBJ8SP/distribution-build0/dist` are
+  `vercor-3.1.0-py3-none-any.whl`, `vercor-3.1.0.tar.gz`, and the 0.1.0 public
+  plugin wheel; wheel/sdist `py.typed`, installed origin/version 3.1.0, plugin
+  smoke, and strict external mypy (4 files) pass. JCM 1.1.1 and Veros 1.6.2 are
+  available; CREDIT is absent and remains uninstalled/unpinned. The final
+  read-only review approved with no remaining Critical, Important, or Minor
+  findings after correcting the CI wheel filename, exact 48-symbol root
+  inventory, verified 2.x migration history, runtime-resolvable public step
+  annotations, and CAMulator period-output path wording.
+- Native bundled period-output compatibility fixed locally on 2026-07-10.
+  Period-enabled Veros and CAMulator factory components now mark their host
+  steps as the private owner of native period writes, so generic runtime-field
+  validation and schema construction do not reject model-native variables or
+  create duplicate files. Period-output detection remains enabled for I/O,
+  tracing, and custom-backend policy, and mixed generic/native plans retain
+  the generic schema. The new three-test regression, five focused existing
+  output/runtime files in fast mode (23/23), Black, flake8, focused mypy, and
+  whitespace checks pass using the direct `scipy` executable.
 - Task 5 final plugin-artifact follow-up implemented locally on 2026-07-10.
   VerCOR wheel/sdist and the independently packaged public-plugin wheel are now
   built once and uploaded together; every installed CI matrix cell consumes

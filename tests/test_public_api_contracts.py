@@ -223,6 +223,17 @@ def test_component_step_return_contract_is_public_in_its_owner_package() -> None
         return_annotation = signature(step_method).return_annotation
         assert return_annotation == "ComponentStepReturn"
 
+    for component_type in (
+        components_module.Component,
+        components_module.HostComponent,
+        components_module.DataComponent,
+    ):
+        step_annotation = (
+            signature(component_type.from_step).parameters["step"].annotation
+        )
+        assert "ComponentStepReturn" in str(step_annotation)
+        assert "Mapping[str" not in str(step_annotation)
+
 
 @pytest.mark.fast_always
 def test_public_component_contracts_do_not_expose_runtime_implementation_types() -> (
@@ -265,6 +276,20 @@ def test_validation_context_runtime_type_hints_resolve_public_state() -> None:
     type_hints = get_type_hints(contracts_module.ValidationContext)
 
     assert type_hints["state"] is vercor.ComponentState
+
+
+@pytest.mark.fast_always
+def test_public_component_step_type_hints_resolve_at_runtime() -> None:
+    components_module = importlib.import_module("vercor.components")
+
+    for component_type in (
+        components_module.Component,
+        components_module.DataComponent,
+        components_module.HostComponent,
+    ):
+        type_hints = get_type_hints(component_type.step)
+        assert type_hints["context"] is components_module.StepContext
+        assert type_hints["return"] is components_module.ComponentStepReturn
 
 
 @pytest.mark.fast_always

@@ -19,6 +19,9 @@ import yaml
 import tests._distribution_support as distribution_support
 from tests._distribution_support import (
     BuiltDistributions,
+    EXPECTED_SDIST_NAME,
+    EXPECTED_VERSION,
+    EXPECTED_WHEEL_NAME,
     build_distributions,
     install_local_target,
 )
@@ -47,7 +50,7 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     runtime_dependencies = tuple(project["dependencies"])
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "3.0.0"
+    assert project["version"] == "3.1.0"
     assert not any(
         dependency.lower().startswith("pytest") for dependency in runtime_dependencies
     )
@@ -147,6 +150,8 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "VERCOR_ARTIFACT_DIR" in installed_commands
     assert "VERCOR_PLUGIN_WHEEL_PATH" in installed_commands
     assert "VERCOR_TEST_PACKAGE_ROOT" in installed_commands
+    assert EXPECTED_WHEEL_NAME in installed_commands
+    assert "vercor-3.0.0-py3-none-any.whl" not in installed_commands
     assert "vercor_public_plugin.smoke" in installed_commands
     assert "MYPYPATH" in installed_commands
     assert "tests/fixtures/public_plugin/src" not in installed_commands
@@ -163,8 +168,8 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
 ) -> None:
     artifact_dir = tmp_path / "downloaded-dist"
     artifact_dir.mkdir()
-    wheel = artifact_dir / "vercor-3.0.0-py3-none-any.whl"
-    sdist = artifact_dir / "vercor-3.0.0.tar.gz"
+    wheel = artifact_dir / EXPECTED_WHEEL_NAME
+    sdist = artifact_dir / EXPECTED_SDIST_NAME
     plugin_wheel = artifact_dir / "vercor_public_plugin-0.1.0-py3-none-any.whl"
     wheel.touch()
     sdist.touch()
@@ -192,18 +197,18 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     ("wheel_name", "sdist_name", "plugin_wheel_name"),
     (
         (
-            "vercor-3.1.0-py3-none-any.whl",
-            "vercor-3.0.0.tar.gz",
-            "vercor_public_plugin-0.1.0-py3-none-any.whl",
-        ),
-        (
             "vercor-3.0.0-py3-none-any.whl",
             "vercor-3.1.0.tar.gz",
             "vercor_public_plugin-0.1.0-py3-none-any.whl",
         ),
         (
-            "vercor-3.0.0-py3-none-any.whl",
+            "vercor-3.1.0-py3-none-any.whl",
             "vercor-3.0.0.tar.gz",
+            "vercor_public_plugin-0.1.0-py3-none-any.whl",
+        ),
+        (
+            "vercor-3.1.0-py3-none-any.whl",
+            "vercor-3.1.0.tar.gz",
             "vercor_public_plugin-0.2.0-py3-none-any.whl",
         ),
     ),
@@ -220,7 +225,7 @@ def test_distribution_helper_rejects_wrong_artifact_version(
     (artifact_dir / sdist_name).touch()
     (artifact_dir / plugin_wheel_name).touch()
 
-    with pytest.raises(ValueError, match="VerCOR 3.0.0"):
+    with pytest.raises(ValueError, match=f"VerCOR {EXPECTED_VERSION}"):
         build_distributions(
             PROJECT_ROOT,
             tmp_path / "unused-build-output",
@@ -236,8 +241,8 @@ def test_built_distributions_run_public_plugin_outside_checkout(
 ) -> None:
     distributions = built_distributions
 
-    assert distributions.wheel.name == "vercor-3.0.0-py3-none-any.whl"
-    assert distributions.sdist.name == "vercor-3.0.0.tar.gz"
+    assert distributions.wheel.name == EXPECTED_WHEEL_NAME
+    assert distributions.sdist.name == EXPECTED_SDIST_NAME
     assert (
         distributions.plugin_wheel.name == "vercor_public_plugin-0.1.0-py3-none-any.whl"
     )
@@ -248,7 +253,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         )
         metadata = wheel.read(metadata_name).decode("utf-8")
     assert "vercor/py.typed" in wheel_names
-    assert "Version: 3.0.0" in metadata
+    assert f"Version: {EXPECTED_VERSION}" in metadata
     pytest_requirements = [
         line
         for line in metadata.splitlines()
@@ -261,7 +266,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
 
     with tarfile.open(distributions.sdist, "r:gz") as sdist:
         sdist_names = set(sdist.getnames())
-    assert "vercor-3.0.0/vercor/py.typed" in sdist_names
+    assert f"vercor-{EXPECTED_VERSION}/vercor/py.typed" in sdist_names
 
     target = tmp_path / "installed-target"
     install_local_target(
@@ -290,7 +295,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     )
     installed = json.loads(probe.stdout)
     assert Path(installed["file"]).is_relative_to(target)
-    assert installed["version"] == "3.0.0"
+    assert installed["version"] == EXPECTED_VERSION
     assert Path(installed["typed"]).is_file()
 
     monkeypatch.setenv("VERCOR_TEST_PACKAGE_ROOT", str(target))

@@ -20,7 +20,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.components import ComponentSpec, DataComponent
 from vercor.components.contexts import StepContext
 from vercor.components.runtime_execution import step_component_runtime_state
-from vercor._exchange_recipes import (
+from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     ATMOSPHERE_TO_LAND_BASIC_FIELDS,

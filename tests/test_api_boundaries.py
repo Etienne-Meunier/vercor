@@ -2003,9 +2003,7 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     )
     exchange_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
     coupler_helpers_path = Path("vercor/setups/coupler_helpers.py")
-    exchange_recipes_source = Path("vercor/_exchange_recipes.py").read_text(
-        encoding="utf-8"
-    )
+    exchange_recipes_source = Path("vercor/recipes.py").read_text(encoding="utf-8")
     exchanges_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
     runtime_prepared_source = Path("vercor/_runtime/prepared.py").read_text(
         encoding="utf-8"
@@ -2688,9 +2686,13 @@ def test_common_exchange_recipes_are_centralized_for_examples() -> None:
         "SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
         "SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
     )
+    recipes_source = Path("vercor/recipes.py").read_text(encoding="utf-8")
+    assert not Path("vercor/_exchange_recipes.py").exists()
+    assert "from vercor._exchange_recipes import" not in recipes_source
     for recipe_name in required_recipes:
         assert hasattr(recipes_module, recipe_name)
         assert recipe_name in recipes_module.__all__
+        assert f"{recipe_name}: tuple[ExchangeField, ...]" in recipes_source
         assert recipe_name not in exchanges_module.__all__
 
     removed_recipe_aliases = (

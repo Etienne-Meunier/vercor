@@ -1,25 +1,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import Any, NoReturn
 
 from vercor.components.contracts import (
     ComponentSpec,
     ComponentStepReturn,
     FieldImportPolicy,
-    StepResult,
 )
 from vercor.components._contracts import (
     merge_component_outputs,
 )
 from vercor.components.base import Component
+from vercor.components.contexts import StepContext
 from vercor.dtypes import PrecisionPolicy
 from vercor.grids import RectilinearGrid
 from vercor.settings import Settings
-
-if TYPE_CHECKING:
-    from vercor.components.contexts import StepContext
-    from vercor.types import RuntimeArray
+from vercor.types import RuntimeArray
 
 
 class DataComponent(Component):
@@ -37,10 +34,7 @@ class DataComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: Callable[
-            ...,
-            Mapping[str, "RuntimeArray"] | StepResult,
-        ],
+        step: Callable[..., ComponentStepReturn],
         *,
         spec: ComponentSpec | None = None,
         payload: Any | None = None,

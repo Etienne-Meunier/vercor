@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from vercor.components.contracts import (
     ComponentStepReturn,
     LifecycleHooks,
     ComponentSpec,
-    StepResult,
     _AuthorStepCallable,
 )
 from vercor.components._callable_wrappers import (
@@ -15,13 +14,11 @@ from vercor.components._callable_wrappers import (
     callable_component_options,
 )
 from vercor.components.base import Component
+from vercor.components.contexts import StepContext
 from vercor.exceptions import ComponentError
 from vercor.grids import RectilinearGrid
 from vercor.settings import Settings
-
-if TYPE_CHECKING:
-    from vercor.components.contexts import StepContext
-    from vercor.types import RuntimeArray
+from vercor.types import RuntimeArray
 
 
 class HostComponent(Component):
@@ -50,10 +47,7 @@ class HostComponent(Component):
         cls,
         name: str,
         grid: RectilinearGrid,
-        step: Callable[
-            ...,
-            Mapping[str, "RuntimeArray"] | StepResult,
-        ],
+        step: Callable[..., ComponentStepReturn],
         *,
         spec: ComponentSpec | None = None,
         payload: Any | None = None,

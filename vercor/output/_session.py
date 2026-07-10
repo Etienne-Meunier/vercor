@@ -311,7 +311,11 @@ def validate_period_output_component_state(
     """Validate generic selected fields against initialized runtime state."""
 
     period = component.spec.output.period
-    if period is None or hasattr(component, "_period_output_schema_factory"):
+    if (
+        period is None
+        or hasattr(component, "_period_output_schema_factory")
+        or _period_output_handled_by_step(component)
+    ):
         return
     selected = tuple(period.variables) or tuple(component.spec.outputs)
     if not selected:
@@ -339,7 +343,7 @@ def build_period_output_plan(
     accumulators: list[_PeriodOutputAccumulator] = []
     for name, component in components.items():
         period = component.spec.output.period
-        if period is None:
+        if period is None or _period_output_handled_by_step(component):
             continue
         component_state = state._component_state(name)
         validate_period_output_component_state(component, component_state)
@@ -467,6 +471,15 @@ def _generic_period_output_schema(
         filename=lambda time: (
             f"{component.name}.averages.{time.strftime('%Y-%m-%d')}.nc"
         ),
+    )
+
+
+def _period_output_handled_by_step(component: "Component") -> bool:
+    """Return whether a bundled host adapter owns its native period writes."""
+
+    return bool(
+        component.spec.output.period is not None
+        and getattr(component, "_period_output_handled_by_step", False)
     )
 
 
