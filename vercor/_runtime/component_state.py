@@ -45,7 +45,7 @@ def create_runtime_component_state(
     received: dict[str, RuntimeArray] = {}
     sent: dict[str, RuntimeArray] = {}
     if prefill_missing:
-        component.prefill_runtime_state_fields(data, received, sent, contract)
+        component._prefill_runtime_state_fields(data, received, sent, contract)
         prefill_runtime_contract_fields(component, data, received, sent, contract)
 
     validate_component_data_layout(
@@ -58,5 +58,5 @@ def create_runtime_component_state(
         fields=FieldStore.from_mapping(data),
         received=FieldStore.from_mapping(received),
         sent=FieldStore.from_mapping(sent),
-        payload=component.create_runtime_payload(),
+        payload=component._create_runtime_payload(),
     )

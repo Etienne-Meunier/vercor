@@ -1055,6 +1055,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         "Component",
         "ComponentLike",
         "ComponentInfo",
+        "ComponentStepReturn",
         "ComponentCreatePayloadHook",
         "FieldImportPolicy",
         "LifecycleHooks",
@@ -1075,6 +1076,7 @@ def test_components_package_exports_only_component_author_contracts() -> None:
     assert components_module.Component is Component
     assert components_module.ComponentLike is contracts_module.ComponentLike
     assert components_module.ComponentInfo is contracts_module.ComponentInfo
+    assert components_module.ComponentStepReturn is contracts_module.ComponentStepReturn
     assert components_module.FieldImportPolicy is contracts_module.FieldImportPolicy
     assert (
         components_module.ComponentCreatePayloadHook
@@ -1113,7 +1115,6 @@ def test_components_package_exports_only_component_author_contracts() -> None:
         (contracts_module, "AuthorFieldValues"),
         (contracts_module, "AuthorStepCallable"),
         (contracts_module, "ComponentStepCallable"),
-        (contracts_module, "ComponentStepReturn"),
         (contracts_module, "FieldNames"),
         (component_contexts_module, "ComponentSetupContext"),
         (component_contexts_module, "ComponentStepContext"),
@@ -1544,6 +1545,11 @@ def test_component_base_owns_runtime_access_methods_directly() -> None:
     }
     expected_lifecycle_methods = {
         "initialize",
+        "_create_runtime_payload",
+        "_prefill_runtime_state_fields",
+        "_validate_runtime_state",
+    }
+    removed_public_lifecycle_methods = {
         "create_runtime_payload",
         "prefill_runtime_state_fields",
         "validate_runtime_state",
@@ -1551,7 +1557,7 @@ def test_component_base_owns_runtime_access_methods_directly() -> None:
 
     for method_name in expected_author_methods | expected_lifecycle_methods:
         assert hasattr(Component, method_name)
-    for method_name in removed_runtime_methods:
+    for method_name in removed_runtime_methods | removed_public_lifecycle_methods:
         assert not hasattr(Component, method_name)
     assert not hasattr(Component, "seed_zero_field")
     assert not hasattr(Component, "seed_zero_fields")

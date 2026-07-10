@@ -15,6 +15,7 @@ from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.grids import RectilinearGrid
+    from vercor.state import ComponentState
 
 KEEP_PAYLOAD: Final = object()
 """Sentinel meaning a component step should preserve the existing payload."""
@@ -58,18 +59,18 @@ class PrefillResult:
 class ValidationContext:
     """Public context supplied to component runtime-state validation hooks."""
 
-    state: Any
+    state: ComponentState
     payload: Any | None = None
     receives: tuple[str, ...] = ()
     sends: tuple[str, ...] = ()
 
 
-_ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
+ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
 _ComponentStepCallable: TypeAlias = Callable[
     [Mapping[str, RuntimeArray], StepContext, Any | None],
-    _ComponentStepReturn,
+    ComponentStepReturn,
 ]
-_AuthorStepCallable: TypeAlias = Callable[..., _ComponentStepReturn]
+_AuthorStepCallable: TypeAlias = Callable[..., ComponentStepReturn]
 _FieldNames: TypeAlias = Iterable[str]
 _AuthorFieldValues: TypeAlias = Mapping[str, object] | None
 ComponentInitializeHook = Callable[[Any, SetupContext], None]
@@ -109,7 +110,7 @@ class ComponentLike(Protocol):
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None = None,
-    ) -> _ComponentStepReturn:
+    ) -> ComponentStepReturn:
         """Return runtime field updates for one component step."""
         ...
 
@@ -223,6 +224,7 @@ __all__ = [
     "LifecycleHooks",
     "ComponentInitializeHook",
     "ComponentPrefillHook",
+    "ComponentStepReturn",
     "ComponentValidateHook",
     "ComponentSpec",
     "KEEP_PAYLOAD",

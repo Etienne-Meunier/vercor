@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from vercor.components.contracts import (
+    ComponentStepReturn,
     ComponentSpec,
     StepResult,
     _AuthorFieldValues,
     _AuthorStepCallable,
     _ComponentStepCallable,
-    _ComponentStepReturn,
     _FieldNames,
 )
 from vercor._field_names import unique_field_names
@@ -86,7 +86,7 @@ __all__ = [
     "_AuthorFieldValues",
     "_AuthorStepCallable",
     "_ComponentStepCallable",
-    "_ComponentStepReturn",
+    "ComponentStepReturn",
     "_FieldNames",
     "declared_runtime_field_names",
     "merge_component_outputs",

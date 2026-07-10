@@ -72,6 +72,24 @@ class DTypePolicy:
 PrecisionPolicy: TypeAlias = DTypePolicy | SupportsEnableX64 | None
 
 
+__all__ = [
+    "DTypePolicy",
+    "PrecisionPolicy",
+    "ShapeLike",
+    "SupportsEnableX64",
+    "as_jax_index_array",
+    "as_jax_real_array",
+    "dtype_policy",
+    "jax_arange",
+    "jax_full",
+    "jax_index_dtype",
+    "jax_linspace",
+    "jax_ones",
+    "jax_real_dtype",
+    "jax_zeros",
+]
+
+
 def dtype_policy(policy: PrecisionPolicy = None) -> DTypePolicy:
     """Normalize optional settings/policy input into a ``DTypePolicy``."""
 

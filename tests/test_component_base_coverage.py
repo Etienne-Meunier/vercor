@@ -328,7 +328,7 @@ def test_data_component_from_fields_accepts_lifecycle_hooks() -> None:
         prefill_missing=True,
         contract=ExchangeContract(),
     )
-    component.validate_runtime_state(state, ExchangeContract())
+    component._validate_runtime_state(state, ExchangeContract())
 
     assert calls == [
         "initialize:OBS:60.0",
@@ -392,7 +392,7 @@ def test_from_fields_and_from_step_facade_expand_scalar_defaults() -> None:
         contract=ExchangeContract(),
     )
 
-    component.validate_runtime_state(state, ExchangeContract())
+    component._validate_runtime_state(state, ExchangeContract())
     assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
     assert_allclose_compact(state.fields.get("forcing"), np.full(grid.shape, 2.0))
     assert_allclose_compact(state.fields.get("tendency"), np.zeros(grid.shape))
@@ -830,7 +830,7 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
             prefill_missing=True,
             contract=ExchangeContract(),
         )
-        component.validate_runtime_state(state, ExchangeContract())
+        component._validate_runtime_state(state, ExchangeContract())
 
     assert events == [
         "initialize:DATA",
@@ -972,7 +972,7 @@ def test_from_step_inputs_validate_missing_fields_without_zero_prefill() -> None
         CouplerError,
         match="Runtime missing required data field 'forcing' for component 'ATM'",
     ):
-        component.validate_runtime_state(state, ExchangeContract())
+        component._validate_runtime_state(state, ExchangeContract())
 
 
 @pytest.mark.fast_always
@@ -1046,7 +1046,7 @@ def test_subclasses_can_declare_fields_with_author_spec() -> None:
         CouplerError,
         match="Runtime missing required data field 'forcing' for component 'ATM'",
     ):
-        component.validate_runtime_state(missing_input_state, ExchangeContract())
+        component._validate_runtime_state(missing_input_state, ExchangeContract())
 
     contract = ExchangeContract(receives=("forcing",))
     state = create_runtime_component_state(
@@ -1054,7 +1054,7 @@ def test_subclasses_can_declare_fields_with_author_spec() -> None:
         prefill_missing=True,
         contract=contract,
     )
-    component.validate_runtime_state(state, contract)
+    component._validate_runtime_state(state, contract)
     assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
     assert_allclose_compact(state.fields.get("forcing"), np.zeros(grid.shape))
 
@@ -1118,7 +1118,7 @@ def test_callable_component_prefills_and_validates_declared_fields() -> None:
         contract=ExchangeContract(),
     )
 
-    component.validate_runtime_state(state, ExchangeContract())
+    component._validate_runtime_state(state, ExchangeContract())
     assert_allclose_compact(state.fields.get("temperature"), np.full(grid.shape, 280.0))
     assert_allclose_compact(state.fields.get("wind"), np.zeros(grid.shape))
 
@@ -1161,7 +1161,7 @@ def test_callable_component_reports_missing_declared_inputs() -> None:
         CouplerError,
         match="Runtime missing required data field 'temperature' for component 'ATM'",
     ):
-        component.validate_runtime_state(state, ExchangeContract())
+        component._validate_runtime_state(state, ExchangeContract())
 
 
 @pytest.mark.fast_always
@@ -1452,7 +1452,7 @@ def test_callable_payload_default_can_be_overridden_by_lifecycle_hook() -> None:
         ),
     )
 
-    assert component.create_runtime_payload() is payload
+    assert component._create_runtime_payload() is payload
 
     def create_runtime_payload(owner: Any) -> dict[str, str]:
         return {"owner": owner.name}
@@ -1471,7 +1471,7 @@ def test_callable_payload_default_can_be_overridden_by_lifecycle_hook() -> None:
         ),
     )
 
-    assert hooked_component.create_runtime_payload() == {"owner": "HOOKED"}
+    assert hooked_component._create_runtime_payload() == {"owner": "HOOKED"}
 
 
 @pytest.mark.fast_always
@@ -1802,7 +1802,7 @@ def test_runtime_validation_uses_component_grid_shape_without_shape_argument() -
     )
 
     validate_component_runtime_contract_fields(component, valid_state, contract)
-    component.validate_runtime_state(valid_state, contract)
+    component._validate_runtime_state(valid_state, contract)
 
     bad_state = valid_state.with_received(
         FieldStore.from_mapping({"temperature": jnp.ones((1, 3))})

@@ -9,6 +9,17 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 1 public component contracts and structural bridge completed on
+  2026-07-10. `ComponentLike` is now the validated canonical structural
+  extension contract; structural lifecycle hooks receive the original user
+  object in the documented refresh order; `ComponentStepReturn` is public from
+  its component owner package; public annotations expose `ComponentState` and
+  `OutputConfig` instead of runtime internals; data-only step construction is
+  rejected; runtime lifecycle bridges are private; and runtime execution
+  precedence remains spec capability, `HostComponent` host enforcement, then
+  whole-run `RuntimeOptions` backend selection. Focused fast (132 tests) and
+  full fast (318 tests) pytest passed; final Black, flake8, mypy, and whitespace
+  checks are recorded in `.superpowers/sdd/task-1-report.md`.
 - Latest local VerCOR 3.0 API-boundary validation passed as of
   2026-07-09. The breaking cleanup removes the `vercor.config` compatibility
   owner, moves surface-mask customization to public `vercor.topology`,

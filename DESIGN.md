@@ -216,9 +216,21 @@ immutable runtime containers used during traced integration.
   class-level `from_fields()` / `from_step()` constructors, or subclasses with
   `declare_fields(...)`. `vercor.components` and `vercor` reexport the
   component-author facade.
+  `ComponentLike` is the canonical structural extension contract: structural
+  components provide a non-empty name, `RectilinearGrid`, `ComponentSpec`,
+  callable `initial_fields`/`initialize`/`step`, and mapping initial fields.
+  Structural initialization calls the user object's `initialize`, refreshes
+  its public state, calls the spec lifecycle initializer with that original
+  object, and refreshes again; payload, prefill, and validation hooks likewise
+  receive the original object. `DataComponent.from_step()` is intentionally
+  rejected because data-only components do not execute steps.
   `vercor.components.contracts` owns public author-facing context, result,
-  spec, and lifecycle-hook types. Internal callable/field-normalization type
-  aliases remain private underscored names. `vercor.components.base` owns only
+  spec, lifecycle-hook types, and `ComponentStepReturn`; the alias is reexported
+  by `vercor.components` but not the root facade. `ValidationContext` exposes
+  public `ComponentState`, while underscored runtime lifecycle bridges keep
+  runtime state/store contracts off inherited public component surfaces.
+  Internal callable/field-normalization type aliases remain private underscored
+  names. `vercor.components.base` owns only
   the abstract differentiable `Component` contract, `vercor.components.data`
   owns `DataComponent`, and `vercor.components.host` owns `HostComponent`.
   Field-name de-duplication lives in private `vercor._field_names`, and
@@ -244,8 +256,10 @@ immutable runtime containers used during traced integration.
   Host/scanned runtime selection is driven by the public
   `ComponentSpec.execution` value, so structural custom components can request
   host execution without subclassing a VerCOR base class or depending on a
-  private marker protocol. Component-facing runtime-field adapters and
-  runtime-store mutation helpers live in private
+  private marker protocol. `HostComponent` always enforces host execution;
+  `RuntimeOptions.execution` selects the backend for the whole coupled run and
+  retains precedence over per-component capability. Component-facing
+  runtime-field adapters and runtime-store mutation helpers live in private
   `vercor.components._runtime_fields`, and component-facing required-field
   validation lives in private `vercor.components._runtime_validation`.
   Component host/scanned execution policy lives in internal

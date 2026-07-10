@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import importlib
+from inspect import signature
 from pathlib import Path
 
 import jax
@@ -199,6 +200,89 @@ def test_component_constructors_accept_component_spec_only() -> None:
             fields={"temperature": 280.0},
             outputs=("temperature",),
         )
+
+
+@pytest.mark.fast_always
+def test_component_step_return_contract_is_public_in_its_owner_package() -> None:
+    components_module = importlib.import_module("vercor.components")
+    contracts_module = importlib.import_module("vercor.components.contracts")
+
+    assert components_module.ComponentStepReturn is contracts_module.ComponentStepReturn
+    assert "ComponentStepReturn" in contracts_module.__all__
+    assert "ComponentStepReturn" in components_module.__all__
+    assert "ComponentStepReturn" not in vercor.__all__
+    assert not hasattr(vercor, "ComponentStepReturn")
+
+    for step_method in (
+        contracts_module.ComponentLike.step,
+        components_module.Component.step,
+        components_module.DataComponent.step,
+        components_module.HostComponent.step,
+    ):
+        return_annotation = signature(step_method).return_annotation
+        assert return_annotation == "ComponentStepReturn"
+
+
+@pytest.mark.fast_always
+def test_public_component_contracts_do_not_expose_runtime_implementation_types() -> (
+    None
+):
+    components_module = importlib.import_module("vercor.components")
+    contracts_module = importlib.import_module("vercor.components.contracts")
+
+    public_signatures = (
+        str(signature(contracts_module.ComponentLike.step)),
+        str(signature(components_module.Component.step)),
+        str(signature(components_module.DataComponent.step)),
+        str(signature(components_module.HostComponent.step)),
+        str(signature(contracts_module.ValidationContext)),
+        str(signature(components_module.Component.output.fget)),
+    )
+    for public_signature in public_signatures:
+        for private_type in (
+            "_ComponentStepReturn",
+            "ExchangeContract",
+            "ComponentRuntimeState",
+            "FieldStore",
+        ):
+            assert private_type not in public_signature
+
+    assert (
+        signature(contracts_module.ValidationContext).parameters["state"].annotation
+        == "ComponentState"
+    )
+    assert (
+        signature(components_module.Component.output.fget).return_annotation
+        == "OutputConfig"
+    )
+
+
+@pytest.mark.fast_always
+def test_data_component_rejects_active_step_factory() -> None:
+    grid = make_test_grid(name="data-step-rejected")
+
+    with pytest.raises(TypeError) as error:
+        DataComponent.from_step("DATA", grid, lambda fields: fields)
+
+    message = str(error.value)
+    assert "data-only components do not execute steps" in message
+    assert "DataComponent.from_fields" in message
+    assert "Component.from_step" in message
+    assert "HostComponent.from_step" in message
+
+
+@pytest.mark.fast_always
+def test_typing_aliases_have_explicit_owner_modules_without_root_aliases() -> None:
+    dtypes_module = importlib.import_module("vercor.dtypes")
+    logging_module = importlib.import_module("vercor.jax_logging")
+    types_module = importlib.import_module("vercor.types")
+
+    assert types_module.__all__ == ["RuntimeArray"]
+    assert "PrecisionPolicy" in dtypes_module.__all__
+    assert "LoggerLike" in logging_module.__all__
+    for name in ("RuntimeArray", "PrecisionPolicy", "LoggerLike"):
+        assert name not in vercor.__all__
+        assert not hasattr(vercor, name)
 
 
 @pytest.mark.fast_always

@@ -112,5 +112,28 @@ def test_callable_wrapper_module_does_not_need_request_dataclass() -> None:
     assert "spec=ComponentComponentSpec(" not in host_source
 
 
+@pytest.mark.fast_always
+def test_runtime_lifecycle_bridge_is_private_inherited_surface() -> None:
+    lifecycle_source = source_for("vercor/components/_lifecycle_api.py")
+    component_state_source = source_for("vercor/_runtime/component_state.py")
+    state_validation_source = source_for("vercor/_runtime/state_validation.py")
+
+    public_bridge_names = (
+        "create_runtime_payload",
+        "prefill_runtime_state_fields",
+        "validate_runtime_state",
+    )
+    for method_name in public_bridge_names:
+        assert not hasattr(__import__("vercor").Component, method_name)
+        assert f"def {method_name}(" not in lifecycle_source
+
+    assert "def _create_runtime_payload(" in lifecycle_source
+    assert "def _prefill_runtime_state_fields(" in lifecycle_source
+    assert "def _validate_runtime_state(" in lifecycle_source
+    assert "component._prefill_runtime_state_fields(" in component_state_source
+    assert "component._create_runtime_payload()" in component_state_source
+    assert "component._validate_runtime_state(" in state_validation_source
+
+
 def test_components_package_has_no_top_level_import_cycles() -> None:
     assert package_import_cycles("vercor/components", "vercor.components") == []

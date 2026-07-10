@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING, Any
 from vercor.components.contracts import (
     FieldImportPolicy,
     LifecycleHooks,
+    ComponentStepReturn,
     ComponentSpec,
     StepResult,
     _AuthorStepCallable,
-    _ComponentStepReturn,
 )
 from vercor.components._callable_wrappers import (
     _CallableRuntimeMixin,
@@ -20,6 +20,7 @@ from vercor.components._callable_wrappers import (
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
 from vercor.grids import RectilinearGrid
+from vercor.output import OutputConfig
 from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
@@ -107,7 +108,7 @@ class Component(
         self._lifecycle_hooks = self._spec.lifecycle
 
     @property
-    def output(self) -> Any:
+    def output(self) -> OutputConfig:
         """Return the output extension configuration from ``spec``."""
 
         return self._spec.output
@@ -194,7 +195,7 @@ class Component(
         fields: Mapping[str, RuntimeArray],
         context: "StepContext",
         payload: Any | None = None,
-    ) -> _ComponentStepReturn:
+    ) -> ComponentStepReturn:
         """Return runtime field updates for one component step."""
 
         _ = fields, context, payload
@@ -252,7 +253,7 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None = None,
-    ) -> _ComponentStepReturn:
+    ) -> ComponentStepReturn:
         """Return field updates from the callable-backed component step."""
 
         return self._step(fields, context, payload)

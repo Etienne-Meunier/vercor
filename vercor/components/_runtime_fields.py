@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from vercor.components.contracts import (
     KEEP_PAYLOAD,
+    ComponentStepReturn,
     ComponentSpec,
     StepResult,
     _AuthorFieldValues,
-    _ComponentStepReturn,
     _FieldNames,
 )
 from vercor.components._constructor_options import normalize_component_spec
@@ -130,7 +130,7 @@ def with_runtime_fields(
 def apply_step_result(
     component: "Component",
     component_state: "ComponentRuntimeState",
-    result: _ComponentStepReturn,
+    result: ComponentStepReturn,
 ) -> "ComponentRuntimeState":
     """Apply a field mapping or ``StepResult`` to runtime state."""
 

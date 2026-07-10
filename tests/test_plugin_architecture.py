@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import FrozenInstanceError
 from datetime import datetime
 import importlib
+from types import SimpleNamespace
 from typing import Any
 
 import jax.numpy as jnp
@@ -59,6 +60,23 @@ def test_component_spec_freezes_mapping_inputs_and_exposes_execution_policy() ->
     with pytest.raises(FrozenInstanceError):
         spec.execution = "jax"  # type: ignore[misc]
 
+    grid = make_test_grid(name="execution-precedence")
+    capable_host = vercor.Component.from_step(
+        "CAPABLE_HOST",
+        grid,
+        lambda fields: fields,
+        spec=ComponentSpec(execution="host"),
+    )
+    enforced_host = vercor.HostComponent.from_step(
+        "ENFORCED_HOST",
+        grid,
+        lambda fields: fields,
+        spec=ComponentSpec(execution="jax"),
+    )
+
+    assert capable_host.spec.execution == "host"
+    assert enforced_host.spec.execution == "host"
+
 
 @pytest.mark.fast_always
 def test_structural_component_like_runs_without_private_component_internals() -> None:
@@ -108,6 +126,137 @@ def test_structural_component_like_runs_without_private_component_internals() ->
         final_state.component("MODEL").field("temperature"),
         jnp.full(component.grid.shape, 289.0),
     )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("override", "message"),
+    (
+        ({"name": ""}, "name.*non-empty string"),
+        ({"name": "   "}, "name.*non-empty string"),
+        ({"name": 7}, "name.*non-empty string"),
+        ({"grid": object()}, "grid.*RectilinearGrid"),
+        ({"spec": object()}, "spec.*ComponentSpec"),
+        ({"initial_fields": None}, "initial_fields.*callable"),
+        ({"initialize": None}, "initialize.*callable"),
+        ({"step": None}, "step.*callable"),
+        ({"initial_fields": lambda: ()}, "initial_fields.*mapping"),
+    ),
+)
+def test_structural_component_validation_is_actionable(
+    override: dict[str, object],
+    message: str,
+) -> None:
+    candidate = SimpleNamespace(
+        name="MODEL",
+        grid=make_test_grid(name="invalid-plain-component"),
+        spec=ComponentSpec(),
+        initial_fields=lambda: {},
+        initialize=lambda context: None,
+        step=lambda fields, context, payload=None: {},
+    )
+    for attribute, value in override.items():
+        setattr(candidate, attribute, value)
+
+    with pytest.raises(vercor.ComponentError, match=message):
+        Coupler(
+            Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+            components=(candidate,),
+            run_order=("MODEL",),
+            runtime=RuntimeOptions(topology=None),
+        )
+
+
+@pytest.mark.fast_always
+def test_structural_lifecycle_hooks_receive_original_object_in_order() -> None:
+    events: list[str] = []
+    hook_owners: list[object] = []
+
+    def initialize_hook(owner: object, context: vercor.SetupContext) -> None:
+        component = owner
+        hook_owners.append(owner)
+        events.append("lifecycle-initialize")
+        assert component.fields["temperature"] == 281.0  # type: ignore[attr-defined]
+        component.fields["temperature"] = 282.0  # type: ignore[attr-defined]
+        assert context.run_order == ("MODEL",)
+
+    def create_payload_hook(owner: object) -> dict[str, str]:
+        hook_owners.append(owner)
+        events.append("create-payload")
+        return {"owner": owner.name}  # type: ignore[attr-defined]
+
+    def prefill_hook(
+        owner: object,
+        context: vercor.PrefillContext,
+    ) -> None:
+        hook_owners.append(owner)
+        events.append("prefill")
+        assert float(jnp.mean(context.fields["temperature"])) == 282.0
+
+    def validate_hook(
+        owner: object,
+        context: vercor.ValidationContext,
+    ) -> None:
+        hook_owners.append(owner)
+        events.append("validate")
+        assert isinstance(context.state, vercor.ComponentState)
+        assert context.payload == {"owner": "MODEL"}
+
+    class PlainLifecycleComponent:
+        name = "MODEL"
+
+        def __init__(self) -> None:
+            self.grid = make_test_grid(name="plain-lifecycle")
+            self.fields = {"temperature": 280.0}
+            self.spec = ComponentSpec(
+                outputs=("temperature",),
+                lifecycle=vercor.LifecycleHooks(
+                    initialize=initialize_hook,
+                    create_payload=create_payload_hook,
+                    prefill=prefill_hook,
+                    validate=validate_hook,
+                ),
+            )
+
+        def initial_fields(self) -> Mapping[str, Any]:
+            return self.fields
+
+        def initialize(self, context: vercor.SetupContext) -> None:
+            events.append("user-initialize")
+            self.fields["temperature"] = 281.0
+            assert context.run_order == ("MODEL",)
+
+        def step(
+            self,
+            fields: Mapping[str, Any],
+            context: StepContext,
+            payload: object | None = None,
+        ) -> Mapping[str, Any]:
+            _ = context, payload
+            return {"temperature": fields["temperature"]}
+
+    component = PlainLifecycleComponent()
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+    state = coupler.initial_state()
+
+    assert_allclose_compact(
+        state.component("MODEL").field("temperature"),
+        jnp.full(component.grid.shape, 282.0),
+    )
+    assert events == [
+        "user-initialize",
+        "lifecycle-initialize",
+        "prefill",
+        "create-payload",
+        "validate",
+    ]
+    assert hook_owners == [component, component, component, component]
 
 
 @pytest.mark.fast_always

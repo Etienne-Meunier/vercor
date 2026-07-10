@@ -1754,7 +1754,7 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
     )
     setup_state = component._lifecycle_hooks.create_payload.args[0]
 
-    payload = component.create_runtime_payload()
+    payload = component._create_runtime_payload()
     assert payload.jcm_state.phydata.speedy_coords is not None
     assert str(
         jax.tree_util.tree_structure(payload.jcm_state.phydata.speedy_coords)

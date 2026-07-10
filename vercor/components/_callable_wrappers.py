@@ -5,11 +5,11 @@ from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from vercor.components.contracts import (
+    ComponentStepReturn,
     LifecycleHooks,
     ComponentSpec,
     _AuthorStepCallable,
     _ComponentStepCallable,
-    _ComponentStepReturn,
 )
 from vercor.exceptions import ComponentError
 from vercor.types import RuntimeArray
@@ -110,7 +110,7 @@ def normalize_component_step_callable(
             fields: Mapping[str, RuntimeArray],
             context: StepContext,
             payload: Any | None,
-        ) -> _ComponentStepReturn:
+        ) -> ComponentStepReturn:
             _ = context, payload
             return step(fields)
 
@@ -122,7 +122,7 @@ def normalize_component_step_callable(
             fields: Mapping[str, RuntimeArray],
             context: StepContext,
             payload: Any | None,
-        ) -> _ComponentStepReturn:
+        ) -> ComponentStepReturn:
             _ = payload
             return step(fields, context)
 
@@ -132,7 +132,7 @@ def normalize_component_step_callable(
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None,
-    ) -> _ComponentStepReturn:
+    ) -> ComponentStepReturn:
         return step(fields, context, payload)
 
     return step_fields_context_and_payload

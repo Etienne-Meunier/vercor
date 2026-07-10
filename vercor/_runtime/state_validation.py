@@ -53,7 +53,7 @@ def validate_runtime_state(
             component_state,
             contract,
         )
-        component.validate_runtime_state(
+        component._validate_runtime_state(
             component_state,
             contract,
         )

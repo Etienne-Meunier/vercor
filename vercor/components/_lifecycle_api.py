@@ -23,6 +23,11 @@ if TYPE_CHECKING:
 class ComponentLifecycleMixin:
     """Default component lifecycle hook dispatch used by factory and subclasses."""
 
+    def _lifecycle_hook_owner(self) -> Any:
+        """Return the public component object supplied to lifecycle hooks."""
+
+        return cast("Component", self)
+
     def initialize(
         self,
         context: "SetupContext",
@@ -32,17 +37,17 @@ class ComponentLifecycleMixin:
         component = cast("Component", self)
         hook = component._lifecycle_hooks.initialize
         if hook is not None:
-            hook(component, context)
+            hook(self._lifecycle_hook_owner(), context)
             return
         component.seed_declared_defaults(context.settings)
 
-    def create_runtime_payload(self) -> Any | None:
+    def _create_runtime_payload(self) -> Any | None:
         """Return optional immutable payload carried by runtime component state."""
 
         component = cast("Component", self)
         hook = component._lifecycle_hooks.create_payload
         if hook is not None:
-            return hook(component)
+            return hook(self._lifecycle_hook_owner())
         return self._default_runtime_payload()
 
     def _default_runtime_payload(self) -> Any | None:
@@ -50,7 +55,7 @@ class ComponentLifecycleMixin:
 
         return None
 
-    def prefill_runtime_state_fields(
+    def _prefill_runtime_state_fields(
         self,
         data: dict[str, RuntimeArray],
         received: dict[str, RuntimeArray],
@@ -63,7 +68,7 @@ class ComponentLifecycleMixin:
         hook = component._lifecycle_hooks.prefill
         if hook is not None:
             result = hook(
-                component,
+                self._lifecycle_hook_owner(),
                 PrefillContext(
                     fields=MappingProxyType(data),
                     received=MappingProxyType(received),
@@ -77,7 +82,7 @@ class ComponentLifecycleMixin:
         _runtime_field_adapters.prefill_declared_runtime_fields(component, data)
         _ = received, sent, contract
 
-    def validate_runtime_state(
+    def _validate_runtime_state(
         self,
         component_state: "ComponentRuntimeState",
         contract: "ExchangeContract",
@@ -88,7 +93,7 @@ class ComponentLifecycleMixin:
         hook = component._lifecycle_hooks.validate
         if hook is not None:
             hook(
-                component,
+                self._lifecycle_hook_owner(),
                 ValidationContext(
                     state=ComponentState._from_runtime(
                         component.name,

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from vercor.components.contracts import (
     ComponentSpec,
+    ComponentStepReturn,
     FieldImportPolicy,
-    _ComponentStepReturn,
+    StepResult,
 )
 from vercor.components._contracts import (
     merge_component_outputs,
@@ -30,6 +31,30 @@ class DataComponent(Component):
     plotting-only diagnostics outside runtime state. Active differentiable models
     should inherit :class:`Component` and implement :meth:`Component.step`.
     """
+
+    @classmethod
+    def from_step(
+        cls,
+        name: str,
+        grid: RectilinearGrid,
+        step: Callable[
+            ...,
+            Mapping[str, "RuntimeArray"] | StepResult,
+        ],
+        *,
+        spec: ComponentSpec | None = None,
+        payload: Any | None = None,
+        settings: Settings | None = None,
+    ) -> NoReturn:
+        """Reject active stepping for data-only components."""
+
+        _ = cls, name, grid, step, spec, payload, settings
+        raise TypeError(
+            "DataComponent.from_step is unavailable because data-only "
+            "components do not execute steps. Use DataComponent.from_fields "
+            "for data, Component.from_step for differentiable models, or "
+            "HostComponent.from_step for host-side models."
+        )
 
     @classmethod
     def from_fields(
@@ -83,7 +108,7 @@ class DataComponent(Component):
         fields: Mapping[str, "RuntimeArray"],
         context: "StepContext",
         payload: Any | None = None,
-    ) -> _ComponentStepReturn:
+    ) -> ComponentStepReturn:
         """Return no updates for data-only components."""
 
         _ = fields, context, payload

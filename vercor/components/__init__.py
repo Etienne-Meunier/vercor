@@ -4,6 +4,7 @@ from vercor.components.base import (
 from vercor.components.contracts import (
     ComponentLike,
     ComponentInfo,
+    ComponentStepReturn,
     LifecycleHooks,
     ComponentCreatePayloadHook,
     FieldImportPolicy,
@@ -32,6 +33,7 @@ __all__ = [
     "Component",
     "ComponentLike",
     "ComponentInfo",
+    "ComponentStepReturn",
     "ComponentCreatePayloadHook",
     "FieldImportPolicy",
     "LifecycleHooks",
