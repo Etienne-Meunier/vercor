@@ -34,13 +34,27 @@ jobs:
         include:
           - environment: base
             extra: ""
-            pytest-target: "tests/test_setup_boundaries.py tests/test_distribution_boundaries.py tests/test_plugin_architecture.py"
+            pytest-target: >-
+              tests/test_setup_boundaries.py::test_public_import_and_config_access_are_optional_dependency_free
+              tests/test_setup_boundaries.py::test_lazy_factory_attribute_access_loads_only_lightweight_factory_module
+              tests/test_setup_boundaries.py::test_vercor_setups_is_the_only_setup_lazy_export_registry
+              tests/test_setup_boundaries.py::test_missing_optional_dependencies_fail_at_factory_invocation
+              tests/test_setup_boundaries.py::test_camulator_enabled_spinup_fails_before_runtime_configuration
+              tests/test_setup_boundaries.py::test_setup_subprocess_helpers_honor_installed_package_root
+              tests/test_distribution_boundaries.py
+              tests/test_plugin_architecture.py
           - environment: jcm
             extra: "[jcm]"
-            pytest-target: "tests/test_setup_lifecycle_helpers.py tests/test_external_components_coverage.py -k jax_gcm"
+            pytest-target: >-
+              tests/test_setup_lifecycle_helpers.py::test_make_jcm_land_atmosphere_replaces_only_missing_forcing
+              tests/test_external_components_coverage.py::test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up
+              tests/test_external_components_coverage.py::test_jax_gcm_initialize_builds_default_forcing_when_missing
           - environment: veros
             extra: "[veros]"
-            pytest-target: "tests/test_external_components_coverage.py -k veros"
+            pytest-target: >-
+              tests/test_setup_boundaries.py::test_veros_implementation_import_does_not_configure_runtime
+              tests/test_setup_boundaries.py::test_veros_factory_configures_once_before_implementation_import
+              tests/test_external_components_coverage.py::test_veros_initialize_spinup_follows_enabled_only
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -52,20 +66,26 @@ jobs:
           path: dist/
       - name: Install selected artifact environment
         run: |
-          python -m pip install --upgrade pip pytest mypy
+          python -m pip install --upgrade pip pytest mypy pyyaml
           WHEEL_PATH=$(python -c "from pathlib import Path; print(next(Path('dist').glob('*.whl')))" )
           python -m pip install "${WHEEL_PATH}${{ matrix.extra }}"
           python -m pip install --no-deps tests/fixtures/public_plugin
+          PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          echo "VERCOR_ARTIFACT_DIR=${GITHUB_WORKSPACE}/dist" >> "$GITHUB_ENV"
+          echo "VERCOR_TEST_PACKAGE_ROOT=${PACKAGE_ROOT}" >> "$GITHUB_ENV"
       - name: Verify imports resolve from the installed wheel
         run: |
           cd "$RUNNER_TEMP"
-          python -c "import pathlib, vercor; assert pathlib.Path(vercor.__file__).is_relative_to(pathlib.Path('${{ env.pythonLocation }}'))"
+          python -c "import pathlib, vercor; assert pathlib.Path(vercor.__file__).is_relative_to(pathlib.Path('${VERCOR_TEST_PACKAGE_ROOT}'))"
       - name: Run external public-plugin fixture
         run: |
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
       - name: Type-check external public-plugin fixture
-        run: mypy --strict tests/fixtures/public_plugin/src tests/fixtures/public_plugin/use_site.py
+        run: |
+          cp tests/fixtures/public_plugin/use_site.py "$RUNNER_TEMP/public_plugin_use_site.py"
+          cd "$RUNNER_TEMP"
+          MYPYPATH="$VERCOR_TEST_PACKAGE_ROOT" mypy --strict "$VERCOR_TEST_PACKAGE_ROOT/vercor_public_plugin" public_plugin_use_site.py
       - name: Run relevant installed-artifact suite
         env:
           PYTHONSAFEPATH: "1"

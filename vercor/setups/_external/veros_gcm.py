@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
 from vercor.output import OutputConfig
 from vercor.setups.config import VerosConfig
+
+
+def _load_veros_implementation() -> tuple[Any, Any, Any, type[Any]]:
+    """Load Veros implementation owners after runtime configuration."""
+
+    import vercor.setups._external.veros_gcm_state as veros_gcm_state
+    import vercor.setups._external.veros_output as veros_output
+    import vercor.setups._external.veros_runtime as veros_runtime
+    from vercor.setups._external.veros_gcm_state import VerosGCMSetupState
+
+    return veros_gcm_state, veros_output, veros_runtime, VerosGCMSetupState
 
 
 def make_veros_gcm(
@@ -29,10 +41,12 @@ def make_veros_gcm(
 
     configure_veros_runtime()
 
-    import vercor.setups._external.veros_gcm_state as _veros_gcm_state
-    import vercor.setups._external.veros_output as _veros_output
-    import vercor.setups._external.veros_runtime as _veros_runtime
-    from vercor.setups._external.veros_gcm_state import VerosGCMSetupState
+    (
+        _veros_gcm_state,
+        _veros_output,
+        _veros_runtime,
+        VerosGCMSetupState,
+    ) = _load_veros_implementation()
 
     config = VerosConfig() if config is None else config
     period_output = config.output.period

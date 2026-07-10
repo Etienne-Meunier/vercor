@@ -32,9 +32,9 @@
 32. `vercor/setups/_external/jax_gcm_output.py`, `jax_gcm_runtime.py`, `jax_gcm_state.py`, and `jax_gcm.py` - JAXGCM output/runtime/state ownership, `Spinup.enabled`-only initialization, canonical `JCMState`, direct hook binding, and a lightweight factory that defers JCM/Dinosaur imports until invocation built on (1, 3, 4, 11, 26, 29, 30, 31, 62)
 33. `vercor/setups/_external/veros_runtime_settings.py` - explicit lazy Veros backend/runtime configuration side-effect boundary
 34. `vercor/setups/_external/veros_setup.py` - concrete Veros setup subclass and setup policy built on (33)
-35. `vercor/setups/_external/veros_fluxes.py` - Veros-to-VerCOR flux conversion built on (1, 4, 9, 33)
-36. `vercor/setups/_external/veros_state.py` - package-private Veros host-state copy, mutation, named forcing-field container, forcing, and stepping helpers built on (1, 10, 33)
-37. `vercor/setups/_external/veros_output.py`, `veros_runtime.py`, `veros_gcm_state.py`, and `veros_gcm.py` - Veros output/runtime/state ownership, `Spinup.enabled`-only lifecycle, and a lightweight invoked factory that explicitly configures Veros before implementation imports built on (1, 4, 6, 10, 25, 31, 33, 34, 35, 36)
+35. `vercor/setups/_external/veros_fluxes.py` - side-effect-free Veros-to-VerCOR flux conversion built on (1, 4, 9)
+36. `vercor/setups/_external/veros_state.py` - side-effect-free package-private Veros host-state copy, mutation, named forcing-field container, forcing, and stepping helpers built on (1, 10)
+37. `vercor/setups/_external/veros_output.py`, `veros_runtime.py`, `veros_gcm_state.py`, and `veros_gcm.py` - side-effect-free Veros output/runtime/state implementation ownership, `Spinup.enabled`-only lifecycle, and a lightweight invoked factory that alone explicitly configures Veros before loading those implementations built on (1, 4, 6, 10, 25, 31, 33, 34, 35, 36)
 38. `vercor/setups/_external/camulator_imports.py` - package-private lazy CREDIT/postblock optional-dependency loading
 39. `vercor/setups/_external/camulator_forcing.py` - CAMulator config loading, forcing context, pure forcing cursor calculation, and command-only runtime forcing cursors built on (26, 38)
 40. `vercor/setups/_external/camulator_tensors.py` - typed CAMulator tensor-variable indexing, package-private static forcing tensor staging, and JAX-to-Torch transfer helpers
@@ -77,4 +77,4 @@
 77. `vercor/_runtime/facade.py` - high-level runtime orchestration over the single prepared coupling for state preparation, execution, and final output built on (24, 25, 59, 60, 64, 67, 72, 73, 74, 75, 76)
 78. `vercor/coupler.py` - public setup/output facade for `initial_state(*, prefill_missing=True)`, `run()`, and `write_outputs()` built on (25, 28, 59, 62, 77)
 79. `examples/` - runnable setup scripts from `vercor.setups`; the ERA5/JCM example supports injected ocean/JCM inputs/clocks plus short and initial-state-only modes, and examples do not discard prepared states
-80. `pyproject.toml`, `vercor/py.typed`, `.github/workflows/python-package.yml`, and `tests/fixtures/public_plugin/` - runtime/test dependency separation, PEP 561 artifacts, installed-artifact Python 3.12/3.13 base/JCM/Veros CI, and an independently packaged public extension fixture
+80. `pyproject.toml`, `vercor/py.typed`, `.github/workflows/python-package.yml`, and `tests/fixtures/public_plugin/` - runtime/test dependency separation, PEP 561 artifacts, downloaded-artifact Python 3.12/3.13 base/JCM/Veros CI with installed-root subprocess and mypy isolation, and an independently packaged public extension fixture

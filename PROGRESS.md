@@ -9,6 +9,22 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 5 review follow-up implemented locally on 2026-07-10. The invoked Veros
+  factory is now the sole owner of one runtime-configuration call before its
+  implementation loader; importing Veros output, flux, or state modules has no
+  configuration side effect. Distribution tests reuse explicit downloaded
+  wheel/sdist paths in CI while retaining an offline local-build fallback, and
+  setup probes plus public-plugin mypy resolve only through an installed root
+  outside the checkout. The Python 3.12/3.13 base/JCM/Veros matrix now selects
+  the paired-JCM replacement/spinup and Veros configuration/spinup regressions
+  by exact node. Focused setup/distribution tests and the real artifact
+  install/plugin/mypy check pass; the exact matrix selection passes 9/9, setup
+  plus distribution boundaries pass 22/22, and the full fast suite passes
+  382/382. Black reports 232 files unchanged, flake8 reports zero findings,
+  full mypy reports no issues in 232 files, and whitespace checks pass. The
+  first full-fast run exposed one stale source-shape assertion for the former
+  inline Veros import; it now verifies the configuration-before-loader boundary
+  instead. Detailed evidence is in `.superpowers/sdd/task-5-fix-report.md`.
 - Task 5 bundled setup/packaging boundary hardening completed locally on
   2026-07-10. `vercor.setups` is the sole lazy factory registry; public import,
   config, and factory-attribute access remain free of JCM/Dinosaur, Veros, and

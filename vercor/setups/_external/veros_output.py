@@ -19,11 +19,7 @@ from vercor.output import SnapshotContext
 from vercor.output._dataset import time_coordinate_variable, used_dimension_names
 from vercor.output._period import TIME_NAME
 from vercor.output import OutputVariable
-from vercor.setups._external.veros_runtime_settings import configure_veros_runtime
-
-configure_veros_runtime()
-
-from veros import variables as veros_variables  # noqa: E402
+from veros import variables as veros_variables
 
 VEROS_TIME_DIM = TIME_NAME
 VEROS_AVERAGE_EMPTY_ERROR_MESSAGE = (

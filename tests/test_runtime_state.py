@@ -539,10 +539,14 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         not in veros_source
     )
     assert "configure_veros_runtime" not in veros_setup_source
-    assert "configure_veros_runtime()" in veros_source
-    assert veros_source.index("configure_veros_runtime()") < veros_source.index(
-        "import vercor.setups._external.veros_gcm_state"
+    veros_loader_source, veros_factory_source = veros_source.split(
+        "def make_veros_gcm(", 1
     )
+    assert "import vercor.setups._external.veros_gcm_state" in veros_loader_source
+    assert "configure_veros_runtime()" in veros_factory_source
+    assert veros_factory_source.index(
+        "configure_veros_runtime()"
+    ) < veros_factory_source.index("_load_veros_implementation()")
     assert "def configure_veros_runtime" in veros_runtime_settings_source
     assert "target_levels: Sequence = range(" not in camulator_wind_filter_source
     assert "target_vars: Sequence[str] = [" not in camulator_wind_filter_source

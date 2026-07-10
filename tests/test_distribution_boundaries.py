@@ -6,6 +6,7 @@ import ast
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -13,8 +14,10 @@ import tomllib
 import zipfile
 
 import pytest
+import yaml
 
 from tests._distribution_support import build_distributions, install_local_target
+from tests.test_setup_boundaries import _run_setup_probe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
@@ -76,24 +79,110 @@ def test_public_plugin_fixture_never_imports_private_vercor_modules() -> None:
 
 @pytest.mark.fast_always
 def test_ci_validates_installed_artifacts_across_supported_environments() -> None:
-    workflow = (PROJECT_ROOT / ".github/workflows/python-package.yml").read_text(
-        encoding="utf-8"
+    workflow_path = PROJECT_ROOT / ".github/workflows/python-package.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    build_job = jobs["build-artifacts"]
+    installed_job = jobs["installed-artifact-tests"]
+
+    build_steps = build_job["steps"]
+    build_commands = "\n".join(
+        step.get("run", "") for step in build_steps if isinstance(step, dict)
+    )
+    assert "python -m build --outdir dist" in build_commands
+    assert any(step.get("uses") == "actions/upload-artifact@v4" for step in build_steps)
+
+    matrix = installed_job["strategy"]["matrix"]
+    assert matrix["python-version"] == ["3.12", "3.13"]
+    assert matrix["environment"] == ["base", "jcm", "veros"]
+    assert len(matrix["python-version"]) * len(matrix["environment"]) == 6
+    included = {item["environment"]: item for item in matrix["include"]}
+    assert set(included) == {"base", "jcm", "veros"}
+    assert (
+        "test_make_jcm_land_atmosphere_replaces_only_missing_forcing"
+        in included["jcm"]["pytest-target"]
+    )
+    assert (
+        "test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up"
+        in included["jcm"]["pytest-target"]
+    )
+    assert (
+        "test_veros_initialize_spinup_follows_enabled_only"
+        in included["veros"]["pytest-target"]
     )
 
-    for python_version in ("3.12", "3.13"):
-        assert python_version in workflow
-    for environment in ("base", "jcm", "veros"):
-        assert environment in workflow
-    assert "python -m build" in workflow
-    assert "actions/upload-artifact@v4" in workflow
-    assert "actions/download-artifact@v4" in workflow
-    assert "tests/fixtures/public_plugin" in workflow
-    assert "vercor_public_plugin.smoke" in workflow
-    assert "pip install ." not in workflow
+    installed_steps = installed_job["steps"]
+    installed_commands = "\n".join(
+        step.get("run", "") for step in installed_steps if isinstance(step, dict)
+    )
+    assert any(
+        step.get("uses") == "actions/download-artifact@v4" for step in installed_steps
+    )
+    assert "python -m build" not in installed_commands
+    assert "VERCOR_ARTIFACT_DIR" in installed_commands
+    assert "VERCOR_TEST_PACKAGE_ROOT" in installed_commands
+    assert "vercor_public_plugin.smoke" in installed_commands
+    assert "MYPYPATH" in installed_commands
+    assert "tests/fixtures/public_plugin/src" not in installed_commands
+    assert "pip install ." not in installed_commands
+
+
+def test_distribution_helper_reuses_explicit_artifact_directory_without_building(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_dir = tmp_path / "downloaded-dist"
+    artifact_dir.mkdir()
+    wheel = artifact_dir / "vercor-3.0.0-py3-none-any.whl"
+    sdist = artifact_dir / "vercor-3.0.0.tar.gz"
+    wheel.touch()
+    sdist.touch()
+
+    def unexpected_build(*args: object, **kwargs: object) -> object:
+        _ = args, kwargs
+        pytest.fail("downloaded artifacts must bypass local build tooling")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_build)
+
+    distributions = build_distributions(
+        PROJECT_ROOT,
+        tmp_path / "unused-build-output",
+        artifact_dir=artifact_dir,
+    )
+
+    assert distributions.wheel == wheel
+    assert distributions.sdist == sdist
+    assert distributions.build_pythonpath == ""
+
+
+@pytest.mark.parametrize(
+    ("wheel_name", "sdist_name"),
+    (
+        ("vercor-3.1.0-py3-none-any.whl", "vercor-3.0.0.tar.gz"),
+        ("vercor-3.0.0-py3-none-any.whl", "vercor-3.1.0.tar.gz"),
+    ),
+)
+def test_distribution_helper_rejects_wrong_artifact_version(
+    tmp_path: Path,
+    wheel_name: str,
+    sdist_name: str,
+) -> None:
+    artifact_dir = tmp_path / "wrong-dist"
+    artifact_dir.mkdir()
+    (artifact_dir / wheel_name).touch()
+    (artifact_dir / sdist_name).touch()
+
+    with pytest.raises(ValueError, match="VerCOR 3.0.0"):
+        build_distributions(
+            PROJECT_ROOT,
+            tmp_path / "unused-build-output",
+            artifact_dir=artifact_dir,
+        )
 
 
 def test_built_distributions_run_public_plugin_outside_checkout(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     distributions = build_distributions(PROJECT_ROOT, tmp_path / "dist")
 
@@ -152,6 +241,12 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert installed["version"] == "3.0.0"
     assert Path(installed["typed"]).is_file()
 
+    monkeypatch.setenv("VERCOR_TEST_PACKAGE_ROOT", str(target))
+    setup_probe = _run_setup_probe("import vercor")
+    setup_probe_path = setup_probe["vercor_file"]
+    assert isinstance(setup_probe_path, str)
+    assert Path(setup_probe_path).is_relative_to(target)
+
     smoke_output = tmp_path / "plugin-output"
     smoke = subprocess.run(
         [
@@ -176,13 +271,15 @@ def test_built_distributions_run_public_plugin_outside_checkout(
 
     mypy_environment = environment.copy()
     mypy_environment["MYPYPATH"] = str(target)
-    subprocess.run(
+    external_use_site = tmp_path / "public_plugin_use_site.py"
+    shutil.copyfile(PLUGIN_ROOT / "use_site.py", external_use_site)
+    mypy = subprocess.run(
         [
             str(Path(sys.executable).with_name("mypy")),
-            "--config-file",
-            str(PLUGIN_ROOT / "pyproject.toml"),
-            str(PLUGIN_ROOT / "src"),
-            str(PLUGIN_ROOT / "use_site.py"),
+            "--strict",
+            "--verbose",
+            str(target / "vercor_public_plugin"),
+            str(external_use_site),
         ],
         cwd=tmp_path,
         env=mypy_environment,
@@ -190,3 +287,6 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         capture_output=True,
         text=True,
     )
+    mypy_evidence = mypy.stdout + mypy.stderr
+    assert str(PROJECT_ROOT) not in mypy_evidence
+    assert str(target) in mypy_evidence

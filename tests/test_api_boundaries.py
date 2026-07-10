@@ -2786,10 +2786,16 @@ def test_veros_setup_state_does_not_keep_one_line_step_wrapper() -> None:
         if isinstance(node, ast.FunctionDef)
     }
     assert "from functools import partial" in gcm_source
+    loader_source, factory_source = gcm_source.split("def make_veros_gcm(", 1)
     assert (
-        "import vercor.setups._external.veros_runtime as _veros_runtime" in gcm_source
+        "import vercor.setups._external.veros_runtime as veros_runtime" in loader_source
     )
-    assert "step=partial(_veros_runtime.step_veros_runtime, state)," in gcm_source
+    assert "configure_veros_runtime()" in factory_source
+    assert "_load_veros_implementation()" in factory_source
+    assert factory_source.index("configure_veros_runtime()") < factory_source.index(
+        "_load_veros_implementation()"
+    )
+    assert "step=partial(_veros_runtime.step_veros_runtime, state)," in factory_source
 
 
 @pytest.mark.fast_always

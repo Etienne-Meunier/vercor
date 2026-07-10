@@ -40,6 +40,7 @@ classifiers = [
 jcm = ["jcm==1.1.1"]
 veros = ["veros"]
 test = [
+  "PyYAML",
   "pytest>=7.4.0",
 ]
 dev = [
@@ -47,6 +48,7 @@ dev = [
   "build",
   "flake8",
   "mypy",
+  "PyYAML",
   "pytest>=7.4.0",
   "types-PyYAML",
 ]

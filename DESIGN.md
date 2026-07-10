@@ -569,8 +569,9 @@ coordinate-variable responsibilities explicit.
 Veros host-state mutation helpers and the named tuple-compatible
 `VerosForcingFields` container live in `vercor.setups._external.veros_state`.
 Veros backend settings are imported only inside the explicit configuration
-function called once by the invoked factory; implementation-module imports do
-not configure the runtime. CAMulator
+function called once by the invoked factory, before its private implementation
+loader runs. Importing `veros_output`, `veros_fluxes`, or `veros_state` never
+configures the runtime. CAMulator
 prediction-block and runtime step orchestration live in
 `vercor.setups._external.camulator_runtime` with concrete setup-state
 annotations, with tensor staging in
@@ -616,9 +617,12 @@ under `tests/fixtures/public_plugin` imports only public VerCOR modules and
 exercises structural JAX/host components, original-object lifecycle hooks, a
 custom sequential backend, a custom topology policy, and snapshot output
 against an installed wheel. CI builds wheel/sdist once, then tests installed
-base, JCM, and Veros environments on Python 3.12 and 3.13. CAMulator is omitted
-from the install matrix until a compatible NCAR MILES-CREDIT release is
-verified.
+base, JCM, and Veros environments on Python 3.12 and 3.13 by consuming the
+downloaded artifacts rather than rebuilding them in each matrix cell. Setup
+subprocess probes and public-plugin mypy run from the installed site-packages
+root or an external temporary use site, so checkout sources cannot satisfy an
+installed-artifact check. CAMulator is omitted from the install matrix until a
+compatible NCAR MILES-CREDIT release is verified.
 
 `vercor.assets` owns generic cache, download, and checksum validation only, with
 asset-specific registries and product vocabulary kept outside the generic cache

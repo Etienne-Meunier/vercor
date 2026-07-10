@@ -9,6 +9,10 @@ from pathlib import Path
 import subprocess
 import sys
 
+EXPECTED_VERSION = "3.0.0"
+EXPECTED_WHEEL_NAME = f"vercor-{EXPECTED_VERSION}-py3-none-any.whl"
+EXPECTED_SDIST_NAME = f"vercor-{EXPECTED_VERSION}.tar.gz"
+
 
 @dataclass(frozen=True)
 class BuiltDistributions:
@@ -40,8 +44,52 @@ def _cached_build_pythonpath() -> str:
     )
 
 
-def build_distributions(project_root: Path, output_dir: Path) -> BuiltDistributions:
-    """Build wheel and sdist without network access or isolated downloads."""
+def _existing_distributions(wheel: Path, sdist: Path) -> BuiltDistributions:
+    """Validate and return externally supplied VerCOR 3.0 artifacts."""
+
+    if wheel.name != EXPECTED_WHEEL_NAME or sdist.name != EXPECTED_SDIST_NAME:
+        raise ValueError(
+            "expected VerCOR 3.0.0 artifacts named "
+            f"{EXPECTED_WHEEL_NAME!r} and {EXPECTED_SDIST_NAME!r}"
+        )
+    if not wheel.is_file() or not sdist.is_file():
+        raise ValueError(f"VerCOR 3.0.0 artifacts are missing: {wheel}, {sdist}")
+    return BuiltDistributions(wheel=wheel, sdist=sdist, build_pythonpath="")
+
+
+def build_distributions(
+    project_root: Path,
+    output_dir: Path,
+    *,
+    artifact_dir: Path | None = None,
+    wheel_path: Path | None = None,
+    sdist_path: Path | None = None,
+) -> BuiltDistributions:
+    """Reuse supplied artifacts or build them offline when none are configured."""
+
+    configured_dir = artifact_dir
+    if configured_dir is None and os.environ.get("VERCOR_ARTIFACT_DIR"):
+        configured_dir = Path(os.environ["VERCOR_ARTIFACT_DIR"])
+    configured_wheel = wheel_path
+    if configured_wheel is None and os.environ.get("VERCOR_WHEEL_PATH"):
+        configured_wheel = Path(os.environ["VERCOR_WHEEL_PATH"])
+    configured_sdist = sdist_path
+    if configured_sdist is None and os.environ.get("VERCOR_SDIST_PATH"):
+        configured_sdist = Path(os.environ["VERCOR_SDIST_PATH"])
+
+    if configured_dir is not None:
+        if configured_wheel is not None or configured_sdist is not None:
+            raise ValueError(
+                "configure either VERCOR_ARTIFACT_DIR or explicit wheel/sdist paths"
+            )
+        return _existing_distributions(
+            configured_dir / EXPECTED_WHEEL_NAME,
+            configured_dir / EXPECTED_SDIST_NAME,
+        )
+    if configured_wheel is not None or configured_sdist is not None:
+        if configured_wheel is None or configured_sdist is None:
+            raise ValueError("both VerCOR 3.0.0 wheel and sdist paths are required")
+        return _existing_distributions(configured_wheel, configured_sdist)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     build_pythonpath = _cached_build_pythonpath()

@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -22,6 +23,12 @@ RUNTIME_ENVIRONMENT_KEYS = (
 ENVIRONMENT_SENTINEL = "vercor-import-boundary"
 
 
+def _test_package_root() -> Path:
+    """Return the package root selected for fresh-process boundary probes."""
+
+    return Path(os.environ.get("VERCOR_TEST_PACKAGE_ROOT", str(PROJECT_ROOT))).resolve()
+
+
 def _run_setup_probe(statement: str) -> dict[str, object]:
     script = f"""
 import json
@@ -34,6 +41,7 @@ for key in {RUNTIME_ENVIRONMENT_KEYS!r}:
 {statement}
 
 print(json.dumps({{
+    "vercor_file": getattr(sys.modules.get("vercor"), "__file__", None),
     "optional_modules": sorted(
         name for name in sys.modules
         if name.partition(".")[0] in {OPTIONAL_MODULE_ROOTS!r}
@@ -46,11 +54,12 @@ print(json.dumps({{
     ),
 }}))
 """
+    package_root = _test_package_root()
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(PROJECT_ROOT)
+    environment["PYTHONPATH"] = str(package_root)
     completed = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=PROJECT_ROOT,
+        cwd=package_root,
         env=environment,
         check=True,
         capture_output=True,
@@ -86,11 +95,12 @@ except Exception as error:
 else:
     print(json.dumps({{"type": "", "message": ""}}))
 """
+    package_root = _test_package_root()
     environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(PROJECT_ROOT)
+    environment["PYTHONPATH"] = str(package_root)
     completed = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=PROJECT_ROOT,
+        cwd=package_root,
         env=environment,
         check=True,
         capture_output=True,
@@ -239,3 +249,105 @@ def test_camulator_enabled_spinup_fails_before_runtime_configuration(
         )
 
     assert configuration_calls == []
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "module_name",
+    (
+        "vercor.setups._external.veros_output",
+        "vercor.setups._external.veros_fluxes",
+        "vercor.setups._external.veros_state",
+    ),
+)
+def test_veros_implementation_import_does_not_configure_runtime(
+    module_name: str,
+) -> None:
+    script = f"""
+import importlib
+import json
+import vercor.setups._external.veros_runtime_settings as runtime_settings
+
+calls = []
+runtime_settings.configure_veros_runtime = lambda: calls.append("configure")
+importlib.import_module({module_name!r})
+print(json.dumps(calls))
+"""
+    package_root = _test_package_root()
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(package_root)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=package_root,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout.splitlines()[-1]) == []
+
+
+@pytest.mark.fast_always
+def test_veros_factory_configures_once_before_implementation_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import vercor.setups as setups
+    import vercor.setups._external.veros_gcm as factory_module
+    import vercor.setups._external.veros_runtime_settings as runtime_settings
+
+    events: list[str] = []
+
+    class ImplementationReached(RuntimeError):
+        pass
+
+    def configure() -> None:
+        events.append("configure")
+
+    def load_implementation() -> object:
+        events.append("implementation")
+        raise ImplementationReached
+
+    monkeypatch.setattr(runtime_settings, "configure_veros_runtime", configure)
+    monkeypatch.setattr(
+        factory_module,
+        "_load_veros_implementation",
+        load_implementation,
+    )
+
+    with pytest.raises(ImplementationReached):
+        setups.make_veros_gcm()
+
+    assert events == ["configure", "implementation"]
+
+
+@pytest.mark.fast_always
+def test_setup_subprocess_helpers_honor_installed_package_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    installed_root = tmp_path / "site-packages"
+    installed_root.mkdir()
+    calls: list[dict[str, object]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> SimpleNamespace:
+        _ = args
+        calls.append(kwargs)
+        return SimpleNamespace(stdout="{}\n")
+
+    monkeypatch.setenv("VERCOR_TEST_PACKAGE_ROOT", str(installed_root))
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _run_setup_probe("import vercor")
+    _run_missing_dependency_probe(
+        factory_name="make_veros_gcm",
+        dependency_root="veros",
+        invocation="factory()",
+    )
+
+    assert len(calls) == 2
+    for call in calls:
+        assert call["cwd"] == installed_root
+        environment = call["env"]
+        assert isinstance(environment, dict)
+        assert environment["PYTHONPATH"] == str(installed_root)
