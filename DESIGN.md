@@ -616,13 +616,16 @@ wheel and sdist as PEP 561 typed packages. The independently packaged fixture
 under `tests/fixtures/public_plugin` imports only public VerCOR modules and
 exercises structural JAX/host components, original-object lifecycle hooks, a
 custom sequential backend, a custom topology policy, and snapshot output
-against an installed wheel. CI builds wheel/sdist once, then tests installed
-base, JCM, and Veros environments on Python 3.12 and 3.13 by consuming the
-downloaded artifacts rather than rebuilding them in each matrix cell. Setup
-subprocess probes and public-plugin mypy run from the installed site-packages
-root or an external temporary use site, so checkout sources cannot satisfy an
-installed-artifact check. CAMulator is omitted from the install matrix until a
-compatible NCAR MILES-CREDIT release is verified.
+against an installed wheel. CI builds the VerCOR wheel/sdist plus the
+independently packaged public-plugin wheel once, then tests installed base, JCM,
+and Veros environments on Python 3.12 and 3.13 by consuming those downloaded
+artifacts rather than invoking build tooling in each matrix cell.
+Local verification uses the same three-artifact bundle, with an offline build
+fallback only when artifact paths are not supplied. Setup subprocess probes and
+public-plugin mypy run from the installed site-packages root or an external
+temporary use site, so checkout sources cannot satisfy an installed-artifact
+check. CAMulator is omitted from the install matrix until a compatible NCAR
+MILES-CREDIT release is verified.
 
 `vercor.assets` owns generic cache, download, and checksum validation only, with
 asset-specific registries and product vocabulary kept outside the generic cache

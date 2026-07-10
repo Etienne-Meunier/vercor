@@ -16,11 +16,26 @@ import zipfile
 import pytest
 import yaml
 
-from tests._distribution_support import build_distributions, install_local_target
+import tests._distribution_support as distribution_support
+from tests._distribution_support import (
+    BuiltDistributions,
+    build_distributions,
+    install_local_target,
+)
 from tests.test_setup_boundaries import _run_setup_probe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
+
+
+@pytest.fixture(scope="module")
+def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> BuiltDistributions:
+    """Build once locally or reuse the explicitly supplied CI artifact bundle."""
+
+    return build_distributions(
+        PROJECT_ROOT,
+        tmp_path_factory.mktemp("distribution-build") / "dist",
+    )
 
 
 @pytest.mark.fast_always
@@ -90,7 +105,14 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         step.get("run", "") for step in build_steps if isinstance(step, dict)
     )
     assert "python -m build --outdir dist" in build_commands
-    assert any(step.get("uses") == "actions/upload-artifact@v4" for step in build_steps)
+    assert (
+        "python -m build --wheel --outdir dist tests/fixtures/public_plugin"
+        in build_commands
+    )
+    upload_step = next(
+        step for step in build_steps if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    assert upload_step["with"]["path"] == "dist/"
 
     matrix = installed_job["strategy"]["matrix"]
     assert matrix["python-version"] == ["3.12", "3.13"]
@@ -115,15 +137,23 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     installed_commands = "\n".join(
         step.get("run", "") for step in installed_steps if isinstance(step, dict)
     )
-    assert any(
-        step.get("uses") == "actions/download-artifact@v4" for step in installed_steps
+    download_step = next(
+        step
+        for step in installed_steps
+        if step.get("uses") == "actions/download-artifact@v4"
     )
+    assert download_step["with"]["path"] == "dist/"
     assert "python -m build" not in installed_commands
     assert "VERCOR_ARTIFACT_DIR" in installed_commands
+    assert "VERCOR_PLUGIN_WHEEL_PATH" in installed_commands
     assert "VERCOR_TEST_PACKAGE_ROOT" in installed_commands
     assert "vercor_public_plugin.smoke" in installed_commands
     assert "MYPYPATH" in installed_commands
     assert "tests/fixtures/public_plugin/src" not in installed_commands
+    assert (
+        "pip install --no-deps tests/fixtures/public_plugin" not in installed_commands
+    )
+    assert 'pip install --no-deps "${PLUGIN_WHEEL_PATH}"' in installed_commands
     assert "pip install ." not in installed_commands
 
 
@@ -135,8 +165,10 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     artifact_dir.mkdir()
     wheel = artifact_dir / "vercor-3.0.0-py3-none-any.whl"
     sdist = artifact_dir / "vercor-3.0.0.tar.gz"
+    plugin_wheel = artifact_dir / "vercor_public_plugin-0.1.0-py3-none-any.whl"
     wheel.touch()
     sdist.touch()
+    plugin_wheel.touch()
 
     def unexpected_build(*args: object, **kwargs: object) -> object:
         _ = args, kwargs
@@ -152,42 +184,63 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
 
     assert distributions.wheel == wheel
     assert distributions.sdist == sdist
+    assert distributions.plugin_wheel == plugin_wheel
     assert distributions.build_pythonpath == ""
 
 
 @pytest.mark.parametrize(
-    ("wheel_name", "sdist_name"),
+    ("wheel_name", "sdist_name", "plugin_wheel_name"),
     (
-        ("vercor-3.1.0-py3-none-any.whl", "vercor-3.0.0.tar.gz"),
-        ("vercor-3.0.0-py3-none-any.whl", "vercor-3.1.0.tar.gz"),
+        (
+            "vercor-3.1.0-py3-none-any.whl",
+            "vercor-3.0.0.tar.gz",
+            "vercor_public_plugin-0.1.0-py3-none-any.whl",
+        ),
+        (
+            "vercor-3.0.0-py3-none-any.whl",
+            "vercor-3.1.0.tar.gz",
+            "vercor_public_plugin-0.1.0-py3-none-any.whl",
+        ),
+        (
+            "vercor-3.0.0-py3-none-any.whl",
+            "vercor-3.0.0.tar.gz",
+            "vercor_public_plugin-0.2.0-py3-none-any.whl",
+        ),
     ),
 )
 def test_distribution_helper_rejects_wrong_artifact_version(
     tmp_path: Path,
     wheel_name: str,
     sdist_name: str,
+    plugin_wheel_name: str,
 ) -> None:
     artifact_dir = tmp_path / "wrong-dist"
     artifact_dir.mkdir()
     (artifact_dir / wheel_name).touch()
     (artifact_dir / sdist_name).touch()
+    (artifact_dir / plugin_wheel_name).touch()
 
     with pytest.raises(ValueError, match="VerCOR 3.0.0"):
         build_distributions(
             PROJECT_ROOT,
             tmp_path / "unused-build-output",
             artifact_dir=artifact_dir,
+            plugin_wheel_path=artifact_dir / plugin_wheel_name,
         )
 
 
 def test_built_distributions_run_public_plugin_outside_checkout(
+    built_distributions: BuiltDistributions,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    distributions = build_distributions(PROJECT_ROOT, tmp_path / "dist")
+    distributions = built_distributions
 
     assert distributions.wheel.name == "vercor-3.0.0-py3-none-any.whl"
     assert distributions.sdist.name == "vercor-3.0.0.tar.gz"
+    assert (
+        distributions.plugin_wheel.name == "vercor_public_plugin-0.1.0-py3-none-any.whl"
+    )
     with zipfile.ZipFile(distributions.wheel) as wheel:
         wheel_names = set(wheel.namelist())
         metadata_name = next(
@@ -213,9 +266,8 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     target = tmp_path / "installed-target"
     install_local_target(
         wheel=distributions.wheel,
-        plugin_root=PLUGIN_ROOT,
+        plugin_wheel=distributions.plugin_wheel,
         target=target,
-        build_pythonpath=distributions.build_pythonpath,
     )
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(target)
@@ -290,3 +342,61 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     mypy_evidence = mypy.stdout + mypy.stderr
     assert str(PROJECT_ROOT) not in mypy_evidence
     assert str(target) in mypy_evidence
+
+
+def test_supplied_wheels_install_and_run_without_build_environment(
+    built_distributions: BuiltDistributions,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_dir = tmp_path / "supplied-artifacts"
+    artifact_dir.mkdir()
+    for artifact in (
+        built_distributions.wheel,
+        built_distributions.sdist,
+        built_distributions.plugin_wheel,
+    ):
+        shutil.copyfile(artifact, artifact_dir / artifact.name)
+
+    def unavailable_build_environment() -> str:
+        pytest.fail("supplied wheels must not inspect build/flit_core/Conda fallback")
+
+    monkeypatch.setattr(
+        distribution_support,
+        "_cached_build_pythonpath",
+        unavailable_build_environment,
+    )
+    monkeypatch.setenv("VERCOR_ARTIFACT_DIR", str(artifact_dir))
+    monkeypatch.setenv(
+        "VERCOR_PLUGIN_WHEEL_PATH",
+        str(artifact_dir / built_distributions.plugin_wheel.name),
+    )
+
+    supplied = build_distributions(PROJECT_ROOT, tmp_path / "must-not-build")
+    target = tmp_path / "clean-installed-target"
+    install_local_target(
+        wheel=supplied.wheel,
+        plugin_wheel=supplied.plugin_wheel,
+        target=target,
+    )
+
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(target)
+    smoke = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "vercor_public_plugin.smoke",
+            "--output-dir",
+            str(tmp_path / "clean-plugin-output"),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    evidence = json.loads(smoke.stdout.splitlines()[-1])
+    assert evidence["temperature"] == 2.0
+    assert evidence["host_value"] == 14.0

@@ -9,6 +9,20 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Task 5 final plugin-artifact follow-up implemented locally on 2026-07-10.
+  VerCOR wheel/sdist and the independently packaged public-plugin wheel are now
+  built once and uploaded together; every installed CI matrix cell consumes
+  both wheels and never invokes plugin source-build tooling. The local
+  distribution helper validates the exact plugin wheel path/name alongside the
+  VerCOR artifacts, builds both packages with the same offline fallback only
+  when no artifacts are supplied, and installs wheels with binary-only pip.
+  A clean supplied-artifact regression disables build/flit_core/Conda fallback,
+  installs both wheels, and runs the plugin successfully. The focused
+  distribution suite passes 10/10 and the full fast suite passes all 379
+  selected tests. Black reports 232 files unchanged, flake8 reports zero
+  findings, full mypy reports no issues in 232 files, and whitespace checks
+  pass. Detailed evidence is recorded in
+  `.superpowers/sdd/task-5-plugin-fix-report.md`.
 - Task 5 review follow-up implemented locally on 2026-07-10. The invoked Veros
   factory is now the sole owner of one runtime-configuration call before its
   implementation loader; importing Veros output, flux, or state modules has no

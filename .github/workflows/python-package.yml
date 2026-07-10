@@ -14,10 +14,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build wheel and sdist once
+      - name: Build VerCOR and public-plugin artifacts once
         run: |
           python -m pip install --upgrade pip build
           python -m build --outdir dist
+          python -m build --wheel --outdir dist tests/fixtures/public_plugin
       - uses: actions/upload-artifact@v4
         with:
           name: vercor-distributions
@@ -67,11 +68,13 @@ jobs:
       - name: Install selected artifact environment
         run: |
           python -m pip install --upgrade pip pytest mypy pyyaml
-          WHEEL_PATH=$(python -c "from pathlib import Path; print(next(Path('dist').glob('*.whl')))" )
+          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-3.0.0-py3-none-any.whl"
+          PLUGIN_WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
           python -m pip install "${WHEEL_PATH}${{ matrix.extra }}"
-          python -m pip install --no-deps tests/fixtures/public_plugin
+          python -m pip install --no-deps "${PLUGIN_WHEEL_PATH}"
           PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           echo "VERCOR_ARTIFACT_DIR=${GITHUB_WORKSPACE}/dist" >> "$GITHUB_ENV"
+          echo "VERCOR_PLUGIN_WHEEL_PATH=${PLUGIN_WHEEL_PATH}" >> "$GITHUB_ENV"
           echo "VERCOR_TEST_PACKAGE_ROOT=${PACKAGE_ROOT}" >> "$GITHUB_ENV"
       - name: Verify imports resolve from the installed wheel
         run: |
