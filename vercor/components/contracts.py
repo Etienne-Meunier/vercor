@@ -11,11 +11,11 @@ from vercor.components.contexts import (
 )
 from vercor._field_names import unique_field_names as _unique_field_names
 from vercor.output import OutputConfig
+from vercor.state import ComponentState
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.grids import RectilinearGrid
-    from vercor.state import ComponentState
 
 KEEP_PAYLOAD: Final = object()
 """Sentinel meaning a component step should preserve the existing payload."""

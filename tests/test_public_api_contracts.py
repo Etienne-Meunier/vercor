@@ -4,6 +4,7 @@ from datetime import datetime
 import importlib
 from inspect import signature
 from pathlib import Path
+from typing import get_type_hints
 
 import jax
 import jax.numpy as jnp
@@ -255,6 +256,15 @@ def test_public_component_contracts_do_not_expose_runtime_implementation_types()
         signature(components_module.Component.output.fget).return_annotation
         == "OutputConfig"
     )
+
+
+@pytest.mark.fast_always
+def test_validation_context_runtime_type_hints_resolve_public_state() -> None:
+    contracts_module = importlib.import_module("vercor.components.contracts")
+
+    type_hints = get_type_hints(contracts_module.ValidationContext)
+
+    assert type_hints["state"] is vercor.ComponentState
 
 
 @pytest.mark.fast_always
