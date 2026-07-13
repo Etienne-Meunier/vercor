@@ -3,13 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from vercor.dtypes import jax_ones
+from vercor.dtypes import DTypePolicy, jax_ones
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.jax_logging import LoggerLike
 from vercor._runtime.topology_state import RuntimeTopologyMaps
-from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components.base import Component
@@ -19,7 +18,7 @@ def build_exchange_topology_maps(
     *,
     components: Mapping[str, "Component"],
     exchanges: Sequence[Exchange],
-    settings: Settings,
+    dtype: DTypePolicy,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
 ) -> RuntimeTopologyMaps:
@@ -47,11 +46,11 @@ def build_exchange_topology_maps(
             )
             binary_masks[key] = jax_ones(
                 components[exchange.target].grid.shape,
-                settings,
+                dtype,
             )
             fractional_masks[key] = jax_ones(
                 components[exchange.target].grid.shape,
-                settings,
+                dtype,
             )
 
     return RuntimeTopologyMaps(

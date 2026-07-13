@@ -9,6 +9,43 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 2 physical configuration and precision ownership
+  completed locally on 2026-07-13. `vercor.physics.PhysicalConstants` is the
+  frozen registered PyTree owner for all 25 traced physical values, using
+  canonical descriptive names while preserving the legacy numerical defaults.
+  Setup and step contexts carry runtime-normalized constants, and
+  `RuntimeOptions.dtype` is the sole precision owner: dtype helpers reject
+  `Settings`, runtime preparation casts constants and component fields at one
+  boundary, and the float64-constant/float32-runtime regression proves both
+  float32 kernel execution and a preserved reverse gradient. Flux, ERA5,
+  JAXGCM, CAMulator, Veros, component-authoring, and exchange-topology paths now
+  receive physics and precision separately; production contains zero direct
+  physical reads from `Settings` and zero `Settings` arguments to dtype
+  helpers. Legacy `Settings` physical metadata/root exports remain only for the
+  sequenced compatibility/removal tasks. TDD began with 7/7 intended missing-
+  module failures; the later mixed-precision regression also failed before the
+  runtime boundary cast. Final focused physics tests pass 8/8, the requested
+  precision-owner cluster passes 63/63, the fast suite passes 467 selected
+  tests, and the full suite passes 868 tests with only the two known third-party
+  `FutureWarning`s. Black, strict flake8 (0), full mypy (240 files), compileall,
+  and whitespace checks pass. Detailed evidence and the exact legacy-to-
+  canonical field map are in `.superpowers/sdd/task-2-report.md`.
+  Review follow-up on 2026-07-13 connected the previously ignored momentum and
+  air-temperature reference heights to both ocean and sea-ice flux kernels,
+  made the 25-field constants API keyword-only, documented every field and
+  unit, and added immediate `RuntimeOptions.dtype` validation. Zero-dimensional
+  NumPy values are now copied to immutable real numeric scalars, non-scalar and
+  nonnumeric NumPy/JAX leaves are rejected without materializing valid JAX
+  scalars or tracers, and replacement of `coupler.constants` after preparation
+  remains mutation-checked without hashing array contents. The review TDD runs
+  recorded 9 intended behavior/ownership/construction/documentation failures
+  plus 4 intended nonnumeric-scalar failures before production edits. The
+  corrected physics/flux focus passes 36 cases, the broader physics/flux/runtime
+  selection passes 71, and the optional setup/kernel selection passes 20. The
+  post-review repository gates pass all 470 fast-selected and 882 full tests
+  with only the two known third-party `FutureWarning`s. Black leaves all 240
+  files unchanged, strict flake8 reports zero findings, full mypy reports no
+  issues in 240 files, and compileall plus whitespace checks pass.
 - VerCOR 4 milestone 1 Task 1 compatibility baseline implemented locally on
   2026-07-13. The static manifest pins clean reference commit
   `9f0b9131c889bed5c1c2d8ded260add3cfef9524`, version 3.1.1, the exact

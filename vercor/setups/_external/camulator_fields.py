@@ -9,7 +9,7 @@ import torch
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
 from vercor.fluxes.vertical_coordinates import compute_hybrid_sigma_full_level_altitudes
 from vercor.host_arrays import runtime_array_to_host
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 from vercor.setups._external.camulator_contracts import CAMULATOR_RUNTIME_FIELD_NAMES
 from vercor.setups._external.camulator_tensors import StateVariableAccessor
 
@@ -174,7 +174,7 @@ def _camulator_output_array(
 
 
 def map_camulator_prediction_to_runtime_fields(
-    settings: Settings,
+    constants: PhysicalConstants,
     *,
     camulator_reference_pressure: float,
     hyai: torch.Tensor,
@@ -191,15 +191,15 @@ def map_camulator_prediction_to_runtime_fields(
     return cast(
         dict[str, jax.Array],
         map_camulator_prediction_arrays(
-            settings.earth_radius,
-            settings.gravity,
-            settings.rdair,
-            settings.zvir,
-            settings.mwdair,
-            settings.rgas,
-            settings.p0,
-            settings.cappa,
-            settings.stefBoltz,
+            constants.earth_radius,
+            constants.gravity,
+            constants.dry_air_gas_constant,
+            constants.water_vapor_mass_ratio_correction,
+            constants.dry_air_molecular_weight,
+            constants.universal_gas_constant,
+            constants.reference_pressure,
+            constants.dry_air_kappa,
+            constants.stefan_boltzmann_constant,
             camulator_reference_pressure,
             runtime_array_to_host(hyai.cpu().numpy()).squeeze(),
             runtime_array_to_host(hybi.cpu().numpy()).squeeze(),

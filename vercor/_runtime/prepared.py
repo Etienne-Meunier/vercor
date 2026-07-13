@@ -15,6 +15,7 @@ from vercor.clock import Clock
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
+from vercor.physics import PhysicalConstants, _physical_constants_for_dtype
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.dispatch_context import (
     RuntimeDispatchContext,
@@ -46,6 +47,7 @@ class _PreparedConfigurationSnapshot:
     clock: tuple[Any, ...]
     runtime: tuple[Any, ...]
     settings: tuple[Any, ...]
+    constants: tuple[Any, ...]
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ class PreparedCoupling:
     dispatch_context: RuntimeDispatchContext
     clock: Clock
     settings: Settings
+    constants: PhysicalConstants
     runtime: RuntimeOptions
     interrupts: RuntimeInterruptController
     configuration_snapshot: _PreparedConfigurationSnapshot
@@ -70,6 +73,7 @@ class PreparedCoupling:
         *,
         clock: Clock,
         settings: Settings,
+        constants: PhysicalConstants,
         runtime: RuntimeOptions,
     ) -> None:
         """Reject direct configuration mutation after preparation."""
@@ -88,6 +92,8 @@ class PreparedCoupling:
             _raise_configuration_mutation("runtime options")
         if _settings_configuration_snapshot(settings) != snapshot.settings:
             _raise_configuration_mutation("coupler settings")
+        if _constants_configuration_snapshot(constants) != snapshot.constants:
+            _raise_configuration_mutation("physical constants")
 
 
 def prepare_coupling(
@@ -97,6 +103,7 @@ def prepare_coupling(
     run_order: Sequence[str],
     clock: Clock,
     settings: Settings,
+    constants: PhysicalConstants,
     runtime: RuntimeOptions,
     logger: LoggerLike,
 ) -> PreparedCoupling:
@@ -106,12 +113,15 @@ def prepare_coupling(
     immutable_components = MappingProxyType(dict(components))
     immutable_exchanges = tuple(exchanges)
     immutable_run_order = tuple(run_order)
+    runtime_constants = _physical_constants_for_dtype(constants, runtime.dtype)
     initialized = initialize_coupler_runtime(
         clock=clock,
         components=dict(immutable_components),
         exchanges=immutable_exchanges,
         run_order=immutable_run_order,
         settings=settings,
+        constants=runtime_constants,
+        dtype=runtime.dtype,
         logger=logger,
         topology_policy=runtime.topology,
     )
@@ -124,11 +134,14 @@ def prepare_coupling(
         contracts,
         dt_seconds=clock.dt_seconds,
         settings=settings,
+        constants=runtime_constants,
+        dtype=runtime.dtype,
     )
     configuration_snapshot = _prepared_configuration_snapshot(
         components=immutable_components,
         clock=clock,
         settings=settings,
+        constants=constants,
         runtime=runtime,
     )
     return PreparedCoupling(
@@ -140,6 +153,7 @@ def prepare_coupling(
         dispatch_context=dispatch_context,
         clock=clock,
         settings=settings,
+        constants=runtime_constants,
         runtime=runtime,
         interrupts=RuntimeInterruptController(),
         configuration_snapshot=configuration_snapshot,
@@ -170,6 +184,7 @@ def _prepared_configuration_snapshot(
     components: Mapping[str, "Component"],
     clock: Clock,
     settings: Settings,
+    constants: PhysicalConstants,
     runtime: RuntimeOptions,
 ) -> _PreparedConfigurationSnapshot:
     """Return the complete post-initialization configuration snapshot."""
@@ -185,6 +200,7 @@ def _prepared_configuration_snapshot(
         clock=_clock_configuration_snapshot(clock),
         runtime=_runtime_configuration_snapshot(runtime),
         settings=_settings_configuration_snapshot(settings),
+        constants=_constants_configuration_snapshot(constants),
     )
 
 
@@ -226,6 +242,14 @@ def _settings_configuration_snapshot(settings: Settings) -> tuple[Any, ...]:
     """Return identity and values for one settings owner."""
 
     return (id(settings), _configuration_value_snapshot(settings.as_dict()))
+
+
+def _constants_configuration_snapshot(
+    constants: PhysicalConstants,
+) -> tuple[Any, ...]:
+    """Return identity and traced values for physical constants."""
+
+    return (id(constants), _configuration_value_snapshot(constants))
 
 
 def _object_configuration_snapshot(component: object) -> tuple[Any, ...]:

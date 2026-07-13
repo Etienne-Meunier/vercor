@@ -39,7 +39,7 @@ class ComponentLifecycleMixin:
         if hook is not None:
             hook(self._lifecycle_hook_owner(), context)
             return
-        component.seed_declared_defaults(context.settings)
+        component.seed_declared_defaults(component._dtype_policy)
 
     def _create_runtime_payload(self) -> Any | None:
         """Return optional immutable payload carried by runtime component state."""

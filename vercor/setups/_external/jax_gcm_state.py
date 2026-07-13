@@ -29,7 +29,7 @@ from vercor.components import (
     Component,
     SetupContext,
 )
-from vercor.dtypes import as_jax_real_array, jax_ones
+from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_ones
 from vercor.grids import RectilinearGrid
 from vercor.output._component_adapter import (
     _ComponentOutputAdapter as ComponentOutputAdapter,
@@ -123,7 +123,7 @@ class JAXGCMSetupState:
 
         self.name = name
         self.grid = grid
-        self.settings: Any | None = None
+        self._dtype_policy = DTypePolicy.from_jax_config()
         self.output_adapter = ComponentOutputAdapter(
             empty_error_message=_jax_gcm_output.JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE,
             time_dim=_jax_gcm_output.JAX_GCM_TIME_DIM,
@@ -138,7 +138,7 @@ class JAXGCMSetupState:
         def step_function(
             state: JCMState, forcing: ForcingData
         ) -> tuple[JCMState, Predictions]:
-            precision_policy = getattr(self, "settings", None)
+            precision_policy = self._dtype_policy
             new_atm_modal_state, predictions = self.model.run_from_state(
                 initial_state=state.metadata,
                 save_interval=self.save_interval / timedelta(days=1),
@@ -171,7 +171,7 @@ class JAXGCMSetupState:
     ) -> None:
         """Initialize runtime payload, defaults, and optional spinup state."""
 
-        self.settings = context.settings
+        self._dtype_policy = context.dtype
         assign_model_timestep_alignment(
             self,
             context.dt_seconds,
@@ -198,7 +198,7 @@ class JAXGCMSetupState:
                     self.model.coords.vertical.layers,
                     **physics_data_kwargs,
                 ),
-                self.settings,
+                self._dtype_policy,
             ),
             prog=dynamics_state_to_physics_state(_modal_state, self.model.primitive),
         )

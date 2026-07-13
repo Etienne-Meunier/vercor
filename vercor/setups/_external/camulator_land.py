@@ -103,7 +103,7 @@ def make_camulator_land(
             logger=logger,
         )
 
-        component.seed_declared_defaults(context.settings)
+        component.seed_declared_defaults(component._dtype_policy)
 
     def step(
         fields: dict[str, Any],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
@@ -24,7 +25,7 @@ from vercor.fluxes.vertical_coordinates import (
     compute_hybrid_pressure_levels,
     get_altitudes_hybrid_sigma_levels,
 )
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 
 
 def _ocean_state(shape: tuple[int, int] = (3, 4)) -> dict[str, np.ndarray]:
@@ -102,7 +103,7 @@ def test_compute_hybrid_pressure_levels_matches_hybrid_definition() -> None:
 
 
 def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     sp = np.full((2, 2), 101_325.0)
     hya = np.array([100.0, 1_000.0, 5_000.0, 10_000.0, 20_000.0])
     hyb = np.array([0.0, 0.1, 0.3, 0.5, 0.8])
@@ -111,7 +112,7 @@ def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -
     t = np.full((2, 2, 4), 260.0)
     q = np.full((2, 2, 4), 0.004)
 
-    alt = get_altitudes_hybrid_sigma_levels(settings=settings, t=t, q=q, ph=ph)
+    alt = get_altitudes_hybrid_sigma_levels(constants=constants, t=t, q=q, ph=ph)
 
     assert alt.shape == (2, 2, 4)
     assert np.all(np.isfinite(alt))
@@ -120,12 +121,12 @@ def test_get_altitudes_hybrid_sigma_levels_returns_finite_increasing_profile() -
 
 
 def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     ph = jnp.asarray([0.0, 1_000.0, 5_000.0, 100_000.0])[None, None, :]
     t = jnp.full((1, 1, 3), 260.0)
     q = jnp.zeros((1, 1, 3))
 
-    alt = get_altitudes_hybrid_sigma_levels(settings=settings, t=t, q=q, ph=ph)
+    alt = get_altitudes_hybrid_sigma_levels(constants=constants, t=t, q=q, ph=ph)
 
     top_down_dlog = jnp.asarray(
         [
@@ -141,7 +142,7 @@ def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None
             1.0 - ph[0, 0, 2] / (ph[0, 0, 3] - ph[0, 0, 2]) * top_down_dlog[2],
         ]
     )
-    moist_temperature_rd = settings.rdair * 260.0
+    moist_temperature_rd = constants.dry_air_gas_constant * 260.0
     expected_bottom_up_geopotential = jnp.asarray(
         [
             moist_temperature_rd * top_down_alpha[2],
@@ -150,11 +151,11 @@ def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None
             * (top_down_dlog[2] + top_down_dlog[1] + top_down_alpha[0]),
         ]
     )
-    geopotential_height = expected_bottom_up_geopotential / settings.gravity
+    geopotential_height = expected_bottom_up_geopotential / constants.gravity
     expected_alt = (
-        settings.earth_radius
+        constants.earth_radius
         * geopotential_height
-        / (settings.earth_radius - geopotential_height)
+        / (constants.earth_radius - geopotential_height)
     )
 
     assert alt.shape == (1, 1, 3)
@@ -163,22 +164,24 @@ def test_get_altitudes_hybrid_sigma_levels_handles_zero_top_half_level() -> None
 
 
 def test_density_and_potential_temperature_match_closed_form() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     pf = np.array([[100_000.0, 90_000.0]])
     t = np.array([[300.0, 280.0]])
 
-    rho = compute_air_density(settings=settings, pf=pf, t=t)
-    theta = compute_potential_temperature(settings=settings, tbot=t, pf=pf)
+    rho = compute_air_density(constants=constants, pf=pf, t=t)
+    theta = compute_potential_temperature(constants=constants, tbot=t, pf=pf)
 
-    expected_rho = settings.mwdair / settings.rgas * pf / t
-    expected_theta = t * (settings.p0 / pf) ** settings.cappa
+    expected_rho = (
+        constants.dry_air_molecular_weight / constants.universal_gas_constant * pf / t
+    )
+    expected_theta = t * (constants.reference_pressure / pf) ** constants.dry_air_kappa
 
     assert_allclose_compact(rho, expected_rho)
     assert_allclose_compact(theta, expected_theta)
 
 
 def test_flux_utility_kernels_support_jit() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     tk = jnp.asarray([260.0, 280.0, 300.0])
     ps = jnp.full(3, 101_325.0)
     sp = jnp.asarray([[100_000.0, 95_000.0], [101_000.0, 99_000.0]])
@@ -201,10 +204,10 @@ def test_flux_utility_kernels_support_jit() -> None:
     assert_allclose_compact(
         jax.jit(
             lambda temp, humid, pressure: get_altitudes_hybrid_sigma_levels(
-                settings, temp, humid, pressure
+                constants, temp, humid, pressure
             )
         )(t, q, ph),
-        get_altitudes_hybrid_sigma_levels(settings, t, q, ph),
+        get_altitudes_hybrid_sigma_levels(constants, t, q, ph),
     )
     assert_allclose_compact(
         jax.jit(cdn)(jnp.asarray([2.0, 8.0, 15.0])), cdn(jnp.asarray([2.0, 8.0, 15.0]))
@@ -218,21 +221,21 @@ def test_flux_utility_kernels_support_jit() -> None:
         psixhu(jnp.asarray([1.0, 2.0, 4.0])),
     )
     assert_allclose_compact(
-        jax.jit(lambda pf, temp: compute_air_density(settings, pf, temp))(
+        jax.jit(lambda pf, temp: compute_air_density(constants, pf, temp))(
             jnp.asarray([[100_000.0, 90_000.0]]),
             jnp.asarray([[300.0, 280.0]]),
         ),
         compute_air_density(
-            settings, np.array([[100_000.0, 90_000.0]]), np.array([[300.0, 280.0]])
+            constants, np.array([[100_000.0, 90_000.0]]), np.array([[300.0, 280.0]])
         ),
     )
     assert_allclose_compact(
-        jax.jit(lambda temp, pf: compute_potential_temperature(settings, temp, pf))(
+        jax.jit(lambda temp, pf: compute_potential_temperature(constants, temp, pf))(
             jnp.asarray([[300.0, 280.0]]),
             jnp.asarray([[100_000.0, 90_000.0]]),
         ),
         compute_potential_temperature(
-            settings, np.array([[300.0, 280.0]]), np.array([[100_000.0, 90_000.0]])
+            constants, np.array([[300.0, 280.0]]), np.array([[100_000.0, 90_000.0]])
         ),
     )
 
@@ -240,11 +243,11 @@ def test_flux_utility_kernels_support_jit() -> None:
 def test_compute_ocean_surface_fluxes_produces_finite_and_physically_consistent_signs() -> (
     None
 ):
-    settings = Settings()
+    constants = PhysicalConstants()
     state = _ocean_state()
 
     sen, lat, lwup, evap, taux, tauy, *_ = compute_ocean_surface_fluxes(
-        settings,
+        constants,
         state["mask"],
         state["zbot"],
         state["ubot"],
@@ -272,11 +275,11 @@ def test_compute_ocean_surface_fluxes_produces_finite_and_physically_consistent_
 
 
 def test_compute_ocean_surface_fluxes_matches_reference_state() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     state = _ocean_state()
 
     out = compute_ocean_surface_fluxes(
-        settings,
+        constants,
         state["mask"],
         state["zbot"],
         state["ubot"],
@@ -316,12 +319,12 @@ def test_compute_ocean_surface_fluxes_matches_reference_state() -> None:
 def test_compute_ocean_surface_fluxes_respects_mask_for_surface_exchange_outputs() -> (
     None
 ):
-    settings = Settings()
+    constants = PhysicalConstants()
     state = _ocean_state(shape=(2, 3))
     state["mask"] = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
 
     out = compute_ocean_surface_fluxes(
-        settings,
+        constants,
         state["mask"],
         state["zbot"],
         state["ubot"],
@@ -341,7 +344,7 @@ def test_compute_ocean_surface_fluxes_respects_mask_for_surface_exchange_outputs
 
 
 def test_flux_kernels_support_jit_and_gradients() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     state = _ocean_state(shape=(1, 1))
     mask = state["mask"]
     zbot = state["zbot"]
@@ -356,7 +359,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
 
     jitted_ocean_flux = jax.jit(
         lambda ts: compute_ocean_surface_fluxes(
-            settings,
+            constants,
             mask,
             zbot,
             ubot,
@@ -372,7 +375,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
     )
     jitted_ice_flux = jax.jit(
         lambda ts: shr_flux_atmIce(
-            settings,
+            constants,
             mask,
             zbot,
             ubot,
@@ -387,10 +390,10 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
 
     ts = jnp.asarray([[300.0]])
     eager_ocean = compute_ocean_surface_fluxes(
-        settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, us, vs, ts
+        constants, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, us, vs, ts
     )
     eager_ice = shr_flux_atmIce(
-        settings, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, ts
+        constants, mask, zbot, ubot, vbot, thbot, qbot, rbot, tbot, ts
     )
 
     for eager_arr, jitted_arr in zip(eager_ocean, jitted_ocean_flux(ts)):
@@ -402,7 +405,7 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
         ts_array = jnp.full((1, 1), ts_scalar)
         return jnp.sum(
             compute_ocean_surface_fluxes(
-                settings,
+                constants,
                 mask,
                 zbot,
                 ubot,
@@ -423,8 +426,92 @@ def test_flux_kernels_support_jit_and_gradients() -> None:
     assert np.isclose(grad_value, finite_diff, rtol=2e-2, atol=1e-3)
 
 
+def test_ocean_flux_uses_traced_reference_heights() -> None:
+    constants = PhysicalConstants()
+    state = _ocean_state(shape=(1, 1))
+
+    def loss(heights: jax.Array) -> jax.Array:
+        configured = replace(
+            constants,
+            reference_height=heights[0],
+            air_temperature_reference_height=heights[1],
+        )
+        outputs = compute_ocean_surface_fluxes(
+            configured,
+            state["mask"],
+            state["zbot"],
+            state["ubot"],
+            state["vbot"],
+            state["thbot"],
+            state["qbot"],
+            state["rbot"],
+            state["tbot"],
+            state["us"],
+            state["vs"],
+            state["ts"],
+        )
+        return jnp.sum(outputs[0] + outputs[6] + outputs[7])
+
+    default_heights = jnp.asarray([10.0, 2.0])
+    configured_heights = jnp.asarray([12.0, 3.0])
+    direction = jnp.asarray([0.25, -0.5])
+    default_loss = loss(default_heights)
+    configured_loss, forward = jax.jvp(
+        loss,
+        (configured_heights,),
+        (direction,),
+    )
+    reverse = jax.grad(loss)(configured_heights)
+
+    assert not np.isclose(float(default_loss), float(configured_loss))
+    assert_allclose_compact(forward, jnp.vdot(reverse, direction))
+    assert np.all(np.isfinite(np.asarray(reverse)))
+    assert np.all(np.abs(np.asarray(reverse)) > 1e-8)
+
+
+def test_ice_flux_uses_traced_reference_heights() -> None:
+    constants = PhysicalConstants()
+    state = _ocean_state(shape=(1, 1))
+
+    def loss(heights: jax.Array) -> jax.Array:
+        configured = replace(
+            constants,
+            reference_height=heights[0],
+            air_temperature_reference_height=heights[1],
+        )
+        outputs = shr_flux_atmIce(
+            configured,
+            state["mask"],
+            state["zbot"],
+            state["ubot"],
+            state["vbot"],
+            state["thbot"],
+            state["qbot"],
+            state["rbot"],
+            state["tbot"],
+            state["ts"],
+        )
+        return jnp.sum(outputs[0] + outputs[6] + outputs[7])
+
+    default_heights = jnp.asarray([10.0, 2.0])
+    configured_heights = jnp.asarray([12.0, 3.0])
+    direction = jnp.asarray([0.25, -0.5])
+    default_loss = loss(default_heights)
+    configured_loss, forward = jax.jvp(
+        loss,
+        (configured_heights,),
+        (direction,),
+    )
+    reverse = jax.grad(loss)(configured_heights)
+
+    assert not np.isclose(float(default_loss), float(configured_loss))
+    assert_allclose_compact(forward, jnp.vdot(reverse, direction))
+    assert np.all(np.isfinite(np.asarray(reverse)))
+    assert np.all(np.abs(np.asarray(reverse)) > 1e-8)
+
+
 def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     shape = (2, 3)
     mask = np.ones(shape)
     zbot = np.full(shape, 10.0)
@@ -439,7 +526,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
     rbot = np.full(shape, 1.25)
 
     base = compute_ocean_surface_fluxes(
-        settings,
+        constants,
         mask,
         zbot,
         ubot,
@@ -454,7 +541,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
         use_coldair_outbreak_mod=False,
     )
     mod = compute_ocean_surface_fluxes(
-        settings,
+        constants,
         mask,
         zbot,
         ubot,
@@ -476,7 +563,7 @@ def test_cold_air_outbreak_mod_strengthens_flux_magnitudes() -> None:
 
 
 def test_shr_flux_atmIce_is_finite_and_masked_outputs_are_zeroed() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
     mask = np.array([[1.0, 0.0], [1.0, 0.0]])
     shape = mask.shape
 
@@ -490,7 +577,7 @@ def test_shr_flux_atmIce_is_finite_and_masked_outputs_are_zeroed() -> None:
     ts = np.full(shape, 270.0)
 
     out = shr_flux_atmIce(
-        settings,
+        constants,
         mask,
         zbot,
         ubot,

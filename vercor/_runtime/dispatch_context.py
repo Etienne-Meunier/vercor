@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
+from vercor.physics import PhysicalConstants
 from vercor._runtime.contracts import ExchangeContract
 from vercor.settings import Settings
 
@@ -23,6 +25,8 @@ class RuntimeDispatchContext:
     contracts: Mapping[str, ExchangeContract]
     dt_seconds: float
     settings: Settings
+    constants: PhysicalConstants
+    dtype: DTypePolicy
 
     def destination_exchanges(self, component_name: str) -> tuple[Exchange, ...]:
         """Return exchanges targeting ``component_name``."""
@@ -38,6 +42,8 @@ def build_runtime_dispatch_context(
     *,
     dt_seconds: float,
     settings: Settings,
+    constants: PhysicalConstants,
+    dtype: DTypePolicy,
 ) -> RuntimeDispatchContext:
     """Return static runtime dispatch plumbing for a configured coupler."""
 
@@ -57,4 +63,6 @@ def build_runtime_dispatch_context(
         contracts=contracts,
         dt_seconds=dt_seconds,
         settings=settings,
+        constants=constants,
+        dtype=dtype,
     )

@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+from typing import TypeAlias, cast
+
 import jax
 import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_real_array
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 from vercor.types import RuntimeArray
+
+ScalarPhysicsValue: TypeAlias = float | RuntimeArray
 
 
 def _virtual_temperature_from_specific_humidity(
     temperature: RuntimeArray,
     specific_humidity: RuntimeArray,
-    virtual_temperature_correction: float,
+    virtual_temperature_correction: ScalarPhysicsValue,
 ) -> jax.Array:
     """Return virtual temperature for specific humidity in kg/kg."""
 
@@ -39,7 +43,7 @@ def compute_hybrid_pressure_levels(
 
 
 def get_altitudes_hybrid_sigma_levels(
-    settings: Settings,
+    constants: PhysicalConstants,
     t: RuntimeArray,
     q: RuntimeArray,
     ph: RuntimeArray,
@@ -50,10 +54,10 @@ def get_altitudes_hybrid_sigma_levels(
         t,
         q,
         ph,
-        earth_radius=settings.earth_radius,
-        gravity=settings.gravity,
-        rdair=settings.rdair,
-        zvir=settings.zvir,
+        earth_radius=constants.earth_radius,
+        gravity=constants.gravity,
+        rdair=constants.dry_air_gas_constant,
+        zvir=constants.water_vapor_mass_ratio_correction,
     )
 
 
@@ -62,10 +66,10 @@ def compute_hybrid_sigma_full_level_altitudes(
     q: RuntimeArray,
     ph: RuntimeArray,
     *,
-    earth_radius: float,
-    gravity: float,
-    rdair: float,
-    zvir: float,
+    earth_radius: ScalarPhysicsValue,
+    gravity: ScalarPhysicsValue,
+    rdair: ScalarPhysicsValue,
+    zvir: ScalarPhysicsValue,
 ) -> jax.Array:
     """Return bottom-to-top hybrid-sigma full-level geometric altitudes."""
 
@@ -105,7 +109,10 @@ def compute_hybrid_sigma_full_level_altitudes(
         + padded_half_level_geopotential[:, :, :-1]
     )
     geopotential_height = full_level_geopotential / gravity
-    return earth_radius * geopotential_height / (earth_radius - geopotential_height)
+    return cast(
+        jax.Array,
+        earth_radius * geopotential_height / (earth_radius - geopotential_height),
+    )
 
 
 def compute_sigma_pressure_levels(

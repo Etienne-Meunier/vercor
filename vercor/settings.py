@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, NamedTuple
 
-from vercor.dtypes import DTypePolicy
 from vercor.physical_constants import PHYSICAL_CONSTANT_SETTINGS
 
 
@@ -201,12 +200,6 @@ class Settings:
         """Return a plain mapping of setting names to values."""
 
         return {name: record.value for name, record in self._settings.items()}
-
-    @property
-    def dtype_policy(self) -> DTypePolicy:
-        """Return the canonical array dtype policy for these settings."""
-
-        return DTypePolicy.from_settings(self)
 
 
 __all__ = [

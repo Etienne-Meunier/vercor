@@ -49,6 +49,8 @@ from vercor.output import OutputVariable
 from vercor.output import OutputConfig, PeriodOutput
 from vercor.output._session import build_period_output_plan
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy
+from vercor.physics import PhysicalConstants
 from vercor.runtime import RuntimeOptions
 from vercor.setups import VerosConfig
 from vercor._runtime.state import ComponentRuntimeState
@@ -499,6 +501,7 @@ def test_generate_step_function_non_jitted_averages_predictions() -> None:
     )
     component.save_interval = timedelta(days=2)
     component.coupling_timestep = timedelta(hours=12)
+    component._dtype_policy = DTypePolicy()
 
     calls: dict[str, Any] = {}
 
@@ -626,7 +629,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     component.name = "CUSTOM_ATMOSPHERE"
     component.grid = make_test_grid()
     component.data = {}
-    component.settings = Settings()
+    component._dtype_policy = DTypePolicy()
     component.save_interval = timedelta(days=1)
     component.output_frequency = None
     component.forcing_data = "provided-forcing"
@@ -683,7 +686,6 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
     hook_component = DataComponent.from_fields(
         name="CUSTOM_ATMOSPHERE",
         grid=component.grid,
-        settings=component.settings,
     )
     coupler = _make_coupler(
         dt_seconds=3600.0,
@@ -717,7 +719,7 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
     component.name = "ATM"
     component.grid = make_test_grid()
     component.data = {}
-    component.settings = Settings()
+    component._dtype_policy = DTypePolicy()
     component.save_interval = timedelta(days=1)
     component.output_frequency = None
     component.forcing_data = None
@@ -767,7 +769,6 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
     hook_component = DataComponent.from_fields(
         name="ATM",
         grid=component.grid,
-        settings=component.settings,
     )
     component.initialize(
         cast(Any, hook_component),
@@ -787,7 +788,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     component.name = "ATM"
     component.grid = make_test_grid(name="atm")
-    component.settings = Settings()
+    component._dtype_policy = DTypePolicy()
     component.data = {
         "sea_surface_temperature": np.asarray([[np.nan, 281.0], [282.0, 283.0]]),
         "land_surface_temperature": np.asarray([[270.0, np.nan], [0.0, 284.0]]),
@@ -921,7 +922,6 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     hook_component = DataComponent.from_fields(
         name="ATM",
         grid=component.grid,
-        settings=component.settings,
     )
     prefill_result = jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
         component,
@@ -1704,7 +1704,7 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
     captured: dict[str, np.ndarray] = {}
 
     def fake_compute_ocean_surface_fluxes(
-        settings: Settings,
+        constants: PhysicalConstants,
         mask: np.ndarray,
         model_level_height: np.ndarray,
         u_velocity: np.ndarray,
@@ -1718,7 +1718,7 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
         surface_temperature: np.ndarray,
     ) -> tuple[np.ndarray, ...]:
         _ = (
-            settings,
+            constants,
             model_level_height,
             u_velocity,
             v_velocity,
@@ -1756,7 +1756,8 @@ def test_veros_compute_fluxes_zeroes_qnec_for_large_negative_dqfldt(
     taux, tauy, qnet, qnec = veros_fluxes_module.compute_fluxes(
         component._veros_state,
         component.data,
-        Settings(),
+        PhysicalConstants(),
+        DTypePolicy(),
     )
 
     assert isinstance(taux, jax.Array)
@@ -2435,7 +2436,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     monkeypatch.setattr(
         veros_fluxes_module,
         "compute_fluxes",
-        lambda veros_state, runtime_fields, settings: (
+        lambda veros_state, runtime_fields, constants, dtype: (
             np.asarray([[1.0, 2.0], [3.0, 4.0]]),
             np.asarray([[5.0, 6.0], [7.0, 8.0]]),
             np.asarray([[9.0, 10.0], [11.0, 12.0]]),
@@ -2495,7 +2496,7 @@ def test_veros_step_records_selected_outputs_and_writes_on_gate(
     monkeypatch.setattr(
         veros_fluxes_module,
         "compute_fluxes",
-        lambda veros_state, runtime_fields, settings: (
+        lambda veros_state, runtime_fields, constants, dtype: (
             np.ones((2, 2)),
             np.ones((2, 2)),
             np.ones((2, 2)),
@@ -2578,7 +2579,7 @@ def test_veros_step_skips_output_when_no_variables_selected(
     monkeypatch.setattr(
         veros_fluxes_module,
         "compute_fluxes",
-        lambda veros_state, runtime_fields, settings: (
+        lambda veros_state, runtime_fields, constants, dtype: (
             np.ones((2, 2)),
             np.ones((2, 2)),
             np.ones((2, 2)),
@@ -2640,7 +2641,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     monkeypatch.setattr(
         veros_fluxes_module,
         "compute_fluxes",
-        lambda veros_state, runtime_fields, settings: (
+        lambda veros_state, runtime_fields, constants, dtype: (
             np.asarray([[1.0, np.nan], [3.0, 4.0]]),
             np.asarray([[5.0, 6.0], [np.nan, 8.0]]),
             np.asarray([[9.0, 10.0], [11.0, np.nan]]),

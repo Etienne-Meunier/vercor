@@ -44,6 +44,7 @@ from vercor.setups._slab.land import make_slab_land
 from vercor.setups._slab.ocean import make_slab_ocean
 from vercor.setups._slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchanges import Exchange
 from vercor.fields import flatten_field_items
@@ -213,7 +214,7 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
     )
     state.name = "ATM"
     state.grid = grid
-    state.settings = Settings()
+    state._dtype_policy = DTypePolicy()
     state.data = {
         "sea_surface_temperature": jnp.full(grid.shape, 281.0, dtype=jnp.float64),
         "land_surface_temperature": jnp.full(grid.shape, 3.0, dtype=jnp.float64),

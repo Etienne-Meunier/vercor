@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING
 from vercor.clock import Clock
 from vercor.components._adapter import validate_component_contract
 from vercor.components.contexts import SetupContext
-from vercor.dtypes import as_jax_real_array
+from vercor.dtypes import DTypePolicy, as_jax_real_array
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
+from vercor.physics import PhysicalConstants
 from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
 from vercor._runtime.topology import build_exchange_topology
 from vercor._runtime.topology_state import (
@@ -37,14 +38,15 @@ class RuntimeInitializationState:
 
 def apply_run_precision_to_component(
     component: Component,
-    settings: Settings,
+    dtype: DTypePolicy,
 ) -> None:
     """Synchronize component-owned setup arrays with the coupler precision."""
 
-    component.settings.set("enable_x64", settings.enable_x64)
-    component.grid = component.grid.with_precision(settings)
+    component._dtype_policy = dtype
+    component.settings.set("enable_x64", dtype.enable_x64)
+    component.grid = component.grid.with_precision(dtype)
     component._data = {
-        field_name: as_jax_real_array(field_value, settings)
+        field_name: as_jax_real_array(field_value, dtype)
         for field_name, field_value in component._data.items()
     }
     spec = component.spec
@@ -63,6 +65,8 @@ def initialize_coupler_runtime(
     exchanges: Sequence[Exchange],
     run_order: Sequence[str],
     settings: Settings,
+    constants: PhysicalConstants,
+    dtype: DTypePolicy,
     logger: LoggerLike,
     topology_maps: RuntimeTopologyMaps | None = None,
     topology_policy: TopologyPolicy | None = None,
@@ -71,21 +75,21 @@ def initialize_coupler_runtime(
 
     logger.info("Initializing coupler and components")
 
-    logger.info(
-        f"Setting default precision for JAX computations: {settings.enable_x64}"
-    )
+    logger.info(f"Setting default precision for JAX computations: {dtype.enable_x64}")
 
     for component in components.values():
         validate_component_contract(component)
 
     for component in components.values():
-        apply_run_precision_to_component(component, settings)
+        apply_run_precision_to_component(component, dtype)
 
     init_context = SetupContext(
         start=clock.start,
         dt_seconds=clock.dt_seconds,
         run_order=run_order,
         settings=settings,
+        constants=constants,
+        dtype=dtype,
         logger=logger,
     )
 
@@ -112,6 +116,7 @@ def initialize_coupler_runtime(
         topology_maps=topology_maps,
         topology_policy=topology_policy,
         settings=settings,
+        dtype=dtype,
         logger=logger,
     )
     return RuntimeInitializationState(

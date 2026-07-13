@@ -32,7 +32,8 @@ def step_veros_runtime(
     taux, tauy, qnet, qnec = _veros_fluxes.compute_fluxes(
         state._veros_state,
         fields,
-        context.settings,
+        context.constants,
+        context.dtype,
     )
     forcing_fields = _veros_state.prepare_surface_forcing_fields(
         taux, tauy, qnet, qnec, state.restore_to_climatology

@@ -18,9 +18,10 @@ from vercor.components import ComponentSpec, FieldImportPolicy
 from vercor.components.data import DataComponent
 from vercor.clock import Clock
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
 from vercor.components.contexts import SetupContext
-from vercor.settings import Settings
+from vercor.runtime import RuntimeOptions
 from vercor.setups._external.jax_gcm_runtime import JAXGCMRuntimePayload
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
@@ -46,12 +47,18 @@ class _RuntimeSendComponent(DataComponent):
         _ = context
 
 
-def test_runtime_contract_prefill_uses_component_float32_policy() -> None:
+def test_runtime_contract_prefill_uses_runtime_float32_policy() -> None:
     component = DataComponent.from_fields(
         name="DATA",
         grid=make_test_grid(name="runtime-prefill-policy"),
-        settings=Settings(enable_x64=False),
     )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("DATA",),
+        runtime=RuntimeOptions(dtype=DTypePolicy(enable_x64=False)),
+    )
+    coupler._ensure_prepared()
     state = create_runtime_component_state(
         component,
         prefill_missing=True,

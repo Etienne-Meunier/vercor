@@ -31,6 +31,7 @@ from vercor._runtime.contracts import build_exchange_contracts
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.components import ComponentSpec, DataComponent
 from vercor.components.runtime_execution import step_component_runtime_state
+from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
 from vercor.fields import flatten_field_items
 from vercor.output._component_adapter import (
@@ -41,6 +42,7 @@ from vercor.output import OutputConfig, PeriodOutput
 from vercor.setups import CAMulatorConfig
 from vercor.setups._external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
+from vercor.physics import PhysicalConstants
 from vercor.grids import RectilinearGrid
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
@@ -893,7 +895,7 @@ def test_state_variable_accessor_uses_shared_index_map_builders() -> None:
 def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions() -> (
     None
 ):
-    settings = Settings()
+    constants = PhysicalConstants()
     hyai = jnp.asarray([0.00, 0.05, 0.10])
     hybi = jnp.asarray([0.00, 0.20, 1.00])
     hyam = jnp.asarray([0.015, 0.025])
@@ -918,15 +920,15 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     surface_pressure = jnp.full((2, 2), 100000.0)
 
     mapped_fields = jax.jit(camulator_fields_module.map_camulator_prediction_arrays)(
-        settings.earth_radius,
-        settings.gravity,
-        settings.rdair,
-        settings.zvir,
-        settings.mwdair,
-        settings.rgas,
-        settings.p0,
-        settings.cappa,
-        settings.stefBoltz,
+        constants.earth_radius,
+        constants.gravity,
+        constants.dry_air_gas_constant,
+        constants.water_vapor_mass_ratio_correction,
+        constants.dry_air_molecular_weight,
+        constants.universal_gas_constant,
+        constants.reference_pressure,
+        constants.dry_air_kappa,
+        constants.stefan_boltzmann_constant,
         100000.0,
         hyai,
         hybi,
@@ -954,7 +956,8 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     )
     assert_allclose_compact(
         mapped_fields["downward_longwave_radiation_flux"],
-        settings.stefBoltz * np.asarray(surface_temperature) ** 4 - 3.0,
+        constants.stefan_boltzmann_constant * np.asarray(surface_temperature) ** 4
+        - 3.0,
     )
     assert mapped_fields["model_level_height"].shape == (2, 2)
     assert mapped_fields["density"].shape == (2, 2)
@@ -964,7 +967,7 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
         + hybi[:, jnp.newaxis, jnp.newaxis] * surface_pressure[jnp.newaxis, :, :]
     )
     expected_model_level_height = get_altitudes_hybrid_sigma_levels(
-        settings,
+        constants,
         temperature_3d.T,
         specific_humidity_3d.T,
         pressure_interfaces.T,
@@ -1447,10 +1450,10 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([0.0, 1.0]),
     )
-    component.settings = Settings()
+    component._dtype_policy = DTypePolicy()
     component._data = camulator_fields_module.initialize_camulator_runtime_fields(
         component.grid.shape,
-        component.settings,
+        component._dtype_policy,
     )
     component._data["sea_surface_temperature"] = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
     component._data["land_surface_temperature"] = jnp.asarray(

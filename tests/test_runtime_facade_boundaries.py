@@ -47,6 +47,7 @@ def test_prepared_coupling_owns_single_normalized_runtime_boundary() -> None:
         "dispatch_context",
         "clock",
         "settings",
+        "constants",
         "runtime",
         "interrupts",
         "configuration_snapshot",

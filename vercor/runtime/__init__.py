@@ -30,6 +30,9 @@ class RuntimeOptions:
     def __post_init__(self) -> None:
         """Validate runtime policy values."""
 
+        if not isinstance(self.dtype, DTypePolicy):
+            raise TypeError("dtype must be a DTypePolicy")
+
         if isinstance(self.execution, str):
             if self.execution not in ("auto", "jax", "host"):
                 raise ValueError(

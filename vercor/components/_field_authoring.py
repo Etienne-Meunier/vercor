@@ -25,6 +25,7 @@ class ComponentFieldAuthoringMixin:
     grid: RectilinearGrid
     _data: dict[str, RuntimeArray]
     settings: Settings
+    _dtype_policy: PrecisionPolicy
     _spec: ComponentSpec
 
     def configure(self: Self, spec: ComponentSpec) -> Self:
@@ -56,7 +57,7 @@ class ComponentFieldAuthoringMixin:
                 component_name=self.name,
                 grid=self.grid,
                 fields=declared.defaults,
-                policy=self.settings,
+                policy=self._dtype_policy,
             )
             or {},
             execution=self._spec.execution,
@@ -113,7 +114,7 @@ class ComponentFieldAuthoringMixin:
                 component_name=self.name,
                 grid=self.grid,
                 fields=defaults,
-                policy=self.settings if policy is None else policy,
+                policy=self._dtype_policy if policy is None else policy,
             )
             or {}
         )
@@ -139,7 +140,7 @@ class ComponentFieldAuthoringMixin:
             component_name=self.name,
             grid=self.grid,
             fields=fields,
-            policy=self.settings if policy is None else policy,
+            policy=self._dtype_policy if policy is None else policy,
         )
         self._data.update(field_updates or {})
         return self

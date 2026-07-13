@@ -9,12 +9,14 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 from vercor.exchanges import Exchange
+from vercor.dtypes import DTypePolicy
 from vercor.fields import vector
 from vercor._runtime.dispatch_context import RuntimeDispatchContext
 from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
 from vercor._runtime.stores import FieldStore
+from vercor.physics import PhysicalConstants
 
 
 class _ScalingRegridder:
@@ -155,6 +157,8 @@ def test_runtime_dispatch_context_groups_exchanges_by_destination() -> None:
         contracts={},
         dt_seconds=60.0,
         settings=cast(Any, object()),
+        constants=PhysicalConstants(),
+        dtype=DTypePolicy(),
     )
 
     assert context.destination_exchanges("ATM") == (atm_exchange,)

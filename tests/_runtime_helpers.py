@@ -43,6 +43,8 @@ def replace_runtime_topology_maps(
         prepared.contracts,
         dt_seconds=prepared.clock.dt_seconds,
         settings=prepared.settings,
+        constants=prepared.constants,
+        dtype=prepared.runtime.dtype,
     )
     coupler._prepared = replace(
         prepared,

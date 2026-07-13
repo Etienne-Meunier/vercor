@@ -40,6 +40,7 @@ from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
 from vercor.clock import Clock
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.output._runtime import write_runtime_component_view_to_netcdf
 from vercor._runtime.contracts import ExchangeContract
@@ -58,6 +59,7 @@ from vercor._runtime.validation import (
 from vercor._runtime.time import scalar_runtime_step_info
 from vercor.state import ComponentState
 from vercor.settings import Settings
+from vercor.runtime import RuntimeOptions
 from vercor.types import RuntimeArray
 
 
@@ -955,9 +957,7 @@ def test_seed_helpers_accept_scalar_author_values_and_expose_spec() -> None:
 
 
 @pytest.mark.fast_always
-def test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled() -> (
-    None
-):
+def test_runtime_normalizes_seeded_component_arrays_to_float32_policy() -> None:
     grid = make_test_grid(name="seeded-policy")
     component = data_module.DataComponent.from_fields(
         name="DATA",
@@ -965,8 +965,16 @@ def test_seeded_component_arrays_follow_float32_policy_with_global_x64_enabled()
         fields={
             "temperature": jnp.asarray([[280.0, 281.0], [282.0, 283.0]]),
         },
-        settings=Settings(enable_x64=False),
     )
+    assert component._data["temperature"].dtype == jnp.float64
+
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("DATA",),
+        runtime=RuntimeOptions(dtype=DTypePolicy(enable_x64=False)),
+    )
+    coupler._ensure_prepared()
 
     assert component._data["temperature"].dtype == jnp.float32
 

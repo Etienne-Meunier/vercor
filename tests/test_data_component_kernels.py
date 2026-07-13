@@ -6,7 +6,7 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
-from vercor.dtypes import as_jax_real_array
+from vercor.dtypes import DTypePolicy, as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
 from vercor.setups._data.era5_atmosphere import (
     _compute_monthly_diagnostics,
@@ -26,11 +26,12 @@ from vercor.setups._data.erainterim_ocean import (
     _binary_ocean_mask_from_salinity,
 )
 from vercor.state import ComponentState
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 
 
 def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
-    settings = Settings()
+    constants = PhysicalConstants()
+    dtype = DTypePolicy()
     lnsp = jnp.log(jnp.asarray([[100000.0, 100500.0], [101000.0, 101500.0]]))
     hyai = jnp.asarray([1000.0, 2000.0, 3000.0])
     hybi = jnp.asarray([0.10, 0.20, 0.30])
@@ -52,7 +53,8 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
         potential_temperature,
     ) = jax.jit(
         lambda sp, t3d, q3d, t: _compute_monthly_diagnostics(
-            settings,
+            constants,
+            dtype,
             sp,
             hyai,
             hybi,
@@ -98,7 +100,8 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
     density_gradient = jax.grad(
         lambda sp: jnp.sum(
             _compute_monthly_diagnostics(
-                settings,
+                constants,
+                dtype,
                 sp,
                 hyai,
                 hybi,

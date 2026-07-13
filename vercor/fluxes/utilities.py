@@ -1,9 +1,10 @@
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
+from typing import cast
 
 from vercor.dtypes import as_jax_real_array
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 
 
 def _virtual_temperature_from_specific_humidity(
@@ -87,22 +88,31 @@ def psixhu(xd: ArrayLike) -> jax.Array:
 
 
 def compute_air_density(
-    settings: Settings,
+    constants: PhysicalConstants,
     pf: ArrayLike,
     t: ArrayLike,
 ) -> jax.Array:
     """Air density (kg/m^3)"""
     pf_array = as_jax_real_array(pf)
     t_array = as_jax_real_array(t)
-    return settings.mwdair / settings.rgas * pf_array / t_array
+    return cast(
+        jax.Array,
+        constants.dry_air_molecular_weight
+        / constants.universal_gas_constant
+        * pf_array
+        / t_array,
+    )
 
 
 def compute_potential_temperature(
-    settings: Settings,
+    constants: PhysicalConstants,
     tbot: ArrayLike,
     pf: ArrayLike,
 ) -> jax.Array:
     """Potential temperature (K)"""
     tbot_array = as_jax_real_array(tbot)
     pf_array = as_jax_real_array(pf)
-    return tbot_array * (settings.p0 / pf_array) ** settings.cappa
+    return (
+        tbot_array
+        * (constants.reference_pressure / pf_array) ** constants.dry_air_kappa
+    )

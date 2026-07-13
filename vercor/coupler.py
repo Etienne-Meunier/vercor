@@ -18,6 +18,7 @@ from vercor.jax_logging import (
     configure_python_logger,
     setup_logger as _setup_logger,
 )
+from vercor.physics import PhysicalConstants
 from vercor._run_order import normalize_run_order
 import vercor._runtime.facade as _runtime_facade
 from vercor._runtime.prepared import PreparedCoupling
@@ -58,6 +59,7 @@ class Coupler:
         exchanges: Iterable[Exchange] = (),
         run_order: Sequence[str] = (),
         runtime: RuntimeOptions | None = None,
+        constants: PhysicalConstants | None = None,
         logger: LoggerLike | None = None,
         log_level: int | str = "INFO",
     ) -> None:
@@ -67,6 +69,7 @@ class Coupler:
         self.log_level = log_level
         self.logger = logger if logger is not None else _setup_logger()
         self.runtime = RuntimeOptions() if runtime is None else runtime
+        self.constants = PhysicalConstants() if constants is None else constants
         self.settings = Settings(
             enable_x64=self.runtime.dtype.enable_x64,
         )
@@ -203,6 +206,7 @@ class Coupler:
                 self._runtime_components,
                 clock=self.clock,
                 settings=self.settings,
+                constants=self.constants,
                 runtime=self.runtime,
             )
             return self._prepared
@@ -212,6 +216,7 @@ class Coupler:
             run_order=self.run_order,
             clock=self.clock,
             settings=self.settings,
+            constants=self.constants,
             runtime=self.runtime,
             logger=self.logger,
         )

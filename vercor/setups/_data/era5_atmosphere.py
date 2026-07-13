@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from vercor.components import LifecycleHooks, DataComponent
-from vercor.dtypes import as_jax_real_array
+from vercor.dtypes import DTypePolicy, as_jax_real_array
 from vercor.field_layout import (
     canonicalize_time_last_level_field,
     canonicalize_time_last_surface_field,
@@ -22,7 +22,7 @@ from vercor.fluxes.vertical_coordinates import (
 from vercor.grids import RectilinearGrid
 from vercor.components import SetupContext
 from vercor.forcing_data import read_forcing as _read_forcing
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 from vercor.setups._data.assets import get_forcing_data
 from vercor.setups._data._component_helpers import time_interpolated_data_component
 
@@ -53,7 +53,8 @@ def _decode_surface_pressure(lnsp: ArrayLike) -> jax.Array:
 
 
 def _compute_monthly_diagnostics(
-    settings: Settings,
+    constants: PhysicalConstants,
+    dtype: DTypePolicy,
     surface_pressure: ArrayLike,
     hyai: ArrayLike,
     hybi: ArrayLike,
@@ -65,31 +66,29 @@ def _compute_monthly_diagnostics(
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Compute ERA5 diagnostics for one monthly slice on the runtime JAX path."""
 
-    surface_pressure_array = as_jax_real_array(surface_pressure, settings)
-    temperature_3d_array = as_jax_real_array(temperature_3d, settings).transpose(
-        (1, 2, 0)
-    )
+    surface_pressure_array = as_jax_real_array(surface_pressure, dtype)
+    temperature_3d_array = as_jax_real_array(temperature_3d, dtype).transpose((1, 2, 0))
     specific_humidity_3d_array = as_jax_real_array(
         specific_humidity_3d,
-        settings,
+        dtype,
     ).transpose((1, 2, 0))
-    temperature_array = as_jax_real_array(temperature, settings)
-    hyai_array = as_jax_real_array(hyai, settings)
-    hybi_array = as_jax_real_array(hybi, settings)
-    hyam_array = as_jax_real_array(hyam, settings)
-    hybm_array = as_jax_real_array(hybm, settings)
+    temperature_array = as_jax_real_array(temperature, dtype)
+    hyai_array = as_jax_real_array(hyai, dtype)
+    hybi_array = as_jax_real_array(hybi, dtype)
+    hyam_array = as_jax_real_array(hyam, dtype)
+    hybm_array = as_jax_real_array(hybm, dtype)
 
     ph = compute_hybrid_pressure_levels(surface_pressure_array, hyai_array, hybi_array)
     pf = compute_hybrid_pressure_levels(surface_pressure_array, hyam_array, hybm_array)
     model_level_height = get_altitudes_hybrid_sigma_levels(
-        settings,
+        constants,
         temperature_3d_array,
         specific_humidity_3d_array,
         ph,
     )[..., 1]
-    density = compute_air_density(settings, pf[..., 0], temperature_array)
+    density = compute_air_density(constants, pf[..., 0], temperature_array)
     potential_temperature = compute_potential_temperature(
-        settings,
+        constants,
         temperature_array,
         pf[..., 0],
     )
@@ -172,7 +171,8 @@ def make_era5_atmosphere(
     def initialize(component: DataComponent, context: SetupContext) -> None:
         diagnostics = [
             _compute_monthly_diagnostics(
-                context.settings,
+                context.constants,
+                component._dtype_policy,
                 component._data["surface_pressure"][month_index],
                 hyai,
                 hybi,

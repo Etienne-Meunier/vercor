@@ -18,6 +18,7 @@ from vercor.components._callable_wrappers import (
 from vercor.components._field_authoring import ComponentFieldAuthoringMixin
 from vercor.components._lifecycle_api import ComponentLifecycleMixin
 from vercor.components.contexts import StepContext
+from vercor.dtypes import DTypePolicy
 from vercor.grids import RectilinearGrid
 from vercor.output import OutputConfig
 from vercor.settings import Settings
@@ -77,6 +78,11 @@ class Component(
         init=False,
         repr=False,
     )
+    _dtype_policy: DTypePolicy = field(
+        default_factory=DTypePolicy.from_jax_config,
+        init=False,
+        repr=False,
+    )
 
     def __init__(
         self,
@@ -95,6 +101,7 @@ class Component(
         self._setup_metadata = {}
         self._spec = ComponentSpec() if spec is None else spec
         self._import_policy = FieldImportPolicy()
+        self._dtype_policy = DTypePolicy.from_jax_config()
 
     @property
     def output(self) -> OutputConfig:

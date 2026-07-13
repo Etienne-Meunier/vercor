@@ -15,8 +15,9 @@ import vercor.setups._external.jax_gcm_tools as jax_gcm_tools_module
 import vercor.setups._external.veros_fluxes as veros_fluxes_module
 import vercor.setups._external.veros_state as veros_state_module
 from tests.assertions import assert_allclose_compact
+from vercor.dtypes import DTypePolicy
 from vercor.fluxes import vertical_coordinates as vertical_coordinates_module
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 
 
 class _FakeVariableStore:
@@ -279,7 +280,8 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
     taux, tauy, qnet, qnec = veros_fluxes_module.compute_fluxes(
         veros_state=veros_state,  # type: ignore[arg-type]
         runtime_fields=runtime_fields,
-        settings=Settings(),
+        constants=PhysicalConstants(),
+        dtype=DTypePolicy(),
     )
 
     assert_allclose_compact(taux, np.full((4, 4), 5.0))

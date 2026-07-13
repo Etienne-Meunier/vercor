@@ -72,7 +72,7 @@ def runtime_field_or(
         component_name=component.name,
         grid=component.grid,
         fields={name: default},
-        policy=component.settings if policy is None else policy,
+        policy=component._dtype_policy if policy is None else policy,
     )
     if normalized is None:
         raise ComponentError(
@@ -183,14 +183,14 @@ def prefill_runtime_fields(
         component_name=component.name,
         grid=component.grid,
         fields=declared.defaults,
-        policy=component.settings if policy is None else policy,
+        policy=component._dtype_policy if policy is None else policy,
     )
     for field_name, field_value in (normalized_defaults or {}).items():
         data.setdefault(field_name, field_value)
 
     zeros = jax_zeros(
         component.grid.shape,
-        component.settings if policy is None else policy,
+        component._dtype_policy if policy is None else policy,
     )
     for field_name in unique_field_names((*declared.outputs, *tuple(outputs))):
         data.setdefault(field_name, zeros)

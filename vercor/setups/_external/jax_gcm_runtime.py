@@ -16,12 +16,12 @@ from vercor.components import (
     ValidationContext,
 )
 from vercor.components._runtime_fields import prefill_runtime_fields
-from vercor.dtypes import as_jax_real_array, jax_zeros
+from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.field_layout import validate_canonical_grid_field_shape
 from vercor.pytree import PyTreeNodeMixin
 from vercor.output._session import _PeriodOutputAccumulator
-from vercor.settings import Settings
+from vercor.physics import PhysicalConstants
 from vercor.setups._external._jax_gcm_pytree import (
     tree_mean,
     tree_stack,
@@ -134,7 +134,9 @@ def prefill_jax_gcm_runtime_fields(
     sigma_levels = jnp.asarray(state.sigma_levels)
     data.setdefault(
         "pressure",
-        jax_zeros((sigma_levels.shape[0], *component.grid.shape), component.settings),
+        jax_zeros(
+            (sigma_levels.shape[0], *component.grid.shape), component._dtype_policy
+        ),
     )
     return PrefillResult(fields=data)
 
@@ -189,7 +191,8 @@ def step_jax_gcm_runtime(
     state: "JAXGCMSetupState",
     fields: Mapping[str, Any],
     payload: Any | None,
-    settings: Settings,
+    constants: PhysicalConstants,
+    dtype: DTypePolicy,
 ) -> tuple[StepResult, Any, Any]:
     """Advance JAXGCM runtime state and return raw prediction details."""
 
@@ -212,7 +215,7 @@ def step_jax_gcm_runtime(
     land_surface_temperature_forcing, sea_surface_temperature_forcing = (
         _jax_gcm_fields.prepare_surface_temperature_forcing(
             total_surface_temperature,
-            as_jax_real_array(state.model.terrain.fmask, settings).T,
+            as_jax_real_array(state.model.terrain.fmask, dtype).T,
         )
     )
     applied_forcing = payload.forcing.copy(
@@ -237,13 +240,13 @@ def step_jax_gcm_runtime(
     )
 
     mapped_fields = _jax_gcm_fields.map_jcm_output_fields(
-        settings.latvap,
+        constants.latent_heat_of_vaporization,
         JCM_REFERENCE_PRESSURE,
         state.sigma_levels,
-        settings.mwdair,
-        settings.rgas,
-        settings.p0,
-        settings.cappa,
+        constants.dry_air_molecular_weight,
+        constants.universal_gas_constant,
+        constants.reference_pressure,
+        constants.dry_air_kappa,
         averaged_prediction.physics.surface_flux.shf,
         averaged_prediction.physics.surface_flux.evap,
         averaged_prediction.physics.surface_flux.rlds,
@@ -327,7 +330,8 @@ def step_jax_gcm_component(
         state,
         fields,
         payload,
-        context.settings,
+        context.constants,
+        context.dtype,
     )
 
     if time is not None:

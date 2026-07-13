@@ -15,33 +15,30 @@ from vercor.dtypes import (
     jax_real_dtype,
     jax_zeros,
 )
-from vercor.settings import Settings
 
 
-def test_settings_disable_x64_maps_real_arrays_to_float32() -> None:
-    settings = Settings(enable_x64=False)
+def test_dtype_policy_disable_x64_maps_real_arrays_to_float32() -> None:
+    policy = DTypePolicy(enable_x64=False)
 
-    assert settings.dtype_policy == DTypePolicy(enable_x64=False)
-    assert jax_real_dtype(settings) == jnp.float32
-    assert np.dtype(jax_real_dtype(settings)) == np.dtype(np.float32)
-    assert as_jax_real_array([1.0, 2.0], settings).dtype == jnp.float32
-    assert jax_zeros((2, 3), settings).dtype == jnp.float32
-    assert jax_ones((2, 3), settings).dtype == jnp.float32
-    assert jax_full((2, 3), 1.5, settings).dtype == jnp.float32
-    assert jax_arange(0.0, 3.0, 1.0, settings).dtype == jnp.float32
+    assert jax_real_dtype(policy) == jnp.float32
+    assert np.dtype(jax_real_dtype(policy)) == np.dtype(np.float32)
+    assert as_jax_real_array([1.0, 2.0], policy).dtype == jnp.float32
+    assert jax_zeros((2, 3), policy).dtype == jnp.float32
+    assert jax_ones((2, 3), policy).dtype == jnp.float32
+    assert jax_full((2, 3), 1.5, policy).dtype == jnp.float32
+    assert jax_arange(0.0, 3.0, 1.0, policy).dtype == jnp.float32
 
 
-def test_settings_enable_x64_maps_real_arrays_to_float64() -> None:
-    settings = Settings(enable_x64=True)
+def test_dtype_policy_enable_x64_maps_real_arrays_to_float64() -> None:
+    policy = DTypePolicy(enable_x64=True)
 
-    assert settings.dtype_policy == DTypePolicy(enable_x64=True)
-    assert jax_real_dtype(settings) == jnp.float64
-    assert np.dtype(jax_real_dtype(settings)) == np.dtype(np.float64)
-    assert as_jax_real_array([1.0, 2.0], settings).dtype == jnp.float64
-    assert jax_zeros((2, 3), settings).dtype == jnp.float64
-    assert jax_ones((2, 3), settings).dtype == jnp.float64
-    assert jax_full((2, 3), 1.5, settings).dtype == jnp.float64
-    assert jax_arange(0.0, 3.0, 1.0, settings).dtype == jnp.float64
+    assert jax_real_dtype(policy) == jnp.float64
+    assert np.dtype(jax_real_dtype(policy)) == np.dtype(np.float64)
+    assert as_jax_real_array([1.0, 2.0], policy).dtype == jnp.float64
+    assert jax_zeros((2, 3), policy).dtype == jnp.float64
+    assert jax_ones((2, 3), policy).dtype == jnp.float64
+    assert jax_full((2, 3), 1.5, policy).dtype == jnp.float64
+    assert jax_arange(0.0, 3.0, 1.0, policy).dtype == jnp.float64
 
 
 def test_dtypes_module_does_not_export_unused_copy_helper() -> None:
@@ -53,21 +50,13 @@ def test_dtypes_module_does_not_export_numpy_dtype_helpers() -> None:
     assert not hasattr(dtypes_module, "numpy_index_dtype")
 
 
-def test_dtype_policy_reads_updated_settings_value() -> None:
-    settings = Settings(enable_x64=False)
-
-    settings.set("enable_x64", True)
-
-    assert settings.dtype_policy == DTypePolicy(enable_x64=True)
-
-
 def test_index_dtype_is_int32_for_both_real_precision_modes() -> None:
     for enable_x64 in (False, True):
-        settings = Settings(enable_x64=enable_x64)
+        policy = DTypePolicy(enable_x64=enable_x64)
 
-        assert jax_index_dtype(settings) == jnp.int32
-        assert np.dtype(jax_index_dtype(settings)) == np.dtype(np.int32)
-        assert as_jax_index_array([0, 1, 2], settings).dtype == jnp.int32
+        assert jax_index_dtype(policy) == jnp.int32
+        assert np.dtype(jax_index_dtype(policy)) == np.dtype(np.int32)
+        assert as_jax_index_array([0, 1, 2], policy).dtype == jnp.int32
 
 
 def test_numpy_and_jax_helpers_agree_on_dtype_policy() -> None:

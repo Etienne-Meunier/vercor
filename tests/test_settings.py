@@ -9,7 +9,6 @@ from vercor.clock import Clock
 from vercor.components import FieldImportPolicy
 from vercor.components.data import DataComponent
 from vercor.coupler import Coupler
-from vercor.dtypes import DTypePolicy, SupportsEnableX64
 from vercor.settings import (
     DEFAULT_SETTINGS,
     SettingSpec,
@@ -121,7 +120,7 @@ def test_known_setting_attributes_are_typed_annotations_not_descriptors() -> Non
     for name in DEFAULT_SETTINGS:
         assert name in annotations
         assert name not in vars(Settings)
-    assert isinstance(Settings.dtype_policy, property)
+    assert not hasattr(Settings, "dtype_policy")
 
 
 def test_dir_lists_default_and_custom_settings() -> None:
@@ -132,17 +131,13 @@ def test_dir_lists_default_and_custom_settings() -> None:
     assert "enable_x64" in names
     assert "cappa" in names
     assert "custom_parameter" in names
-    assert "dtype_policy" in names
+    assert "dtype_policy" not in names
 
 
-def _precision_protocol_value(settings: SupportsEnableX64) -> bool:
-    return DTypePolicy.from_settings(settings).enable_x64
-
-
-def test_settings_satisfy_precision_protocol_after_dynamic_refactor() -> None:
+def test_settings_do_not_own_runtime_precision_policy() -> None:
     settings = Settings(enable_x64=True)
 
-    assert _precision_protocol_value(settings) is True
+    assert not hasattr(settings, "dtype_policy")
 
 
 def test_coupler_and_components_get_independent_settings_containers() -> None:

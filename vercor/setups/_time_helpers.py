@@ -111,6 +111,6 @@ def seed_grid_field_defaults(
         component.grid_field_defaults(
             field_names,
             overrides=overrides,
-            policy=context.settings,
+            policy=component._dtype_policy,
         )
     )

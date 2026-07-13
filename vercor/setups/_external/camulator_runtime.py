@@ -212,7 +212,7 @@ def step_camulator_runtime(
     state.runtime_cursor.advance()
 
     mapped_fields = _camulator_fields.map_camulator_prediction_to_runtime_fields(
-        context.settings,
+        context.constants,
         camulator_reference_pressure=state.P0,
         hyai=state.hyai,
         hybi=state.hybi,

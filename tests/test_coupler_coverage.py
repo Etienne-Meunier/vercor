@@ -33,6 +33,7 @@ from vercor.components.contracts import ComponentInfo, ComponentSpec
 from vercor.components.host import HostComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy
 from vercor.exceptions import ComponentError, CouplerError, ExchangeError
 from vercor.exchanges import Exchange
 from vercor.fields import vector
@@ -744,6 +745,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         components=cast(Any, components),
         exchanges=(exchange,),
         settings=Settings(),
+        dtype=DTypePolicy(),
         topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
@@ -783,6 +785,7 @@ def test_build_exchange_topology_rejects_duplicate_topology_keys() -> None:
             components=cast(Any, components),
             exchanges=exchanges,
             settings=Settings(),
+            dtype=DTypePolicy(),
             logger=cast(Any, logger),
         )
 
@@ -826,6 +829,7 @@ def test_surface_mask_policy_uses_uniform_applies_then_build_protocol(
         components=cast(Any, components),
         exchanges=(exchange,),
         settings=Settings(),
+        dtype=DTypePolicy(),
         topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
@@ -870,6 +874,7 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
             fractional_masks=existing_fractional_masks,
         ),
         settings=Settings(),
+        dtype=DTypePolicy(),
         topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
