@@ -32,10 +32,22 @@ workflows without duplicating setup- or topology-specific aliases.
 
 Configuration has four owners:
 
-- `RuntimeOptions`: static execution, topology, dtype, and runtime policy.
-- `Settings`: traced physics and component/model constants.
+- `RuntimeOptions` owns static policy for execution, topology, dtype, and the
+  runtime.
+- `Settings` is mutable setup-time metadata for physics and component/model
+  constants. Its values may be JAX-traced when the container is constructed
+  inside a differentiated workflow.
 - `ComponentSpec`: fields, lifecycle, execution capability, and output.
 - Setup config dataclasses: construction policy for one bundled model.
+
+Prefer three assembly paths:
+
+- the `Coupler` constructor for complete one-off setups;
+- `CouplerSpec` for reusable recipes;
+- mutators for incremental assembly.
+
+Public mutators safely invalidate preparation; direct configuration mutation
+after preparation is an error.
 
 The following snippets share this small grid and clock:
 
@@ -297,10 +309,11 @@ paths; it does not redirect the period files emitted during `run()`.
 
 ## Further reading
 
-See the [VerCOR 3.1 API architecture review](docs/api-architecture-review.md)
+See the [VerCOR 3.1.1 API architecture review](docs/api-architecture-review.md)
 for the complete public/private inventory, execution precedence, and migration
 table. The independently packaged
 [`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
-structural JAX and host components, original-object lifecycle hooks, a custom
-backend, custom topology, snapshots, installed-wheel isolation, and strict mypy
+the current 3.1 API, while
+[`tests/fixtures/public_plugin_3_0`](tests/fixtures/public_plugin_3_0) freezes a
+valid 3.0-only workflow. Both prove installed-wheel isolation and strict mypy
 using public imports only.

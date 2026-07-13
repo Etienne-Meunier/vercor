@@ -1,10 +1,11 @@
-# VerCOR 3.1 API architecture review
+# VerCOR 3.1.1 API architecture review
 
 This review compares the pre-3.1 implementation with the API shipped in
-VerCOR 3.1. It treats public `__all__` declarations, annotations, tests, examples,
-and the independently packaged fixture under `tests/fixtures/public_plugin` as
-the source of truth. “Plugin” means a separately packaged Python object supplied
-through dependency injection; VerCOR does not discover plugins globally.
+VerCOR 3.1 and hardened in VerCOR 3.1.1. It treats public `__all__`
+declarations, annotations, tests, examples, and the current and frozen-3.0
+independently packaged fixtures as the source of truth. “Plugin” means a
+separately packaged Python object supplied through dependency injection;
+VerCOR does not discover plugins globally.
 
 ## 1. Executive summary
 
@@ -16,36 +17,61 @@ topology, and dispatch data were rebuilt at several entry points; host and JAX
 loops had split ownership; period output depended on the selected backend; and
 merely importing bundled setup modules could load or configure optional models.
 
-The essential 3.1 strategy is consolidation, not a second facade:
+The essential 3.1 strategy is consolidation, not a second facade. VerCOR 3.1.1
+finishes that strategy by making validation ownership and compatibility gates
+explicit:
 
 - `vercor.components.ComponentLike` is the canonical structural extension
   contract. `Component.from_step`, `HostComponent.from_step`, and
   `DataComponent.from_fields` are convenience adapters to the same runtime
-  bridge.
+  bridge. Both structural objects and VerCOR components enter the single
+  private `validate_component_contract()` path, and `ComponentSpec.lifecycle`
+  is the only lifecycle-hook owner.
 - A `Coupler` prepares one private immutable `PreparedCoupling`, then reuses its
   normalized components, contracts, topology maps, dispatch context, run order,
-  and configuration fingerprints for state creation, execution, and output.
+  and structural configuration snapshot for state creation, execution, and
+  output. Prepared reuse does not re-execute `initial_fields()` and does not
+  materialize or hash seed array contents. The snapshot observes explicit
+  component attributes, `Settings`, clock, runtime, and topology structure;
+  callable replacement; explicit author callable objects, bound owners, and
+  partials; and bounded array metadata. Generic lifecycle and spec callables are
+  identity-only. Hidden closure, global, and default state is outside the
+  supported configuration contract.
+- Exchange contract construction rejects ambiguous scalar or vector fan-in
+  independent of declaration order or regridder while allowing a component to
+  receive, step, and send the same field. Runtime updates are shape-preserving,
+  and custom backends must return a schema-compatible state.
 - `RuntimeOptions.execution` selects one implementation owned by
   `vercor._runtime.backends`; `vercor._runtime.runner` only selects, checks, and
   delegates.
 - Topology customization uniformly calls `TopologyPolicy.applies(context)` and
-  then `build(context)`. Generic and JAXGCM period output use private schemas,
+  then `build(context)`. Every topology-mask patch is a concrete, finite,
+  numeric/bool target-shaped array and must satisfy its binary or fractional
+  range. Generic and JAXGCM period output use private schemas,
   boundary plans, and sum/count sessions with host writes between compiled
   chunks; existing native Veros/CAMulator host adapters retain their private
   step-managed accumulator path.
 - Bundled setup factories remain the only supported entrance to their private
   adapters. Optional imports and environment configuration occur when a factory
   is invoked, not when `vercor` or `vercor.setups` is imported.
+- Installed compatibility is executable. The current public plugin proves the
+  bounded required scenarios: canonical-owner imports, `DataComponent`, one
+  cross-grid bilinear `Exchange`, `StepResult` payload replacement,
+  `RunState.replace_fields`, structural JAX/host components, original-object
+  lifecycle hooks, a custom sequential backend, an empty valid topology-policy
+  patch, and snapshot output. A separate frozen 3.0 plugin proves an unchanged
+  valid workflow, and CI enforces full tests plus a 90% branch-coverage gate.
 
 Essential changes are the contract corrections, original-object lifecycle
 semantics, one prepared runtime, topology/backend/output unification, strict
 validation, import isolation, PEP 561 packaging, installed-plugin tests, and the
-3.1.0 release artifacts. Optional ideas are deliberately deferred: global
-registries or entry-point discovery, Pydantic configuration, a generic forcing
-index protocol, periodic-grid endpoint default changes, raw interpolator
-removal, setup-package extraction, and wholesale private-directory
-reorganization. Those additions have no demonstrated 3.1 requirement and would
-increase compatibility cost.
+3.1.1 release artifacts. The following design expansions are explicitly
+deferred to 4.0: route IDs, fan-in reducers, a unified output contract, public
+payload access, `ComponentBinding`/`PreparedGraph`, entry-point discovery, and
+Pydantic configuration. Generic forcing-index protocols, periodic-grid endpoint
+changes, raw interpolator removal, setup-package extraction, and wholesale
+private-directory reorganization likewise have no demonstrated 3.1 requirement
+and would increase compatibility cost.
 
 No valid 3.0 root import is removed. The root convenience surface remains the
 same 48 symbols; `ComponentStepReturn` is intentionally public only from its
@@ -60,15 +86,20 @@ not valid 3.0 workflows.
 | `RunState`/`ComponentState` visible through `vercor.runtime` and owned by `vercor.state` | **kept separate** | The runtime reexports are valid 3.0 imports; `vercor.state` remains canonical. |
 | `Exchange` visible through `vercor.coupling` and owned by `vercor.exchanges` | **kept separate** | The coupling facade is convenient while `vercor.exchanges` owns the declaration. |
 | Structural models, subclasses, callable wrappers, data adapters, and host adapters as apparently different component APIs | **merged** | They normalize through `vercor.components._adapter.normalize_component`; `ComponentLike` is canonical and the three class constructors are conveniences. |
+| Component contract validation split between structural and VerCOR components | **merged** | One `validate_component_contract()` checks the public protocol for every component; initialized storage/settings checks remain in setup validation. |
 | Private `_ComponentStepReturn`-style vocabulary and repeated union annotations | **renamed** and **moved public** | `vercor.components.ComponentStepReturn = Mapping[str, RuntimeArray] | StepResult` is the single owner-package alias used by public step contracts. It is not a new root alias. |
 | `DataComponent.from_step` inheriting a constructor that returned an unrelated active component | **removed** | The path now raises a focused `TypeError`; data-only construction is `DataComponent.from_fields`. |
 | Public-looking inherited runtime-store lifecycle methods | **renamed** and **moved private** | Underscored bridge methods keep `FieldStore`, `ComponentRuntimeState`, and `ExchangeContract` out of component-author APIs. |
 | Lifecycle dispatch split between structural objects and convenience components | **merged** | Structural initialization is user `initialize`, refresh, spec hook with the original user object, refresh. Convenience components retain one lifecycle dispatch. |
+| Lifecycle hooks duplicated between `ComponentSpec.lifecycle` and a component cache | **removed** | `ComponentSpec.lifecycle` is authoritative for base, callable, data, host, and structural adapters. |
 | Rebuilding component normalization, exchange contracts, topology, dispatch groups, and run order in `initial_state`, `run`, and output | **merged** | One `PreparedCoupling` is built after lifecycle initialization and reused. |
-| Runtime validation split across entry points | **merged** | Prepared contracts/topology validate created and supplied states; configuration fingerprints reject direct mutation after preparation. |
+| Runtime validation split across entry points | **merged** | Prepared contracts/topology validate created and supplied states; one structural configuration snapshot rejects supported direct mutation during prepared reuse without recomputing seed fields. |
 | Public mutators and direct component mutation as two setup paths | **kept separate** | `Coupler.add_component`, `add_exchange(s)`, and `set_run_order` intentionally invalidate preparation; unsupported direct mutation raises `CouplerError`. |
 | `SurfaceMaskPolicy` special-case branch versus the public topology protocol | **merged** | Every policy follows `applies` then `build`; surface masks are one built-in policy. |
 | Duplicate patch application and retained `SurfaceExchangeMasks` | **removed** | Patches apply once, validate keys/shapes, and derived surface masks remain local to construction. |
+| Ambiguous exchange fan-in versus legal receive/send feedback | **kept separate** | More than one producer for one target field is rejected; one component may receive and send the same field because run order defines the feedback sequence. |
+| Runtime field replacement versus schema-changing append | **kept separate** | Existing-field replacement preserves shape and dtype; append-capable transfer stores retain their explicit internal role. |
+| Custom-backend result schema versus backend ownership | **merged** | Backends may return a compatible state from any coupler. Validation checks exact component, store-field, and fractional-mask names; per-field and mask shapes; and component grid shapes—not grid coordinates or identity, mask values, or dtypes. |
 | Host loop, scanned loop, thin backend classes, and custom-backend lazy imports | **merged** | Loop/adaptation implementations live in `vercor._runtime.backends`; selection stays in `runner`. |
 | Generic and JAXGCM period accumulation plus backend-specific write paths | **merged** | Shared output schemas, immutable sum/count accumulators, coalesced boundaries, and host writers support compiled/host execution. Model-specific extraction stays private beside the JAXGCM adapter. |
 | Native Veros/CAMulator accumulation versus traced session accumulation | **kept separate** | `_ComponentOutputAdapter` preserves their native host layouts/cadence; `_PeriodOutputSession` is immutable and JAX-compatible for generic/JAXGCM output. A private marker prevents duplicate generic schemas. Both reuse shared variable/file primitives. |
@@ -76,6 +107,8 @@ not valid 3.0 workflows.
 | Setup-specific configuration mixed into `RuntimeOptions` or `Settings` | **kept separate** | Runtime policy, traced model constants, component contracts, and model construction have distinct owners. |
 | Manual paired-JCM configuration copying | **merged** | `dataclasses.replace` changes only missing forcing data and preserves caller values/subclasses. |
 | Exchange recipes defined privately and reexported publicly | **moved public** | Recipe constants now live directly in `vercor.recipes`, their public owner. |
+| Current-plugin proof versus frozen-3.0 proof | **kept separate** | The current fixture proves canonical-owner imports, `DataComponent`, one cross-grid bilinear `Exchange`, `StepResult` payload replacement, `RunState.replace_fields`, structural JAX/host components, original-object lifecycle hooks, a custom sequential backend, an empty valid topology-policy patch, and snapshot output. An isolated frozen fixture proves unchanged 3.0 source compatibility. |
+| Installed-artifact smoke checks versus repository quality enforcement | **kept separate** | The matrix proves wheel/plugin environments; the Python 3.12 quality job enforces formatting, lint, typing, compileall, full tests, and branch coverage. |
 | Registry discovery, Pydantic models, service containers, and setup extraction | **deferred** | They are speculative for current customization cases and are **nice to improve** only with concrete demand. |
 
 ## 3. Bad design decisions
@@ -83,12 +116,17 @@ not valid 3.0 workflows.
 | Priority | Design problem | Consequence | Concrete fix |
 | --- | --- | --- | --- |
 | **must change** | Treating VerCOR subclasses as the implicit plugin contract | External models had to inherit internals or mimic undocumented behavior. | Make structural `ComponentLike` canonical and normalize every registered object through one validated private bridge. |
+| **must change** | Letting VerCOR components bypass structural contract validation | Invalid names, grids, specs, callables, or initial-field results failed at different stages. | Route every component through one `validate_component_contract()` call before and after lifecycle initialization. |
 | **must change** | Sending a normalized wrapper rather than the original user object to structural lifecycle hooks | Identity-based state, mocks, and plugin-owned attributes behaved incorrectly. | Call user `initialize`, refresh declarations, then call `ComponentSpec.lifecycle.initialize` exactly once with the original user object; payload, prefill, and validation hooks use that object too. |
+| **must change** | Caching lifecycle hooks outside `ComponentSpec.lifecycle` | Configure paths and wrappers could disagree about the active hooks. | Keep `ComponentSpec.lifecycle` as the single hook owner and dispatch only from the authoritative spec. |
 | **must change** | Letting data-only construction accept an active step callback | `DataComponent.from_step` silently changed component kind. | Raise `TypeError` with the three supported alternatives. |
 | **must change** | Rebuilding static runtime artifacts at several public operations | Lifecycle hooks could repeat, validation could disagree, and setup cost was duplicated. | Prepare one frozen `PreparedCoupling` and reuse it everywhere. |
-| **must change** | Allowing direct component configuration changes after preparation | A run could use stale contracts or topology. | Fingerprint normalized and original objects and raise `CouplerError`; supported `Coupler` mutators invalidate safely. |
+| **must change** | Allowing direct component configuration changes after preparation | A run could use stale contracts or topology. | Capture normalized and original objects in the structural configuration snapshot and raise `CouplerError`; supported `Coupler` mutators invalidate safely. |
 | **must change** | Branching on the concrete `SurfaceMaskPolicy` type | Custom topology implementations could not receive equivalent behavior. | Adapt every `TopologyPolicy` uniformly and validate patch keys and target-grid shapes. |
 | **must change** | Silently sharing duplicate exchange topology keys | Different declarations could overwrite one another's regridder or masks. | Reject duplicates with guidance to merge their field declarations. |
+| **must change** | Allowing duplicate producers for one target field | The last exchange silently overwrote earlier data and made results declaration-order dependent. | Flatten scalar/vector fields and reject ambiguous fan-in with exchange labels plus distinct-name/aggregator guidance. |
+| **must change** | Accepting schema-changing replacement shapes | A step, public perturbation, or backend could change JAX carry structure after preparation. | Preserve existing field shapes; raise `ComponentError`, `ValueError`, or `CouplerError` at the owning boundary. |
+| **must change** | Accepting nonnumeric or out-of-range topology masks | Nonnumeric, non-finite, nonbinary, or out-of-range values could reach regridding. | Require concrete finite numeric/bool arrays of the target shape, `{0, 1}` binary values, and `[0, 1]` fractional values. |
 | **must change** | Splitting loop implementations between runner, backend classes, and circular imports | Selection, stepping, cancellation, and return validation drifted. | Put loops and custom-driver adaptation in `backends.py`; keep `runner.py` as selection/delegation only. |
 | **must change** | Falling back to step zero or clock start for malformed custom-backend driver calls | Custom workflows could execute the wrong model time without an error. | Require a concrete scalar integer-convertible value, reject booleans/fractions, and require `0 <= step < clock.steps`. |
 | **must change** | Performing period output as backend-specific per-step side effects | Compiled runs missed output or put Python I/O inside traced execution. | Precompute cadence boundaries, accumulate in JAX chunks, and transfer/write completed reductions only at host boundaries. |
@@ -99,6 +137,8 @@ not valid 3.0 workflows.
 | **nice to improve** | Dataclass validation is hand-written | Complex future configuration schemas could need richer parsing. | Keep frozen dataclasses now; consider Pydantic only when external text configuration becomes a real requirement. |
 | **nice to improve** | Forcing indexes, raw interpolators, and periodic endpoint defaults retain historical shapes | Some specialized extension cases remain less uniform. | Evaluate a forcing-index protocol, raw interpolator removal, and endpoint changes for a future breaking release with measured use cases. |
 | **nice to improve** | Private modules are numerous | Navigation can be difficult despite focused ownership. | Defer setup extraction and wholesale reorganization; private layout can evolve without changing public contracts. |
+| **nice to improve** | Exchange routes have no public IDs or reducer objects | Ambiguous fan-in must currently be rejected instead of explicitly combined. | Consider route IDs and fan-in reducers together in 4.0 after real aggregation use cases are collected. |
+| **nice to improve** | Output and payload access differ by adapter/runtime kind | A single public abstraction would add surface without proven common semantics. | Consider unified output, public payload access, and `ComponentBinding`/`PreparedGraph` only in a compatibility-planned 4.0 release. |
 
 ## 4. Public API redesign
 
@@ -116,14 +156,20 @@ facades remain valid; the frozen list is not an instruction to delete them.
 Configuration ownership is exact:
 
 - `RuntimeOptions` owns static execution, topology, dtype, model-year, and
-  runtime policy.
-- `Settings` owns traced physics and component/model constants. It remains a
-  mutable setup-time container so components can intentionally update values
-  before preparation.
+  runtime policy; it is not differentiated runtime state.
+- `Settings` is mutable setup-time metadata for physics and component/model
+  constants. Its values may be JAX-traced when the container is constructed in
+  a differentiated workflow, so those values are not inherently static merely
+  because the owner is configured before preparation.
 - `ComponentSpec` owns fields, lifecycle, execution capability, and output
   contract.
 - `Spinup`, `JAXGCMConfig`, `VerosConfig`, `CAMulatorConfig`, and
   `JCMLandAtmosphereConfig` own model-specific construction only.
+
+The preferred assembly choices are a complete one-off setup through the
+`Coupler` constructor, `CouplerSpec` for reusable recipes, and public `Coupler`
+mutators for incremental assembly. The mutators invalidate preparation
+intentionally; direct mutation of already-prepared configuration is rejected.
 
 The main contracts have these signatures (annotations abbreviated only where a
 public type alias is already named):
@@ -183,10 +229,18 @@ arbitrary objects can be classified with `isinstance`.
 lifecycle=None, output=None)` is immutable. The `inputs`/`outputs` sequences are
 deduplicated, `defaults` is copied into a read-only mapping, and `execution` is
 `"jax"` or `"host"`. `LifecycleHooks(initialize, create_payload, prefill,
-validate)` is the only public lifecycle customization path. Structural hook
-arguments are the original user object. Public contexts are `SetupContext`,
+validate)` stored at `ComponentSpec.lifecycle` is the only public lifecycle
+customization path and the single runtime hook owner. Structural hook arguments
+are the original user object. Public contexts are `SetupContext`,
 `StepContext`, `PrefillContext`, `PrefillResult`, and `ValidationContext`; the
 last exposes a public `ComponentState`, never a runtime store.
+
+Normalization sends both structural objects and VerCOR component instances
+through one private contract validator. Preparation repeats that validation
+after initialization, then snapshots the effective clock, runtime options,
+coupler/component settings, topology policy, component fields, lifecycle
+configuration, and author callables. Public mutators rebuild this boundary;
+unsupported direct mutation raises an actionable `CouplerError` before reuse.
 
 ### Execution precedence
 
@@ -207,6 +261,13 @@ the `RunState`, prepared component name, scalar/concrete/integer-convertible
 step, and range. Booleans, fractional reals, tracers that cannot materialize,
 arrays with dimensions, negative values, and `step >= clock.steps` raise
 `CouplerError`; there is no step-zero fallback.
+
+The backend's final `RunState` is validated against the same prepared topology
+and component contracts. The schema comparison covers exact component,
+store-field, and fractional-mask names; per-field and mask shapes; and component
+grid shapes—not grid coordinates or identity, mask values, or dtypes. Runtime
+field values and payload may change. A structurally compatible foreign state is
+valid; missing/extra components or fields and incompatible shapes are not.
 
 Custom backends currently reject configured period output before invocation
 because `ExecutionBackend` has no public period-session hook. Built-in JAX and
@@ -257,26 +318,41 @@ fields, *, regrid=bilinear, label=None)` accepts scalar names or public
 the `bilinear`/`conservative` factories make interpolation replaceable without
 exposing concrete private wrappers.
 
+Contract construction flattens scalar/vector declarations and rejects more than
+one exchange producing the same field for one target, regardless of declaration
+order or regrid factory. The error names the target, field, and conflicting
+labels and recommends distinct names or an aggregator. This does not prohibit a
+component contract from using run order to receive and send the same field;
+receive/step/send feedback is a valid 3.x workflow.
+
 `TopologyPolicy.applies(TopologyContext) -> bool` and
 `build(TopologyContext) -> ExchangeTopologyPatch` are the complete topology
 extension. Patch keys are `(source, target, regrid_key)` and values must match
-the target grid. `SurfaceMaskPolicy` is the bundled ATM/OCN/LND implementation,
-not a special runtime type branch.
+the target grid. Values must be concrete finite numeric or bool arrays; binary
+masks contain only `{0, 1}` and fractional masks stay in `[0, 1]`.
+`SurfaceMaskPolicy` is the bundled ATM/OCN/LND implementation, not a special
+runtime type branch.
 
 `RunState` is immutable and opaque; direct construction raises `TypeError`.
 Use `component(name)`, `components(names=None)`, or immutable
-`replace_fields(component, fields)`. `ComponentState` exposes `field`, `fields`,
-and `iter_fields` across the public `state`, `received`, and `sent` scopes.
+`replace_fields(component, fields)`. Existing-field replacements preserve shape
+and dtype; public shape errors are `ValueError`, while a component step returning
+a shape-changing update raises `ComponentError`. Step callbacks must return a
+mapping or `StepResult`, whose `fields` must also be a mapping. `ComponentState`
+exposes `field`, `fields`, and `iter_fields` across the public `state`,
+`received`, and `sent` scopes.
 
 `OutputConfig(snapshot_writer=None, period=None)` belongs on `ComponentSpec`.
 Snapshot writers receive `SnapshotContext` with public `ComponentInfo`,
 `ComponentState`, payload, path, time, and logger. Generic period output samples
 declared runtime fields; an empty `PeriodOutput.variables` uses
-`ComponentSpec.outputs`. Session-managed generic, JAXGCM, and current Veros
-period files are emitted during `Coupler.run()` in the current working
-directory. CAMulator writes native period files beneath its configured
-`save_location` hierarchy. `write_outputs(output_dir=...)` writes final runtime
-views and registered snapshots; it does not redirect period files.
+`ComponentSpec.outputs`. Session-managed generic and JAXGCM period files are
+emitted during `Coupler.run()` in the current working directory. Native Veros
+period files use their adapter's existing location.
+CAMulator writes native period files beneath its configured `save_location`
+hierarchy.
+`write_outputs(output_dir=...)` writes final runtime views and registered
+snapshots; it does not redirect period files.
 
 ### Short component and backend example
 
@@ -334,15 +410,15 @@ as long as public behavior remains stable.
 
 | Private owner | Responsibility | Public contract supported |
 | --- | --- | --- |
-| `vercor.components._adapter` | `_ComponentAdapter`, structural validation, `normalize_component(component)` | `ComponentLike`, original-object lifecycle identity, `Coupler.add_component` |
-| `vercor.components._contracts`, `_callable_wrappers`, `_lifecycle_api`, `_runtime_fields`, `_runtime_validation` | Author value normalization, callable arity adaptation, lifecycle dispatch, mapping/store translation, validation | Convenience component constructors and `ComponentStepReturn` |
-| `vercor._runtime.prepared` | `PreparedCoupling`, preparation, frozen contracts/topology/dispatch, configuration fingerprints, x64 capability enablement | `Coupler.initial_state`, `run`, `write_outputs` consistency |
+| `vercor.components._adapter` | `_ComponentAdapter`, `normalize_component(component)`, and the single `validate_component_contract()` path for structural and VerCOR components | `ComponentLike`, original-object lifecycle identity, `Coupler.add_component` |
+| `vercor.components._contracts`, `_callable_wrappers`, `_lifecycle_api`, `_runtime_fields`, `_runtime_validation` | Author value normalization, callable arity adaptation, authoritative `ComponentSpec.lifecycle` dispatch, mapping/store translation, validation | Convenience component constructors and `ComponentStepReturn` |
+| `vercor._runtime.prepared` | `PreparedCoupling`, preparation, frozen contracts/topology/dispatch, `PreparedCoupling.validate_configuration()` structural snapshot checks, x64 capability enablement | `Coupler.initial_state`, `run`, `write_outputs` consistency |
 | `vercor._runtime.initialization` and `preparation` | Lifecycle initialization, contract/topology construction, state creation, supplied-state validation, sent-store priming | Public setup lifecycle and state entry points |
-| `vercor._runtime.contracts`, `stores`, `state`, `component_state`, `field_transfer`, `validation`, `state_validation` | Immutable runtime stores/states and receive/send/shape enforcement | Opaque `RunState` and public `ComponentState` views |
+| `vercor._runtime.contracts`, `stores`, `state`, `component_state`, `field_transfer`, `validation`, `state_validation` | `validate_exchange_fan_in()`, immutable runtime stores/states, legal feedback overlap, shape-preserving replacement, and exact/all-component validation | Opaque `RunState` and public `ComponentState` views |
 | `vercor._runtime.dispatch_context`, `exchange_dispatch`, `driver` | Destination-grouped exchanges and receive/step/send orchestration | Built-in loops and `RuntimeDriver.step_component` |
-| `vercor._runtime.topology_policy`, `exchange_topology`, `surface_masks`, `topology_state`, `topology` | Uniform public-policy adaptation, duplicate/key/shape checks, regridders/masks, frozen maps | `TopologyPolicy`, `SurfaceMaskPolicy`, `ExchangeTopologyPatch` |
+| `vercor._runtime.topology_policy`, `exchange_topology`, `surface_masks`, `topology_state`, `topology` | Uniform public-policy adaptation, duplicate/key/shape checks, concrete finite numeric/bool mask validation, regridders/masks, frozen maps | `TopologyPolicy`, `SurfaceMaskPolicy`, `ExchangeTopologyPatch` |
 | `vercor._runtime.runner` | Mode selection, host compatibility/warning, signal scope, delegation | `RuntimeOptions.execution` precedence |
-| `vercor._runtime.backends` | Compiled scan, output-enabled chunks, host loop, custom backend adapter, strict driver validation | JAX/host/custom execution and interrupt propagation |
+| `vercor._runtime.backends` | Compiled scan, output-enabled chunks, host loop, custom backend adapter, strict driver validation, and prepared custom-backend result schema enforcement over exact component, store-field, and fractional-mask names; per-field and mask shapes; and component grid shapes—not grid coordinates or identity, mask values, or dtypes | JAX/host/custom execution and interrupt propagation |
 | `vercor.output._session` | `_PeriodOutputSchema`, immutable `_PeriodOutputAccumulator`/`_PeriodOutputSession`, boundary/filename plans, early field/tracer/backend checks, native-host schema exclusion | Backend-consistent generic/JAXGCM `PeriodOutput` without duplicating native Veros/CAMulator writes |
 | `vercor.output._period`, `_dataset`, `_period_files`, `_netcdf` | Sum/count math, calendar coordinates, dataset decoration, file lifecycle, final host transfer | `OutputVariable`, period files, existing NetCDF layout |
 | `vercor.output._runtime` | Final runtime-view and registered snapshot orchestration | `Coupler.write_outputs` and `SnapshotWriter` |
@@ -351,12 +427,41 @@ as long as public behavior remains stable.
 | `vercor.setups._external.veros_runtime_settings` and `camulator_runtime_settings` | Invocation-time model/environment configuration | Side-effect-free core/setup imports |
 | `vercor._regridders` and private interpolator helpers | Concrete implementations and precomputed geometry/weights | Public regridder protocols/factories |
 
-`PreparedCoupling` is built after lifecycle initialization so its fingerprints
-capture the effective configuration. It stores read-only component/contract
-mappings, tuple exchanges/run order, frozen `RuntimeTopologyMaps`, one
+`PreparedCoupling` is built after lifecycle initialization so its structural
+configuration snapshot captures the effective setup. It stores read-only
+component/contract mappings, tuple exchanges/run order, frozen
+`RuntimeTopologyMaps`, one
 `RuntimeDispatchContext`, runtime controls, and the interrupt controller.
 `initial_state`, supplied-state validation, execution, and output all consume
-that object; none reconstructs contracts independently.
+that object; none reconstructs contracts independently. Its broad
+`validate_configuration()` check catches replacement or mutation of registered
+components, contract callables, fields, settings, clock, runtime policy, and
+topology-policy configuration before prepared reuse.
+
+The snapshot observes component, `Settings`, clock, runtime, and topology
+structure; callable replacement; explicit author callable objects, bound owners,
+and partials; and array identity, field name, shape, and dtype. Prepared reuse
+does not re-execute `initial_fields()` or materialize or hash seed array
+contents. Generic lifecycle and spec callables are identity-only, including
+callable objects whose internal counters or event logs may change during normal
+validation. Hidden mutable closure, global, and default state is outside the
+supported configuration contract because it is indistinguishable from
+legitimate operational state. Mutable setup configuration belongs in `Settings`,
+component attributes, or an explicit author callable object. Opaque external-
+object internals remain replacement-sensitive by identity rather than
+recursively traversed.
+
+The contract owner flattens scalar/vector fields and runs
+`validate_exchange_fan_in()` once during construction. Runtime-state validation
+requires exactly the registered component set and invokes field and lifecycle
+validation for every component, including those outside `run_order`. Shape
+checks stay at the boundary that owns the mutation: `FieldStore` rejects a
+schema-changing replacement, component steps translate that failure to
+`ComponentError`, and public `RunState.replace_fields` exposes `ValueError`.
+Custom-backend results then pass the same prepared validator plus checks for
+exact component, store-field, and fractional-mask names; per-field and mask
+shapes; and component grid shapes—not grid coordinates or identity, mask
+values, or dtypes—before return.
 
 Precision intentionally follows implemented JAX semantics rather than a fake
 per-session global lock. An x64 coupler may enable the process-wide JAX x64
@@ -374,7 +479,7 @@ session owner explicitly skips them to prevent validation drift and duplicate
 files. Filenames are collision-safe without changing unique historical names.
 
 These pieces remain private because their dataclass fields, grouping strategy,
-fingerprinting algorithm, chunking, accumulator representation, and optional
+snapshot traversal, chunking, accumulator representation, and optional
 model integrations are implementation choices, not contracts plugin authors
 should have to track.
 
@@ -388,7 +493,8 @@ simple fakes, and no process-global ordering or discovery state.
 
 Frozen dataclasses are used for `ComponentSpec`, `RuntimeOptions`, topology
 patches, output policies, setup configs, and runtime state. `Settings` is the
-intentional setup-time mutable exception for traced physics/model constants.
+intentional mutable setup-time metadata exception for physics/model constants;
+its values can still be traced when constructed inside differentiated code.
 Small factories and adapters reduce boilerplate but do not define an alternate
 runtime contract. Dependency injection is direct; there is no global registry,
 entry-point discovery, Pydantic dependency, or service container in 3.1.
@@ -420,9 +526,24 @@ Supported realistic setups are:
 - **Testing/mocking:** use a 1x1 or 2x2 `RectilinearGrid`, structural fake
   components, a sequential backend, and an empty topology patch. No private
   imports or monkeypatching of a registry is necessary.
-- **Independent packaging:** depend on `vercor>=3.1.0`, import only public owner
-  modules, include type information, and test against an installed wheel. The
-  repository's `tests/fixtures/public_plugin` is the executable reference.
+- **Independent packaging:** declare a supported 3.x dependency range, import
+  only public owner modules, include type information, and test against an
+  installed wheel.
+
+Installed proof has two deliberately isolated owners:
+
+- `tests/fixtures/public_plugin` depends on `vercor>=3.1,<4` and exercises
+  canonical-owner imports, `DataComponent`, one cross-grid bilinear `Exchange`,
+  `StepResult` payload replacement, `RunState.replace_fields`, structural
+  JAX/host components, original-object lifecycle hooks, a custom sequential
+  backend, an empty valid topology-policy patch, and snapshot output.
+- `tests/fixtures/public_plugin_3_0` depends on `vercor>=3.0,<4` and freezes a
+  valid 3.0-only source workflow under a separate distribution and module name.
+
+Both plugin wheels are built with the VerCOR wheel/sdist, installed outside the
+checkout, smoke-tested, and strict-mypy checked in the Python 3.12/3.13
+base/JCM/Veros matrix. A separate Python 3.12 quality job runs Black, strict
+flake8, mypy, compileall, full pytest, and the 90% branch-coverage gate.
 
 The tradeoff is deliberate explicitness. Applications own import/discovery and
 object lifetime; VerCOR owns validation and execution. Entry-point discovery
@@ -444,25 +565,38 @@ Intentional error tightening:
 
 - `DataComponent.from_step` raises instead of producing an active component.
 - Invalid structural names, grids, specs, methods, initial-field results, and
-  execution modes fail during normalization/preparation.
-- Direct component configuration mutation after preparation raises
-  `CouplerError`; public coupler mutators remain supported.
+  execution modes fail through the same component contract path used for VerCOR
+  component instances.
+- `ComponentSpec.lifecycle` is authoritative; invalid initialize-time mutation
+  fails before preparation completes.
+- Direct prepared component, callable, clock, settings, runtime-policy, or
+  topology-policy mutation raises `CouplerError`; public coupler mutators remain
+  supported.
+- Ambiguous scalar/vector exchange fan-in raises with the target, field, labels,
+  and remedy. A component receiving and sending the same field remains valid.
+- Field replacements cannot change shape; malformed step returns and incompatible
+  custom-backend state schemas raise at their component/public/backend owners.
 - Duplicate topology keys, unknown patch keys, wrong mask shapes, forced JAX
   with host components, malformed/out-of-range driver steps, and non-`RunState`
-  backend results raise explicit errors.
+  backend results raise explicit errors. Topology mask values must also be
+  concrete, real numeric/bool, finite, and inside the binary/fractional range.
 - Period output rejects traced runs and custom execution backends until their
   public contracts can represent the I/O session.
 - Enabled CAMulator spinup is rejected because no implementation exists.
 
-There are no 3.x deprecation shims. Invalid silent behavior is corrected
-directly; any future removal of a valid v3 contract waits for 4.0 and requires
-an external plugin compatibility matrix plus a migration guide.
+There are no 3.x deprecation shims. These error tightenings are corrections of invalid or ambiguous behavior.
+They are not removals of valid 3.x workflows. Any future removal of a valid v3
+contract waits for 4.0 and requires an external plugin compatibility matrix plus
+a migration guide. That external plugin compatibility matrix must retain
+installed current and frozen-source cases.
 
-Packaging changes are additive for users: pytest/build/lint/type tools live in
-extras; `vercor/py.typed` ships in wheel and sdist; CI tests installed Python
-3.12/3.13 artifacts in base, JCM, and Veros environments. CAMulator still
-requires the separately installed NCAR MILES-CREDIT project and is deliberately
-unpinned until a compatible release is verified.
+Packaging changes are additive for users: pytest/build/lint/type/coverage tools
+live in extras; `vercor/py.typed` ships in wheel and sdist; CI tests VerCOR 3.1.1
+with current and frozen-3.0 installed plugins on Python 3.12/3.13 in base, JCM,
+and Veros environments. The quality job separately enforces the repository's
+format, lint, type, compile, full-test, and 90% branch-coverage contracts.
+CAMulator still requires the separately installed NCAR MILES-CREDIT project and
+is deliberately unpinned until a compatible release is verified.
 
 JCM/JAXGCM naming is retained for compatibility. JCM is the model/ecosystem name
 used by paired setup helpers and resources; `JAXGCMConfig`/`make_jax_gcm`
@@ -485,27 +619,33 @@ relationship instead.
 | `Coupler.write_outputs(...)` | Same method | The public final-output path remains stable; period files are emitted during `run`. |
 | Setup implementation imports | Factories from `vercor.setups` | Private `_data`/`_external` modules are not plugin contracts. |
 
-Release strategy: publish 3.1.0 as a minor release, run the external installed
-plugin fixture against the built wheel, and document every error tightening in
-release notes. Preserve valid 3.x behavior throughout the series; collect
-real-world plugin cases before considering 4.0 changes.
+Release strategy: publish VerCOR 3.1.1 as a patch hardening release, run both
+external installed plugin fixtures against the built wheel, and document every
+error tightening in release notes. Preserve valid 3.x behavior throughout the
+series; collect real-world plugin cases before considering 4.0 route IDs,
+fan-in reducers, unified output, public payload access,
+`ComponentBinding`/`PreparedGraph`, discovery, or Pydantic configuration.
 
 ## 8. Final rewritten API
 
 ### Complete proposed public API
 
-The proposal below is the implemented 3.1 API, not pseudocode.
+The proposal below is the implemented VerCOR 3.1.1 API, not pseudocode. The
+hardening release adds no public export or signature.
 
-- `vercor` keeps its 48-symbol 3.0 convenience surface unchanged:
+- `vercor` keeps its exact 48-symbol 3.0 convenience surface unchanged:
   `AssetError`, `Coupler`, `CouplerError`, `RunState`, `Component`,
-  `ComponentLike`, `ComponentInfo`, `ComponentError`, lifecycle hook aliases,
-  `ComponentState`, `CouplerSpec`, `ExecutionBackend`, `ExecutionContext`,
-  `FieldImportPolicy`, `LifecycleHooks`, `DataComponent`, `DTypePolicy`,
-  `ExchangeError`, `ComponentSpec`, `GridError`, `HostComponent`,
-  `KEEP_PAYLOAD`, output types, prefill/validation contexts, `RegridderError`,
-  `RuntimeOptions`, `RuntimeDriver`, `Settings`, setup/step contexts,
-  `StepResult`, `Clock`, calendar datetime types, `RectilinearGrid`, `Exchange`,
-  `VectorField`, and `vector`.
+  `ComponentLike`, `ComponentInfo`, `ComponentError`,
+  `ComponentCreatePayloadHook`, `ComponentState`, `CouplerSpec`,
+  `ExecutionBackend`, `ExecutionContext`, `FieldImportPolicy`, `LifecycleHooks`,
+  `ComponentInitializeHook`, `ComponentPrefillHook`, `ComponentValidateHook`,
+  `DataComponent`, `DTypePolicy`, `ExchangeError`, `ComponentSpec`, `GridError`,
+  `HostComponent`, `KEEP_PAYLOAD`, `OutputConfig`, `OutputVariable`,
+  `PeriodOutput`, `PrefillContext`, `PrefillResult`, `RegridderError`,
+  `RuntimeOptions`, `RuntimeDriver`, `Settings`, `SetupContext`,
+  `SnapshotContext`, `SnapshotWriter`, `StepContext`, `StepResult`,
+  `ValidationContext`, `Clock`, `DateTime360`, `DateTime365`,
+  `RectilinearGrid`, `Exchange`, `ModelDateTime`, `VectorField`, and `vector`.
 - `vercor.components`: `Component`, `ComponentLike`, `ComponentInfo`,
   `ComponentStepReturn`, `ComponentSpec`, `DataComponent`, `HostComponent`,
   `FieldImportPolicy`, `LifecycleHooks`, the four hook aliases,
@@ -549,7 +689,8 @@ Primary public relationships are:
 
 ```text
 ComponentLike / convenience adapters
-        -> CouplerSpec (reusable recipe) or Coupler (session)
+        -> CouplerSpec (reusable recipe), Coupler constructor (one-off setup),
+           or Coupler mutators (incremental assembly)
         -> Prepared public configuration: Exchange + RuntimeOptions
         -> Coupler.initial_state / run
         -> immutable RunState -> ComponentState views
@@ -569,7 +710,7 @@ The implemented private relationship map is:
 vercor.components._adapter.normalize_component
     -> normalized Component objects
     -> vercor._runtime.prepared.prepare_coupling
-       -> initialization + contracts + topology + dispatch + fingerprints
+       -> initialization + contracts + topology + dispatch + structural snapshot
        -> PreparedCoupling
           -> preparation.create_runtime_state / prepare_runtime_state
           -> runner.run_coupler_runtime
@@ -609,3 +750,16 @@ No internal class or function in this subsection is a supported plugin import.
 VerCOR may combine, rename, or reorganize them in 3.x while preserving the
 public signatures, lifecycle order, execution precedence, state semantics,
 output formats, and valid 3.0 workflows described above.
+
+### Deferred 4.0 candidates
+
+Public route IDs and fan-in reducers belong together because reducers need an
+explicit route identity and ordering contract. A unified output abstraction
+remains deferred. Any public payload access likewise needs compatibility
+evidence across generic, JAXGCM, Veros, and CAMulator workflows.
+`ComponentBinding` and `PreparedGraph` would name public prepared objects that
+are intentionally private today. Automatic entry-point discovery and Pydantic
+configuration would add global/package schema policy.
+All of these remain deferred to 4.0; VerCOR 3.1.1 keeps explicit dependency
+injection, the opaque `RunState`, existing output contracts, and private
+preparation owners.

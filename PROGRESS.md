@@ -9,6 +9,25 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 3.1.1 API hardening documented on 2026-07-13. Task 1 established the
+  single component contract validator, authoritative `ComponentSpec.lifecycle`,
+  and a non-materializing structural prepared-configuration snapshot (focused
+  148/148). Lifecycle/spec callables are identity-only so validation event logs
+  and counters do not false-invalidate prepared reuse; hidden closure/global/
+  default mutable state is outside the supported configuration contract. Task 2
+  added deterministic exchange fan-in rejection, legal feedback
+  overlap, shape-stable state/backend schemas, strict topology masks, and
+  settings/payload gradient regressions (focused 93/93). Task 3 proved current-3.1
+  and frozen-3.0 installed plugins and added strict CI quality/coverage
+  enforcement (focused 50/50; historical branch coverage 90.53%). Task 4's
+  strengthened documentation contracts pass 10/10, including exact
+  heading/export inventories, line-break-independent stale-API guards, bounded
+  installed-plugin proof, and accurate custom-backend comparison scope; its
+  broader API/documentation/distribution selection passes 173 cases. Final
+  integrated verification reports that Black, strict flake8, focused mypy, and
+  whitespace checks pass; the fast suite passes 461/461 with 397 deselected; and
+  the full suite passes 858/858 with only the two known third-party
+  FutureWarnings.
 - VerCOR 3.1.1 Task 2 runtime-state semantics completed locally on 2026-07-13.
   Exchange contract construction now rejects deterministic scalar/vector fan-in
   conflicts while allowing receive/step/send feedback fields; the slab driver
@@ -839,10 +858,10 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Follow-Up Candidates
 
-- Keep remaining public simplification candidates review-only unless a
-  compatibility decision is made: component `.data`/`.setup_metadata` remain
-  mutable setup attributes for compatibility even though raw constructor inputs
-  are no longer public.
+- Do not restore component `.data` or `.setup_metadata`; they are removed public
+  surfaces, not compatibility attributes. Component authors use
+  `seed_field()`/`seed_fields()` and plugin-owned attributes, while bundled
+  adapters keep setup-only details in private `_setup_metadata`.
 
 ## Recent Work
 
