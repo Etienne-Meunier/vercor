@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 import vercor
@@ -145,6 +146,114 @@ def test_topology_policy_patch_rejects_unknown_keys_and_wrong_shapes(
 
     with pytest.raises(CouplerError, match=message):
         coupler.initial_state()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("mask_kind", "value", "message"),
+    (
+        pytest.param(
+            "binary",
+            np.full((2, 2), "land"),
+            "binary.*concrete numeric or bool",
+            id="binary-nonnumeric",
+        ),
+        pytest.param(
+            "fractional",
+            np.full((2, 2), object(), dtype=object),
+            "fractional.*concrete numeric or bool",
+            id="fractional-nonconcrete-object",
+        ),
+        pytest.param(
+            "binary",
+            np.asarray([[0.0, 1.0], [np.nan, 0.0]]),
+            "binary.*finite",
+            id="binary-nonfinite",
+        ),
+        pytest.param(
+            "fractional",
+            np.asarray([[0.0, 1.0], [np.inf, 0.5]]),
+            "fractional.*finite",
+            id="fractional-nonfinite",
+        ),
+        pytest.param(
+            "binary",
+            np.asarray([[0.0, 1.0], [0.5, 0.0]]),
+            r"binary.*\{0, 1\}",
+            id="binary-nonbinary",
+        ),
+        pytest.param(
+            "fractional",
+            np.asarray([[0.0, 1.0], [-0.01, 0.5]]),
+            r"fractional.*\[0, 1\]",
+            id="fractional-below-range",
+        ),
+        pytest.param(
+            "fractional",
+            np.asarray([[0.0, 1.01], [0.25, 0.5]]),
+            r"fractional.*\[0, 1\]",
+            id="fractional-above-range",
+        ),
+    ),
+)
+def test_topology_policy_patch_rejects_invalid_mask_values(
+    mask_kind: str,
+    value: Any,
+    message: str,
+) -> None:
+    key = ("SRC", "DST", "bilinear")
+    patch = ExchangeTopologyPatch(
+        binary_masks={key: value} if mask_kind == "binary" else {},
+        fractional_masks={key: value} if mask_kind == "fractional" else {},
+    )
+    coupler = _topology_policy_coupler(
+        _RecordingTopologyPolicy(applies=True, patch=patch)
+    )
+
+    with pytest.raises(CouplerError, match=message):
+        coupler.initial_state()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "binary_mask",
+    (
+        pytest.param(
+            np.asarray([[False, True], [True, False]]),
+            id="bool",
+        ),
+        pytest.param(
+            np.asarray([[0, 1], [1, 0]], dtype=np.int32),
+            id="zero-one",
+        ),
+    ),
+)
+def test_topology_policy_patch_accepts_valid_binary_and_fractional_masks(
+    binary_mask: np.ndarray,
+) -> None:
+    key = ("SRC", "DST", "bilinear")
+    fractional_mask = np.asarray([[0.0, 0.25], [0.75, 1.0]])
+    coupler = _topology_policy_coupler(
+        _RecordingTopologyPolicy(
+            applies=True,
+            patch=ExchangeTopologyPatch(
+                binary_masks={key: binary_mask},
+                fractional_masks={key: fractional_mask},
+            ),
+        )
+    )
+
+    coupler.initial_state()
+
+    assert coupler._prepared is not None
+    assert_allclose_compact(
+        coupler._prepared.topology_maps.binary_masks[key],
+        binary_mask,
+    )
+    assert_allclose_compact(
+        coupler._prepared.topology_maps.fractional_masks[key],
+        fractional_mask,
+    )
 
 
 @pytest.mark.fast_always

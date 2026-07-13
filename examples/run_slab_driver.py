@@ -124,12 +124,6 @@ if __name__ == "__main__":
                 regrid=conservative,
             ),
             Exchange(
-                source="OCN",
-                target="ICE",
-                fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
                 source="ICE",
                 target="OCN",
                 fields=SEAICE_TO_OCEAN_FIELDS,

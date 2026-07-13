@@ -1838,8 +1838,7 @@ def test_component_validation_and_runtime_receive_delegate() -> None:
         receives=("temperature",),
         sends=("temperature",),
     )
-    with pytest.raises(ComponentError, match="overlapping fields"):
-        check_not_empty_import_export_lists(component, overlapping)
+    check_not_empty_import_export_lists(component, overlapping)
 
     invalid = ExchangeContract(
         receives=("temperature",),

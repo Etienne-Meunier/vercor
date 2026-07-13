@@ -115,12 +115,6 @@ def check_not_empty_import_export_lists(
             f"Component '{component.name}' has no runtime fields defined."
         )
 
-    all_fields = set(contract.all_fields)
-    if len(all_fields) < len(contract.all_fields):
-        raise ComponentError(
-            f"Component '{component.name}' has overlapping fields in import/export lists."
-        )
-
 
 def validate_exchange_fields_declared(
     component: "Component",

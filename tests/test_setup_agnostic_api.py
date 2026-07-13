@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,6 +28,7 @@ from vercor import (
 )
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.output import OutputConfig, PeriodOutput
+from vercor.regridding import conservative
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 from vercor.topology import SurfaceMaskPolicy
 
@@ -120,6 +122,143 @@ def test_duplicate_exchange_topology_key_requires_merged_fields_or_distinct_fact
         match="Duplicate exchange topology key.*merge field declarations.*distinct regrid factories",
     ):
         coupler.initial_state()
+
+
+@pytest.mark.fast_always
+def test_exchange_fan_in_rejects_scalar_conflicts_independent_of_order_and_regrid() -> (
+    None
+):
+    grid = make_test_grid(name="fan-in-scalar")
+    source_a = DataComponent.from_fields("SRC_A", grid, {"flux": 1.0})
+    source_b = DataComponent.from_fields("SRC_B", grid, {"flux": 2.0})
+    target = DataComponent.from_fields(
+        "DST",
+        grid,
+        {"flux": 0.0},
+        spec=ComponentSpec(inputs=("flux",)),
+    )
+    exchanges = (
+        Exchange("SRC_A", "DST", ("flux",), label="alpha route"),
+        Exchange(
+            "SRC_B",
+            "DST",
+            ("flux",),
+            regrid=conservative,
+            label="omega route",
+        ),
+    )
+
+    messages = []
+    for declared in (exchanges, tuple(reversed(exchanges))):
+        coupler = Coupler(
+            clock=_clock(),
+            components=(source_a, source_b, target),
+            exchanges=declared,
+            run_order=("SRC_A", "SRC_B", "DST"),
+            runtime=RuntimeOptions(topology=None),
+        )
+        with pytest.raises(CouplerError) as error:
+            coupler.initial_state()
+        messages.append(str(error.value))
+
+    assert messages[0] == messages[1]
+    assert "DST" in messages[0]
+    assert "flux" in messages[0]
+    assert "alpha route" in messages[0]
+    assert "omega route" in messages[0]
+    assert "distinct field names" in messages[0]
+    assert "aggregator component" in messages[0]
+
+
+@pytest.mark.fast_always
+def test_exchange_fan_in_flattens_vector_declarations() -> None:
+    grid = make_test_grid(name="fan-in-vector")
+    source_a = DataComponent.from_fields("SRC_A", grid, {"u": 1.0, "v": 2.0})
+    source_b = DataComponent.from_fields("SRC_B", grid, {"v": 3.0})
+    target = DataComponent.from_fields(
+        "DST",
+        grid,
+        {"u": 0.0, "v": 0.0},
+        spec=ComponentSpec(inputs=("u", "v")),
+    )
+    coupler = Coupler(
+        clock=_clock(),
+        components=(source_a, source_b, target),
+        exchanges=(
+            Exchange(
+                "SRC_A",
+                "DST",
+                (vercor.vector("u", "v"),),
+                label="vector route",
+            ),
+            Exchange("SRC_B", "DST", ("v",), label="scalar route"),
+        ),
+        run_order=("SRC_A", "SRC_B", "DST"),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+    with pytest.raises(
+        CouplerError,
+        match="DST.*v.*scalar route.*vector route.*distinct field names.*aggregator",
+    ):
+        coupler.initial_state()
+
+
+@pytest.mark.fast_always
+def test_component_can_receive_step_and_send_the_same_field() -> None:
+    grid = make_test_grid(name="feedback-field")
+    source = DataComponent.from_fields("SRC", grid, {"signal": 2.0})
+    middle = Component.from_step(
+        "MID",
+        grid,
+        lambda fields: {"signal": fields["signal"] + 1.0},
+        spec=ComponentSpec(
+            inputs=("signal",),
+            outputs=("signal",),
+            defaults={"signal": 0.0},
+        ),
+    )
+    target = DataComponent.from_fields(
+        "DST",
+        grid,
+        {"signal": 0.0},
+        spec=ComponentSpec(inputs=("signal",)),
+    )
+    coupler = Coupler(
+        clock=_clock(),
+        components=(source, middle, target),
+        exchanges=(
+            Exchange("SRC", "MID", ("signal",)),
+            Exchange("MID", "DST", ("signal",)),
+        ),
+        run_order=("SRC", "MID", "DST"),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+    final_state = coupler.run()
+
+    assert_allclose_compact(
+        final_state.component("MID").field("signal"),
+        np.full(grid.shape, 3.0),
+    )
+    assert_allclose_compact(
+        final_state.component("DST").field("signal"),
+        np.full(grid.shape, 3.0),
+    )
+
+
+@pytest.mark.fast_always
+def test_slab_driver_has_one_bilinear_ocean_to_seaice_temperature_route() -> None:
+    source = Path("examples/run_slab_driver.py").read_text(encoding="utf-8")
+
+    assert source.count("fields=OCEAN_TO_SEAICE_SURFACE_FIELDS") == 1
+    exchange_block = source.split(
+        "fields=OCEAN_TO_SEAICE_SURFACE_FIELDS",
+        maxsplit=1,
+    )[
+        1
+    ].split("),", maxsplit=1)[0]
+    assert "regrid=bilinear" in exchange_block
 
 
 @pytest.mark.fast_always

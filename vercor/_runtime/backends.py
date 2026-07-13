@@ -7,6 +7,7 @@ from numbers import Integral, Real
 from typing import Any, cast
 
 import jax
+import jax.numpy as jnp
 from jax.errors import JaxRuntimeError
 
 from vercor.calendar import ModelDateTime
@@ -29,6 +30,9 @@ from vercor._runtime.progress import (
     runtime_step_progress_messages,
 )
 from vercor._runtime.run_context import RuntimeRunContext
+from vercor._runtime.state_validation import (
+    validate_runtime_state as validate_runtime_state_schema,
+)
 from vercor._runtime.time import build_runtime_step_info, scalar_runtime_step_info
 from vercor.output._session import (
     _PeriodOutputPlan,
@@ -378,7 +382,93 @@ def run_custom_backend(
             f"Execution backend {backend_name}.run(...) must return RunState; "
             f"got {actual_type}."
         )
+    exchanges = tuple(
+        exchange
+        for destination_exchanges in (
+            context.dispatch_context.exchanges_by_destination.values()
+        )
+        for exchange in destination_exchanges
+    )
+    validate_runtime_state_schema(
+        result,
+        components=context.dispatch_context.components,
+        exchanges=exchanges,
+        regridders=context.dispatch_context.regridders,
+        contracts=context.dispatch_context.contracts,
+        run_order=context.run_order,
+    )
+    _validate_custom_backend_result_schema(result, reference=state)
     return result
+
+
+def _validate_custom_backend_result_schema(
+    result: RunState,
+    *,
+    reference: RunState,
+) -> None:
+    """Reject custom backend results that change the validated runtime schema."""
+
+    for component_name in reference.component_names:
+        result_component = result._component_state(component_name)
+        reference_component = reference._component_state(component_name)
+        for store_name in ("fields", "received", "sent"):
+            result_store = getattr(result_component, store_name)
+            reference_store = getattr(reference_component, store_name)
+            _validate_store_schema(
+                result_store,
+                reference_store,
+                owner=f"Component '{component_name}' runtime {store_name}",
+            )
+
+        result_grid = result.component_grids[result._component_index(component_name)]
+        reference_grid = reference.component_grids[
+            reference._component_index(component_name)
+        ]
+        result_shape = None if result_grid is None else result_grid.shape
+        reference_shape = None if reference_grid is None else reference_grid.shape
+        if result_shape != reference_shape:
+            raise CouplerError(
+                f"Component '{component_name}' runtime grid has shape "
+                f"{result_shape}, expected {reference_shape}."
+            )
+
+    _validate_store_schema(
+        result._fractional_masks,
+        reference._fractional_masks,
+        owner="Runtime fractional masks",
+    )
+
+
+def _validate_store_schema(result: Any, reference: Any, *, owner: str) -> None:
+    """Validate one runtime store's exact names and per-field shapes."""
+
+    result_names = tuple(result.field_names)
+    reference_names = tuple(reference.field_names)
+    result_name_set = set(result_names)
+    reference_name_set = set(reference_names)
+    missing = sorted(reference_name_set - result_name_set)
+    extra = sorted(result_name_set - reference_name_set)
+    duplicates = sorted(
+        name for name in result_name_set if result_names.count(name) > 1
+    )
+    if missing or extra or duplicates:
+        details = []
+        if missing:
+            details.append(f"missing {', '.join(missing)}")
+        if extra:
+            details.append(f"extra {', '.join(extra)}")
+        if duplicates:
+            details.append(f"duplicate {', '.join(duplicates)}")
+        raise CouplerError(f"{owner} are incompatible: " + "; ".join(details))
+
+    for field_name in reference_names:
+        result_shape = jnp.asarray(result.get(field_name)).shape
+        reference_shape = jnp.asarray(reference.get(field_name)).shape
+        if result_shape != reference_shape:
+            raise CouplerError(
+                f"{owner} field '{field_name}' has shape {result_shape}, "
+                f"expected {reference_shape}."
+            )
 
 
 class _RuntimeDriverAdapter:

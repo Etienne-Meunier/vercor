@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 import vercor
@@ -252,6 +253,119 @@ def test_custom_backend_rejects_non_run_state_return(
         CouplerError,
         match=rf"InvalidReturnBackend.*return.*RunState.*{actual_type}",
     ):
+        coupler.run()
+
+
+class _ReturnForeignStateBackend:
+    def __init__(self, state: vercor.RunState) -> None:
+        self.state = state
+
+    def run(
+        self,
+        state: vercor.RunState,
+        *,
+        context: vercor.ExecutionContext,
+        driver: vercor.RuntimeDriver,
+    ) -> vercor.RunState:
+        _ = state, context, driver
+        return self.state
+
+
+def _data_state(
+    *components: vercor.DataComponent,
+    run_order: tuple[str, ...],
+) -> vercor.RunState:
+    return vercor.Coupler(
+        _clock(),
+        components=components,
+        run_order=run_order,
+        runtime=vercor.RuntimeOptions(topology=None),
+    ).initial_state()
+
+
+@pytest.mark.fast_always
+def test_custom_backend_accepts_structurally_compatible_foreign_run_state() -> None:
+    grid = make_test_grid(name="compatible-foreign-state")
+    foreign_state = _data_state(
+        vercor.DataComponent.from_fields("MODEL", grid, {"value": 9.0}),
+        run_order=("MODEL",),
+    )
+    coupler = vercor.Coupler(
+        _clock(),
+        components=(vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        run_order=("MODEL",),
+        runtime=vercor.RuntimeOptions(
+            topology=None,
+            execution=_ReturnForeignStateBackend(foreign_state),
+        ),
+    )
+
+    result = coupler.run()
+
+    assert result is foreign_state
+    assert_allclose_compact(
+        result.component("MODEL").field("value"),
+        jnp.full(grid.shape, 9.0),
+    )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "case",
+    (
+        pytest.param("missing", id="missing-component"),
+        pytest.param("extra", id="extra-component"),
+        pytest.param("extra-field", id="extra-field"),
+        pytest.param("shape", id="incompatible-field-shape"),
+    ),
+)
+def test_custom_backend_validates_returned_run_state_schema(case: str) -> None:
+    grid = make_test_grid(name=f"custom-backend-schema-{case}")
+    if case == "missing":
+        foreign_state = _data_state(
+            vercor.DataComponent.from_fields("OTHER", grid, {"value": 1.0}),
+            run_order=("OTHER",),
+        )
+        message = "missing.*MODEL"
+    elif case == "extra":
+        foreign_state = _data_state(
+            vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),
+            vercor.DataComponent.from_fields("EXTRA", grid, {"value": 2.0}),
+            run_order=("MODEL",),
+        )
+        message = "extra.*EXTRA"
+    elif case == "extra-field":
+        foreign_state = _data_state(
+            vercor.DataComponent.from_fields(
+                "MODEL",
+                grid,
+                {"value": 1.0, "extra_field": 2.0},
+            ),
+            run_order=("MODEL",),
+        )
+        message = "MODEL.*fields.*extra_field"
+    else:
+        wide_grid = make_test_grid(
+            name="custom-backend-schema-wide",
+            longitude=np.asarray([0.0, 1.0, 2.0]),
+        )
+        foreign_state = _data_state(
+            vercor.DataComponent.from_fields("MODEL", wide_grid, {"value": 1.0}),
+            run_order=("MODEL",),
+        )
+        message = r"value.*MODEL.*shape \(2, 3\).*expected.*grid shape \(2, 2\)"
+
+    coupler = vercor.Coupler(
+        _clock(),
+        components=(vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        run_order=("MODEL",),
+        runtime=vercor.RuntimeOptions(
+            topology=None,
+            execution=_ReturnForeignStateBackend(foreign_state),
+        ),
+    )
+
+    with pytest.raises(CouplerError, match=message):
         coupler.run()
 
 

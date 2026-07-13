@@ -45,6 +45,34 @@ def _extend_contract_fields(
     return tuple(updated)
 
 
+def validate_exchange_fan_in(exchanges: Sequence[Exchange]) -> None:
+    """Reject ambiguous exchange producers for one target runtime field."""
+
+    producers: dict[tuple[str, str], list[str]] = {}
+    for exchange in exchanges:
+        flattened_fields = set(flatten_exchange_fields(exchange.fields))
+        for field_name in flattened_fields:
+            producers.setdefault((exchange.target, field_name), []).append(
+                exchange.label
+            )
+
+    conflicts = [
+        (target, field_name, tuple(sorted(labels)))
+        for (target, field_name), labels in producers.items()
+        if len(labels) > 1
+    ]
+    if not conflicts:
+        return
+
+    target, field_name, labels = sorted(conflicts)[0]
+    formatted_labels = ", ".join(repr(label) for label in labels)
+    raise CouplerError(
+        f"Exchange fan-in conflict for target '{target}' field '{field_name}': "
+        f"conflicting exchanges {formatted_labels}. Use distinct field names or "
+        "an aggregator component."
+    )
+
+
 def build_exchange_contracts(
     component_names: Sequence[str],
     exchanges: Sequence[Exchange],
@@ -55,18 +83,22 @@ def build_exchange_contracts(
 
     known_components = set(component_names)
     contracts = {name: ExchangeContract() for name in component_names}
-    for exchange in exchanges:
-        if exchange.source not in known_components:
-            if validate_endpoints:
+    if validate_endpoints:
+        for exchange in exchanges:
+            if exchange.source not in known_components:
                 raise CouplerError(
                     f"Source component '{exchange.source}' not registered in coupler"
                 )
-            continue
-        if exchange.target not in known_components:
-            if validate_endpoints:
+            if exchange.target not in known_components:
                 raise CouplerError(
                     f"Destination component '{exchange.target}' not registered in coupler"
                 )
+    validate_exchange_fan_in(exchanges)
+
+    for exchange in exchanges:
+        if exchange.source not in known_components:
+            continue
+        if exchange.target not in known_components:
             continue
 
         flattened_fields = flatten_exchange_fields(exchange.fields)

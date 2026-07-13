@@ -9,6 +9,24 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 3.1.1 Task 2 runtime-state semantics completed locally on 2026-07-13.
+  Exchange contract construction now rejects deterministic scalar/vector fan-in
+  conflicts while allowing receive/step/send feedback fields; the slab driver
+  retains only its bilinear ocean-to-sea-ice temperature route. Runtime field
+  replacement preserves shapes, malformed step returns raise component-oriented
+  errors, supplied states require the exact registered component set and validate
+  every component, and custom backends return a schema-compatible `RunState`
+  independent of originating coupler identity. Topology patches now require
+  concrete finite numeric/bool target-shaped masks with binary/fractional range
+  checks. Focused tests recorded 24 intended failures from 29 cases before
+  production edits plus one additional extra-field schema RED; settings/payload
+  gradient and compatible-state acceptance regressions stayed GREEN. Final
+  focused ownership verification passes 93 cases, Black leaves all 13 affected
+  files unchanged, strict flake8 reports zero findings, mypy reports no issues
+  in 13 affected files, the fast suite passes 446/446, and the full suite passes
+  842/842 with only the two known third-party FutureWarnings. The final Conda
+  launcher attempt hit the known Rattler NULL-object panic before pytest; direct
+  execution with the `scipy` environment Python passed all final suites.
 - VerCOR 3.1 API consolidation release validation completed locally on
   2026-07-10 with the direct
   `/Users/romannuterman/miniforge3/envs/scipy/bin/python` fallback for the known

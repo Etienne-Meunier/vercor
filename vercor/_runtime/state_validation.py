@@ -34,7 +34,30 @@ def validate_runtime_state(
     if not run_order:
         raise CouplerError("Runtime requires a non-empty component run sequence")
 
+    expected_component_names = set(components)
     runtime_component_names = set(runtime_state.component_names)
+    missing_components = sorted(expected_component_names - runtime_component_names)
+    extra_components = sorted(runtime_component_names - expected_component_names)
+    duplicate_components = sorted(
+        name
+        for name in runtime_component_names
+        if runtime_state.component_names.count(name) > 1
+    )
+    if missing_components or extra_components or duplicate_components:
+        details = []
+        if missing_components:
+            details.append(
+                "missing from runtime state: " + ", ".join(missing_components)
+            )
+        if extra_components:
+            details.append(f"extra components: {', '.join(extra_components)}")
+        if duplicate_components:
+            details.append(f"duplicate {', '.join(duplicate_components)}")
+        raise CouplerError(
+            "Runtime component names must exactly match registered components: "
+            + "; ".join(details)
+        )
+
     for cname in run_order:
         if cname not in components:
             raise CouplerError(
@@ -45,7 +68,7 @@ def validate_runtime_state(
                 f"Run-sequence component '{cname}' is missing from runtime state"
             )
 
-        component = components[cname]
+    for cname, component in components.items():
         component_state = runtime_state._component_state(cname)
         contract = contracts[cname]
         validate_component_runtime_contract_fields(

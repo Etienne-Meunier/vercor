@@ -124,7 +124,14 @@ def with_runtime_fields(
             "from_step()/declare_fields(), or declare it through an "
             "exchange before runtime execution."
         )
-    return component_state.with_fields(component_state.fields.replace_many(fields))
+    try:
+        updated_fields = component_state.fields.replace_many(fields)
+    except ValueError as exc:
+        raise ComponentError(
+            f"Component '{component.name}' returned an invalid runtime field update: "
+            f"{exc}"
+        ) from exc
+    return component_state.with_fields(updated_fields)
 
 
 def apply_step_result(
@@ -135,11 +142,21 @@ def apply_step_result(
     """Apply a field mapping or ``StepResult`` to runtime state."""
 
     if isinstance(result, StepResult):
+        if not isinstance(result.fields, Mapping):
+            raise ComponentError(
+                f"Component '{component.name}' StepResult.fields must be a mapping; "
+                f"got {type(result.fields).__name__}."
+            )
         updated_state = with_runtime_fields(component, component_state, result.fields)
         if result.payload is KEEP_PAYLOAD:
             return updated_state
         return updated_state.with_payload(result.payload)
 
+    if not isinstance(result, Mapping):
+        raise ComponentError(
+            f"Component '{component.name}' step must return a mapping or StepResult; "
+            f"got {type(result).__name__}."
+        )
     return with_runtime_fields(component, component_state, result)
 
 

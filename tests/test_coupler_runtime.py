@@ -19,7 +19,10 @@ from vercor.components import (
     ComponentSpec,
     HostComponent,
     SetupContext,
+    StepContext,
+    StepResult,
 )
+from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
 from vercor.setups._data.era5_land import make_era5_land
 from vercor.setups._data.era5_ocean import make_era5_ocean
@@ -2081,3 +2084,264 @@ def test_run_validates_fractional_mask_shape_before_scan() -> None:
 
     with pytest.raises(CouplerError, match="fractional mask.*shape"):
         run_scanned_coupler(coupler, state)
+
+
+@pytest.mark.fast_always
+def test_field_store_replacements_reject_shape_changes() -> None:
+    store = FieldStore.from_mapping(
+        {
+            "temperature": jnp.zeros((2, 2)),
+            "humidity": jnp.ones((2, 2)),
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"temperature.*shape \(1, 2\).*existing shape \(2, 2\)",
+    ):
+        store.replace("temperature", jnp.ones((1, 2)))
+    with pytest.raises(
+        ValueError,
+        match=r"humidity.*shape \(2, 1\).*existing shape \(2, 2\)",
+    ):
+        store.replace_many({"humidity": jnp.ones((2, 1))})
+
+
+@pytest.mark.fast_always
+def test_public_run_state_replace_fields_rejects_shape_changes() -> None:
+    grid = make_test_grid(name="public-replace-shape")
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        run_order=("MODEL",),
+    )
+    state = coupler.initial_state()
+
+    with pytest.raises(
+        ValueError,
+        match=r"value.*shape \(1, 2\).*existing shape \(2, 2\)",
+    ):
+        state.replace_fields("MODEL", {"value": jnp.ones((1, 2))})
+
+
+@pytest.mark.fast_always
+def test_component_step_shape_changes_raise_component_error() -> None:
+    grid = make_test_grid(name="component-step-shape")
+    component = HostComponent.from_step(
+        "MODEL",
+        grid,
+        lambda fields: {"value": jnp.ones((1, 2))},
+        spec=ComponentSpec(outputs=("value",), defaults={"value": 1.0}),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(execution="host"),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match=r"MODEL.*value.*shape \(1, 2\).*existing shape \(2, 2\)",
+    ):
+        coupler.run()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("returned", "actual_type"),
+    (
+        pytest.param(7, "int", id="integer"),
+        pytest.param(["value"], "list", id="list"),
+        pytest.param(None, "NoneType", id="none"),
+    ),
+)
+def test_component_step_rejects_non_mapping_non_step_result_returns(
+    returned: object,
+    actual_type: str,
+) -> None:
+    grid = make_test_grid(name=f"malformed-step-{actual_type}")
+    component = HostComponent.from_step(
+        "MODEL",
+        grid,
+        lambda fields: cast(Any, returned),
+        spec=ComponentSpec(outputs=("value",), defaults={"value": 1.0}),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(execution="host"),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match=rf"Component 'MODEL'.*mapping or StepResult.*{actual_type}",
+    ):
+        coupler.run()
+
+
+@pytest.mark.fast_always
+def test_component_step_rejects_step_result_with_non_mapping_fields() -> None:
+    grid = make_test_grid(name="malformed-step-result-fields")
+    component = HostComponent.from_step(
+        "MODEL",
+        grid,
+        lambda fields: StepResult(fields=cast(Any, ["value"])),
+        spec=ComponentSpec(outputs=("value",), defaults={"value": 1.0}),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(execution="host"),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match=r"Component 'MODEL'.*StepResult.fields.*mapping.*list",
+    ):
+        coupler.run()
+
+
+def _state_validation_coupler(
+    *,
+    dormant_lifecycle: LifecycleHooks | None = None,
+) -> Coupler:
+    grid = make_test_grid(name="exact-state-components")
+    active = DataComponent.from_fields("ACTIVE", grid, {"value": 1.0})
+    dormant = Component.from_step(
+        "DORMANT",
+        grid,
+        lambda fields: {"value": fields["value"]},
+        spec=ComponentSpec(
+            outputs=("value",),
+            defaults={"value": 2.0},
+            lifecycle=dormant_lifecycle,
+        ),
+    )
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(active, dormant),
+        run_order=("ACTIVE",),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+
+@pytest.mark.fast_always
+def test_runtime_state_requires_exact_registered_component_names() -> None:
+    coupler = _state_validation_coupler()
+    state = coupler.initial_state()
+    missing = RunState._from_runtime(
+        component_names=("ACTIVE",),
+        components=(state._component_state("ACTIVE"),),
+        fractional_masks=state._fractional_masks,
+        component_grids=(state.component_grids[state._component_index("ACTIVE")],),
+    )
+    extra = RunState._from_runtime(
+        component_names=(*state.component_names, "EXTRA"),
+        components=(*state._components, state._component_state("ACTIVE")),
+        fractional_masks=state._fractional_masks,
+        component_grids=(*state.component_grids, state.component_grids[0]),
+    )
+
+    with pytest.raises(CouplerError, match="component.*missing.*DORMANT"):
+        coupler.run(missing)
+    with pytest.raises(CouplerError, match="component.*extra.*EXTRA"):
+        coupler.run(extra)
+
+
+@pytest.mark.fast_always
+def test_runtime_state_validates_declared_fields_outside_run_order() -> None:
+    coupler = _state_validation_coupler()
+    state = coupler.initial_state()
+    dormant = state._component_state("DORMANT").with_fields(
+        FieldStore.from_mapping({"value": jnp.ones((1, 2))})
+    )
+    malformed = state._with_component_state("DORMANT", dormant)
+
+    with pytest.raises(
+        CouplerError,
+        match=r"value.*DORMANT.*shape \(1, 2\).*expected.*grid shape \(2, 2\)",
+    ):
+        coupler.run(malformed)
+
+
+@pytest.mark.fast_always
+def test_runtime_state_runs_validation_hooks_outside_run_order() -> None:
+    validated: list[str] = []
+
+    def validate(component: Component, context: Any) -> None:
+        _ = context
+        validated.append(component.name)
+
+    coupler = _state_validation_coupler(
+        dormant_lifecycle=LifecycleHooks(validate=validate)
+    )
+
+    coupler.initial_state()
+
+    assert validated == ["DORMANT"]
+
+
+@pytest.mark.fast_always
+def test_gradient_flows_through_scalar_step_context_setting() -> None:
+    grid = make_test_grid(name="settings-gradient")
+    component = Component.from_step(
+        "MODEL",
+        grid,
+        lambda fields, context: {"value": fields["value"] * context.settings.scale},
+        spec=ComponentSpec(outputs=("value",), defaults={"value": 2.0}),
+    )
+    state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping({"value": jnp.full(grid.shape, 2.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+    )
+
+    def loss(scale: jax.Array) -> jax.Array:
+        context = StepContext(
+            dt_seconds=60.0,
+            settings=Settings(custom={"scale": scale}),
+        )
+        result = step_component_runtime_state(
+            component,
+            state,
+            context,
+            allow_host_runtime=False,
+        )
+        return jnp.sum(result.fields.get("value"))
+
+    gradient = jax.grad(loss)(jnp.asarray(3.0))
+
+    assert_allclose_compact(gradient, np.asarray(8.0))
+
+
+@pytest.mark.fast_always
+def test_gradient_flows_through_component_payload() -> None:
+    grid = make_test_grid(name="payload-gradient")
+    component = Component.from_step(
+        "MODEL",
+        grid,
+        lambda fields, context, payload: {"value": fields["value"] * payload},
+        spec=ComponentSpec(outputs=("value",), defaults={"value": 2.0}),
+    )
+    state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping({"value": jnp.full(grid.shape, 2.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+    )
+    context = StepContext(dt_seconds=60.0, settings=Settings())
+
+    def loss(payload: jax.Array) -> jax.Array:
+        result = step_component_runtime_state(
+            component,
+            state.with_payload(payload),
+            context,
+            allow_host_runtime=False,
+        )
+        return jnp.sum(result.fields.get("value"))
+
+    gradient = jax.grad(loss)(jnp.asarray(3.0))
+
+    assert_allclose_compact(gradient, np.asarray(8.0))

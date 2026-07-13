@@ -127,15 +127,10 @@ class FieldStore(PyTreeNodeMixin):
         if name not in self:
             raise KeyError(f"Runtime field {name!r} not found")
 
-        values = tuple(
-            (
-                jnp.array(value, dtype=jnp.asarray(current).dtype, copy=True)
-                if field_name == name
-                else current
-            )
-            for field_name, current in zip(self.field_names, self.values)
-        )
-        return FieldStore(field_names=self.field_names, values=values)
+        index = self.field_indices[name]
+        values = list(self.values)
+        values[index] = self._replacement_array(name, value, values[index])
+        return FieldStore(field_names=self.field_names, values=tuple(values))
 
     def replace_many(
         self,
@@ -143,7 +138,36 @@ class FieldStore(PyTreeNodeMixin):
     ) -> "FieldStore":
         """Return a new store with multiple existing fields replaced."""
 
+        if not fields:
+            return self
+
         for field_name in fields:
             if field_name not in self:
                 raise KeyError(f"Runtime field {field_name!r} not found")
-        return self.set_many(fields)
+
+        values = list(self.values)
+        for field_name, field_value in fields.items():
+            index = self.field_indices[field_name]
+            values[index] = self._replacement_array(
+                field_name,
+                field_value,
+                values[index],
+            )
+        return FieldStore(field_names=self.field_names, values=tuple(values))
+
+    @staticmethod
+    def _replacement_array(
+        name: str,
+        value: RuntimeArray,
+        current: RuntimeArray,
+    ) -> RuntimeArray:
+        """Normalize one replacement while preserving its existing shape and dtype."""
+
+        current_array = jnp.asarray(current)
+        replacement_shape = jnp.asarray(value).shape
+        if replacement_shape != current_array.shape:
+            raise ValueError(
+                f"Runtime field {name!r} replacement has shape {replacement_shape}, "
+                f"but its existing shape {current_array.shape} must be preserved"
+            )
+        return jnp.array(value, dtype=current_array.dtype, copy=True)

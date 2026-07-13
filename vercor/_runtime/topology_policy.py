@@ -5,6 +5,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
+from jax.errors import TracerBoolConversionError
 
 from vercor.components.contracts import ComponentInfo
 from vercor.exceptions import CouplerError
@@ -124,12 +125,55 @@ def _validate_patch_item(
             f"Topology policy {mask_kind} mask key {key!r} does not match a "
             "configured topology key."
         )
+    try:
+        mask_array = jnp.asarray(value)
+    except (TypeError, ValueError) as exc:
+        raise CouplerError(
+            f"Topology policy {mask_kind} mask for key {key!r} must be a "
+            "concrete numeric or bool array."
+        ) from exc
+    is_real_numeric = (
+        jnp.issubdtype(mask_array.dtype, jnp.bool_)
+        or jnp.issubdtype(mask_array.dtype, jnp.integer)
+        or jnp.issubdtype(mask_array.dtype, jnp.floating)
+    )
+    if not is_real_numeric:
+        raise CouplerError(
+            f"Topology policy {mask_kind} mask for key {key!r} must be a "
+            "concrete numeric or bool array."
+        )
     target_shape = components[key[1]].grid.shape
-    mask_shape = jnp.asarray(value).shape
+    mask_shape = mask_array.shape
     if mask_shape != target_shape:
         raise CouplerError(
             f"Topology policy {mask_kind} mask for key {key!r} has shape "
             f"{mask_shape}, expected {target_shape} for target component {key[1]!r}."
+        )
+    try:
+        all_finite = bool(jnp.all(jnp.isfinite(mask_array)))
+        all_binary = bool(jnp.all(jnp.logical_or(mask_array == 0, mask_array == 1)))
+        all_fractional = bool(
+            jnp.all(jnp.logical_and(mask_array >= 0, mask_array <= 1))
+        )
+    except TracerBoolConversionError as exc:
+        raise CouplerError(
+            f"Topology policy {mask_kind} mask for key {key!r} must be a "
+            "concrete numeric or bool array."
+        ) from exc
+    if not all_finite:
+        raise CouplerError(
+            f"Topology policy {mask_kind} mask for key {key!r} must contain "
+            "only finite values."
+        )
+    if mask_kind == "binary" and not all_binary:
+        raise CouplerError(
+            f"Topology policy binary mask for key {key!r} must contain only "
+            "values in {0, 1}."
+        )
+    if mask_kind == "fractional" and not all_fractional:
+        raise CouplerError(
+            f"Topology policy fractional mask for key {key!r} must contain "
+            "values in [0, 1]."
         )
 
 
