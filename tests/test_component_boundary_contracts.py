@@ -76,12 +76,12 @@ def test_public_lifecycle_hook_types_are_owned_by_component_contracts() -> None:
         private_imports = _imported_names_from(path, "vercor.components._lifecycle")
         public_imports = _imported_names_from(path, "vercor.components.contracts")
         assert hook_names.isdisjoint(private_imports), path
-        assert "LifecycleHooks" in public_imports, path
+        assert "LifecycleHooks" not in public_imports, path
         assert hook_names.isdisjoint(public_imports), path
 
 
 @pytest.mark.fast_always
-def test_lifecycle_storage_uses_normalized_private_hook_assignment() -> None:
+def test_lifecycle_storage_uses_component_spec_as_single_owner() -> None:
     contracts_source = source_for("vercor/components/contracts.py")
     base_source = source_for("vercor/components/base.py")
     callable_source = source_for("vercor/components/_callable_wrappers.py")
@@ -89,11 +89,10 @@ def test_lifecycle_storage_uses_normalized_private_hook_assignment() -> None:
 
     assert "class LifecycleHooks" in contracts_source
     assert "class ComponentLifecycleHooks" not in contracts_source
-    assert "_lifecycle_hooks: LifecycleHooks" in base_source
-    assert "_lifecycle_hooks: Any" not in base_source
-    assert "component._lifecycle_hooks = lifecycle_hooks" in callable_source
+    assert "_lifecycle_hooks" not in base_source
+    assert "_lifecycle_hooks" not in callable_source
     assert "normalize_lifecycle_hooks" not in data_source
-    assert "component._lifecycle_hooks = spec.lifecycle" in data_source
+    assert "_lifecycle_hooks" not in data_source
     assert not Path("vercor/components/_protocols.py").exists()
 
 
@@ -105,7 +104,7 @@ def test_callable_wrapper_module_does_not_need_request_dataclass() -> None:
 
     assert "class _CallableComponentDefinition" not in callable_source
     assert "def _callable_component_definition(" not in callable_source
-    assert "lifecycle_hooks: LifecycleHooks" in callable_source
+    assert "lifecycle_hooks: LifecycleHooks" not in callable_source
     assert "def create_runtime_payload(" not in callable_source
     assert "component._lifecycle_hooks.create_runtime_payload" not in callable_source
     assert "spec=_ComponentComponentSpec(" not in base_source

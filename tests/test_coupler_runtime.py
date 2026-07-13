@@ -1753,7 +1753,7 @@ def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
             logger=cast(Any, None),
         )
     )
-    setup_state = component._lifecycle_hooks.create_payload.args[0]
+    setup_state = component.spec.lifecycle.create_payload.args[0]
 
     payload = component._create_runtime_payload()
     assert payload.jcm_state.phydata.speedy_coords is not None

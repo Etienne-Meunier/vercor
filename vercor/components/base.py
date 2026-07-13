@@ -7,7 +7,6 @@ from typing import Any
 
 from vercor.components.contracts import (
     FieldImportPolicy,
-    LifecycleHooks,
     ComponentStepReturn,
     ComponentSpec,
     _AuthorStepCallable,
@@ -78,11 +77,6 @@ class Component(
         init=False,
         repr=False,
     )
-    _lifecycle_hooks: LifecycleHooks = field(
-        default_factory=LifecycleHooks,
-        init=False,
-        repr=False,
-    )
 
     def __init__(
         self,
@@ -101,7 +95,6 @@ class Component(
         self._setup_metadata = {}
         self._spec = ComponentSpec() if spec is None else spec
         self._import_policy = FieldImportPolicy()
-        self._lifecycle_hooks = self._spec.lifecycle
 
     @property
     def output(self) -> OutputConfig:
@@ -146,7 +139,6 @@ class Component(
             payload=options.payload,
             settings=settings,
             spec=options.spec,
-            lifecycle_hooks=options.lifecycle_hooks,
         )
 
     @property
@@ -222,7 +214,6 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
         payload: Any | None,
         settings: Settings | None,
         spec: ComponentSpec,
-        lifecycle_hooks: LifecycleHooks,
     ) -> None:
         if settings is None:
             Component.__init__(self, name=name, grid=grid, spec=spec)
@@ -238,7 +229,6 @@ class _CallableComponent(_CallableRuntimeMixin, Component):
             step=step,
             payload=payload,
             spec=spec,
-            lifecycle_hooks=lifecycle_hooks,
         )
 
     def step(

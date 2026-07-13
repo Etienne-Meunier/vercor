@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Self
 from vercor.clock import Clock
 from vercor.components._adapter import normalize_component
 from vercor.components.contracts import ComponentInfo
-from vercor.components.setup_validation import validate_component_setup
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.fields import VectorField
@@ -143,7 +142,6 @@ class Coupler:
         """Register a component with the coupler."""
 
         normalized_component = normalize_component(component)
-        validate_component_setup(normalized_component)
         if normalized_component.name in self._components:
             raise CouplerError(
                 f"Component {normalized_component.name} already registered"
@@ -201,7 +199,12 @@ class Coupler:
         """Return the one prepared runtime boundary for this configuration."""
 
         if self._prepared is not None:
-            self._prepared.validate_component_configuration(self._runtime_components)
+            self._prepared.validate_configuration(
+                self._runtime_components,
+                clock=self.clock,
+                settings=self.settings,
+                runtime=self.runtime,
+            )
             return self._prepared
         prepared = _runtime_facade.prepare_coupling(
             components=self._runtime_components,

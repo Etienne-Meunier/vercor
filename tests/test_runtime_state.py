@@ -403,8 +403,11 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def apply_run_precision_to_component(" in runtime_initialization_source
     assert "def initialize_coupler_runtime(" in runtime_initialization_source
     assert (
-        "from vercor.components.setup_validation import validate_component_setup"
-        in (runtime_initialization_source)
+        "from vercor.components._adapter import validate_component_contract"
+        in runtime_initialization_source
+    )
+    assert "from vercor.components.setup_validation import" not in (
+        runtime_initialization_source
     )
     assert "from vercor._runtime.initialization import" not in coupler_source
     assert (

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass
+from functools import partial
+from inspect import isroutine
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -29,11 +31,21 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class _ComponentConfigurationFingerprint:
+class _ComponentConfigurationSnapshot:
     """Comparable post-initialization component configuration snapshot."""
 
     runtime_configuration: tuple[Any, ...]
     public_configuration: tuple[Any, ...]
+
+
+@dataclass(frozen=True)
+class _PreparedConfigurationSnapshot:
+    """Comparable snapshot of every owner used to prepare the runtime."""
+
+    components: Mapping[str, _ComponentConfigurationSnapshot]
+    clock: tuple[Any, ...]
+    runtime: tuple[Any, ...]
+    settings: tuple[Any, ...]
 
 
 @dataclass(frozen=True)
@@ -50,21 +62,32 @@ class PreparedCoupling:
     settings: Settings
     runtime: RuntimeOptions
     interrupts: RuntimeInterruptController
-    component_fingerprints: Mapping[str, _ComponentConfigurationFingerprint]
+    configuration_snapshot: _PreparedConfigurationSnapshot
 
-    def validate_component_configuration(
+    def validate_configuration(
         self,
         components: Mapping[str, "Component"],
+        *,
+        clock: Clock,
+        settings: Settings,
+        runtime: RuntimeOptions,
     ) -> None:
-        """Reject direct component mutation after this boundary was prepared."""
+        """Reject direct configuration mutation after preparation."""
 
+        snapshot = self.configuration_snapshot
         current_names = tuple(components)
-        if current_names != tuple(self.component_fingerprints):
-            _raise_component_mutation("registered component mapping")
+        if current_names != tuple(snapshot.components):
+            _raise_configuration_mutation("registered component mapping")
         for registered_name, component in components.items():
-            current = _component_fingerprint(component)
-            if current != self.component_fingerprints[registered_name]:
-                _raise_component_mutation(registered_name)
+            current = _component_configuration_snapshot(component)
+            if current != snapshot.components[registered_name]:
+                _raise_configuration_mutation(f"component {registered_name!r}")
+        if _clock_configuration_snapshot(clock) != snapshot.clock:
+            _raise_configuration_mutation("clock")
+        if _runtime_configuration_snapshot(runtime) != snapshot.runtime:
+            _raise_configuration_mutation("runtime options")
+        if _settings_configuration_snapshot(settings) != snapshot.settings:
+            _raise_configuration_mutation("coupler settings")
 
 
 def prepare_coupling(
@@ -102,11 +125,11 @@ def prepare_coupling(
         dt_seconds=clock.dt_seconds,
         settings=settings,
     )
-    fingerprints = MappingProxyType(
-        {
-            name: _component_fingerprint(component)
-            for name, component in immutable_components.items()
-        }
+    configuration_snapshot = _prepared_configuration_snapshot(
+        components=immutable_components,
+        clock=clock,
+        settings=settings,
+        runtime=runtime,
     )
     return PreparedCoupling(
         components=immutable_components,
@@ -119,7 +142,7 @@ def prepare_coupling(
         settings=settings,
         runtime=runtime,
         interrupts=RuntimeInterruptController(),
-        component_fingerprints=fingerprints,
+        configuration_snapshot=configuration_snapshot,
     )
 
 
@@ -130,40 +153,227 @@ def _ensure_jax_precision_capability(runtime: RuntimeOptions) -> None:
         jax.config.update("jax_enable_x64", True)
 
 
-def _component_fingerprint(
+def _component_configuration_snapshot(
     component: "Component",
-) -> _ComponentConfigurationFingerprint:
-    """Return runtime and public-owner configuration fingerprints."""
+) -> _ComponentConfigurationSnapshot:
+    """Return runtime and public-owner structural configuration snapshots."""
 
     public_component = getattr(component, "_component", component)
-    return _ComponentConfigurationFingerprint(
-        runtime_configuration=_object_configuration(component),
-        public_configuration=_object_configuration(public_component),
+    return _ComponentConfigurationSnapshot(
+        runtime_configuration=_object_configuration_snapshot(component),
+        public_configuration=_object_configuration_snapshot(public_component),
     )
 
 
-def _object_configuration(component: object) -> tuple[Any, ...]:
-    """Return the minimum mutation-sensitive configuration for a component."""
+def _prepared_configuration_snapshot(
+    *,
+    components: Mapping[str, "Component"],
+    clock: Clock,
+    settings: Settings,
+    runtime: RuntimeOptions,
+) -> _PreparedConfigurationSnapshot:
+    """Return the complete post-initialization configuration snapshot."""
+
+    component_snapshots = MappingProxyType(
+        {
+            name: _component_configuration_snapshot(component)
+            for name, component in components.items()
+        }
+    )
+    return _PreparedConfigurationSnapshot(
+        components=component_snapshots,
+        clock=_clock_configuration_snapshot(clock),
+        runtime=_runtime_configuration_snapshot(runtime),
+        settings=_settings_configuration_snapshot(settings),
+    )
+
+
+def _clock_configuration_snapshot(clock: Clock) -> tuple[Any, ...]:
+    """Return identity and values for the configured clock."""
+
+    return (id(clock), _configuration_value_snapshot(clock))
+
+
+def _runtime_configuration_snapshot(runtime: RuntimeOptions) -> tuple[Any, ...]:
+    """Return stable runtime-option identity and policy configuration."""
+
+    execution = runtime.execution
+    execution_snapshot = (
+        execution if isinstance(execution, str) else (type(execution), id(execution))
+    )
+    return (
+        id(runtime),
+        _configuration_value_snapshot(runtime.dtype),
+        execution_snapshot,
+        _topology_configuration_snapshot(runtime.topology),
+        runtime.model_year_seconds,
+    )
+
+
+def _topology_configuration_snapshot(topology: object | None) -> Any:
+    """Return identity and mutable configuration for one topology policy."""
+
+    if topology is None:
+        return None
+    return (
+        type(topology),
+        id(topology),
+        _instance_configuration_snapshot(topology),
+    )
+
+
+def _settings_configuration_snapshot(settings: Settings) -> tuple[Any, ...]:
+    """Return identity and values for one settings owner."""
+
+    return (id(settings), _configuration_value_snapshot(settings.as_dict()))
+
+
+def _object_configuration_snapshot(component: object) -> tuple[Any, ...]:
+    """Return the supported mutation-sensitive component configuration."""
 
     name = getattr(component, "name", None)
     grid = getattr(component, "grid", None)
     spec = getattr(component, "spec", None)
-    initial_fields = getattr(component, "initial_fields", None)
-    seeded_fields = initial_fields() if callable(initial_fields) else {}
+    seeded_fields = getattr(component, "_data", None)
     settings = getattr(component, "settings", None)
     settings_values = settings.as_dict() if isinstance(settings, Settings) else {}
     return (
+        id(component),
         name,
         id(grid),
-        getattr(grid, "shape", None),
+        _configuration_value_snapshot(grid),
         id(spec),
-        _configuration_value(spec),
-        _seeded_field_fingerprint(seeded_fields),
-        _configuration_value(settings_values),
+        _configuration_value_snapshot(spec),
+        tuple(
+            (
+                method_name,
+                _callable_identity_snapshot(getattr(component, method_name, None)),
+            )
+            for method_name in ("initial_fields", "initialize", "step")
+        ),
+        _author_callable_configuration_snapshot(
+            getattr(component, "_author_step", None),
+            include_bound_owner_state=True,
+        ),
+        _field_configuration_snapshot(seeded_fields),
+        id(settings),
+        _configuration_value_snapshot(settings_values),
+        _instance_configuration_snapshot(
+            component,
+            excluded_names=frozenset({"_component", "_setup_metadata"}),
+        ),
     )
 
 
-def _seeded_field_fingerprint(values: object) -> tuple[Any, ...]:
+def _callable_identity_snapshot(value: object) -> tuple[Any, ...]:
+    """Return stable callable identity without traversing operational state."""
+
+    if not callable(value):
+        return ("invalid", type(value))
+    function = getattr(value, "__func__", None)
+    owner = getattr(value, "__self__", None)
+    if function is not None:
+        return (type(value), id(function), id(owner))
+    return (type(value), id(value))
+
+
+def _author_callable_configuration_snapshot(
+    value: object,
+    *,
+    include_bound_owner_state: bool = False,
+    seen: frozenset[int] = frozenset(),
+) -> tuple[Any, ...]:
+    """Return bounded configuration for the explicit author-step owner."""
+
+    if not callable(value):
+        return ("invalid", type(value))
+    if id(value) in seen:
+        return ("cycle", type(value))
+    if isinstance(value, partial):
+        nested_seen = seen | {id(value)}
+        return (
+            type(value),
+            id(value),
+            _author_callable_configuration_snapshot(
+                value.func,
+                include_bound_owner_state=True,
+                seen=nested_seen,
+            ),
+            _configuration_value_snapshot(value.args, seen=nested_seen),
+            _configuration_value_snapshot(value.keywords or {}, seen=nested_seen),
+        )
+    function = getattr(value, "__func__", None)
+    owner = getattr(value, "__self__", None)
+    if function is not None:
+        snapshot: tuple[Any, ...] = (
+            type(value),
+            id(function),
+            id(owner),
+        )
+        if include_bound_owner_state and owner is not None:
+            return (
+                *snapshot,
+                _instance_configuration_snapshot(owner, seen=seen | {id(value)}),
+            )
+        return snapshot
+    if isroutine(value):
+        return (type(value), id(value))
+    return (
+        type(value),
+        id(value),
+        _instance_configuration_snapshot(value, seen=seen),
+    )
+
+
+def _instance_configuration_snapshot(
+    value: object,
+    *,
+    seen: frozenset[int] = frozenset(),
+    excluded_names: frozenset[str] = frozenset(),
+) -> tuple[Any, ...]:
+    """Return bounded instance state without traversing functions or globals."""
+
+    if id(value) in seen:
+        return ("cycle", type(value))
+    nested_seen = seen | {id(value)}
+    state = getattr(value, "__dict__", None)
+    if isinstance(state, Mapping) and excluded_names:
+        # Adapter ownership is captured separately, while setup metadata is
+        # diagnostic state rather than runtime component configuration.
+        state = {
+            name: item for name, item in state.items() if name not in excluded_names
+        }
+    mapping_state = (
+        _configuration_value_snapshot(state, seen=nested_seen)
+        if isinstance(state, Mapping)
+        else None
+    )
+    slot_state = []
+    for owner in reversed(type(value).__mro__):
+        slots = owner.__dict__.get("__slots__", ())
+        if isinstance(slots, str):
+            slots = (slots,)
+        for slot_name in slots:
+            if slot_name in ("__dict__", "__weakref__") or slot_name in excluded_names:
+                continue
+            storage_name = slot_name
+            if slot_name.startswith("__") and not slot_name.endswith("__"):
+                storage_name = f"_{owner.__name__.lstrip('_')}{slot_name}"
+            try:
+                slot_value = getattr(value, storage_name)
+            except AttributeError:
+                continue
+            slot_state.append(
+                (
+                    owner,
+                    slot_name,
+                    _configuration_value_snapshot(slot_value, seen=nested_seen),
+                )
+            )
+    return (mapping_state, tuple(slot_state))
+
+
+def _field_configuration_snapshot(values: object) -> tuple[Any, ...]:
     """Return field names plus array identity, shape, and dtype metadata."""
 
     if not isinstance(values, Mapping):
@@ -173,54 +383,83 @@ def _seeded_field_fingerprint(values: object) -> tuple[Any, ...]:
         shape = getattr(value, "shape", None)
         dtype = getattr(value, "dtype", None)
         if shape is None and dtype is None:
-            value_fingerprint = _configuration_value(value)
+            value_snapshot = _configuration_value_snapshot(value)
         else:
-            value_fingerprint = (
-                id(value),
-                tuple(shape) if shape is not None else None,
-                None if dtype is None else str(dtype),
-            )
-        result.append((name, value_fingerprint))
+            value_snapshot = _array_configuration_snapshot(value, shape, dtype)
+        result.append((name, value_snapshot))
     return tuple(result)
 
 
-def _configuration_value(value: object) -> Any:
+def _configuration_value_snapshot(
+    value: object,
+    *,
+    seen: frozenset[int] = frozenset(),
+) -> Any:
     """Return a stable comparable snapshot of nested configuration values."""
 
     if value is None or isinstance(value, (bool, int, float, str, bytes)):
         return value
+    if id(value) in seen:
+        return ("cycle", type(value))
+    nested_seen = seen | {id(value)}
     if isinstance(value, Mapping):
-        return tuple((key, _configuration_value(item)) for key, item in value.items())
+        return tuple(
+            (key, _configuration_value_snapshot(item, seen=nested_seen))
+            for key, item in value.items()
+        )
     if isinstance(value, (tuple, list)):
-        return tuple(_configuration_value(item) for item in value)
+        return tuple(
+            _configuration_value_snapshot(item, seen=nested_seen) for item in value
+        )
+    if callable(value):
+        # Generic/spec/lifecycle callables are identity-only. Their defaults,
+        # closures, globals, and callable-object state can hold legitimate
+        # operational logs/counters and are not supported configuration owners.
+        return _callable_identity_snapshot(value)
     if is_dataclass(value) and not isinstance(value, type):
         return (
             type(value),
             tuple(
-                (field.name, _configuration_value(getattr(value, field.name)))
+                (
+                    field.name,
+                    _configuration_value_snapshot(
+                        getattr(value, field.name),
+                        seen=nested_seen,
+                    ),
+                )
                 for field in fields(value)
             ),
         )
     shape = getattr(value, "shape", None)
     dtype = getattr(value, "dtype", None)
     if shape is not None or dtype is not None:
-        return (
-            id(value),
-            tuple(shape) if shape is not None else None,
-            None if dtype is None else str(dtype),
-        )
-    if callable(value):
-        return (type(value), id(value))
-    return (type(value), repr(value))
+        return _array_configuration_snapshot(value, shape, dtype)
+    # Opaque external objects are supported by identity/replacement only. Their
+    # hidden internals are not traversed because they may own unbounded graphs.
+    return (type(value), id(value))
 
 
-def _raise_component_mutation(component_name: str) -> None:
+def _array_configuration_snapshot(
+    value: object,
+    shape: Any,
+    dtype: Any,
+) -> tuple[Any, ...]:
+    """Return array identity and metadata without materializing its values."""
+
+    return (
+        id(value),
+        tuple(shape) if shape is not None else None,
+        None if dtype is None else str(dtype),
+    )
+
+
+def _raise_configuration_mutation(owner: str) -> None:
     """Raise the actionable direct-mutation error for a prepared coupling."""
 
     raise CouplerError(
-        f"Component {component_name!r} changed after preparation. Configure "
-        "components before preparation, or create/reconfigure the Coupler "
-        "through its public mutators before preparing it again."
+        f"Coupler configuration for {owner} changed after preparation. Configure "
+        "components, clock, runtime options, and settings before preparation, "
+        "or create a new Coupler and prepare it again."
     )
 
 

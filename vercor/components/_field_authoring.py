@@ -30,6 +30,8 @@ class ComponentFieldAuthoringMixin:
     def configure(self: Self, spec: ComponentSpec) -> Self:
         """Replace this component's public runtime field contract."""
 
+        if not isinstance(spec, ComponentSpec):
+            raise ComponentError("Component spec must be a ComponentSpec instance.")
         self._spec = spec
         return self
 

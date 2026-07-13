@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 from datetime import datetime
 import importlib
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import jax.numpy as jnp
 import pytest
@@ -272,6 +272,79 @@ def test_structural_component_validation_is_actionable(
             run_order=("MODEL",),
             runtime=RuntimeOptions(topology=None),
         )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("name", "name.*non-empty string"),
+        ("grid", "Component-like object.*grid.*RectilinearGrid"),
+        ("spec", "spec.*ComponentSpec"),
+        ("initial_fields", "initial_fields.*callable"),
+        ("initialize", "initialize.*callable"),
+        ("step", "step.*callable"),
+        ("initial_fields_result", "initial_fields.*mapping"),
+    ),
+)
+def test_vercor_component_validation_uses_the_structural_contract_path(
+    mutation: str,
+    message: str,
+) -> None:
+    component = vercor.Component.from_step(
+        "MODEL",
+        make_test_grid(name="invalid-vercor-component"),
+        lambda fields: fields,
+    )
+    if mutation == "name":
+        component.name = "   "
+    elif mutation == "grid":
+        component.grid = cast(Any, object())
+    elif mutation == "spec":
+        component._spec = cast(Any, object())
+    elif mutation == "initial_fields_result":
+        setattr(component, "initial_fields", lambda: ())
+    else:
+        setattr(component, mutation, None)
+
+    with pytest.raises(vercor.ComponentError, match=message):
+        Coupler(
+            Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+            components=(component,),
+            run_order=("MODEL",),
+            runtime=RuntimeOptions(topology=None),
+        )
+
+
+@pytest.mark.fast_always
+def test_component_contract_mutation_during_initialize_is_rejected() -> None:
+    class InvalidatingComponent(vercor.Component):
+        def initialize(self, context: vercor.SetupContext) -> None:
+            _ = context
+            self.name = "   "
+
+        def step(
+            self,
+            fields: Mapping[str, Any],
+            context: StepContext,
+            payload: object | None = None,
+        ) -> Mapping[str, Any]:
+            _ = context, payload
+            return fields
+
+    component = InvalidatingComponent(
+        "MODEL",
+        make_test_grid(name="initialize-contract-mutation"),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+    with pytest.raises(vercor.ComponentError, match="name.*non-empty string"):
+        coupler.initial_state()
 
 
 @pytest.mark.fast_always

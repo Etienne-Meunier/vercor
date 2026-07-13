@@ -11,6 +11,7 @@ from vercor.components.contracts import (
     FieldImportPolicy,
 )
 from vercor.components.contexts import SetupContext, StepContext
+from vercor.components.setup_validation import validate_component_setup
 from vercor.exceptions import ComponentError
 from vercor.grids import RectilinearGrid
 from vercor.types import RuntimeArray
@@ -41,7 +42,6 @@ class _ComponentAdapter(Component):
         self.name = self._component.name
         self.grid = self._component.grid
         self._spec = self._component.spec
-        self._lifecycle_hooks = self._spec.lifecycle
         self._import_policy = getattr(
             self._component,
             "import_policy",
@@ -59,11 +59,11 @@ class _ComponentAdapter(Component):
         """Initialize the wrapped component and resync its public setup data."""
 
         self._component.initialize(context)
-        self._refresh_from_component(_validate_component_like(self._component))
-        initialize_hook = self._lifecycle_hooks.initialize
+        self._refresh_from_component(validate_component_contract(self._component))
+        initialize_hook = self.spec.lifecycle.initialize
         if initialize_hook is not None:
             initialize_hook(self._component, context)
-        self._refresh_from_component(_validate_component_like(self._component))
+        self._refresh_from_component(validate_component_contract(self._component))
 
     def step(
         self,
@@ -79,15 +79,21 @@ class _ComponentAdapter(Component):
 def normalize_component(component: ComponentLike) -> Component:
     """Return an internal component object for public component-like input."""
 
+    initial_fields = validate_component_contract(component)
     if isinstance(component, Component):
         return component
 
-    initial_fields = _validate_component_like(component)
     return _ComponentAdapter(component, initial_fields)
 
 
-def _validate_component_like(component: object) -> Mapping[str, RuntimeArray]:
-    """Validate the public structural component contract before adapting."""
+def validate_component_contract(component: object) -> Mapping[str, RuntimeArray]:
+    """Validate one public component contract before registration or refresh."""
+
+    if isinstance(component, Component) and any(
+        not hasattr(component, attribute)
+        for attribute in ("name", "grid", "_data", "settings")
+    ):
+        validate_component_setup(component)
 
     missing = [
         attribute
@@ -131,6 +137,8 @@ def _validate_component_like(component: object) -> Mapping[str, RuntimeArray]:
                 f"Component-like object {component.__class__.__name__!r} has "
                 f"invalid {method_name}; expected a callable."
             )
+    if isinstance(component, Component):
+        validate_component_setup(component)
     initial_fields = getattr(component, "initial_fields")()
     if not isinstance(initial_fields, Mapping):
         raise ComponentError(

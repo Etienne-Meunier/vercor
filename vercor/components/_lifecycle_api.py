@@ -35,7 +35,7 @@ class ComponentLifecycleMixin:
         """Optionally initialize component-owned runtime data before coupling."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.initialize
+        hook = component.spec.lifecycle.initialize
         if hook is not None:
             hook(self._lifecycle_hook_owner(), context)
             return
@@ -45,7 +45,7 @@ class ComponentLifecycleMixin:
         """Return optional immutable payload carried by runtime component state."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.create_payload
+        hook = component.spec.lifecycle.create_payload
         if hook is not None:
             return hook(self._lifecycle_hook_owner())
         return self._default_runtime_payload()
@@ -65,7 +65,7 @@ class ComponentLifecycleMixin:
         """Optionally pre-seed fields required by runtime execution."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.prefill
+        hook = component.spec.lifecycle.prefill
         if hook is not None:
             result = hook(
                 self._lifecycle_hook_owner(),
@@ -90,7 +90,7 @@ class ComponentLifecycleMixin:
         """Optionally validate component-specific runtime fields before execution."""
 
         component = cast("Component", self)
-        hook = component._lifecycle_hooks.validate
+        hook = component.spec.lifecycle.validate
         if hook is not None:
             hook(
                 self._lifecycle_hook_owner(),

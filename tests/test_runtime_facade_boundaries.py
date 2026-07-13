@@ -1,21 +1,35 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import importlib
-from dataclasses import FrozenInstanceError, fields, is_dataclass
+from dataclasses import FrozenInstanceError, dataclass, fields, is_dataclass
 from datetime import datetime
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 import pytest
 
 import vercor.output._runtime as output_runtime_module
 from tests._architecture_support import package_import_cycles, source_for
 from tests._coverage_support import make_test_grid
-from vercor import Clock, ComponentSpec, Coupler, DataComponent, RuntimeOptions
+from vercor import (
+    Clock,
+    Component,
+    ComponentSpec,
+    Coupler,
+    DataComponent,
+    LifecycleHooks,
+    RuntimeOptions,
+)
 from vercor.dtypes import DTypePolicy
 from vercor.exceptions import CouplerError
 from vercor._runtime.topology_state import RuntimeTopologyMaps
+from vercor.settings import Settings
+from vercor.topology import ExchangeTopologyPatch, TopologyContext
 
 
 def test_prepared_coupling_owns_single_normalized_runtime_boundary() -> None:
@@ -35,7 +49,7 @@ def test_prepared_coupling_owns_single_normalized_runtime_boundary() -> None:
         "settings",
         "runtime",
         "interrupts",
-        "component_fingerprints",
+        "configuration_snapshot",
     ]
 
 
@@ -211,6 +225,547 @@ def test_direct_component_mutation_after_preparation_is_rejected(
         CouplerError,
         match="changed after preparation.*configure.*before preparation|changed after preparation.*create.*Coupler",
     ):
+        coupler.run(state=state)
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("attribute", "replacement"),
+    (
+        ("initial_fields", None),
+        ("initial_fields", lambda: {}),
+        ("initialize", None),
+        ("step", None),
+        ("step", lambda fields, context, payload=None: {}),
+    ),
+)
+def test_direct_component_callable_mutation_after_preparation_is_rejected(
+    attribute: str,
+    replacement: Any,
+) -> None:
+    component = Component.from_step(
+        "MODEL",
+        make_test_grid(name="prepared-callable-mutation"),
+        lambda fields: fields,
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
+
+    setattr(component, attribute, replacement)
+
+    with pytest.raises(CouplerError, match="component.*changed after preparation"):
+        coupler._ensure_prepared()
+
+
+class _MutablePreparedTopologyPolicy:
+    def __init__(self) -> None:
+        self.enabled = False
+
+    def applies(self, context: TopologyContext) -> bool:
+        _ = context
+        return self.enabled
+
+    def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
+        _ = context
+        return ExchangeTopologyPatch()
+
+
+class _SlotsPreparedTopologyPolicy:
+    __slots__ = ("enabled",)
+
+    def __init__(self) -> None:
+        self.enabled = False
+
+    def applies(self, context: TopologyContext) -> bool:
+        _ = context
+        return self.enabled
+
+    def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
+        _ = context
+        return ExchangeTopologyPatch()
+
+
+@pytest.mark.fast_always
+def test_nested_topology_policy_mutation_after_preparation_is_rejected() -> None:
+    policy = _MutablePreparedTopologyPolicy()
+    component = DataComponent.from_fields(
+        "MODEL",
+        make_test_grid(name="prepared-topology-mutation"),
+        {"temperature": 280.0},
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(topology=policy),
+    )
+    coupler.initial_state()
+
+    policy.enabled = True
+
+    with pytest.raises(
+        CouplerError, match="runtime options.*changed after preparation"
+    ):
+        coupler._ensure_prepared()
+
+
+@pytest.mark.fast_always
+def test_slots_topology_policy_mutation_after_preparation_is_rejected() -> None:
+    policy = _SlotsPreparedTopologyPolicy()
+    component = DataComponent.from_fields(
+        "MODEL",
+        make_test_grid(name="prepared-slots-topology-mutation"),
+        {"temperature": 280.0},
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(topology=policy),
+    )
+    coupler.initial_state()
+
+    policy.enabled = True
+
+    with pytest.raises(
+        CouplerError, match="runtime options.*changed after preparation"
+    ):
+        coupler._ensure_prepared()
+
+
+class _FreshSeedStructuralComponent:
+    name = "MODEL"
+
+    def __init__(self, seed_value: float = 280.0) -> None:
+        self.grid = make_test_grid(name="prepared-fresh-structural-seeds")
+        self.spec = ComponentSpec(outputs=("temperature",))
+        self.seed_value = seed_value
+
+    def initial_fields(self) -> Mapping[str, Any]:
+        return {"temperature": jnp.full(self.grid.shape, self.seed_value)}
+
+    def initialize(self, context: Any) -> None:
+        _ = context
+
+    def step(
+        self,
+        fields: Mapping[str, Any],
+        context: Any,
+        payload: object | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, context, payload
+        return {}
+
+
+@pytest.mark.fast_always
+def test_fresh_value_equivalent_structural_seeds_reuse_preparation() -> None:
+    component = _FreshSeedStructuralComponent()
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    state = coupler.initial_state()
+    prepared = coupler._prepared
+
+    assert prepared is not None
+    assert coupler._ensure_prepared() is prepared
+    coupler.run(state=state)
+
+
+@pytest.mark.fast_always
+def test_changed_structural_seed_values_invalidate_preparation() -> None:
+    component = _FreshSeedStructuralComponent()
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
+
+    component.seed_value = 281.0
+
+    with pytest.raises(CouplerError, match="component.*changed after preparation"):
+        coupler._ensure_prepared()
+
+
+class _TracerSeedStructuralComponent:
+    name = "MODEL"
+
+    def __init__(self, seed_value: Any) -> None:
+        self.grid = make_test_grid(name="prepared-tracer-structural-seeds")
+        self.spec = ComponentSpec(outputs=("temperature",))
+        self.seed_value = seed_value
+
+    def initial_fields(self) -> Mapping[str, Any]:
+        return {"temperature": jnp.full(self.grid.shape, self.seed_value)}
+
+    def initialize(self, context: Any) -> None:
+        _ = context
+
+    def step(
+        self,
+        fields: Mapping[str, Any],
+        context: Any,
+        payload: object | None = None,
+    ) -> Mapping[str, Any]:
+        _ = context, payload
+        return {"temperature": 2.0 * fields["temperature"]}
+
+
+@pytest.mark.fast_always
+def test_tracer_derived_fresh_structural_seed_reuses_preparation_under_grad() -> None:
+    def objective(seed_value: Any) -> Any:
+        component = _TracerSeedStructuralComponent(seed_value)
+        coupler = Coupler(
+            Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+            components=(component,),
+            run_order=("MODEL",),
+        )
+        state = coupler.initial_state()
+        final_state = coupler.run(state=state)
+        return jnp.mean(final_state.component("MODEL").field("temperature"))
+
+    assert jnp.isclose(jax.grad(objective)(jnp.asarray(3.0)), 2.0)
+
+
+class _CountingSeedStructuralComponent(_FreshSeedStructuralComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.initial_fields_calls = 0
+
+    def initial_fields(self) -> Mapping[str, Any]:
+        self.initial_fields_calls += 1
+        return super().initial_fields()
+
+
+@pytest.mark.fast_always
+def test_prepared_reuse_does_not_reinvoke_or_materialize_initial_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prepared_module = importlib.import_module("vercor._runtime.prepared")
+    component = _CountingSeedStructuralComponent()
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    state = coupler.initial_state()
+    calls_after_preparation = component.initial_fields_calls
+
+    def forbidden_array_materialization(*args: Any, **kwargs: Any) -> Any:
+        _ = args, kwargs
+        raise AssertionError("prepared validation materialized array values")
+
+    prepared_jax = prepared_module.jax
+    monkeypatch.setattr(
+        prepared_module,
+        "jax",
+        SimpleNamespace(
+            config=prepared_jax.config,
+            core=prepared_jax.core,
+            device_get=forbidden_array_materialization,
+        ),
+    )
+    monkeypatch.setattr(
+        prepared_module,
+        "blake2b",
+        forbidden_array_materialization,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        output_runtime_module,
+        "write_coupler_runtime_outputs",
+        lambda **kwargs: None,
+    )
+
+    prepared = coupler._prepared
+    assert prepared is not None
+    assert coupler._ensure_prepared() is prepared
+    final_state = coupler.run(state=state)
+    coupler.write_outputs(final_state, write_snapshots=False)
+
+    assert component.initial_fields_calls == calls_after_preparation
+    prepared_source = source_for("vercor/_runtime/prepared.py")
+    assert "device_get" not in prepared_source
+    assert "blake2b" not in prepared_source
+    assert ".tobytes" not in prepared_source
+
+
+def _closure_step_with_mutable_configuration() -> tuple[Any, dict[str, float]]:
+    configuration = {"increment": 1.0}
+
+    def step(fields: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"temperature": fields["temperature"] + configuration["increment"]}
+
+    return step, configuration
+
+
+def _default_step_with_mutable_configuration() -> tuple[Any, dict[str, float]]:
+    configuration = {"increment": 1.0}
+
+    def step(
+        fields: Mapping[str, Any],
+        configured: dict[str, float] = configuration,
+    ) -> Mapping[str, Any]:
+        return {"temperature": fields["temperature"] + configured["increment"]}
+
+    return step, configuration
+
+
+def _kwdefault_step_with_mutable_configuration() -> tuple[Any, dict[str, float]]:
+    configuration = {"increment": 1.0}
+
+    def step(
+        fields: Mapping[str, Any],
+        *,
+        configured: dict[str, float] = configuration,
+    ) -> Mapping[str, Any]:
+        return {"temperature": fields["temperature"] + configured["increment"]}
+
+    return step, configuration
+
+
+_MUTABLE_STEP_FACTORIES = {
+    "closure": _closure_step_with_mutable_configuration,
+    "defaults": _default_step_with_mutable_configuration,
+    "kwdefaults": _kwdefault_step_with_mutable_configuration,
+}
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize("owner", ("closure", "defaults", "kwdefaults"))
+def test_ordinary_step_hidden_configuration_is_not_a_prepared_owner(
+    owner: str,
+) -> None:
+    step, configuration = _MUTABLE_STEP_FACTORIES[owner]()
+    component = Component.from_step(
+        "MODEL",
+        make_test_grid(name=f"prepared-function-{owner}-mutation"),
+        step,
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            defaults={"temperature": 280.0},
+        ),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
+    prepared = coupler._prepared
+
+    configuration["increment"] = 2.0
+
+    assert prepared is not None
+    assert coupler._ensure_prepared() is prepared
+
+
+@dataclass
+class _CountingLifecycleValidator:
+    calls: int = 0
+
+    def __call__(self, component: Component, context: Any) -> None:
+        _ = component, context
+        self.calls += 1
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize("hook_kind", ("function", "callable-object"))
+def test_lifecycle_validation_operational_state_does_not_invalidate_preparation(
+    hook_kind: str,
+) -> None:
+    events: list[str] = []
+
+    def validate(component: Component, context: Any) -> None:
+        _ = context
+        events.append(component.name)
+
+    callable_validator = _CountingLifecycleValidator()
+    hook = validate if hook_kind == "function" else callable_validator
+    component = DataComponent.from_fields(
+        "MODEL",
+        make_test_grid(name=f"prepared-lifecycle-{hook_kind}"),
+        {"temperature": 280.0},
+        spec=ComponentSpec(lifecycle=LifecycleHooks(validate=hook)),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+
+    state = coupler.initial_state()
+    first = coupler.run(state=state)
+    coupler.run(state=first)
+
+    assert events == (["MODEL"] * 3 if hook_kind == "function" else [])
+    assert callable_validator.calls == (3 if hook_kind == "callable-object" else 0)
+
+
+class _MutableStepCallable:
+    def __init__(self, increment: float = 1.0) -> None:
+        self.increment = increment
+
+    def __call__(self, fields: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"temperature": fields["temperature"] + self.increment}
+
+
+@pytest.mark.fast_always
+def test_mutable_callable_step_configuration_invalidates_preparation() -> None:
+    step = _MutableStepCallable()
+    component = Component.from_step(
+        "MODEL",
+        make_test_grid(name="prepared-callable-object-mutation"),
+        step,
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            defaults={"temperature": 280.0},
+        ),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
+
+    step.increment = 2.0
+
+    with pytest.raises(CouplerError, match="component.*changed after preparation"):
+        coupler._ensure_prepared()
+
+
+class _BoundMethodStepModel:
+    def __init__(self, increment: float = 1.0) -> None:
+        self.increment = increment
+        self.self_reference = self
+
+    def step(self, fields: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"temperature": fields["temperature"] + self.increment}
+
+
+@pytest.mark.fast_always
+def test_bound_method_owner_configuration_invalidates_preparation() -> None:
+    model = _BoundMethodStepModel()
+    component = Component.from_step(
+        "MODEL",
+        make_test_grid(name="prepared-bound-method-owner-mutation"),
+        model.step,
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            defaults={"temperature": 280.0},
+        ),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
+    prepared = coupler._prepared
+
+    assert prepared is not None
+    assert coupler._ensure_prepared() is prepared
+
+    model.increment = 2.0
+
+    with pytest.raises(CouplerError, match="component.*changed after preparation"):
+        coupler._ensure_prepared()
+
+
+def _partial_step(
+    fields: Mapping[str, Any],
+    *,
+    increment: float,
+) -> Mapping[str, Any]:
+    return {"temperature": fields["temperature"] + increment}
+
+
+@pytest.mark.fast_always
+def test_partial_keyword_configuration_invalidates_preparation() -> None:
+    step = partial(_partial_step, increment=1.0)
+    component = Component.from_step(
+        "MODEL",
+        make_test_grid(name="prepared-partial-keyword-mutation"),
+        step,
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            defaults={"temperature": 280.0},
+        ),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    coupler.initial_state()
+
+    assert step.keywords is not None
+    step.keywords["increment"] = 2.0
+
+    with pytest.raises(CouplerError, match="component.*changed after preparation"):
+        coupler._ensure_prepared()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "registered-component",
+        "clock-value",
+        "clock-replacement",
+        "runtime-replacement",
+        "coupler-settings-value",
+        "coupler-settings-replacement",
+        "component-settings-replacement",
+    ),
+)
+def test_direct_prepared_configuration_mutation_or_replacement_is_rejected(
+    mutation: str,
+) -> None:
+    component = DataComponent.from_fields(
+        "MODEL",
+        make_test_grid(name="prepared-configuration"),
+        {"temperature": 280.0},
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+    state = coupler.initial_state()
+
+    if mutation == "registered-component":
+        coupler._components["MODEL"] = DataComponent.from_fields(
+            "MODEL",
+            component.grid,
+            {"temperature": 280.0},
+            spec=component.spec,
+        )
+    elif mutation == "clock-value":
+        coupler.clock.steps = 2
+    elif mutation == "clock-replacement":
+        coupler.clock = Clock(
+            start=coupler.clock.start,
+            dt_seconds=coupler.clock.dt_seconds,
+            steps=coupler.clock.steps,
+        )
+    elif mutation == "runtime-replacement":
+        coupler.runtime = RuntimeOptions()
+    elif mutation == "coupler-settings-value":
+        coupler.settings.set("missval", -999.0)
+    elif mutation == "coupler-settings-replacement":
+        coupler.settings = Settings(**coupler.settings.as_dict())
+    else:
+        component.settings = Settings(**component.settings.as_dict())
+
+    with pytest.raises(CouplerError, match="changed after preparation"):
         coupler.run(state=state)
 
 

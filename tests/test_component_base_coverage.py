@@ -714,7 +714,7 @@ def test_data_component_seeding_preserves_inputs_and_defaults() -> None:
 
 
 @pytest.mark.fast_always
-def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() -> None:
+def test_constructor_lifecycle_hooks_are_owned_by_component_spec() -> None:
     grid = make_test_grid(name="lifecycle-container")
     events: list[str] = []
 
@@ -813,7 +813,8 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
     )
 
     for component in factories:
-        assert isinstance(component._lifecycle_hooks, contracts_module.LifecycleHooks)
+        assert isinstance(component.spec.lifecycle, contracts_module.LifecycleHooks)
+        assert not hasattr(component, "_lifecycle_hooks")
         assert not hasattr(component, "_initialize_hook")
         assert not hasattr(component, "_create_runtime_payload_hook")
         component.initialize(
@@ -854,6 +855,71 @@ def test_constructor_lifecycle_hooks_are_stored_in_single_private_container() ->
         "payload:DIRECT_HOST",
         "validate:DIRECT_HOST",
     ]
+
+
+@pytest.mark.fast_always
+def test_configure_requires_component_spec_and_updates_authoritative_lifecycle() -> (
+    None
+):
+    grid = make_test_grid(name="configure-contract")
+    events: list[str] = []
+
+    component = base_module.Component.from_step(
+        "MODEL",
+        grid,
+        lambda fields: fields,
+        spec=contracts_module.ComponentSpec(
+            lifecycle=contracts_module.LifecycleHooks(
+                initialize=lambda owner, context: events.append("old")
+            )
+        ),
+    )
+    replacement = contracts_module.ComponentSpec(
+        lifecycle=contracts_module.LifecycleHooks(
+            initialize=lambda owner, context: events.append("new")
+        )
+    )
+
+    with pytest.raises(ComponentError, match="spec.*ComponentSpec"):
+        component.configure(cast(Any, object()))
+
+    assert component.configure(replacement) is component
+    component.initialize(
+        SetupContext(
+            start=datetime(2000, 1, 1),
+            dt_seconds=60.0,
+            run_order=("MODEL",),
+            settings=Settings(),
+            logger=cast(Any, None),
+        )
+    )
+
+    assert component.spec is replacement
+    assert events == ["new"]
+
+
+@pytest.mark.fast_always
+def test_host_configure_preserves_host_execution_and_other_spec_fields() -> None:
+    grid = make_test_grid(name="host-configure-contract")
+    hooks = contracts_module.LifecycleHooks(initialize=lambda owner, context: None)
+    output = contracts_module.OutputConfig()
+    requested = contracts_module.ComponentSpec(
+        inputs=("forcing",),
+        outputs=("temperature",),
+        defaults={"temperature": 280.0},
+        execution="jax",
+        lifecycle=hooks,
+        output=output,
+    )
+    component = _HostStepOnlyComponent(name="HOST", grid=grid)
+
+    assert component.configure(requested) is component
+    assert component.spec.execution == "host"
+    assert component.spec.inputs == requested.inputs
+    assert component.spec.outputs == requested.outputs
+    assert component.spec.defaults == requested.defaults
+    assert component.spec.lifecycle is hooks
+    assert component.spec.output is output
 
 
 @pytest.mark.fast_always
@@ -1585,6 +1651,27 @@ def test_coupler_initialize_validates_component_setup_before_precision_sync() ->
         match="missing required setup attribute.*name.*grid.*data.*settings",
     ):
         coupler._initialize_runtime()
+
+
+@pytest.mark.fast_always
+def test_initialize_storage_mutation_is_reported_by_setup_validation() -> None:
+    class InvalidStorageComponent(_RuntimeOnlyComponent):
+        def initialize(self, context: SetupContext) -> None:
+            _ = context
+            self._data = cast(Any, object())
+
+    component = InvalidStorageComponent(
+        name="MODEL",
+        grid=make_test_grid(name="initialize-storage-mutation"),
+    )
+    coupler = Coupler(
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+
+    with pytest.raises(ComponentError, match="invalid setup attribute '_data'"):
+        coupler.initial_state()
 
 
 @pytest.mark.fast_always

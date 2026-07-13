@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from vercor.clock import Clock
-from vercor.components.setup_validation import validate_component_setup
+from vercor.components._adapter import validate_component_contract
 from vercor.components.contexts import SetupContext
 from vercor.dtypes import as_jax_real_array
 from vercor.exchanges import Exchange
@@ -76,7 +76,7 @@ def initialize_coupler_runtime(
     )
 
     for component in components.values():
-        validate_component_setup(component)
+        validate_component_contract(component)
 
     for component in components.values():
         apply_run_precision_to_component(component, settings)
@@ -91,7 +91,7 @@ def initialize_coupler_runtime(
 
     for name, component in components.items():
         component.initialize(init_context)
-        validate_component_setup(component)
+        validate_component_contract(component)
         logger.info(f"Initialized {name}")
 
     runtime_contracts = build_exchange_contracts(

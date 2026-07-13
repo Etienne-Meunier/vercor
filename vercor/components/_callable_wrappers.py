@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from vercor.components.contracts import (
     ComponentStepReturn,
-    LifecycleHooks,
     ComponentSpec,
     _AuthorStepCallable,
     _ComponentStepCallable,
@@ -26,7 +25,6 @@ class CallableComponentOptions:
     step: _AuthorStepCallable
     payload: Any | None
     spec: ComponentSpec
-    lifecycle_hooks: LifecycleHooks
 
 
 def callable_component_options(
@@ -42,7 +40,6 @@ def callable_component_options(
         step=step,
         payload=payload,
         spec=spec,
-        lifecycle_hooks=spec.lifecycle,
     )
 
 
@@ -150,6 +147,7 @@ def _component_step_signature_error() -> ComponentError:
 class _CallableRuntimeMixin:
     """Shared metadata hooks for callable-backed component wrappers."""
 
+    _author_step: _AuthorStepCallable
     _step: _ComponentStepCallable
     _payload: Any | None
 
@@ -159,13 +157,12 @@ class _CallableRuntimeMixin:
         step: _AuthorStepCallable,
         payload: Any | None,
         spec: ComponentSpec,
-        lifecycle_hooks: LifecycleHooks,
     ) -> None:
         component = cast("Component", self)
+        self._author_step = step
         self._step = normalize_component_step_callable(step)
         self._payload = payload
         component._spec = spec
-        component._lifecycle_hooks = lifecycle_hooks
 
     def _default_runtime_payload(self) -> Any | None:
         """Return the payload supplied to the callable component factory."""

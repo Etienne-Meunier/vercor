@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, Self
 
 from vercor.components.contracts import (
     ComponentStepReturn,
-    LifecycleHooks,
     ComponentSpec,
     _AuthorStepCallable,
 )
@@ -67,8 +66,14 @@ class HostComponent(Component):
             payload=options.payload,
             settings=settings,
             spec=options.spec,
-            lifecycle_hooks=options.lifecycle_hooks,
         )
+
+    def configure(self, spec: ComponentSpec) -> Self:
+        """Replace this component's contract while retaining host execution."""
+
+        if not isinstance(spec, ComponentSpec):
+            return super().configure(spec)
+        return super().configure(_host_execution_spec(spec))
 
     def step(
         self,
@@ -97,7 +102,6 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
         payload: Any | None,
         settings: Settings | None,
         spec: ComponentSpec,
-        lifecycle_hooks: LifecycleHooks,
     ) -> None:
         HostComponent.__init__(
             self,
@@ -110,7 +114,6 @@ class _CallableHostRuntimeComponent(_CallableRuntimeMixin, HostComponent):
             step=step,
             payload=payload,
             spec=self.spec,
-            lifecycle_hooks=lifecycle_hooks,
         )
 
     def step(

@@ -83,7 +83,6 @@ class DataComponent(Component):
         component._import_policy = (
             FieldImportPolicy() if import_policy is None else import_policy
         )
-        component._lifecycle_hooks = spec.lifecycle
         return component
 
     def seed_fields(

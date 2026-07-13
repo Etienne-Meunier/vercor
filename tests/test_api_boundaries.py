@@ -1365,6 +1365,9 @@ def test_component_base_internals_are_private_modules() -> None:
     callable_source = Path("vercor/components/_callable_wrappers.py").read_text(
         encoding="utf-8"
     )
+    lifecycle_source = Path("vercor/components/_lifecycle_api.py").read_text(
+        encoding="utf-8"
+    )
     runtime_fields_source = Path("vercor/components/_runtime_fields.py").read_text(
         encoding="utf-8"
     )
@@ -1456,8 +1459,10 @@ def test_component_base_internals_are_private_modules() -> None:
     assert "def differentiable_component(" not in base_source
     assert "def host_component(" not in base_source
     assert not Path("vercor/components/_lifecycle.py").exists()
-    assert "component._lifecycle_hooks = lifecycle_hooks" in callable_source
-    assert "component._lifecycle_hooks = spec.lifecycle" in data_source
+    assert "_lifecycle_hooks" not in base_source
+    assert "_lifecycle_hooks" not in callable_source
+    assert "_lifecycle_hooks" not in data_source
+    assert "component.spec.lifecycle" in lifecycle_source
     assert "from vercor.components import _runtime_fields" not in base_source
     assert "from vercor.components.factories import _install_lifecycle_hooks" not in (
         callable_source
