@@ -264,6 +264,9 @@ def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
         )
     )
     quality = workflow["jobs"]["quality"]
+    checkout = next(
+        step for step in quality["steps"] if step.get("uses") == "actions/checkout@v4"
+    )
     setup = next(
         step
         for step in quality["steps"]
@@ -273,6 +276,7 @@ def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
         step.get("run", "") for step in quality["steps"] if isinstance(step, dict)
     )
 
+    assert checkout.get("with", {}).get("fetch-depth") == 0
     assert setup["with"]["python-version"] == "3.12"
     assert 'pip install ".[dev,jcm,veros]"' in commands
     assert "black --check vercor examples tests" in commands

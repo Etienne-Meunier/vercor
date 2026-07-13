@@ -9,6 +9,27 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 1 compatibility baseline implemented locally on
+  2026-07-13. The static manifest pins clean reference commit
+  `9f0b9131c889bed5c1c2d8ded260add3cfef9524`, version 3.1.1, the exact
+  48-symbol root surface, 13 canonical owner-module export lists, and 37 public
+  signatures needed by the future v3 adapter. The focused test recorded the
+  intended missing-manifest RED. Review follow-up then recorded two intended
+  failures for the omitted setup/protocol contract and missing clean-reference
+  builder. The non-optional test now creates a clean source tree with
+  `git archive` of the pinned commit, builds its wheel offline through the
+  established distribution cache fallback, and inspects it in an isolated
+  bounded subprocess; the evolving live checkout is not compared with the v3
+  manifest, and the later 3.0 fixture is rejected as baseline evidence. A
+  follow-up CI audit reproduced `fatal: not a tree object` for the reference
+  SHA in a real depth-1 clone and recorded the intended workflow-boundary RED
+  (`fetch-depth` absent). The quality job is the only current job that collects
+  the baseline test through its full and coverage suites, and its checkout now
+  uses `fetch-depth: 0`; an executable YAML assertion protects that boundary.
+  A full-history clone archived the exact SHA and passed the assertion plus all
+  three baseline tests (4/4). Final default validation passes 464 tests with
+  397 deselections in fast mode; the full suite passes 861 tests with only the
+  two known third-party `FutureWarning`s.
 - VerCOR 3.1.1 API hardening documented on 2026-07-13. Task 1 established the
   single component contract validator, authoritative `ComponentSpec.lifecycle`,
   and a non-materializing structural prepared-configuration snapshot (focused
