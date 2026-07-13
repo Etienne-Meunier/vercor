@@ -20,15 +20,20 @@ EXPECTED_PLUGIN_VERSION = "0.1.0"
 EXPECTED_PLUGIN_WHEEL_NAME = (
     f"vercor_public_plugin-{EXPECTED_PLUGIN_VERSION}-py3-none-any.whl"
 )
+EXPECTED_FROZEN_PLUGIN_VERSION = "0.1.0"
+EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = (
+    f"vercor_compat_plugin_3_0-{EXPECTED_FROZEN_PLUGIN_VERSION}-py3-none-any.whl"
+)
 
 
 @dataclass(frozen=True)
 class BuiltDistributions:
-    """Paths to the VerCOR distributions and public-plugin wheel."""
+    """Paths to VerCOR and both installed compatibility plugin wheels."""
 
     wheel: Path
     sdist: Path
     plugin_wheel: Path
+    frozen_plugin_wheel: Path
     build_pythonpath: str
 
 
@@ -57,6 +62,7 @@ def _existing_distributions(
     wheel: Path,
     sdist: Path,
     plugin_wheel: Path,
+    frozen_plugin_wheel: Path,
 ) -> BuiltDistributions:
     """Validate and return externally supplied VerCOR and plugin artifacts."""
 
@@ -64,21 +70,26 @@ def _existing_distributions(
         wheel.name != EXPECTED_WHEEL_NAME
         or sdist.name != EXPECTED_SDIST_NAME
         or plugin_wheel.name != EXPECTED_PLUGIN_WHEEL_NAME
+        or frozen_plugin_wheel.name != EXPECTED_FROZEN_PLUGIN_WHEEL_NAME
     ):
         raise ValueError(
-            f"expected VerCOR {EXPECTED_VERSION} and public plugin 0.1.0 artifacts named "
+            f"expected VerCOR {EXPECTED_VERSION} and plugin 0.1.0 artifacts named "
             f"{EXPECTED_WHEEL_NAME!r}, {EXPECTED_SDIST_NAME!r}, and "
-            f"{EXPECTED_PLUGIN_WHEEL_NAME!r}"
+            f"{EXPECTED_PLUGIN_WHEEL_NAME!r}, and "
+            f"{EXPECTED_FROZEN_PLUGIN_WHEEL_NAME!r}"
         )
-    if not wheel.is_file() or not sdist.is_file() or not plugin_wheel.is_file():
+    if not all(
+        path.is_file() for path in (wheel, sdist, plugin_wheel, frozen_plugin_wheel)
+    ):
         raise ValueError(
-            f"VerCOR {EXPECTED_VERSION} or public plugin 0.1.0 artifacts are missing: "
-            f"{wheel}, {sdist}, {plugin_wheel}"
+            f"VerCOR {EXPECTED_VERSION} or plugin 0.1.0 artifacts are missing: "
+            f"{wheel}, {sdist}, {plugin_wheel}, {frozen_plugin_wheel}"
         )
     return BuiltDistributions(
         wheel=wheel,
         sdist=sdist,
         plugin_wheel=plugin_wheel,
+        frozen_plugin_wheel=frozen_plugin_wheel,
         build_pythonpath="",
     )
 
@@ -91,18 +102,26 @@ def build_distributions(
     wheel_path: Path | None = None,
     sdist_path: Path | None = None,
     plugin_wheel_path: Path | None = None,
+    frozen_plugin_wheel_path: Path | None = None,
 ) -> BuiltDistributions:
     """Reuse supplied artifacts or build them offline when none are configured."""
 
     direct_configuration = any(
         path is not None
-        for path in (artifact_dir, wheel_path, sdist_path, plugin_wheel_path)
+        for path in (
+            artifact_dir,
+            wheel_path,
+            sdist_path,
+            plugin_wheel_path,
+            frozen_plugin_wheel_path,
+        )
     )
     if direct_configuration:
         configured_dir = artifact_dir
         configured_wheel = wheel_path
         configured_sdist = sdist_path
         configured_plugin_wheel = plugin_wheel_path
+        configured_frozen_plugin_wheel = frozen_plugin_wheel_path
     else:
         configured_dir = (
             Path(os.environ["VERCOR_ARTIFACT_DIR"])
@@ -124,6 +143,11 @@ def build_distributions(
             if os.environ.get("VERCOR_PLUGIN_WHEEL_PATH")
             else None
         )
+        configured_frozen_plugin_wheel = (
+            Path(os.environ["VERCOR_COMPAT_PLUGIN_WHEEL_PATH"])
+            if os.environ.get("VERCOR_COMPAT_PLUGIN_WHEEL_PATH")
+            else None
+        )
 
     if configured_dir is not None:
         if configured_wheel is not None or configured_sdist is not None:
@@ -138,24 +162,36 @@ def build_distributions(
                 if configured_plugin_wheel is not None
                 else configured_dir / EXPECTED_PLUGIN_WHEEL_NAME
             ),
+            (
+                configured_frozen_plugin_wheel
+                if configured_frozen_plugin_wheel is not None
+                else configured_dir / EXPECTED_FROZEN_PLUGIN_WHEEL_NAME
+            ),
         )
     if any(
         path is not None
-        for path in (configured_wheel, configured_sdist, configured_plugin_wheel)
+        for path in (
+            configured_wheel,
+            configured_sdist,
+            configured_plugin_wheel,
+            configured_frozen_plugin_wheel,
+        )
     ):
         if (
             configured_wheel is None
             or configured_sdist is None
             or configured_plugin_wheel is None
+            or configured_frozen_plugin_wheel is None
         ):
             raise ValueError(
-                f"VerCOR {EXPECTED_VERSION} wheel/sdist and public plugin 0.1.0 wheel "
-                "paths are all required"
+                f"VerCOR {EXPECTED_VERSION} wheel/sdist and both plugin 0.1.0 "
+                "wheel paths are all required"
             )
         return _existing_distributions(
             configured_wheel,
             configured_sdist,
             configured_plugin_wheel,
+            configured_frozen_plugin_wheel,
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -179,33 +215,38 @@ def build_distributions(
         capture_output=True,
         text=True,
     )
-    plugin_root = project_root / "tests" / "fixtures" / "public_plugin"
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--no-isolation",
-            "--wheel",
-            "--outdir",
-            str(output_dir),
-            str(plugin_root),
-        ],
-        check=True,
-        cwd=project_root,
-        env=environment,
-        capture_output=True,
-        text=True,
-    )
+    for plugin_root in (
+        project_root / "tests" / "fixtures" / "public_plugin",
+        project_root / "tests" / "fixtures" / "public_plugin_3_0",
+    ):
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "build",
+                "--no-isolation",
+                "--wheel",
+                "--outdir",
+                str(output_dir),
+                str(plugin_root),
+            ],
+            check=True,
+            cwd=project_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
     validated = _existing_distributions(
         output_dir / EXPECTED_WHEEL_NAME,
         output_dir / EXPECTED_SDIST_NAME,
         output_dir / EXPECTED_PLUGIN_WHEEL_NAME,
+        output_dir / EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
     )
     return BuiltDistributions(
         wheel=validated.wheel,
         sdist=validated.sdist,
         plugin_wheel=validated.plugin_wheel,
+        frozen_plugin_wheel=validated.frozen_plugin_wheel,
         build_pythonpath=build_pythonpath,
     )
 
@@ -214,13 +255,14 @@ def install_local_target(
     *,
     wheel: Path,
     plugin_wheel: Path,
+    frozen_plugin_wheel: Path,
     target: Path,
 ) -> None:
     """Install prebuilt wheels into a target directory without dependencies."""
 
     environment = os.environ.copy()
     target.mkdir(parents=True, exist_ok=True)
-    for source in (wheel, plugin_wheel):
+    for source in (wheel, plugin_wheel, frozen_plugin_wheel):
         subprocess.run(
             [
                 sys.executable,

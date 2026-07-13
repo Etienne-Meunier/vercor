@@ -1,6 +1,6 @@
 [project]
 name = "vercor"
-version = "3.1.0"
+version = "3.1.1"
 authors = [
   { name = "Roman Nuterman" }
 ]
@@ -42,6 +42,7 @@ veros = ["veros"]
 test = [
   "PyYAML",
   "pytest>=7.4.0",
+  "pytest-cov",
 ]
 dev = [
   "black",
@@ -50,6 +51,7 @@ dev = [
   "mypy",
   "PyYAML",
   "pytest>=7.4.0",
+  "pytest-cov",
   "types-PyYAML",
 ]
 
@@ -67,6 +69,9 @@ filterwarnings = [
 [tool.coverage.run]
 branch = true
 source = ["vercor"]
+
+[tool.coverage.report]
+fail_under = 90
 
 [tool.flake8]
 exclude = [

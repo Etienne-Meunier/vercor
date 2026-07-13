@@ -19,6 +19,7 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build --outdir dist
           python -m build --wheel --outdir dist tests/fixtures/public_plugin
+          python -m build --wheel --outdir dist tests/fixtures/public_plugin_3_0
       - uses: actions/upload-artifact@v4
         with:
           name: vercor-distributions
@@ -68,13 +69,16 @@ jobs:
       - name: Install selected artifact environment
         run: |
           python -m pip install --upgrade pip pytest mypy pyyaml
-          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-3.1.0-py3-none-any.whl"
+          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-3.1.1-py3-none-any.whl"
           PLUGIN_WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+          COMPAT_PLUGIN_WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl"
           python -m pip install "${WHEEL_PATH}${{ matrix.extra }}"
           python -m pip install --no-deps "${PLUGIN_WHEEL_PATH}"
+          python -m pip install --no-deps "${COMPAT_PLUGIN_WHEEL_PATH}"
           PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           echo "VERCOR_ARTIFACT_DIR=${GITHUB_WORKSPACE}/dist" >> "$GITHUB_ENV"
           echo "VERCOR_PLUGIN_WHEEL_PATH=${PLUGIN_WHEEL_PATH}" >> "$GITHUB_ENV"
+          echo "VERCOR_COMPAT_PLUGIN_WHEEL_PATH=${COMPAT_PLUGIN_WHEEL_PATH}" >> "$GITHUB_ENV"
           echo "VERCOR_TEST_PACKAGE_ROOT=${PACKAGE_ROOT}" >> "$GITHUB_ENV"
       - name: Verify imports resolve from the installed wheel
         run: |
@@ -84,12 +88,43 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
+          python -m vercor_compat_plugin_3_0.smoke
       - name: Type-check external public-plugin fixture
         run: |
           cp tests/fixtures/public_plugin/use_site.py "$RUNNER_TEMP/public_plugin_use_site.py"
+          cp tests/fixtures/public_plugin_3_0/use_site.py "$RUNNER_TEMP/compat_plugin_3_0_use_site.py"
           cd "$RUNNER_TEMP"
-          MYPYPATH="$VERCOR_TEST_PACKAGE_ROOT" mypy --strict "$VERCOR_TEST_PACKAGE_ROOT/vercor_public_plugin" public_plugin_use_site.py
+          MYPYPATH="$VERCOR_TEST_PACKAGE_ROOT" mypy --strict \
+            "$VERCOR_TEST_PACKAGE_ROOT/vercor_public_plugin" \
+            "$VERCOR_TEST_PACKAGE_ROOT/vercor_compat_plugin_3_0" \
+            public_plugin_use_site.py compat_plugin_3_0_use_site.py
       - name: Run relevant installed-artifact suite
         env:
           PYTHONSAFEPATH: "1"
         run: python -P -m pytest --import-mode=importlib ${{ matrix.pytest-target }} -q --tb=short
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install quality and optional-model dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev,jcm,veros]"
+      - name: Check formatting
+        run: python -m black --check vercor examples tests
+      - name: Run strict lint
+        run: python -m flake8 . --count --max-line-length=120 --statistics
+      - name: Run static type checks
+        run: python -m mypy vercor examples tests
+      - name: Compile Python sources
+        run: python -m compileall -q vercor examples tests
+      - name: Run full test suite
+        run: python -m pytest tests/ -q --tb=short
+      - name: Enforce branch coverage
+        run: >-
+          python -m pytest tests/ -q --tb=short --cov=vercor --cov-branch
+          --cov-report=term-missing --cov-fail-under=90

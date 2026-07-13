@@ -164,6 +164,12 @@ def test_release_metadata_and_plugin_requirement_are_vercor_3_1() -> None:
             encoding="utf-8"
         )
     )["project"]
+    frozen_plugin = tomllib.loads(
+        (PROJECT_ROOT / "tests/fixtures/public_plugin_3_0/pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )["project"]
 
-    assert project["version"] == "3.1.0"
-    assert plugin["dependencies"] == ["vercor>=3.1.0"]
+    assert project["version"] == "3.1.1"
+    assert plugin["dependencies"] == ["vercor>=3.1,<4"]
+    assert frozen_plugin["dependencies"] == ["vercor>=3.0,<4"]
