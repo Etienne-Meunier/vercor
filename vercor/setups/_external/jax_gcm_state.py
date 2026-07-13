@@ -248,8 +248,8 @@ class JAXGCMSetupState:
             run_logged_spinup(
                 steps=self.spinup_steps,
                 logger=context.logger,
-                intro_message=f" Performing JCM spinup for {self.spinup_time} day(s)...",
-                step_message=lambda step, total: f" JCM spinup step {step} / {total}",
+                intro_message=f"Performing JCM spinup for {self.spinup_time} day(s)...",
+                step_message=lambda step, total: f"JCM spinup step {step} / {total}",
                 step=spinup_step,
             )
 

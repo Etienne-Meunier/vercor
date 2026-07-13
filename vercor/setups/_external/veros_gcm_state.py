@@ -147,8 +147,8 @@ class VerosGCMSetupState:
             run_logged_spinup(
                 steps=self.spinup_steps,
                 logger=context.logger,
-                intro_message=f" Performing Veros spinup for {self.spinup_time} day(s)...",
-                step_message=lambda step, total: f" Step {step} / {total}",
+                intro_message=f"Performing Veros spinup for {self.spinup_time} day(s)...",
+                step_message=lambda step, total: f"Step {step} / {total}",
                 step=spinup_step,
             )
 

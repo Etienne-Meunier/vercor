@@ -69,10 +69,10 @@ def initialize_coupler_runtime(
 ) -> RuntimeInitializationState:
     """Initialize components, contracts, and exchange topology for a coupler."""
 
-    logger.info(" Initializing coupler and components")
+    logger.info("Initializing coupler and components")
 
     logger.info(
-        f" Setting default precision for JAX computations: {settings.enable_x64}"
+        f"Setting default precision for JAX computations: {settings.enable_x64}"
     )
 
     for component in components.values():
@@ -92,7 +92,7 @@ def initialize_coupler_runtime(
     for name, component in components.items():
         component.initialize(init_context)
         validate_component_setup(component)
-        logger.info(f" Initialized {name}")
+        logger.info(f"Initialized {name}")
 
     runtime_contracts = build_exchange_contracts(
         tuple(components),

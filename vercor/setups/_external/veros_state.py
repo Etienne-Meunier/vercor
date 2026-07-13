@@ -171,7 +171,7 @@ def advance_veros_substeps(
     updated_state = state
     for i in range(model_substeps):
         if logger is not None:
-            logger.info(f" Veros sub-step {i+1} / {model_substeps}")
+            logger.info(f"Veros sub-step {i+1} / {model_substeps}")
         updated_state = step_function(updated_state)
     return updated_state
 

@@ -157,7 +157,7 @@ def write_coupler_runtime_outputs(
             ),
         )
         if logger is not None:
-            logger.info(f" Finalized {name}")
+            logger.info(f"Finalized {name}")
 
 
 def write_coupler_component_snapshots(

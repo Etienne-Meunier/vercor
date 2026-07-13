@@ -296,7 +296,7 @@ def record_jax_gcm_host_step(
     )
     if logger is not None:
         logger.info(
-            " Number of cells with (SST + SKT) less than 250.0 K: {}",
+            "Number of cells with (SST + SKT) less than 250.0 K: {}",
             jnp.sum(cold_surface_cells),
         )
 
@@ -315,7 +315,7 @@ def step_jax_gcm_component(
     logger = context.logger
     if logger is not None:
         logger.info(
-            " Mean of SST: {}",
+            "Mean of SST: {}",
             jnp.nanmean(jnp.asarray(fields.get("sea_surface_temperature"))),
         )
 

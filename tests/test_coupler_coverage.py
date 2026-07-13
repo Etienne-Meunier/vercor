@@ -462,15 +462,15 @@ def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
     assert final_state.component_names == ("ATM", "OCN")
     log_text = stream.getvalue()
     assert (
-        " ====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
+        "====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
         in log_text
     )
     assert (
-        " ====== Step: 00001 ====== Date: 2000-01-01 00:01:00 ====== Δt: 0:01:00 "
+        "====== Step: 00001 ====== Date: 2000-01-01 00:01:00 ====== Δt: 0:01:00 "
         in log_text
     )
-    assert log_text.count(" Run component: ATM") == 2
-    assert log_text.count(" Run component: OCN") == 2
+    assert log_text.count("Run component: ATM") == 2
+    assert log_text.count("Run component: OCN") == 2
 
 
 def test_scanned_runtime_suppresses_info_below_log_level() -> None:
@@ -491,8 +491,8 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
     assert final_state.component_names == ("ATM",)
     log_text = stream.getvalue()
     assert "scanned ATM" not in log_text
-    assert " ====== Step:" not in log_text
-    assert " Run component:" not in log_text
+    assert "====== Step:" not in log_text
+    assert "Run component:" not in log_text
 
 
 @pytest.mark.fast_always

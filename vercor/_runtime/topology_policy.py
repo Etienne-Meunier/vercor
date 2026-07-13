@@ -83,7 +83,7 @@ def apply_topology_policy(
         patch,
         components=context.components,
     )
-    logger.info(" Exchange topology policy patching complete")
+    logger.info("Exchange topology policy patching complete")
     return prepared_maps
 
 

@@ -17,13 +17,13 @@ from vercor.types import RuntimeArray
 def runtime_step_progress_message(n: int, time: object, dt: object) -> str:
     """Return the shared host/scanned runtime step progress message."""
 
-    return f" ====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
+    return f"====== Step: {n:05d} ====== Date: {time} ====== Δt: {dt} "
 
 
 def runtime_component_progress_message(component_name: str) -> str:
     """Return the shared host/scanned runtime component progress message."""
 
-    return f" Run component: {component_name}"
+    return f"Run component: {component_name}"
 
 
 def runtime_step_progress_messages(clock: Clock) -> tuple[str, ...]:

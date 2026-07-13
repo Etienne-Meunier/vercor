@@ -151,7 +151,7 @@ class Coupler:
 
         self._components[normalized_component.name] = normalized_component
         self._invalidate_preparation()
-        self.logger.info(f" Registered component {normalized_component.name}")
+        self.logger.info(f"Registered component {normalized_component.name}")
         return self
 
     def add_exchange(self, exchange: Exchange) -> Self:
@@ -169,7 +169,7 @@ class Coupler:
             for item in exchange.fields
         )
         self.logger.info(
-            f" Added exchange {exchange.label}: Fields ({formatted_field_names})"
+            f"Added exchange {exchange.label}: Fields ({formatted_field_names})"
         )
         return self
 
@@ -193,7 +193,7 @@ class Coupler:
         self._run_order = normalized_run_order
         self._invalidate_preparation()
         self.logger.info(
-            f" Set coupler components run order: {', '.join(self.run_order)}"
+            f"Set coupler components run order: {', '.join(self.run_order)}"
         )
         return self
 
@@ -241,7 +241,7 @@ class Coupler:
 
         prepared = self._ensure_prepared()
         _runtime_facade.validate_runtime_state(state, prepared=prepared)
-        self.logger.info(" ------------ Writing coupler outputs ------------")
+        self.logger.info("------------ Writing coupler outputs ------------")
         _runtime_facade.finalize(
             final_state=state,
             prepared=prepared,
