@@ -74,14 +74,17 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_time_source = Path("vercor/_runtime/time.py").read_text(encoding="utf-8")
     runtime_coupler_state_path = Path("vercor/_runtime/coupler_state.py")
     runtime_backends_path = Path("vercor/_runtime/backends.py")
+    runtime_execution_path = Path("vercor/_runtime/execution.py")
     runtime_runner_path = Path("vercor/_runtime/runner.py")
     assert runtime_coupler_state_path.exists()
     assert runtime_backends_path.exists()
+    assert runtime_execution_path.exists()
     assert runtime_runner_path.exists()
     runtime_coupler_state_source = runtime_coupler_state_path.read_text(
         encoding="utf-8"
     )
     runtime_backends_source = runtime_backends_path.read_text(encoding="utf-8")
+    runtime_execution_source = runtime_execution_path.read_text(encoding="utf-8")
     runtime_runner_source = runtime_runner_path.read_text(encoding="utf-8")
     component_contexts_path = Path("vercor/components/contexts.py")
     runtime_contexts_path = Path("vercor/_runtime/contexts.py")
@@ -308,10 +311,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "prime_runtime_outgoing(" not in coupler_source
     assert "prime_runtime_outgoing(" in runtime_preparation_source
     assert "prime_runtime_outgoing(" not in runtime_facade_source
-    assert "def run_host_runtime(" in runtime_backends_source
-    assert "def run_scanned_runtime(" in runtime_backends_source
-    assert "def run_host_runtime(" not in runtime_runner_source
-    assert "def run_scanned_runtime(" not in runtime_runner_source
+    assert "def execute_host_chunk(" in runtime_backends_source
+    assert "def execute_jax_chunk(" in runtime_backends_source
+    assert "def execute_host_chunk(" not in runtime_runner_source
+    assert "def execute_jax_chunk(" not in runtime_runner_source
     assert "def run_coupler_runtime(" in runtime_runner_source
     assert "class RuntimeRunContext" not in runtime_runner_source
     assert "class RuntimeRunContext" in runtime_run_context_source
@@ -352,9 +355,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def _compiled_runtime_cache_key" not in coupler_source
     run_body = coupler_source.split("def run", 1)[1]
     assert "host_component_names(self._components)" not in run_body
-    assert "host_component_names(context.dispatch_context.components)" in (
-        runtime_runner_source
-    )
+    assert "host_component_names(scheduled_components)" in runtime_execution_source
     assert "def _prepare_runtime_state(" not in coupler_source
     assert "_runtime_facade.prepare_runtime_state(" in run_body
     assert "def _run_scanned_runtime(" not in coupler_source
@@ -427,7 +428,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         assert "from vercor.components._runtime_execution import" not in source
         assert "from vercor.components._validation import" not in source
     assert "from vercor.components.runtime_execution import" in runtime_driver_source
-    assert "from vercor.components.runtime_execution import" in runtime_runner_source
+    assert "from vercor.components.runtime_execution import" in runtime_execution_source
     assert "from vercor.components.setup_validation import" in (
         runtime_component_state_source
     )

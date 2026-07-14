@@ -619,8 +619,10 @@ def test_lifecycle_validation_operational_state_does_not_invalidate_preparation(
     first = coupler.run(state=state)
     coupler.run(state=first)
 
-    assert events == (["MODEL"] * 3 if hook_kind == "function" else [])
-    assert callable_validator.calls == (3 if hook_kind == "callable-object" else 0)
+    # Initial-state validation plus input and chunk-result validation for each
+    # run must not invalidate or rebuild the prepared coupling.
+    assert events == (["MODEL"] * 5 if hook_kind == "function" else [])
+    assert callable_validator.calls == (5 if hook_kind == "callable-object" else 0)
 
 
 class _MutableStepCallable:
@@ -1017,14 +1019,18 @@ def test_runtime_facade_reexports_preparation_without_owning_it() -> None:
 def test_runtime_runner_selects_and_delegates_to_backend_owners() -> None:
     runner_source = source_for("vercor/_runtime/runner.py")
     backend_source = source_for("vercor/_runtime/backends.py")
-    run_coupler_body = runner_source.split("def run_coupler_runtime(", 1)[1].split(
-        "\ndef _run_host_backend(", 1
-    )[0]
+    execution_source = source_for("vercor/_runtime/execution.py")
+    run_coupler_body = runner_source.split("def run_coupler_runtime(", 1)[1]
 
-    assert "def run_compiled_scanned_runtime(" in backend_source
-    assert "def run_compiled_scanned_runtime(" not in runner_source
-    assert "def run_host_runtime(" in backend_source
-    assert "def run_scanned_runtime(" in backend_source
+    assert "def execute_jax_chunk(" in backend_source
+    assert "def execute_host_chunk(" in backend_source
+    assert "def execute_custom_chunk(" in backend_source
+    assert "def execute_jax_chunk(" not in runner_source
+    assert "def execute_host_chunk(" not in runner_source
+    assert "def execute_plan(" in execution_source
+    assert "execute_jax_chunk(" in execution_source
+    assert "execute_host_chunk(" in execution_source
+    assert "execute_custom_chunk(" in execution_source
     assert "vercor._runtime.runner" not in backend_source
     assert "class _JAXScannedBackend" not in backend_source
     assert "class _HostLoopBackend" not in backend_source

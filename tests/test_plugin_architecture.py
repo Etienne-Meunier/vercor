@@ -28,7 +28,12 @@ from vercor.components import (
     ValidationContext,
 )
 from vercor.exceptions import CouplerError
-from vercor.runtime import ExecutionContext, RuntimeDriver, RuntimeOptions
+from vercor.runtime import (
+    ExecutionChunk,
+    ExecutionContext,
+    RuntimeDriver,
+    RuntimeOptions,
+)
 from vercor.state import ComponentState, RunState
 from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyContext
 
@@ -42,7 +47,7 @@ def test_runtime_options_own_core_runtime_configuration() -> None:
 
     assert runtime.topology == SurfaceMaskPolicy(mode="disabled")
     assert runtime.dtype.enable_x64 is False
-    assert runtime.execution == "auto"
+    assert runtime.backend == "auto"
     assert runtime.model_year_seconds == 360.0
     assert vercor.RuntimeOptions is RuntimeOptions
     assert "RuntimeOptions" in vercor.__all__
@@ -566,16 +571,18 @@ def test_runtime_options_accept_custom_execution_backend() -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def run(
+        def execute(
             self,
             state: RunState,
             *,
             context: ExecutionContext,
+            chunk: ExecutionChunk,
             driver: RuntimeDriver,
         ) -> RunState:
-            _ = driver
             self.calls += 1
-            assert context.run_order == ("MODEL",)
+            assert context.component_names == ("MODEL",)
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
             return state.replace_fields(
                 "MODEL",
                 {"temperature": jnp.full(grid.shape, 301.0)},
@@ -592,7 +599,7 @@ def test_runtime_options_accept_custom_execution_backend() -> None:
         Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(topology=None, execution=backend),
+        runtime=RuntimeOptions(topology=None, backend=backend),
     )
 
     final_state = coupler.run()

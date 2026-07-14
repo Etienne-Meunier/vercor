@@ -4,9 +4,10 @@ Versatile Earth system COupleR (VerCOR) is a JAX-first coupler for composing
 Earth-system model components, forcing data, exchanges, regridding, diagnostics,
 and output. The in-progress VerCOR 4 refactor now uses a protocol-first
 component contract with one immutable declaration for fields, lifecycle hooks,
-and runtime capabilities. Assembly is constructor-only; output and custom
-runtime examples below describe the currently implemented transitional
-boundaries and do not imply the later workflow/output-provider design exists.
+and runtime capabilities. Assembly is constructor-only, and static workflows
+plus chunk-oriented execution backends are implemented. Output remains on the
+transitional component declarations below; the unified `OutputProvider` and
+`OutputTarget` design is deferred.
 
 ## Installation
 
@@ -37,8 +38,8 @@ duplicated at the root.
 
 Configuration currently has four owners:
 
-- `RuntimeOptions` owns static policy for execution, topology, dtype, and the
-  runtime.
+- `RuntimeOptions` owns static policy for dtype, backend, workflow, topology,
+  and model-year length.
 - `PhysicalConstants` is the frozen traced PyTree owner for physical constants.
 - `ComponentSpec`: inputs, outputs, initial fields, lifecycle, transfer,
   execution capability, and output.
@@ -142,7 +143,7 @@ structure; host execution may clear or restructure payload state.
 ### Host component
 
 Use `CallableComponent` with `ComponentSpec(execution="host")` for a Python or
-foreign-runtime model. `RuntimeOptions(execution="auto")` selects the host loop:
+foreign-runtime model. `RuntimeOptions(backend="auto")` selects the host loop:
 
 ```python
 from collections.abc import Mapping
@@ -175,28 +176,26 @@ component through the Python loop.
 
 ### Custom execution backend
 
-A backend controls ordering through the validated public driver. It must return
-`RunState`; `step` must be a concrete scalar integer within the clock range:
+A backend consumes core-authored plans through the validated public driver and
+must return `RunState`:
 
 ```python
 from vercor import RuntimeOptions
-from vercor.runtime import ExecutionContext, RuntimeDriver
+from vercor.runtime import ExecutionChunk, ExecutionContext, RuntimeDriver
 from vercor.state import RunState
 
 
 class SequentialBackend:
-    def run(
+    def execute(
         self,
         state: RunState,
         *,
         context: ExecutionContext,
+        chunk: ExecutionChunk,
         driver: RuntimeDriver,
     ) -> RunState:
-        for step in range(context.clock.steps):
-            for component_name in context.run_order:
-                state = driver.step_component(
-                    state, component_name, step=step
-                )
+        for plan in chunk.steps:
+            state = driver.run_step(state, plan)
         return state
 
 
@@ -205,18 +204,19 @@ backend_coupler = Coupler(
     clock,
     components=(backend_model,),
     run_order=(backend_model.name,),
-    runtime=RuntimeOptions(execution=SequentialBackend()),
+    runtime=RuntimeOptions(backend=SequentialBackend()),
 )
 backend_state = backend_coupler.run()
 ```
 
-Custom backends currently cannot be combined with period output because the
-public backend contract has no period-session hook.
+VerCOR owns workflow validation, chunk boundaries, cancellation, and period
+output around custom backend calls. A backend must consume every supplied plan
+exactly once through `RuntimeDriver.run_step(...)`.
 
 ### Custom topology policy
 
 Topology is also structural. Policies inspect a public read-only context and
-return patches keyed by `(source, target, regrid_key)`:
+return patches keyed by stable exchange `route_id` values:
 
 ```python
 from vercor import RuntimeOptions
@@ -227,9 +227,6 @@ from vercor.topology import (
 
 
 class NoMaskTopology:
-    def applies(self, context: TopologyContext) -> bool:
-        return bool(context.components)
-
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         _ = context
         return ExchangeTopologyPatch()

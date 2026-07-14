@@ -238,10 +238,15 @@ PUBLIC_MODULE_EXPORTS = {
     ),
     "vercor.runtime": (
         "ExecutionBackend",
+        "ExecutionChunk",
         "ExecutionContext",
-        "ExecutionMode",
+        "ExecutionPlan",
         "RuntimeDriver",
         "RuntimeOptions",
+        "SequentialWorkflow",
+        "StepPlan",
+        "Workflow",
+        "WorkflowContext",
     ),
     "vercor.setups": (
         "CAMulatorConfig",
@@ -832,7 +837,9 @@ def test_empty_run_order_is_explicit_setup_only_and_run_is_noop() -> None:
     final = coupler.run(initial)
 
     assert setup_calls == 1
-    assert validate_calls == 2
+    # Initial construction, supplied-state validation, and the empty workflow's
+    # chunk result all retain the same prepared component schema.
+    assert validate_calls == 3
     assert step_calls == 0
     assert tuple(initial.components()) == ("MODEL",)
     assert tuple(final.components()) == tuple(initial.components())

@@ -19,7 +19,12 @@ from vercor.components import (
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.grids import RectilinearGrid
-from vercor.runtime import ExecutionContext, RuntimeDriver, RuntimeOptions
+from vercor.runtime import (
+    ExecutionChunk,
+    ExecutionContext,
+    RuntimeDriver,
+    RuntimeOptions,
+)
 from vercor.state import RunState
 from vercor.dtypes import as_jax_real_array
 
@@ -153,18 +158,19 @@ class StructuralFluxModel:
 class SequentialBackend:
     """Minimal custom backend that delegates component stepping to RuntimeDriver."""
 
-    def run(
+    def execute(
         self,
         state: RunState,
         *,
         context: ExecutionContext,
+        chunk: ExecutionChunk,
         driver: RuntimeDriver,
     ) -> RunState:
-        """Run components sequentially for every clock step."""
+        """Run every step plan in one core-defined chunk."""
 
-        for step, _, _ in context.clock.iter():
-            for component in context.run_order:
-                state = driver.step_component(state, component, step=step)
+        _ = context
+        for plan in chunk.steps:
+            state = driver.run_step(state, plan)
         return state
 
 
@@ -179,7 +185,7 @@ def make_custom_coupler(grid: RectilinearGrid) -> Coupler:
         components=(source, model),
         exchanges=(Exchange("FORCING", "MODEL", ("custom_flux",)),),
         run_order=("FORCING", "MODEL"),
-        runtime=RuntimeOptions(execution=SequentialBackend()),
+        runtime=RuntimeOptions(backend=SequentialBackend()),
     )
 
 

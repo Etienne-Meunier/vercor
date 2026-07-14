@@ -9,6 +9,43 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 6 completed locally on 2026-07-14 from base commit
+  `ed5fccf`. The canonical public runtime surface is now the frozen workflow
+  planning and chunk execution contract: `WorkflowContext`, `StepPlan`,
+  `ExecutionPlan`, `SequentialWorkflow`, `ExecutionContext`, `ExecutionChunk`,
+  `Workflow`, `ExecutionBackend`, `RuntimeDriver`, and `RuntimeOptions`.
+  Workflows produce exactly one validated absolute plan per clock step and may
+  reorder or omit registered components. The private execution coordinator
+  groups uniform output-free schedules, preserves the default one-JIT/one-scan
+  path, builds clock-derived metadata once per run, and reuses one run-local
+  jitted executor per distinct component schedule across cadence chunks. It
+  selects host/JAX from scheduled components only and keeps period-output
+  sampling, writes, cancellation, and result validation core-owned. Custom
+  backends consume an identity-checked ordered plan ledger through
+  `RuntimeDriver.run_step`; forged, repeated, reordered, and skipped plans fail.
+  Initial outgoing stores are primed for every registered component so custom
+  workflows can schedule producers omitted from the default order. Full-suite
+  validation exposed and fixed a JAXGCM payload precision instability when a
+  float32 runtime follows process-level x64 enablement; numeric payload leaves
+  now normalize at creation while opaque/static leaves remain unchanged.
+  TDD reached 33 intended RED failures before implementation. Review-driven
+  performance regressions additionally proved that output-enabled and
+  alternating workflows previously rebuilt clock metadata and JIT executors
+  per chunk. The workflow tests are split by responsibility into a 442-line
+  public contract owner and a 661-line execution module, with shared helpers in
+  an 89-line private support module; their exact 41-test collection is
+  preserved.
+  Final gradient review strengthened intermediate corrupt-state rejection to
+  prove later nonempty chunks do not run and made the JAX A/B/A regression
+  numerically depend on absolute step indices; both pass without production
+  changes. The repaired focused workflow/runtime/plugin/docs selection passes
+  163 tests with 137 deselected. The fast suite passes 475 tests with 550
+  deselected, and the full suite passes 1025 tests with the two known
+  third-party `FutureWarning`s. Black leaves all 238
+  files unchanged, strict flake8 reports zero findings, full mypy reports no
+  issues in 234 source files, compileall and whitespace checks pass. Exact
+  evidence is in `.superpowers/sdd/task-6-v4-report.md`; the required commit
+  title is `feat!: add workflow-driven execution backends`.
 - VerCOR 4 milestone 1 Task 5 completed locally on 2026-07-14 from base commit
   `166f021`. `Exchange` now owns stable global `route_id` identity and an
   injected `regridder_factory`; default `source->target` collisions fail before

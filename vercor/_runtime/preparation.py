@@ -66,11 +66,11 @@ def create_runtime_state(
         prepared=prepared,
         prefill_missing=prefill_missing,
     )
-    run_order = prepared.run_order
-    if prefill_missing and tuple(run_order):
+    component_names = tuple(prepared.components)
+    if prefill_missing and component_names:
         runtime_state = prime_runtime_outgoing(
             runtime_state,
-            tuple(run_order),
+            component_names,
             dispatch_context=prepared.dispatch_context,
             step_info=initial_runtime_step_info(
                 prepared.clock,

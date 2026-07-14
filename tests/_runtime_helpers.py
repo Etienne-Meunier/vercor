@@ -9,9 +9,9 @@ import jax.numpy as jnp
 import vercor._runtime.facade as runtime_facade
 import vercor._runtime.preparation as runtime_preparation
 from vercor.coupler import Coupler
-from vercor._runtime.backends import run_scanned_runtime
 from vercor._runtime.dispatch_context import build_runtime_dispatch_context
 from vercor._runtime.prepared import PreparedCoupling
+from vercor._runtime.runner import run_coupler_runtime
 from vercor.state import RunState
 from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor.types import RuntimeArray
@@ -83,15 +83,14 @@ def run_scanned_coupler(
         prepared=coupling,
         validate_state=validate_state,
     )
-    return run_scanned_runtime(
-        prepared_state,
-        run_order=coupling.run_order,
-        clock=coupling.clock,
-        model_year_seconds=coupling.runtime.model_year_seconds,
+    context = runtime_facade.runtime_run_context(
+        prepared=replace(
+            coupling,
+            runtime=replace(coupling.runtime, backend="jax"),
+        ),
         logger=coupler.logger,
-        dispatch_context=coupling.dispatch_context,
-        interrupts=coupling.interrupts,
     )
+    return run_coupler_runtime(prepared_state, context=context)
 
 
 def runtime_state_from_coupler_components(

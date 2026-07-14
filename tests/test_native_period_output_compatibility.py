@@ -29,7 +29,7 @@ def _host_coupler(component: Any) -> Coupler:
         Clock(datetime(2000, 1, 1), 86_400.0, 1),
         components=(component,),
         run_order=(component.name,),
-        runtime=RuntimeOptions(execution="host"),
+        runtime=RuntimeOptions(backend="host"),
     )
 
 
@@ -187,7 +187,7 @@ def test_mixed_period_plan_keeps_generic_schema_and_skips_native_host_owner() ->
         clock,
         components=(native, generic),
         run_order=("native", "generic"),
-        runtime=RuntimeOptions(execution="host"),
+        runtime=RuntimeOptions(backend="host"),
     )
 
     plan = build_period_output_plan(

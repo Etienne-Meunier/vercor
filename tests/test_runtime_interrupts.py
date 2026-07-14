@@ -187,14 +187,15 @@ def test_host_runtime_signal_aborts_through_shared_controller() -> None:
 @pytest.mark.fast_always
 def test_custom_backend_signal_aborts_through_shared_controller() -> None:
     class InterruptingBackend:
-        def run(
+        def execute(
             self,
             state: vercor.RunState,
             *,
             context: ExecutionContext,
+            chunk: object,
             driver: RuntimeDriver,
         ) -> vercor.RunState:
-            _ = context, driver
+            _ = context, chunk, driver
             signal.raise_signal(signal.SIGINT)
             return state
 
@@ -203,7 +204,7 @@ def test_custom_backend_signal_aborts_through_shared_controller() -> None:
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(cast(Any, component),),
         run_order=("ATM",),
-        runtime=vercor.RuntimeOptions(execution=InterruptingBackend()),
+        runtime=vercor.RuntimeOptions(backend=InterruptingBackend()),
     )
 
     with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
@@ -217,19 +218,22 @@ def test_compiled_scanned_runtime_translates_interrupt_callback_error(
 ) -> None:
     coupler = _make_pure_coupler()
     interrupts = coupler._ensure_prepared().interrupts
-    original_checkpoint = interrupts.checkpoint
+    original_scanned_checkpoint = interrupts.scanned_checkpoint
     requested = False
 
-    def request_once_then_checkpoint(label: str = "runtime") -> None:
+    def request_once_then_checkpoint(
+        label: str = "scanned runtime",
+        token: object | None = None,
+    ) -> None:
         nonlocal requested
-        if not requested:
+        if not requested and label == "scanned runtime step":
             requested = True
             interrupts.request(signal.SIGINT)
-        original_checkpoint(label)
+        original_scanned_checkpoint(label, token)
 
     monkeypatch.setattr(
         interrupts,
-        "checkpoint",
+        "scanned_checkpoint",
         request_once_then_checkpoint,
     )
 
@@ -244,19 +248,22 @@ def test_compiled_scanned_runtime_observes_wakeup_fd_interrupt(
 ) -> None:
     coupler = _make_pure_coupler()
     interrupts = coupler._ensure_prepared().interrupts
-    original_checkpoint = interrupts.checkpoint
+    original_scanned_checkpoint = interrupts.scanned_checkpoint
     injected = False
 
-    def write_wakeup_once_then_checkpoint(label: str = "runtime") -> None:
+    def write_wakeup_once_then_checkpoint(
+        label: str = "scanned runtime",
+        token: object | None = None,
+    ) -> None:
         nonlocal injected
-        if not injected:
+        if not injected and label == "scanned runtime step":
             injected = True
             _write_wakeup_signal(interrupts, signal.SIGTSTP)
-        original_checkpoint(label)
+        original_scanned_checkpoint(label, token)
 
     monkeypatch.setattr(
         interrupts,
-        "checkpoint",
+        "scanned_checkpoint",
         write_wakeup_once_then_checkpoint,
     )
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 import logging
 
 import jax
 
+from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
 from vercor.jax_logging import (
     LoggerLike,
@@ -26,12 +28,17 @@ def runtime_component_progress_message(component_name: str) -> str:
     return f"Run component: {component_name}"
 
 
-def runtime_step_progress_messages(clock: Clock) -> tuple[str, ...]:
+def runtime_step_progress_messages(
+    clock: Clock,
+    *,
+    clock_steps: (
+        Sequence[tuple[int, datetime | ModelDateTime, timedelta]] | None
+    ) = None,
+) -> tuple[str, ...]:
     """Return host-rendered progress messages for all scanned runtime steps."""
 
-    return tuple(
-        runtime_step_progress_message(n, time, dt) for n, time, dt in clock.iter()
-    )
+    steps = clock.iter() if clock_steps is None else clock_steps
+    return tuple(runtime_step_progress_message(n, time, dt) for n, time, dt in steps)
 
 
 def log_scanned_step_progress(

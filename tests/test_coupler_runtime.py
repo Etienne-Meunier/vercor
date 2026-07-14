@@ -1658,6 +1658,7 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
 
 
 def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
+    jax.config.update("jax_enable_x64", True)
     grid = make_test_grid(name="jcm-runtime")
     fixture = _make_jax_gcm_fixture(grid)
     component = fixture.component
@@ -1670,6 +1671,8 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     )
 
     initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
+    initial_payload = initial_state._component_state("ATM").payload
+    assert initial_payload is not None
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
@@ -1686,6 +1689,18 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     assert np.all(np.isfinite(np.asarray(temperature)))
     assert np.all(np.isfinite(np.asarray(sensible_heat_flux)))
     assert atmosphere_state.payload is not None
+    initial_float_dtypes = tuple(
+        jnp.asarray(leaf).dtype
+        for leaf in jax.tree_util.tree_leaves(initial_payload)
+        if jnp.issubdtype(jnp.asarray(leaf).dtype, jnp.floating)
+    )
+    final_float_dtypes = tuple(
+        jnp.asarray(leaf).dtype
+        for leaf in jax.tree_util.tree_leaves(atmosphere_state.payload)
+        if jnp.issubdtype(jnp.asarray(leaf).dtype, jnp.floating)
+    )
+    assert set(initial_float_dtypes) == {jnp.dtype(jnp.float32)}
+    assert final_float_dtypes == initial_float_dtypes
 
     def loss(sea_surface_temperature: jax.Array) -> jax.Array:
         atmosphere = initial_state._component_state("ATM")
@@ -1701,7 +1716,7 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(result._component_state("ATM").fields.get("temperature"))
 
-    gradient = jax.grad(loss)(jnp.full(grid.shape, 281.0, dtype=jnp.float64))
+    gradient = jax.grad(loss)(jnp.full(grid.shape, 281.0, dtype=jnp.float32))
     assert gradient.shape == grid.shape
     assert np.all(np.isfinite(np.asarray(gradient)))
     assert np.any(np.asarray(gradient) != 0.0)
@@ -1928,7 +1943,7 @@ def test_scanned_runtime_rejects_camulator_land_runtime_boundary() -> None:
         state.component("LND").field("land_surface_temperature"), jax.Array
     )
 
-    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+    with pytest.raises(ComponentError, match="backend='jax'.*host-backed"):
         run_scanned_coupler(coupler, state)
 
 
@@ -1953,7 +1968,7 @@ def test_scanned_runtime_rejects_camulator_gcm_runtime_boundary() -> None:
     state = coupler.initial_state()
     assert isinstance(state.component("ATM").field("temperature"), jax.Array)
 
-    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+    with pytest.raises(ComponentError, match="backend='jax'.*host-backed"):
         run_scanned_coupler(coupler, state)
 
 
@@ -1985,7 +2000,7 @@ def test_scanned_runtime_rejects_veros_runtime_boundary() -> None:
         state.component("OCN").field("sea_surface_temperature"), jax.Array
     )
 
-    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+    with pytest.raises(ComponentError, match="backend='jax'.*host-backed"):
         run_scanned_coupler(coupler, state)
 
 
@@ -2155,7 +2170,7 @@ def test_component_step_shape_changes_raise_component_error() -> None:
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution="host"),
+        runtime=RuntimeOptions(backend="host"),
     )
 
     with pytest.raises(
@@ -2191,7 +2206,7 @@ def test_component_step_rejects_non_mapping_non_step_result_returns(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution="host"),
+        runtime=RuntimeOptions(backend="host"),
     )
 
     with pytest.raises(
@@ -2216,7 +2231,7 @@ def test_component_step_rejects_step_result_with_non_mapping_fields() -> None:
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution="host"),
+        runtime=RuntimeOptions(backend="host"),
     )
 
     with pytest.raises(

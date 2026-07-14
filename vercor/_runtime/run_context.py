@@ -21,11 +21,5 @@ class RuntimeRunContext:
     interrupts: RuntimeInterruptController
     options: RuntimeOptions
 
-    @property
-    def execution(self) -> object:
-        """Return selected execution policy for private runtime helpers."""
-
-        return self.options.execution
-
 
 __all__ = ["RuntimeRunContext"]

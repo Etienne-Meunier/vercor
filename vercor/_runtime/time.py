@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import cast
 
 import jax
@@ -101,10 +101,14 @@ def build_runtime_step_info(
     clock: Clock,
     *,
     model_year_seconds: float,
+    clock_steps: (
+        Sequence[tuple[int, datetime | ModelDateTime, timedelta]] | None
+    ) = None,
 ) -> RuntimeStepInfo:
     """Build scanned-runtime time metadata for every clock step."""
 
-    times = [time for _, time, _ in clock.iter()]
+    steps = clock.iter() if clock_steps is None else clock_steps
+    times = [time for _, time, _ in steps]
     return runtime_step_info_from_times(
         times,
         forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),

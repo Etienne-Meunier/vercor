@@ -1276,7 +1276,7 @@ def test_jax_gcm_period_schema_writes_matching_host_and_scanned_files(
             Clock(datetime(2000, 1, 1), 86_400.0, 2),
             components=(make_component(),),
             run_order=("ATM",),
-            runtime=RuntimeOptions(execution=cast(Any, execution)),
+            runtime=RuntimeOptions(backend=cast(Any, execution)),
             log_level="WARNING",
         )
         coupler.run()
@@ -1445,7 +1445,7 @@ def test_jax_gcm_multitime_nan_weighting_matches_raw_prediction_reduction(
             Clock(datetime(2000, 1, 1), 86_400.0, 2),
             components=(component,),
             run_order=("ATM",),
-            runtime=RuntimeOptions(execution=cast(Any, execution)),
+            runtime=RuntimeOptions(backend=cast(Any, execution)),
             log_level="WARNING",
         ).run()
         records = []

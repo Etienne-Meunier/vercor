@@ -25,8 +25,12 @@ from vercor.exchanges import Exchange
 from vercor.grids import RectilinearGrid
 from vercor.output import OutputConfig, SnapshotContext
 from vercor.regridding import bilinear
-from vercor.runtime import ExecutionContext, RuntimeDriver
-from vercor.runtime import RuntimeOptions
+from vercor.runtime import (
+    ExecutionChunk,
+    ExecutionContext,
+    RuntimeDriver,
+    RuntimeOptions,
+)
 from vercor.state import RunState
 from vercor.topology import (
     ExchangeTopologyPatch,
@@ -151,14 +155,15 @@ class SequentialBackend:
         self.calls = 0
         self.state_replacement = False
 
-    def run(
+    def execute(
         self,
         state: RunState,
         *,
         context: ExecutionContext,
+        chunk: ExecutionChunk,
         driver: RuntimeDriver,
     ) -> RunState:
-        """Advance every configured component for every clock step."""
+        """Advance every plan in one core-defined chunk."""
 
         initial_temperature = state.component("JAX").field("temperature")
         state = state.replace_fields(
@@ -167,9 +172,9 @@ class SequentialBackend:
         )
         self.state_replacement = True
         self.calls += 1
-        for step in range(context.clock.steps):
-            for component in context.run_order:
-                state = driver.step_component(state, component, step=step)
+        _ = context
+        for plan in chunk.steps:
+            state = driver.run_step(state, plan)
         return state
 
 
@@ -217,7 +222,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
             ),
         ),
         run_order=(forcing_component.name, jax_component.name, host_component.name),
-        runtime=RuntimeOptions(execution=backend, topology=topology),
+        runtime=RuntimeOptions(backend=backend, topology=topology),
     )
 
     final_state = coupler.run()

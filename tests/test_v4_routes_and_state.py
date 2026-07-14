@@ -692,7 +692,7 @@ _INCOMING_STATE_INVARIANTS = (
 
 def _state_coupler(*, backend: Any | None = None) -> Coupler:
     route = Exchange("SRC", "DST", ("scalar",), route_id="scalar-route")
-    runtime = RuntimeOptions(execution=backend) if backend is not None else None
+    runtime = RuntimeOptions(backend=backend) if backend is not None else None
     source, target = _components()
     return Coupler(
         _clock(),
@@ -733,9 +733,16 @@ def test_driver_rejects_foreign_state_before_component_dispatch(
     message: str,
 ) -> None:
     class DriverBackend:
-        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
+        def execute(
+            self,
+            state: RunState,
+            *,
+            context: Any,
+            chunk: Any,
+            driver: Any,
+        ) -> RunState:
             _ = context
-            driver.step_component(corrupt(state), "SRC", step=0)
+            driver.run_step(corrupt(state), chunk.steps[0])
             pytest.fail("invalid state reached component dispatch")
 
     with pytest.raises(CouplerError, match=message):
@@ -748,8 +755,17 @@ def test_backend_returned_foreign_state_is_strictly_validated(
     message: str,
 ) -> None:
     class ReturningBackend:
-        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
-            _ = context, driver
+        def execute(
+            self,
+            state: RunState,
+            *,
+            context: Any,
+            chunk: Any,
+            driver: Any,
+        ) -> RunState:
+            _ = context
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
             return cast(RunState, corrupt(state))
 
     with pytest.raises(CouplerError, match=message):
@@ -782,8 +798,17 @@ def test_transformed_invalid_state_values_are_rejected(
 
 def test_compatible_foreign_state_remains_accepted() -> None:
     class ReturningBackend:
-        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
-            _ = context, driver
+        def execute(
+            self,
+            state: RunState,
+            *,
+            context: Any,
+            chunk: Any,
+            driver: Any,
+        ) -> RunState:
+            _ = context
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
             leaves, tree = jax.tree.flatten(state)
             return cast(RunState, jax.tree.unflatten(tree, leaves))
 
@@ -820,15 +845,24 @@ def _interleaved_route_coupler(backend: Any) -> Coupler:
             Exchange("SRC", "FIRST", ("other",), route_id="route-3"),
         ),
         run_order=("SRC", "FIRST", "SECOND"),
-        runtime=RuntimeOptions(execution=backend),
+        runtime=RuntimeOptions(backend=backend),
     )
 
 
 def test_driver_validation_preserves_interleaved_route_order() -> None:
     class DriverBackend:
-        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
+        def execute(
+            self,
+            state: RunState,
+            *,
+            context: Any,
+            chunk: Any,
+            driver: Any,
+        ) -> RunState:
             _ = context
-            return cast(RunState, driver.step_component(state, "SRC", step=0))
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
+            return cast(RunState, state)
 
     final = _interleaved_route_coupler(DriverBackend()).run()
     assert tuple(final.components()) == ("SRC", "FIRST", "SECOND")
@@ -836,8 +870,17 @@ def test_driver_validation_preserves_interleaved_route_order() -> None:
 
 def test_backend_return_validation_preserves_interleaved_route_order() -> None:
     class ReturningBackend:
-        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
-            _ = context, driver
+        def execute(
+            self,
+            state: RunState,
+            *,
+            context: Any,
+            chunk: Any,
+            driver: Any,
+        ) -> RunState:
+            _ = context
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
             return state
 
     final = _interleaved_route_coupler(ReturningBackend()).run()

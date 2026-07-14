@@ -53,14 +53,19 @@ Each function takes explicit inputs and returns explicit outputs, which can be e
 
 ### One-shot JIT scanned runtime
 
-Pure differentiable coupled runs use a one-shot `jax.jit` wrapper around the
-scanned runtime. VerCOR does not own a persistent compiled-runtime cache and
-does not expose state-buffer donation controls through `Coupler.run()`.
-That single-scan path remains unchanged when no component configures period
-output. Configured period output precomputes all component cadence boundaries,
-coalesces them into ordered scan chunks, and carries immutable JAX sum/count
-accumulators between chunks. Completed reductions cross to the host writer only
-between chunks; model state remains JAX-backed. Because period output is an I/O
+The default differentiable workflow uses a one-shot `jax.jit` wrapper around
+the scanned runtime. VerCOR does not own a persistent compiled-runtime cache
+and does not expose state-buffer donation controls through `Coupler.run()`.
+The default output-free workflow remains one JIT-wrapped scan. A custom static
+workflow is split only where consecutive component schedules differ, with each
+uniform chunk preserving absolute clock indices. One run-local jitted executor
+is reused for every chunk with the same component schedule; JAX recompiles that
+callable naturally when chunk input shapes differ. Clock steps, JAX step
+indices, forcing-selection metadata, and progress messages are built once per
+run and sliced for each chunk. Configured period output uses
+one-step chunks so the core can sample every post-step state, retain immutable
+JAX sum/count accumulators, and perform host writes only at precomputed cadence
+boundaries. Model state remains JAX-backed. Because period output is an I/O
 workflow, traced `RunState` leaves are rejected when it is enabled, while
 output-free runs remain differentiable.
 Configuration objects still need stable shapes and PyTree structures because
@@ -187,20 +192,25 @@ immutable runtime containers used during traced integration.
   loop advances no component. Component names are setup-owned identifiers rather than a
   fixed enum, so custom coupled runs can use names outside the bundled
   ATM/OCN/LND/ICE conventions. `RuntimeOptions` owns static coupler runtime
-  policy, including dtype, execution backend, model-year length, and optional
-  topology policy. Pass
+  policy, including dtype, workflow, execution backend, model-year length, and
+  optional topology policy. Pass
   `RuntimeOptions(topology=vercor.topology.SurfaceMaskPolicy())` to opt into
   the bundled ATM/OCN/LND surface-mask topology, and leave `topology=None` for
-  setup-agnostic custom exchanges. Public custom execution backends implement
-  `vercor.runtime.ExecutionBackend` and receive an `ExecutionContext` plus
+  setup-agnostic custom exchanges. A public `Workflow.build(WorkflowContext)`
+  returns one exact ascending `StepPlan` per clock step; each step may reorder
+  or omit registered components without duplicating or inventing names. The
+  default `SequentialWorkflow` repeats the constructor run order. Public custom
+  execution backends implement `vercor.runtime.ExecutionBackend.execute(...)`
+  and receive an `ExecutionContext`, core-defined `ExecutionChunk`, and
   `RuntimeDriver`; the private runtime context is not part of the public
-  contract. Custom backends must return `RunState`. Supplied states, every
+  contract. Backends must consume every supplied plan exactly once through
+  `RuntimeDriver.run_step(state, plan)` and return `RunState`. Supplied states, every
   state entering the public driver, and backend-returned states are validated
   against the private prepared binding: exact component/store/route names,
   grids and coordinates, array shapes and dtypes, and mask constraints must
-  match. The driver also validates the prepared component name and concrete
-  in-range scalar step before it dispatches the normal receive/step/send pipeline; custom orchestration may
-  include host-backed components. Component lifecycle initialization runs for
+  match. The driver rejects forged, reordered, repeated, skipped, or
+  out-of-chunk plans before it dispatches the normal receive/step/send pipeline;
+  custom orchestration may include host-backed components. Component lifecycle initialization runs for
   any non-empty configured component graph, including custom single-component
   or no-exchange workflows. `vercor.state.RunState` is opaque: users inspect results
   through `RunState.component(name) -> ComponentState` and
@@ -301,11 +311,13 @@ immutable runtime containers used during traced integration.
   an x64 Coupler may enable it before component arrays are normalized, while a
   float32 Coupler keeps explicit float32 VerCOR allocations even when the
   process capability is already enabled.
-  Compiled and pure scanned execution, the Python host loop, custom backend
-  adaptation, and validated public driver adaptation live in
-  `vercor._runtime.backends`. `vercor._runtime.runner` owns only run-mode
-  selection, host-component compatibility and warnings, interrupt signal scope,
-  and delegation to those backend implementations. High-level runtime orchestration
+  Compiled scanned execution, the Python host loop, custom backend adaptation,
+  and validated public driver adaptation live in `vercor._runtime.backends`.
+  `vercor._runtime.execution` owns workflow validation, schedule chunking,
+  scheduled-component backend selection, host compatibility warnings,
+  per-chunk result validation, and core-owned period-output boundaries.
+  `vercor._runtime.runner` owns the interrupt signal scope and delegates plan
+  construction and execution to that coordinator. High-level runtime orchestration
   for the public `Coupler` facade lives in `vercor._runtime.facade`: prepared
   runtime-state reuse, run-context construction, host/scanned execution,
   runtime views, and final output delegation enter through this module instead
@@ -429,9 +441,9 @@ Shared output extension primitives for adapter authors are exported from
 `vercor.output`: `OutputVariable`, `PeriodOutput`, `OutputConfig`,
 `SnapshotContext`, and `SnapshotWriter`. `OutputConfig.period is None`
 disables period output; `PeriodOutput(frequency="step")` requests every-step
-period output. Custom `ExecutionBackend` objects are rejected when period
-output is configured until the public backend contract provides a
-period-session hook. Snapshot writers receive only public component/result views and
+period output. Custom `ExecutionBackend` objects use the same core-owned
+sampling, accumulation, and write boundaries as built-in backends; they do not
+receive an output-session hook. Snapshot writers receive only public component/result views and
 the component payload. Shared cadence, calendar time metadata, dataset
 coordinate discovery, period-sample/output conversion, period-average file
 orchestration, and direct `h5netcdf` writing live in private
@@ -635,9 +647,9 @@ the full coupled loop is not differentiable.
 ### Runtime interruption across host and scanned integrations
 
 `Coupler.run()` provides an internal runtime interrupt controller to
-`vercor._runtime.runner`, which owns the signal scope, while
-`vercor._runtime.backends` owns host, scanned, and custom runtime cancellation
-checkpoints. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request graceful
+`vercor._runtime.runner`, which owns the signal scope, while the execution
+coordinator, public driver adapter, and scanned/custom backend boundaries own
+runtime cancellation checkpoints. During a run, `SIGINT`, `SIGTERM`, and `SIGTSTP` request graceful
 runtime cancellation and are restored to their previous handlers when the run
 exits. The host runtime checks the controller at step and component boundaries.
 The controller also installs a temporary nonblocking wakeup fd so signals
@@ -663,8 +675,9 @@ parallel parameter container or primary `physical_constants` module.
 
 **Files**: `vercor/runtime/__init__.py` and `vercor/dtypes.py`
 
-`RuntimeOptions` owns static execution, topology, model-year, and precision
-policy. `DTypePolicy` is owned by `vercor.dtypes`, and
+`RuntimeOptions` owns static backend, workflow, topology, model-year, and
+precision policy. The public runtime module also owns the frozen planning
+containers and workflow/backend/driver protocols. `DTypePolicy` is owned by `vercor.dtypes`, and
 `RuntimeOptions.dtype` is the sole runtime precision selection.
 
 **Files**: `vercor/components/contracts.py` and `vercor/setups/config.py`
@@ -733,8 +746,10 @@ For each module, verify that AD gradients match finite-difference gradients.
 
 ### JIT compilation
 
-The output-free JAX runtime executes the complete clock through one JIT-compiled
-scan. `RunState` and traced physical values are array-bearing PyTree inputs;
+The default output-free JAX workflow executes the complete clock through one
+JIT-compiled scan. Custom workflows reuse one run-local jitted scan executor
+per distinct component schedule, including across output cadence boundaries.
+`RunState` and traced physical values are array-bearing PyTree inputs;
 `RuntimeOptions`, component declarations, routing, and other shape-controlling
 configuration remain static in the private prepared coupling. Configuration
 must therefore keep stable names, shapes, dtypes, and payload PyTree structure

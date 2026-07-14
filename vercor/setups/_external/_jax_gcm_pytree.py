@@ -5,7 +5,26 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from vercor.dtypes import jax_real_dtype
+from vercor.dtypes import DTypePolicy, jax_real_dtype
+
+
+def tree_as_runtime_dtype(tree: Any, policy: DTypePolicy) -> Any:
+    """Normalize floating JAXGCM leaves without changing integer semantics."""
+
+    complex_dtype = jnp.complex128 if policy.enable_x64 else jnp.complex64
+
+    def normalize(value: Any) -> Any:
+        try:
+            array = jnp.asarray(value)
+        except (TypeError, ValueError):
+            return value
+        if jnp.issubdtype(array.dtype, jnp.floating):
+            return array.astype(policy.jax_real)
+        if jnp.issubdtype(array.dtype, jnp.complexfloating):
+            return array.astype(complex_dtype)
+        return array
+
+    return jax.tree_util.tree_map(normalize, tree)
 
 
 def tree_as_real_dtype(tree: Any, policy: Any = None) -> Any:
@@ -41,6 +60,7 @@ def tree_stack(objs: list[Any]) -> Any:
 
 __all__ = [
     "tree_as_real_dtype",
+    "tree_as_runtime_dtype",
     "tree_mean",
     "tree_stack",
     "tree_unwrap_leading_dims",

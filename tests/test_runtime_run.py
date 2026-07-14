@@ -319,7 +319,7 @@ def _make_period_output_coupler(
         ),
         components=(selected_component,),
         run_order=(selected_component.name,),
-        runtime=RuntimeOptions(execution=cast(Any, execution)),
+        runtime=RuntimeOptions(backend=cast(Any, execution)),
         log_level="WARNING",
     )
 
@@ -463,7 +463,7 @@ def test_period_output_paths_are_unique_across_schemas(
         clock=Clock(datetime(2000, 1, 1), 86_400.0, 1),
         components=(first, second),
         run_order=(first.name, second.name),
-        runtime=RuntimeOptions(execution="jax"),
+        runtime=RuntimeOptions(backend="jax"),
         log_level="WARNING",
     ).run()
 
@@ -492,7 +492,7 @@ def test_mixed_component_period_frequencies_coexist(
         clock=Clock(datetime(2000, 1, 30), 86_400.0, 3),
         components=(daily, monthly),
         run_order=("daily", "monthly"),
-        runtime=RuntimeOptions(execution="jax"),
+        runtime=RuntimeOptions(backend="jax"),
         log_level="WARNING",
     )
 
@@ -629,14 +629,26 @@ def test_period_output_rejects_outer_jit_and_grad() -> None:
         jax.grad(objective)(jnp.asarray(1.0))
 
 
-def test_period_output_rejects_custom_backend_before_invocation() -> None:
+def test_period_output_supports_custom_backend_at_core_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class RecordingBackend:
         def __init__(self) -> None:
             self.called = False
 
-        def run(self, state: RunState, *, context: Any, driver: Any) -> RunState:
-            _ = context, driver
+        def execute(
+            self,
+            state: RunState,
+            *,
+            context: Any,
+            chunk: Any,
+            driver: Any,
+        ) -> RunState:
+            _ = context
             self.called = True
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
             return state
 
     backend = RecordingBackend()
@@ -645,17 +657,15 @@ def test_period_output_rejects_custom_backend_before_invocation() -> None:
         clock=Clock(datetime(2000, 1, 1), 86_400.0, 1),
         components=(component,),
         run_order=("model",),
-        runtime=RuntimeOptions(execution=cast(Any, backend)),
+        runtime=RuntimeOptions(backend=cast(Any, backend)),
         log_level="WARNING",
     )
+    monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(
-        CouplerError,
-        match="Custom execution backends do not support period output.*disable",
-    ):
-        coupler.run()
+    coupler.run()
 
-    assert not backend.called
+    assert backend.called
+    assert (tmp_path / "model.averages.2000-01-01.nc").is_file()
 
 
 def test_snapshot_output_still_runs_with_period_output_configured(
@@ -683,11 +693,14 @@ def test_snapshot_output_still_runs_with_period_output_configured(
 
 def test_period_file_io_stays_outside_scanned_chunk_body() -> None:
     backends = importlib.import_module("vercor._runtime.backends")
-    source = inspect.getsource(backends._run_period_output_scanned_chunk)
+    execution = importlib.import_module("vercor._runtime.execution")
+    backend_source = inspect.getsource(backends.execute_jax_chunk)
+    execution_source = inspect.getsource(execution.execute_plan)
 
-    assert "write_period_output_boundary" not in source
-    assert "write_netcdf" not in source
-    assert "io_callback" not in source
+    assert "write_period_output_boundary" not in backend_source
+    assert "write_netcdf" not in backend_source
+    assert "io_callback" not in backend_source
+    assert "write_period_output_boundary" in execution_source
 
 
 def test_run_executes_pure_scanned_runtime_for_same_shapes_and_metadata() -> None:

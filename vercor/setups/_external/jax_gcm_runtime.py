@@ -23,6 +23,7 @@ from vercor.output._session import _PeriodOutputAccumulator
 from vercor.physics import PhysicalConstants
 from vercor.setups._external._jax_gcm_pytree import (
     tree_mean,
+    tree_as_runtime_dtype,
     tree_stack,
     tree_unwrap_leading_dims,
 )
@@ -94,16 +95,18 @@ def create_jax_gcm_runtime_payload(
             f"state creation; missing {missing_names}"
         )
 
+    jcm_state = tree_as_runtime_dtype(state._state, state._dtype_policy)
+    forcing = tree_as_runtime_dtype(state.forcing, state._dtype_policy)
     period_output = None
     if state.output_frequency is not None:
         period_output = _jax_gcm_output.jax_gcm_period_output_accumulator_template(
-            state._state,
+            jcm_state,
             coords=state.model.coords,
             physics_module=getattr(state.model, "physics", None),
         )
     return JAXGCMRuntimePayload(
-        jcm_state=state._state,
-        forcing=state.forcing,
+        jcm_state=jcm_state,
+        forcing=forcing,
         period_output=period_output,
     )
 

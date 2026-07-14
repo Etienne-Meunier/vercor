@@ -50,10 +50,15 @@ def test_runtime_module_owns_public_runtime_contracts() -> None:
 
     assert runtime.__all__ == [
         "ExecutionBackend",
+        "ExecutionChunk",
         "ExecutionContext",
-        "ExecutionMode",
+        "ExecutionPlan",
         "RuntimeDriver",
         "RuntimeOptions",
+        "SequentialWorkflow",
+        "StepPlan",
+        "Workflow",
+        "WorkflowContext",
     ]
     assert RuntimeOptions is runtime.RuntimeOptions
     assert ExecutionContext is runtime.ExecutionContext
@@ -68,7 +73,7 @@ def test_runtime_module_owns_public_runtime_contracts() -> None:
     assert "surface_masks" not in signature(runtime.RuntimeOptions).parameters
     assert not hasattr(runtime, "SurfaceMaskPolicy")
     assert not hasattr(vercor, "SurfaceMaskPolicy")
-    assert "RuntimeRunContext" not in str(signature(runtime.ExecutionBackend.run))
+    assert "RuntimeRunContext" not in str(signature(runtime.ExecutionBackend.execute))
 
 
 @pytest.mark.fast_always
@@ -98,17 +103,18 @@ def test_custom_execution_backend_receives_public_context_and_driver() -> None:
         def __init__(self) -> None:
             self.calls: list[tuple[ExecutionContext, object]] = []
 
-        def run(
+        def execute(
             self,
             state: RunState,
             *,
             context: ExecutionContext,
+            chunk: runtime.ExecutionChunk,
             driver: RuntimeDriver,
         ) -> RunState:
             self.calls.append((context, driver))
-            assert context.run_order == ("MODEL",)
-            assert context.options.execution is self
-            return driver.step_component(state, "MODEL", step=0)
+            assert context.component_names == ("MODEL",)
+            assert context.options.backend is self
+            return driver.run_step(state, chunk.steps[0])
 
     backend = StepOnceBackend()
     component = CallableComponent(
@@ -125,7 +131,7 @@ def test_custom_execution_backend_receives_public_context_and_driver() -> None:
         _clock(),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution=backend),
+        runtime=RuntimeOptions(backend=backend),
     )
 
     final_state = coupler.run()
@@ -159,20 +165,21 @@ def test_custom_backend_runs_complete_host_exchange_order_from_supplied_state() 
     class SequentialBackend:
         def __init__(self) -> None:
             self.received_state: RunState | None = None
-            self.driver_calls: list[tuple[int, str]] = []
+            self.driver_calls: list[tuple[int, tuple[str, ...]]] = []
 
-        def run(
+        def execute(
             self,
             state: RunState,
             *,
             context: ExecutionContext,
+            chunk: runtime.ExecutionChunk,
             driver: RuntimeDriver,
         ) -> RunState:
             self.received_state = state
-            for step, _, _ in context.clock.iter():
-                for component in context.run_order:
-                    self.driver_calls.append((step, component))
-                    state = driver.step_component(state, component, step=step)
+            _ = context
+            for plan in chunk.steps:
+                self.driver_calls.append((plan.step, plan.components))
+                state = driver.run_step(state, plan)
             return state
 
     source = CallableComponent(
@@ -203,7 +210,7 @@ def test_custom_backend_runs_complete_host_exchange_order_from_supplied_state() 
         components=(source, target),
         exchanges=(Exchange("SRC", "DST", ("flux",)),),
         run_order=("SRC", "DST"),
-        runtime=RuntimeOptions(execution=backend),
+        runtime=RuntimeOptions(backend=backend),
     )
     initial_state = coupler.initial_state().replace_fields(
         "SRC",
@@ -214,10 +221,8 @@ def test_custom_backend_runs_complete_host_exchange_order_from_supplied_state() 
 
     assert backend.received_state is initial_state
     assert backend.driver_calls == [
-        (0, "SRC"),
-        (0, "DST"),
-        (1, "SRC"),
-        (1, "DST"),
+        (0, ("SRC", "DST")),
+        (1, ("SRC", "DST")),
     ]
     assert observed_steps == [
         ("SRC", 0, datetime(2000, 1, 1, 0, 0)),
@@ -249,14 +254,15 @@ def test_custom_backend_rejects_non_run_state_return(
     actual_type: str,
 ) -> None:
     class InvalidReturnBackend:
-        def run(
+        def execute(
             self,
             state: RunState,
             *,
             context: ExecutionContext,
+            chunk: runtime.ExecutionChunk,
             driver: RuntimeDriver,
         ) -> Any:
-            _ = state, context, driver
+            _ = state, context, chunk, driver
             return returned
 
     grid = make_test_grid(name=f"v2-invalid-backend-{actual_type}")
@@ -264,7 +270,7 @@ def test_custom_backend_rejects_non_run_state_return(
         _clock(),
         components=(DataComponent("MODEL", grid, {"value": 1.0}),),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution=InvalidReturnBackend()),
+        runtime=RuntimeOptions(backend=InvalidReturnBackend()),
     )
 
     with pytest.raises(
@@ -278,14 +284,17 @@ class _ReturnForeignStateBackend:
     def __init__(self, state: RunState) -> None:
         self.state = state
 
-    def run(
+    def execute(
         self,
         state: RunState,
         *,
         context: ExecutionContext,
+        chunk: runtime.ExecutionChunk,
         driver: RuntimeDriver,
     ) -> RunState:
-        _ = state, context, driver
+        _ = context
+        for plan in chunk.steps:
+            state = driver.run_step(state, plan)
         return self.state
 
 
@@ -314,7 +323,7 @@ def test_custom_backend_accepts_structurally_compatible_foreign_run_state() -> N
         run_order=("MODEL",),
         runtime=RuntimeOptions(
             topology=None,
-            execution=_ReturnForeignStateBackend(foreign_state),
+            backend=_ReturnForeignStateBackend(foreign_state),
         ),
     )
 
@@ -379,7 +388,7 @@ def test_custom_backend_validates_returned_run_state_schema(case: str) -> None:
         run_order=("MODEL",),
         runtime=RuntimeOptions(
             topology=None,
-            execution=_ReturnForeignStateBackend(foreign_state),
+            backend=_ReturnForeignStateBackend(foreign_state),
         ),
     )
 
@@ -388,66 +397,33 @@ def test_custom_backend_validates_returned_run_state_schema(case: str) -> None:
 
 
 @pytest.mark.fast_always
-@pytest.mark.parametrize(
-    ("case", "step", "message"),
-    (
-        pytest.param("state", 0, "state.*RunState.*object", id="state"),
-        pytest.param(
-            "component",
-            0,
-            "component.*UNKNOWN.*prepared.*MODEL",
-            id="unknown-component",
-        ),
-        pytest.param("step", True, "step.*boolean", id="boolean"),
-        pytest.param("step", 0.5, "step.*integer.*0.5", id="fractional"),
-        pytest.param(
-            "step",
-            jnp.asarray([0, 1]),
-            r"step.*scalar.*shape \(2,\)",
-            id="non-scalar",
-        ),
-        pytest.param("step", -1, r"step -1.*\[0, 2\)", id="negative"),
-        pytest.param("step", 2, r"step 2.*\[0, 2\)", id="equal-to-steps"),
-        pytest.param("step", 3, r"step 3.*\[0, 2\)", id="beyond-range"),
-    ),
-)
-def test_runtime_driver_rejects_invalid_dispatch_before_component_step(
-    case: str,
-    step: object,
-    message: str,
-) -> None:
+def test_runtime_driver_rejects_invalid_dispatch_before_component_step() -> None:
     class InvalidDriverCallBackend:
-        def run(
+        def execute(
             self,
             state: RunState,
             *,
             context: ExecutionContext,
+            chunk: runtime.ExecutionChunk,
             driver: RuntimeDriver,
         ) -> RunState:
             _ = context
-            if case == "state":
-                return driver.step_component(object(), "MODEL", step=0)  # type: ignore[arg-type]
-            component = "UNKNOWN" if case == "component" else "MODEL"
-            return driver.step_component(
-                state,
-                component,
-                step=step,  # type: ignore[arg-type]
-            )
+            return driver.run_step(object(), chunk.steps[0])  # type: ignore[arg-type]
 
-    grid = make_test_grid(name=f"v2-driver-{case}")
+    grid = make_test_grid(name="v2-driver-invalid-state")
     coupler = Coupler(
         _clock(steps=2),
         components=(DataComponent("MODEL", grid, {"value": 1.0}),),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution=InvalidDriverCallBackend()),
+        runtime=RuntimeOptions(backend=InvalidDriverCallBackend()),
     )
 
-    with pytest.raises(CouplerError, match=message):
+    with pytest.raises(CouplerError, match="run_step state.*RunState.*object"):
         coupler.run()
 
 
 @pytest.mark.fast_always
-def test_runtime_driver_accepts_integer_jax_scalar_and_uses_requested_time() -> None:
+def test_runtime_driver_uses_each_plan_absolute_step_and_time() -> None:
     grid = make_test_grid(name="v2-driver-jax-step")
     observed_contexts: list[StepContext] = []
 
@@ -458,20 +434,19 @@ def test_runtime_driver_accepts_integer_jax_scalar_and_uses_requested_time() -> 
         observed_contexts.append(context)
         return {"value": fields["value"] + 1.0}
 
-    class JAXScalarStepBackend:
-        def run(
+    class SequentialPlanBackend:
+        def execute(
             self,
             state: RunState,
             *,
             context: ExecutionContext,
+            chunk: runtime.ExecutionChunk,
             driver: RuntimeDriver,
         ) -> RunState:
             _ = context
-            return driver.step_component(
-                state,
-                "MODEL",
-                step=jnp.asarray(1, dtype=jnp.int32),
-            )
+            for plan in chunk.steps:
+                state = driver.run_step(state, plan)
+            return state
 
     component = CallableComponent(
         "MODEL",
@@ -488,17 +463,20 @@ def test_runtime_driver_accepts_integer_jax_scalar_and_uses_requested_time() -> 
         _clock(steps=3),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(execution=JAXScalarStepBackend()),
+        runtime=RuntimeOptions(backend=SequentialPlanBackend()),
     )
 
     final_state = coupler.run()
 
-    assert len(observed_contexts) == 1
-    assert int(observed_contexts[0].step) == 1
-    assert observed_contexts[0].time == datetime(2000, 1, 1, 0, 1)
+    assert [int(context.step) for context in observed_contexts] == [0, 1, 2]
+    assert [context.time for context in observed_contexts] == [
+        datetime(2000, 1, 1, 0, 0),
+        datetime(2000, 1, 1, 0, 1),
+        datetime(2000, 1, 1, 0, 2),
+    ]
     assert_allclose_compact(
         final_state.component("MODEL").field("value"),
-        jnp.full(grid.shape, 2.0),
+        jnp.full(grid.shape, 4.0),
     )
 
 
@@ -511,11 +489,7 @@ def test_runtime_backends_own_loops_without_importing_runner() -> None:
     assert "vercor._runtime.runner" not in backend_source
     assert "class _JAXScannedBackend" not in backend_source
     assert "class _HostLoopBackend" not in backend_source
-    for implementation in (
-        "run_compiled_scanned_runtime",
-        "run_scanned_runtime",
-        "run_host_runtime",
-    ):
+    for implementation in ("execute_jax_chunk", "execute_host_chunk"):
         assert f"def {implementation}" in backend_source
         assert f"def {implementation}" not in runner_source
 

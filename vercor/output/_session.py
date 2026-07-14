@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import jax
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from vercor._runtime.state import ComponentRuntimeState
 
 _Time = datetime | ModelDateTime
+_ClockStep = tuple[int, _Time, timedelta]
 _SampleExtractor = Callable[["ComponentRuntimeState"], Mapping[str, OutputVariable]]
 _CoordinateBuilder = Callable[
     [_Time, Mapping[str, OutputVariable]], Mapping[str, OutputVariable]
@@ -293,17 +294,6 @@ def validate_period_output_run_state_not_traced(state: "RunState") -> None:
         )
 
 
-def validate_period_output_execution(execution: object) -> None:
-    """Reject custom backends until they can carry an output session."""
-
-    if not isinstance(execution, str):
-        raise CouplerError(
-            "Custom execution backends do not support period output because "
-            "the public backend contract has no period-session hook. Configure "
-            "a built-in host/auto/JAX backend or disable component period output."
-        )
-
-
 def validate_period_output_component_state(
     component: "_ComponentBinding",
     state: "ComponentRuntimeState",
@@ -336,6 +326,8 @@ def build_period_output_plan(
     components: Mapping[str, "_ComponentBinding"],
     state: "RunState",
     clock: Clock,
+    *,
+    clock_steps: Sequence[_ClockStep] | None = None,
 ) -> _PeriodOutputPlan:
     """Build static schemas and ordered chunk boundaries before execution."""
 
@@ -378,7 +370,11 @@ def build_period_output_plan(
                 )
             )
 
-    boundaries = _period_output_boundaries(tuple(schemas), clock)
+    boundaries = _period_output_boundaries(
+        tuple(schemas),
+        clock,
+        clock_steps=clock_steps,
+    )
     return _PeriodOutputPlan(
         schemas=tuple(schemas),
         initial_session=_PeriodOutputSession(tuple(accumulators)),
@@ -499,10 +495,13 @@ def _generic_field_dims(
 def _period_output_boundaries(
     schemas: tuple[_PeriodOutputSchema, ...],
     clock: Clock,
+    *,
+    clock_steps: Sequence[_ClockStep] | None = None,
 ) -> tuple[_PeriodOutputBoundary, ...]:
+    steps = tuple(clock.iter()) if clock_steps is None else clock_steps
     raw_boundaries: list[tuple[int, _Time, tuple[int, ...]]] = []
     last_stop = 0
-    for step, time, dt in clock.iter():
+    for step, time, dt in steps:
         due = tuple(
             index
             for index, schema in enumerate(schemas)
@@ -512,9 +511,7 @@ def _period_output_boundaries(
             last_stop = step + 1
             raw_boundaries.append((last_stop, time, due))
     if last_stop < clock.steps:
-        final_time: _Time = clock.start
-        for _, final_time, _ in clock.iter():
-            pass
+        final_time = steps[-1][1] if steps else clock.start
         raw_boundaries.append((clock.steps, final_time, ()))
 
     base_filenames = tuple(
