@@ -1510,6 +1510,19 @@ def test_veros_output_provider_exposes_active_native_variable_universe() -> None
     state.variables.v = state.variables.u.copy()
     state.variables.w = state.variables.temp.copy()
     state.variables.surface_tauy = state.variables.surface_taux.copy()
+    local_dimension_resolutions = 0
+
+    def local_dimensions(settings: Any) -> tuple[str, ...]:
+        nonlocal local_dimension_resolutions
+        _ = settings
+        local_dimension_resolutions += 1
+        return ("xt", "yt", "months")
+
+    state.variables.sss_clim = np.ones((6, 7, 12), dtype=float)
+    state.var_meta["sss_clim"] = SimpleNamespace(
+        active=True,
+        dims=local_dimensions,
+    )
     provider = veros_output_module.veros_output_provider(
         SimpleNamespace(_veros_state=state)
     )
@@ -1538,6 +1551,8 @@ def test_veros_output_provider_exposes_active_native_variable_universe() -> None
         "surface_tauy",
         "psi",
     )
+    assert "sss_clim" not in frame.variables
+    assert local_dimension_resolutions == 0
     assert frame.variables["temp"].dims == ("zt", "yt", "xt")
 
 

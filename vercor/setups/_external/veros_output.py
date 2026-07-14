@@ -226,7 +226,8 @@ def _active_output_variable_names(veros_state: Any) -> tuple[str, ...]:
     active_metadata = {
         name: variable
         for name, variable in metadata.items()
-        if bool(_resolve_metadata(variable.active, veros_state.settings))
+        if name in veros_variables.VARIABLES
+        and bool(_resolve_metadata(variable.active, veros_state.settings))
         and hasattr(veros_state.variables, name)
     }
     coordinate_names = {
