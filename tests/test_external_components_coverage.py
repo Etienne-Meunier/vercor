@@ -309,6 +309,7 @@ def _make_veros_output_state(offset: float = 0.0) -> Any:
     return SimpleNamespace(
         settings=SimpleNamespace(
             enable_eke=True,
+            enable_neutral_diffusion=True,
             enable_streamfunction=True,
             enable_tke=True,
             coord_degree=True,
@@ -1510,6 +1511,18 @@ def test_veros_output_provider_exposes_active_native_variable_universe() -> None
     state.variables.v = state.variables.u.copy()
     state.variables.w = state.variables.temp.copy()
     state.variables.surface_tauy = state.variables.surface_taux.copy()
+    state.variables.line_psin = np.ones((6, 6), dtype=float)
+    state.var_meta["line_psin"] = SimpleNamespace(
+        active=True,
+        dims=("isle", "isle"),
+    )
+    state.variables.Ai_ez = np.ones((6, 7, 2, 2, 2), dtype=float)
+    state.var_meta["Ai_ez"] = SimpleNamespace(
+        active=True,
+        dims=("xt", "yt", "zt", "tensor1", "tensor2"),
+    )
+    state.variables.time = np.asarray(259_200.0, dtype=np.float32)
+    state.var_meta["time"] = SimpleNamespace(active=True, dims=None)
     local_dimension_resolutions = 0
 
     def local_dimensions(settings: Any) -> tuple[str, ...]:
@@ -1552,6 +1565,10 @@ def test_veros_output_provider_exposes_active_native_variable_universe() -> None
         "psi",
     )
     assert "sss_clim" not in frame.variables
+    assert "line_psin" not in frame.variables
+    assert "Ai_ez" not in frame.variables
+    assert "time" not in frame.variables
+    assert "time" in frame.coordinates
     assert local_dimension_resolutions == 0
     assert frame.variables["temp"].dims == ("zt", "yt", "xt")
 

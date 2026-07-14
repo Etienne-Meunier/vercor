@@ -9,6 +9,17 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- Veros native-variable representability regression fixed locally on
+  2026-07-14. The
+  native provider now resolves each supported active variable's dimensions
+  once, excludes `line_psin`, whose repeated `("isle", "isle")` axes cannot
+  satisfy the shared `OutputVariable` contract, and excludes four `Ai_*`
+  variables whose `tensor1` and `tensor2` coordinates are unavailable, and
+  reserves `time` for the adapter-owned coordinate. The
+  focused provider regression and Veros output selection pass 6/6; a bounded one-step
+  `run_jcm_with_veros.py` execution passes; the fast suite passes 480 tests with
+  586 deselected, and the full suite passes all 1066 tests. Black, flake8, mypy,
+  and whitespace checks pass.
 - Veros output-universe regression fixed locally on 2026-07-14. The bundled
   provider now excludes setup-local state metadata such as `sss_clim` before
   resolving dimensions, keeping enumeration aligned with Veros's global output

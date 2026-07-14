@@ -217,6 +217,17 @@ def veros_output_provider(state: Any) -> _VerosOutputProvider:
     return _VerosOutputProvider(state)
 
 
+def _coordinate_dimension_is_extractable(veros_state: Any, dim: str) -> bool:
+    if dim == _TIMESTEP_DIM:
+        return True
+    variable = veros_variables.VARIABLES.get(dim)
+    return bool(
+        variable is not None
+        and _resolved_dims(variable, veros_state.settings, dim) == (dim,)
+        and hasattr(veros_state.variables, dim)
+    )
+
+
 def _active_output_variable_names(veros_state: Any) -> tuple[str, ...]:
     """Return active native variables in Veros manifest order."""
 
@@ -230,12 +241,20 @@ def _active_output_variable_names(veros_state: Any) -> tuple[str, ...]:
         and bool(_resolve_metadata(variable.active, veros_state.settings))
         and hasattr(veros_state.variables, name)
     }
-    coordinate_names = {
-        dim
+    dimensions_by_name = {
+        name: _resolved_dims(variable, veros_state.settings, name)
         for name, variable in active_metadata.items()
-        for dim in _resolved_dims(variable, veros_state.settings, name)
     }
-    return tuple(name for name in active_metadata if name not in coordinate_names)
+    coordinate_names = {VEROS_TIME_DIM} | {
+        dim for dims in dimensions_by_name.values() for dim in dims
+    }
+    return tuple(
+        name
+        for name, dims in dimensions_by_name.items()
+        if name not in coordinate_names
+        and len(set(dims)) == len(dims)
+        and all(_coordinate_dimension_is_extractable(veros_state, dim) for dim in dims)
+    )
 
 
 def _native_output_variables(
