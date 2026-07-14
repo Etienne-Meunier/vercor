@@ -17,9 +17,8 @@ def run_coupler_runtime(
 ) -> RunState:
     """Build, validate, chunk, and execute one configured workflow."""
 
-    with context.interrupts.signal_scope():
-        plan = build_validated_execution_plan(context)
-        return execute_plan(runtime_state, plan=plan, context=context)
+    plan = build_validated_execution_plan(context)
+    return execute_plan(runtime_state, plan=plan, context=context)
 
 
 __all__ = ["run_coupler_runtime"]

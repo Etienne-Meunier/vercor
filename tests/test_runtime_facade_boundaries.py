@@ -31,6 +31,7 @@ from vercor.components import (
 from vercor.dtypes import DTypePolicy
 from vercor.exceptions import CouplerError
 from vercor._runtime.topology_state import RuntimeTopologyMaps
+from vercor.output import OutputTarget
 from vercor.runtime import RuntimeOptions
 from vercor.topology import ExchangeTopologyPatch, TopologyContext
 
@@ -112,15 +113,22 @@ def test_contracts_and_dispatch_are_built_once_across_public_runtime_calls(
 
     initial_state = coupler.initial_state()
     prepared = coupler._prepared
-    final_state = coupler.run(state=initial_state)
-    coupler.write_outputs(final_state, write_snapshots=False)
+    coupler.run(
+        state=initial_state,
+        output=OutputTarget(
+            ".",
+            write_period=False,
+            write_final_fields=True,
+            write_snapshots=False,
+        ),
+    )
 
     assert calls == {"contracts": 1, "dispatch": 1}
     assert coupler._prepared is prepared
 
 
 @pytest.mark.fast_always
-def test_write_outputs_rejects_incompatible_supplied_state_before_output(
+def test_run_output_rejects_incompatible_supplied_state_before_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     clock = Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1)
@@ -156,7 +164,15 @@ def test_write_outputs_rejects_incompatible_supplied_state_before_output(
 
     error: CouplerError | None = None
     try:
-        coupler.write_outputs(foreign_state, write_snapshots=False)
+        coupler.run(
+            foreign_state,
+            output=OutputTarget(
+                ".",
+                write_period=False,
+                write_final_fields=True,
+                write_snapshots=False,
+            ),
+        )
     except CouplerError as exc:
         error = exc
 
@@ -501,8 +517,15 @@ def test_prepared_reuse_does_not_reinvoke_or_materialize_setup_fields(
     prepared = coupler._prepared
     assert prepared is not None
     assert coupler._ensure_prepared() is prepared
-    final_state = coupler.run(state=state)
-    coupler.write_outputs(final_state, write_snapshots=False)
+    coupler.run(
+        state=state,
+        output=OutputTarget(
+            ".",
+            write_period=False,
+            write_final_fields=True,
+            write_snapshots=False,
+        ),
+    )
 
     assert component.setup_calls == calls_after_preparation
     prepared_source = source_for("vercor/_runtime/prepared.py")
@@ -1040,6 +1063,9 @@ def test_runtime_runner_selects_and_delegates_to_backend_owners() -> None:
     assert "get_or_compile_for_context(" not in runner_source
     assert "context.compiled_runtime_cache_key(" not in runner_source
     assert "get_or_compile(" not in runner_source
+    assert "signal_scope(" not in run_coupler_body
+    facade_source = source_for("vercor/_runtime/facade.py")
+    assert facade_source.count("signal_scope(") == 1
     assert "donate_state" not in runner_source
     assert "raise CouplerError(" not in run_coupler_body
 

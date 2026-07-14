@@ -29,11 +29,11 @@ from vercor._runtime.state_validation import (
     validate_runtime_state as validate_runtime_state_schema,
 )
 from vercor.output._session import (
-    _PeriodOutputBoundary,
-    build_period_output_plan,
+    _OutputBoundary,
+    build_output_plan,
     has_period_output,
-    validate_period_output_run_state_not_traced,
-    write_period_output_boundary,
+    initial_output_session,
+    write_output_boundary,
 )
 
 
@@ -120,21 +120,23 @@ def execute_plan(
 ) -> RunState:
     """Execute validated chunks while the core owns I/O and cancellation."""
 
-    output_enabled = has_period_output(context.dispatch_context.components)
+    output_enabled = has_period_output(
+        context.dispatch_context.components,
+        context.output,
+    )
     output_plan = None
     output_session = None
-    output_boundaries: dict[int, _PeriodOutputBoundary] = {}
-    if output_enabled:
-        validate_period_output_run_state_not_traced(state)
+    output_boundaries: dict[int, _OutputBoundary] = {}
     execution_data = build_runtime_execution_data(context)
     if output_enabled:
-        output_plan = build_period_output_plan(
+        assert context.output is not None
+        output_plan = build_output_plan(
             context.dispatch_context.components,
-            state,
             context.clock,
+            context.output,
             clock_steps=execution_data.clock_steps,
         )
-        output_session = output_plan.initial_session
+        output_session = initial_output_session(output_plan)
         output_boundaries = {
             boundary.stop_step: boundary for boundary in output_plan.boundaries
         }
@@ -201,11 +203,19 @@ def execute_plan(
         if output_plan is not None and output_session is not None:
             # Output-enabled chunks are deliberately one step so sampling and
             # accumulation remain core-owned for every backend.
-            output_session = output_session.accumulate(output_plan.schemas, state)
+            step_index = chunk.steps[-1].step
+            _, output_time, output_dt = execution_data.clock_steps[step_index]
+            output_session = output_session.accumulate(
+                output_plan,
+                state,
+                step=step_index,
+                time=output_time + output_dt,
+                dt=output_dt,
+            )
             stop = chunk.steps[-1].step + 1
             boundary = output_boundaries.get(stop)
             if boundary is not None:
-                output_session = write_period_output_boundary(
+                output_session = write_output_boundary(
                     output_plan,
                     output_session,
                     boundary,

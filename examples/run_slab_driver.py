@@ -12,6 +12,7 @@ from vercor import (
 )
 from vercor.dtypes import jax_ones
 from vercor import RectilinearGrid
+from vercor.output import OutputTarget
 from vercor.regridding import bilinear, conservative
 from vercor.setups import (
     make_slab_atmosphere,
@@ -129,8 +130,7 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    final_state = cpl.run(output=OutputTarget("."))
     views = final_state.components(("ATM", "OCN", "LND", "ICE"))
 
     # Inspect a few fields in a component-wise table.

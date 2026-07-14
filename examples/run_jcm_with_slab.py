@@ -18,6 +18,7 @@ from vercor.setups import (
     make_slab_ocean,
 )
 from vercor.dtypes import as_jax_real_array
+from vercor.output import OutputTarget
 from vercor.regridding import bilinear, conservative
 from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
@@ -118,8 +119,7 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    final_state = cpl.run(output=OutputTarget("."))
     views = final_state.components(("ATM", "OCN", "LND"))
 
     # Inspect a few fields in a component-wise table.

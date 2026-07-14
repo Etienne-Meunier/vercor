@@ -8,7 +8,6 @@ from vercor.field_layout import validate_component_data_layout
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
-from vercor.output._session import validate_period_output_component_state
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
@@ -61,5 +60,4 @@ def create_runtime_component_state(
         sent=FieldStore.from_mapping(sent),
         payload=component._create_runtime_payload(),
     )
-    validate_period_output_component_state(component, state)
     return state

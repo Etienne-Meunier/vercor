@@ -6,7 +6,7 @@ from vercor import (
     Exchange,
     RuntimeOptions,
 )
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.setups import (
     JAXGCMConfig,
     JCMLandAtmosphereConfig,
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     ocn = make_veros_gcm(
         config=VerosConfig(
             spinup=Spinup(enabled=True),
-            output=OutputConfig(
+            output=OutputSpec(
                 period=PeriodOutput(
                     frequency="month",
                     variables=(
@@ -86,7 +86,7 @@ if __name__ == "__main__":
             atmosphere=JAXGCMConfig(
                 custom_parameters=custom_jcm_parameters,
                 spinup=Spinup(enabled=True),
-                output=OutputConfig(period=PeriodOutput(frequency="month")),
+                output=OutputSpec(period=PeriodOutput(frequency="month")),
                 jitted=True,
             ),
         ),
@@ -145,5 +145,4 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    cpl.run(output=OutputTarget("."))

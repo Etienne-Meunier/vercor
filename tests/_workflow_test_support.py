@@ -10,7 +10,7 @@ import vercor.runtime as runtime
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
 from vercor.components import CallableComponent, ComponentSpec, StepContext
-from vercor.output import OutputConfig
+from vercor.output import OutputSpec
 from vercor.state import RunState
 
 
@@ -28,7 +28,7 @@ def make_component(
     *,
     execution: str = "jax",
     observed: list[tuple[str, int]] | None = None,
-    output: OutputConfig | None = None,
+    output: OutputSpec | None = None,
 ) -> CallableComponent:
     """Build the scalar increment component shared by workflow tests."""
     grid = make_test_grid(name=f"workflow-{name}")
@@ -50,7 +50,7 @@ def make_component(
             outputs=("value",),
             initial_fields={"value": 0.0},
             execution=cast(Any, execution),
-            output=OutputConfig() if output is None else output,
+            output=OutputSpec() if output is None else output,
         ),
     )
 

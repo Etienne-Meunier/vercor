@@ -10,7 +10,7 @@ from vercor.components import (
     LifecycleHooks,
     ComponentSpec,
 )
-from vercor.output import OutputConfig
+from vercor.output import OutputSpec
 from vercor.setups.config import CAMulatorConfig
 
 
@@ -36,20 +36,32 @@ def make_camulator_gcm(
     import vercor.setups._external.camulator_runtime as _camulator_runtime
     from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
-    period_output = config.output.period
     state = CAMulatorGCMSetupState(
         config_path=config.config_path,
         name=config.name,
         model_weights_path=config.model_weights_path,
-        output_subfolder_name=config.output_subfolder_name,
         init_noise=config.init_noise,
         spinup_time=config.spinup.duration,
         do_spinup=config.spinup.enabled,
         device=config.device,
-        output_cpus_number=config.output_cpus_number,
-        output_frequency=None if period_output is None else period_output.frequency,
         logger=config.logger,
     )
+    output_provider = (
+        _camulator_output.camulator_output_provider(state)
+        if config.output.provider is None
+        else config.output.provider
+    )
+    snapshot_writer = config.output.snapshot_writer
+    if snapshot_writer is None:
+        snapshot_provider = _camulator_output.camulator_output_provider(
+            state,
+            latest_only=True,
+        )
+        snapshot_writer = partial(
+            _camulator_output.write_camulator_snapshot_output,
+            state,
+            snapshot_provider,
+        )
     component = CallableComponent(
         config.name,
         state.grid,
@@ -60,15 +72,13 @@ def make_camulator_gcm(
             initial_fields=_camulator_contracts.camulator_runtime_field_defaults(),
             execution="host",
             lifecycle=LifecycleHooks(setup=state.setup),
-            output=OutputConfig(
-                snapshot_writer=config.output.snapshot_writer
-                or partial(_camulator_output.write_camulator_snapshot_output, state),
+            output=OutputSpec(
+                provider=output_provider,
+                snapshot_writer=snapshot_writer,
                 period=config.output.period,
             ),
         ),
     )
-    if period_output is not None:
-        setattr(component, "_period_output_handled_by_step", True)
     return component
 
 

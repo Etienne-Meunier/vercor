@@ -32,9 +32,6 @@ from vercor.components import (
 )
 from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_ones
 from vercor.grids import RectilinearGrid
-from vercor.output._component_adapter import (
-    _ComponentOutputAdapter as ComponentOutputAdapter,
-)
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,
@@ -42,7 +39,6 @@ from vercor.setups._time_helpers import (
 )
 from vercor.setups._external._jax_gcm_pytree import tree_as_real_dtype, tree_mean
 import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups._external.jax_gcm_output as _jax_gcm_output
 import vercor.setups._external.jax_gcm_runtime as _jax_gcm_runtime
 from vercor.setups._external.jax_gcm_tools import change_jcm_parameter_values
 from vercor.types import RuntimeArray
@@ -61,7 +57,6 @@ class JCMState:
 class JAXGCMSetupState:
     """Mutable setup-time owner for a JAXGCM/JCM atmosphere adapter."""
 
-    output_adapter: ComponentOutputAdapter
     _step_function: Callable[[JCMState, ForcingData], tuple[JCMState, Predictions]]
     _state: JCMState
     forcing: ForcingData
@@ -79,14 +74,12 @@ class JAXGCMSetupState:
         save_interval: timedelta = timedelta(days=1),
         spinup_time: timedelta = timedelta(days=2),
         forcing_data: ForcingData | None = None,
-        output_frequency: str | None = None,
         do_spinup: bool = False,
         jitted: bool = True,
     ) -> None:
         """Build JAXGCM model resources and the VerCOR grid."""
 
         self.forcing_data = forcing_data
-        self.output_frequency = output_frequency
         self.model_timestep = model_timestep
         self.save_interval = save_interval
         self.spinup_time = spinup_time
@@ -125,11 +118,6 @@ class JAXGCMSetupState:
         self.name = name
         self.grid = grid
         self._dtype_policy = DTypePolicy.from_jax_config()
-        self.output_adapter = ComponentOutputAdapter(
-            empty_error_message=_jax_gcm_output.JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE,
-            time_dim=_jax_gcm_output.JAX_GCM_TIME_DIM,
-            dimension_order=_jax_gcm_output.JAX_GCM_OUTPUT_DIMENSION_ORDER,
-        )
 
     def _generate_step_function(
         self, jitted: bool = True
@@ -224,8 +212,6 @@ class JAXGCMSetupState:
             },
         )
 
-        self.output_adapter.reset()
-
         if self.do_spinup:
 
             def spinup_step(step_number: int) -> None:
@@ -235,14 +221,7 @@ class JAXGCMSetupState:
                     self.forcing,
                 )
                 self._state = _new_state
-                self.output_adapter.accumulate(
-                    _jax_gcm_output.jax_gcm_prediction_output_variables(
-                        _predictions,
-                        coords=self.model.coords,
-                        physics_module=getattr(self.model, "physics", None),
-                    ),
-                    summation_dim=_jax_gcm_output.JAX_GCM_TIME_DIM,
-                )
+                _ = _predictions
 
             run_logged_spinup(
                 steps=self.spinup_steps,

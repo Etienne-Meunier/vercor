@@ -4,10 +4,9 @@ Versatile Earth system COupleR (VerCOR) is a JAX-first coupler for composing
 Earth-system model components, forcing data, exchanges, regridding, diagnostics,
 and output. The in-progress VerCOR 4 refactor now uses a protocol-first
 component contract with one immutable declaration for fields, lifecycle hooks,
-and runtime capabilities. Assembly is constructor-only, and static workflows
-plus chunk-oriented execution backends are implemented. Output remains on the
-transitional component declarations below; the unified `OutputProvider` and
-`OutputTarget` design is deferred.
+and runtime capabilities. Assembly is constructor-only, static workflows feed
+chunk-oriented execution backends, and explicit `OutputProvider`/
+`OutputTarget` contracts keep all output cadence and writes core-owned.
 
 ## Installation
 
@@ -135,7 +134,7 @@ Structural lifecycle hooks receive the original `WarmingModel`, not a private
 adapter. `CallableComponent(...)` provides the same JAX contract with less
 boilerplate. `LifecycleHooks(setup=...)` may return
 `SetupResult(fields=..., payload=...)`; `TransferPolicy` selects current,
-monthly-linear, or daily source data. A `StepResult` with omitted payload
+linear, or daily source data. A `StepResult` with omitted payload
 preserves it, while an explicit replacement updates it. Compiled scanned JAX
 execution requires every replacement to keep the setup payload's PyTree
 structure; host execution may clear or restructure payload state.
@@ -247,8 +246,9 @@ leave topology as `None` for ordinary setup-agnostic graphs.
 
 ### Lifecycle hooks and output
 
-Lifecycle and output policy belong on one `ComponentSpec`. Snapshot writers see
-only public metadata/state. Generic period output samples declared runtime
+Lifecycle and output policy belong on one `ComponentSpec`. Snapshot writers
+receive the original public component, its final public state view, the payload,
+and a coordinator-allocated path. Generic period output samples declared runtime
 fields; an empty variable list defaults to declared outputs:
 
 ```python
@@ -263,7 +263,11 @@ from vercor.components import (
     SetupContext,
 )
 from vercor.output import (
-    OutputConfig,
+    OutputContext,
+    OutputFrame,
+    OutputSpec,
+    OutputTarget,
+    OutputVariable,
     PeriodOutput,
     SnapshotContext,
 )
@@ -280,6 +284,20 @@ def snapshot_writer(context: SnapshotContext) -> None:
     context.output_path.write_text(str(value), encoding="utf-8")
 
 
+class KelvinProvider:
+    def sample(self, context: OutputContext) -> OutputFrame:
+        return OutputFrame(
+            {
+                "surface_temperature": OutputVariable(
+                    ("latitude", "longitude"),
+                    context.state.field("temperature"),
+                    {"units": "K"},
+                )
+            },
+            metadata={"source": "custom-provider"},
+        )
+
+
 def output_step(
     fields: Mapping[str, RuntimeArray],
 ) -> Mapping[str, RuntimeArray]:
@@ -294,25 +312,32 @@ output_model = CallableComponent(
         outputs=("temperature",),
         initial_fields={"temperature": 280.0},
         lifecycle=LifecycleHooks(setup=setup_hook),
-        output=OutputConfig(
+        output=OutputSpec(
+            provider=KelvinProvider(),
             snapshot_writer=snapshot_writer,
-            period=PeriodOutput(frequency="step", variables=("temperature",)),
+            period=PeriodOutput(
+                frequency="step",
+                variables=("surface_temperature",),
+            ),
         ),
     ),
 )
 output_coupler = Coupler(
     clock, components=(output_model,), run_order=(output_model.name,)
 )
-output_state = output_coupler.run()  # period files are written in the current cwd
 output_directory = Path("output")
-output_directory.mkdir(exist_ok=True)
-output_coupler.write_outputs(output_state, output_dir=output_directory)
+output_state = output_coupler.run(output=OutputTarget(output_directory))
 ```
 
-Period output is an I/O workflow and is rejected when `Coupler.run()` receives
-traced state leaves. Disable period output for differentiated or outer-jitted
-runs. `write_outputs(output_dir=...)` controls final runtime-view and snapshot
-paths; it does not redirect the period files emitted during `run()`.
+Output is opt-in. `Coupler.run(output=None)` performs no I/O, while one
+`OutputTarget` controls period, final runtime-view, and snapshot output paths.
+`OutputTarget(directory)` enables all three kinds by default; set
+`write_period`, `write_final_fields`, or `write_snapshots` to `False` to disable
+one. For every provider, an empty `PeriodOutput.variables` selects the complete
+frame, a non-empty tuple selects that ordered subset, and an unknown name is an
+error. Providers see the post-step state, payload, and end-of-step model time.
+Enabled output is rejected when `Coupler.run()` receives traced state leaves;
+use the default `output=None` for differentiated or outer-jitted runs.
 
 ## Further reading
 
@@ -320,8 +345,8 @@ The [VerCOR 3.1.1 API architecture review](docs/api-architecture-review.md)
 remains historical compatibility input; its full v4 rewrite is scheduled for
 the documentation/release milestone. The independently packaged
 [`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
-the current protocol-first component and constructor-only assembly contract
-against transitional output/runtime facades, while
+the current protocol-first component, constructor-only assembly, workflow, and
+explicit output-target contracts, while
 [`tests/fixtures/public_plugin_3_0`](tests/fixtures/public_plugin_3_0) freezes a
 valid 3.0-only workflow that is intentionally rejected by the removed authoring
 surface. The current fixture proves installed-wheel isolation and strict mypy

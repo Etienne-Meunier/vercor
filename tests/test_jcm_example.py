@@ -148,13 +148,10 @@ class _RecordingRunCoupler:
         self.events.append(("initial_state", state))
         return state
 
-    def run(self) -> object:
+    def run(self, *, output: object | None = None) -> object:
         state = object()
-        self.events.append(("run", state))
+        self.events.append(("run", output))
         return state
-
-    def write_outputs(self, state: object) -> None:
-        self.events.append(("write_outputs", state))
 
 
 @pytest.mark.fast_always
@@ -166,7 +163,7 @@ class _RecordingRunCoupler:
             3,
             ("initial_state",),
         ),
-        (["--steps", "2"], 2, ("run", "write_outputs")),
+        (["--steps", "2"], 2, ("run",)),
     ),
 )
 def test_cli_modes_use_requested_step_count_and_state_path(
@@ -191,8 +188,8 @@ def test_cli_modes_use_requested_step_count_and_state_path(
 
     assert clocks[0].steps == expected_steps
     assert tuple(event for event, _ in coupler.events) == expected_events
-    if expected_events == ("run", "write_outputs"):
-        assert coupler.events[1][1] is coupler.events[0][1]
+    if expected_events == ("run",):
+        assert coupler.events[0][1] is not None
 
 
 @pytest.mark.fast_always

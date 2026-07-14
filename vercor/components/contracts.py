@@ -5,43 +5,21 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from inspect import signature
-from types import MappingProxyType
-from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Literal, TypeAlias
 
 import jax
 
 from vercor._field_names import unique_field_names as _unique_field_names
+import vercor.components._protocol as _component_protocol
+from vercor.components._protocol import (
+    _snapshot_mapping,
+    Component,
+    StepResult,
+)
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.exceptions import ComponentError
-from vercor.grids import RectilinearGrid
 from vercor.state import ComponentState
 from vercor.types import RuntimeArray
-
-_KEEP_PAYLOAD = object()
-
-
-def _snapshot_mapping(
-    values: Mapping[str, Any] | None,
-    *,
-    label: str = "field values",
-) -> Mapping[str, Any]:
-    """Return a detached read-only insertion-ordered mapping snapshot."""
-
-    if values is not None and not isinstance(values, Mapping):
-        raise TypeError(
-            f"{label} must be a mapping or None; got {type(values).__name__}"
-        )
-    snapshot: dict[str, Any] = {}
-    for name, value in (values or {}).items():
-        if not isinstance(name, str) or not name:
-            raise TypeError("component field names must be non-empty strings")
-        copy = getattr(value, "copy", None)
-        snapshot[name] = (
-            copy()
-            if callable(copy) and type(value).__module__.startswith("numpy")
-            else value
-        )
-    return MappingProxyType(snapshot)
 
 
 def _validate_callback(name: str, callback: object | None) -> None:
@@ -63,54 +41,6 @@ def _validate_callback(name: str, callback: object | None) -> None:
     except TypeError:
         return
     raise TypeError(f"LifecycleHooks.{name} must accept exactly (component, context)")
-
-
-@jax.tree_util.register_pytree_node_class
-@dataclass(frozen=True, init=False)
-class StepResult:
-    """Field and optional payload updates returned by a component step.
-
-    Omitting ``payload`` preserves the current payload. Passing ``None``
-    explicitly clears it. Differentiable compiled execution requires every
-    replacement payload to preserve the setup payload's PyTree structure;
-    host execution may clear or restructure payload state.
-    """
-
-    fields: Mapping[str, RuntimeArray]
-    payload: Any
-
-    def __init__(
-        self,
-        fields: Mapping[str, RuntimeArray] | None = None,
-        payload: Any = _KEEP_PAYLOAD,
-    ) -> None:
-        object.__setattr__(
-            self,
-            "fields",
-            _snapshot_mapping(fields, label="StepResult.fields"),
-        )
-        object.__setattr__(self, "payload", payload)
-
-    def tree_flatten(self) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
-        """Flatten fields and payload while preserving mapping order."""
-
-        names = tuple(self.fields)
-        preserve_payload = self.payload is _KEEP_PAYLOAD
-        children = tuple(self.fields.values())
-        if not preserve_payload:
-            children = (*children, self.payload)
-        return children, (names, preserve_payload)
-
-    @classmethod
-    def tree_unflatten(
-        cls, aux_data: tuple[Any, ...], children: tuple[Any, ...]
-    ) -> "StepResult":
-        """Restore a result from JAX PyTree leaves."""
-
-        names, preserve_payload = aux_data
-        field_count = len(names)
-        payload = _KEEP_PAYLOAD if preserve_payload else children[field_count]
-        return cls(dict(zip(names, children[:field_count], strict=True)), payload)
 
 
 @jax.tree_util.register_pytree_node_class
@@ -233,35 +163,6 @@ _ComponentStepCallable: TypeAlias = Callable[
 _AuthorStepCallable: TypeAlias = Callable[..., _ComponentStepReturn]
 
 
-@runtime_checkable
-class Component(Protocol):
-    """Structural contract implemented by every VerCOR model component."""
-
-    @property
-    def name(self) -> str:
-        """Return the unique component name."""
-        ...
-
-    @property
-    def grid(self) -> RectilinearGrid:
-        """Return the component's rectilinear grid."""
-        ...
-
-    @property
-    def spec(self) -> "ComponentSpec":
-        """Return the immutable component declaration."""
-        ...
-
-    def step(
-        self,
-        fields: Mapping[str, RuntimeArray],
-        context: StepContext,
-        payload: Any | None = None,
-    ) -> Mapping[str, RuntimeArray] | StepResult:
-        """Return declared field updates for one component step."""
-        ...
-
-
 @dataclass(frozen=True)
 class LifecycleHooks:
     """Optional callbacks at the three component lifecycle boundaries.
@@ -324,7 +225,7 @@ class ComponentSpec:
     execution: Literal["jax", "host"]
     lifecycle: LifecycleHooks
     transfer: TransferPolicy
-    output: "OutputConfig"
+    output: "OutputSpec"
 
     def __init__(
         self,
@@ -335,7 +236,7 @@ class ComponentSpec:
         execution: Literal["jax", "host"] = "jax",
         lifecycle: LifecycleHooks | None = None,
         transfer: TransferPolicy | None = None,
-        output: "OutputConfig | None" = None,
+        output: "OutputSpec | None" = None,
     ) -> None:
         """Create and eagerly validate a component declaration."""
 
@@ -360,8 +261,8 @@ class ComponentSpec:
             raise TypeError("lifecycle must be LifecycleHooks or None")
         if transfer is not None and not isinstance(transfer, TransferPolicy):
             raise TypeError("transfer must be TransferPolicy or None")
-        if output is not None and not isinstance(output, OutputConfig):
-            raise TypeError("output must be OutputConfig or None")
+        if output is not None and not isinstance(output, OutputSpec):
+            raise TypeError("output must be OutputSpec or None")
         object.__setattr__(self, "inputs", normalized_inputs)
         object.__setattr__(self, "outputs", normalized_outputs)
         object.__setattr__(self, "initial_fields", frozen_initial_fields)
@@ -372,12 +273,17 @@ class ComponentSpec:
         object.__setattr__(
             self, "transfer", TransferPolicy() if transfer is None else transfer
         )
-        object.__setattr__(self, "output", OutputConfig() if output is None else output)
+        object.__setattr__(self, "output", OutputSpec() if output is None else output)
 
 
-# This late public-owner import breaks the ComponentSpec/OutputConfig cycle until
-# Task 7 separates output policy declarations from output runtime contexts.
-from vercor.output import OutputConfig  # noqa: E402
+# This late public-owner import keeps component and output declarations acyclic
+# while retaining one canonical owner for each public contract.
+from vercor.output import OutputSpec  # noqa: E402
+
+# Resolve the protocol's public forward reference once both declarations exist.
+# This is import metadata, not runtime component state.
+_component_protocol._resolve_component_spec(ComponentSpec)
+_KEEP_PAYLOAD = _component_protocol._KEEP_PAYLOAD
 
 __all__ = [
     "Component",

@@ -14,7 +14,7 @@ from vercor import (
     RuntimeOptions,
 )
 from vercor.components import DataComponent
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
@@ -59,7 +59,7 @@ def build_coupler(
         config=JCMLandAtmosphereConfig(
             atmosphere=JAXGCMConfig(
                 spinup=Spinup(enabled=True),
-                output=OutputConfig(period=PeriodOutput(frequency="month")),
+                output=OutputSpec(period=PeriodOutput(frequency="month")),
                 jitted=True,
             ),
         ),
@@ -130,9 +130,7 @@ def main(arguments: Sequence[str] | None = None) -> RunState:
     if args.initial_state_only:
         return coupler.initial_state()
 
-    final_state = coupler.run()
-    coupler.write_outputs(final_state)
-    return final_state
+    return coupler.run(output=OutputTarget("."))
 
 
 if __name__ == "__main__":

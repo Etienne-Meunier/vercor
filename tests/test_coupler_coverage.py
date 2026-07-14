@@ -51,7 +51,7 @@ from vercor._regridders.bilinear import bilinear
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output._runtime import output_masks_for_component
-from vercor.output import OutputConfig, SnapshotContext
+from vercor.output import OutputSpec, OutputTarget, SnapshotContext
 from vercor.runtime import RuntimeOptions
 from vercor._runtime.surface_masks import (
     create_surface_exchange_masks,
@@ -178,7 +178,7 @@ def make_coupler(
     )
 
 
-def _snapshot_output_time_for_write_outputs(
+def _snapshot_output_time_for_run_output(
     coupler: Coupler,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Any:
@@ -209,7 +209,13 @@ def _snapshot_output_time_for_write_outputs(
         output_runtime_module, "write_coupler_component_snapshots", fake_write_snapshots
     )
 
-    coupler.write_outputs(state)
+    coupler.run(
+        state,
+        output=OutputTarget(
+            ".",
+            write_period=False,
+        ),
+    )
 
     return captured_snapshots["output_time"]
 
@@ -1244,7 +1250,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         )
 
 
-def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
+def test_coupler_run_writes_enabled_outputs_for_all_components(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     components = (
@@ -1272,9 +1278,15 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
         output_runtime_module, "write_coupler_component_snapshots", fake_write_snapshots
     )
 
-    coupler.write_outputs(state, output_dir=Path("snapshot"))
+    final_state = coupler.run(
+        state,
+        output=OutputTarget(
+            Path("snapshot"),
+            write_period=False,
+        ),
+    )
 
-    assert captured_runtime["final_state"] is state
+    assert captured_runtime["final_state"] is final_state
     captured_components = captured_runtime["components"]
     prepared_components = coupler._ensure_prepared().components
     assert tuple(captured_components) == tuple(prepared_components)
@@ -1290,36 +1302,34 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
         captured_runtime["fractional_masks"]
         is coupler._ensure_prepared().topology_maps.fractional_masks
     )
-    assert captured_runtime["output_file_mask"] is None
     assert captured_runtime["output_dir"] == Path("snapshot")
-    assert captured_runtime["filename_template"] == "{component}.runtime_fields.nc"
     assert captured_runtime["logger"] is coupler.logger
-    assert captured_snapshots["final_state"] is state
+    assert captured_snapshots["final_state"] is final_state
     snapshot_components = captured_snapshots["components"]
     assert tuple(snapshot_components) == tuple(prepared_components)
     for name, component in prepared_components.items():
         assert snapshot_components[name] is component
-    assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 0)
+    assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 1)
     assert captured_snapshots["output_dir"] == Path("snapshot")
     assert captured_snapshots["logger"] is coupler.logger
 
 
-def test_coupler_write_outputs_uses_last_executed_runtime_step_time(
+def test_coupler_run_output_uses_final_runtime_state_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2))
 
-    output_time = _snapshot_output_time_for_write_outputs(coupler, monkeypatch)
+    output_time = _snapshot_output_time_for_run_output(coupler, monkeypatch)
 
-    assert output_time == datetime(2000, 1, 1, 0, 1)
+    assert output_time == datetime(2000, 1, 1, 0, 2)
 
 
-def test_coupler_write_outputs_uses_clock_start_without_runtime_steps(
+def test_coupler_run_output_uses_clock_start_without_runtime_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=0))
 
-    output_time = _snapshot_output_time_for_write_outputs(coupler, monkeypatch)
+    output_time = _snapshot_output_time_for_run_output(coupler, monkeypatch)
 
     assert output_time == coupler.clock.start
 
@@ -1354,14 +1364,13 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
         exchanges=coupler.exchanges,
         binary_masks=prepared.topology_maps.binary_masks,
         fractional_masks=prepared.topology_maps.fractional_masks,
-        output_file_mask=Path("snapshot"),
         logger=coupler.logger,
     )
 
     assert [item[0] for item in captured] == ["ATM", "OCN"]
     assert captured[0][1].grid is prepared.components["ATM"].grid
-    assert captured[0][2] == Path("atm_snapshot.nc")
-    assert captured[1][2] == Path("ocn_snapshot.nc")
+    assert captured[0][2] == Path("atm.runtime_fields.nc")
+    assert captured[1][2] == Path("ocn.runtime_fields.nc")
 
 
 def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
@@ -1382,7 +1391,7 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
             outputs=component.spec.outputs,
             initial_fields=component.spec.initial_fields,
             lifecycle=component.spec.lifecycle,
-            output=OutputConfig(snapshot_writer=write_snapshot),
+            output=OutputSpec(snapshot_writer=write_snapshot),
         )
     )
     coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))

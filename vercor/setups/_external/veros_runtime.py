@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from vercor.components import StepContext
 import vercor.setups._external.veros_fluxes as _veros_fluxes
-import vercor.setups._external.veros_output as _veros_output
 import vercor.setups._external.veros_state as _veros_state
 
 if TYPE_CHECKING:
@@ -50,8 +48,6 @@ def step_veros_runtime(
         model_substeps=state.model_substeps,
         logger=logger,
     )
-    record_veros_output(state, context)
-
     return {
         "sea_surface_temperature": _veros_state.extract_veros_runtime_sst(
             state._veros_state
@@ -59,29 +55,4 @@ def step_veros_runtime(
     }
 
 
-def record_veros_output(
-    state: "VerosGCMSetupState",
-    context: StepContext,
-) -> None:
-    """Record selected Veros variables and write optional period output."""
-
-    output_variables = getattr(state, "output_variables", ())
-    if not output_variables:
-        return
-
-    time = context.time
-    if time is None:
-        return
-
-    _veros_output.record_veros_period_output(
-        state.output_adapter,
-        state._veros_state,
-        output_variables=output_variables,
-        output_time=time,
-        dt=timedelta(seconds=context.dt_seconds),
-        output_frequency=state.output_frequency,
-        logger=context.logger,
-    )
-
-
-__all__ = ["record_veros_output", "step_veros_runtime"]
+__all__ = ["step_veros_runtime"]

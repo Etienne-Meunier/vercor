@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import jax.numpy as jnp
 import torch
 
 from vercor.components import StepContext
-from vercor.jax_logging import LoggerLike
 import vercor.setups._external.camulator_fields as _camulator_fields
-import vercor.setups._external.camulator_output as _camulator_output
 import vercor.setups._external.camulator_tensors as _camulator_tensors
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
+    from vercor.jax_logging import LoggerLike
     from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
 
@@ -46,10 +45,11 @@ def run_camulator_prediction_block(
     block_start: int,
     block_end: int,
     logger: LoggerLike | None,
-) -> tuple[torch.Tensor, RuntimeArray]:
-    """Run one CAMulator forcing block and return the final prediction and TS."""
+) -> tuple[torch.Tensor, torch.Tensor, RuntimeArray]:
+    """Run one CAMulator forcing block and return its predictions and final TS."""
 
     prediction = None
+    prediction_samples: list[torch.Tensor] = []
     last_total_surface_temperature: RuntimeArray | None = None
 
     ds_slice = state.dynamic_ds.isel(time=slice(block_start, block_end)).load()
@@ -112,13 +112,7 @@ def run_camulator_prediction_block(
             prediction = state.stepper.model(model_input.float())
 
         prediction = state.stepper._apply_postprocessing(prediction, model_input)
-
-        record_camulator_prediction_output(
-            state,
-            prediction=prediction,
-            utc_datetime=utc_datetime,
-            logger=logger,
-        )
+        prediction_samples.append(prediction)
 
         state.state = state.stepper.shift_state_forward(
             state.state,
@@ -132,56 +126,10 @@ def run_camulator_prediction_block(
             "check forcing availability and coupling timestep alignment."
         )
 
-    return cast(torch.Tensor, prediction), last_total_surface_temperature
-
-
-def record_camulator_prediction_output(
-    state: "CAMulatorGCMSetupState",
-    *,
-    prediction: torch.Tensor,
-    utc_datetime: datetime,
-    logger: LoggerLike | None,
-) -> None:
-    """Write CAMulator increment output or record period-average output."""
-
-    output_frequency = getattr(state, "output_frequency", None)
-    _camulator_output.record_camulator_snapshot(
-        state.output_adapter,
-        prediction,
-        output_time=utc_datetime,
-        metadata=state.metadata,
-        conf=state.conf,
-        state_transformer=state.state_transformer,
-    )
-    if output_frequency is None:
-        _camulator_output.write_camulator_prediction_output(
-            prediction,
-            utc_datetime,
-            latitude=state.latlons.latitude.values,
-            longitude=state.latlons.longitude.values,
-            init_str=state.runtime_cursor.init_str,
-            lead_time_periods=state.lead_time_periods,
-            forecast_hour=state.forecast_hour,
-            metadata=state.metadata,
-            conf=state.conf,
-            state_transformer=state.state_transformer,
-            logger=logger,
-        )
-        return
-
-    _camulator_output.record_camulator_period_output(
-        state.output_adapter,
-        prediction,
-        output_time=utc_datetime,
-        dt=timedelta(hours=state.lead_time_periods),
-        output_frequency=output_frequency,
-        latitude=state.latlons.latitude.values,
-        longitude=state.latlons.longitude.values,
-        init_str=state.runtime_cursor.init_str,
-        metadata=state.metadata,
-        conf=state.conf,
-        state_transformer=state.state_transformer,
-        logger=logger,
+    return (
+        cast(torch.Tensor, prediction),
+        torch.cat(prediction_samples, dim=0),
+        last_total_surface_temperature,
     )
 
 
@@ -198,17 +146,25 @@ def step_camulator_runtime(
     logger = context.logger
     if time is None:
         return {}
+    if not isinstance(time, datetime):
+        raise TypeError("CAMulator runtime requires datetime clock values.")
 
     block_start = state.runtime_cursor.current_index()
     block_end = block_start + state.model_substeps
 
-    prediction, last_total_surface_temperature = run_camulator_prediction_block(
+    (
+        prediction,
+        prediction_samples,
+        last_total_surface_temperature,
+    ) = run_camulator_prediction_block(
         state,
         fields,
         block_start=block_start,
         block_end=block_end,
         logger=logger,
     )
+    state._output_prediction = prediction
+    state._output_prediction_samples = prediction_samples
     state.runtime_cursor.advance()
 
     mapped_fields = _camulator_fields.map_camulator_prediction_to_runtime_fields(
@@ -231,7 +187,6 @@ def step_camulator_runtime(
 
 __all__ = [
     "coerce_camulator_datetime",
-    "record_camulator_prediction_output",
     "run_camulator_prediction_block",
     "step_camulator_runtime",
 ]

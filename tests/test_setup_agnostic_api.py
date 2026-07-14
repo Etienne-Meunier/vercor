@@ -31,7 +31,7 @@ from vercor.components import (
 )
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.fields import vector
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, PeriodOutput
 from vercor.regridding import conservative
 from vercor.runtime import RuntimeOptions
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
@@ -467,7 +467,7 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
         name="CUSTOM_ATM",
         custom_parameters={"surface_flux.vgust": 5.01},
         spinup=Spinup(enabled=False),
-        output=OutputConfig(period=PeriodOutput(frequency="day")),
+        output=OutputSpec(period=PeriodOutput(frequency="day")),
         jitted=False,
     )
     setup = jcm_setup_module.make_jcm_land_atmosphere(

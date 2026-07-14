@@ -35,6 +35,7 @@ __all__ = [
 # are implementation modules, not additional public owners; keep only the
 # explicit contract above visible from the facade namespace.
 for _module_name in (
+    "_protocol",
     "base",
     "contexts",
     "contracts",

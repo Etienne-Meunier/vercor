@@ -21,7 +21,7 @@ from vercor.setups._external.camulator_forcing import (
     initialize_camulator_forcing_cursor,
 )
 from tests._coverage_support import make_test_grid
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, PeriodOutput
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 
 
@@ -417,7 +417,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
             atmosphere=JAXGCMConfig(
                 custom_parameters={"surface_flux.vgust": 5.01},
                 spinup=Spinup(enabled=False),
-                output=OutputConfig(period=PeriodOutput(frequency="year")),
+                output=OutputSpec(period=PeriodOutput(frequency="year")),
                 jitted=False,
             ),
             land_name="CUSTOM_LND",
@@ -441,7 +441,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
                 custom_parameters={"surface_flux.vgust": 5.01},
                 forcing_data=forcing,
                 spinup=Spinup(enabled=False),
-                output=OutputConfig(period=PeriodOutput(frequency="year")),
+                output=OutputSpec(period=PeriodOutput(frequency="year")),
                 jitted=False,
             ),
         },

@@ -9,6 +9,34 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 7 completed locally on 2026-07-14 from base commit
+  `12478cd`. `vercor.output` now exposes exactly the immutable provider/frame,
+  period, target, and snapshot contracts; `Coupler.run(..., output=None)` is an
+  explicit no-I/O default and `OutputTarget` independently enables period,
+  final-field, and snapshot output. One private coordinator owns cadence,
+  selection, collision-safe filenames, host NetCDF writes, interruption scope,
+  and the sole immutable JAX-PyTree sum/count accumulator. Generic runtime
+  fields, JAXGCM, Veros, CAMulator, and third-party providers share identical
+  `PeriodOutput.variables` filtering. Provider frames validate rank, shape,
+  dtype, dimensions, coordinates, attributes, metadata, and sample/time schema;
+  concrete array metadata is canonicalized for safe JIT cache equality while
+  coordinate values remain dynamic PyTree leaves. All output failures are
+  component/path-scoped, and traced I/O is rejected without compromising JIT or
+  gradients for output-free and all-disabled runs.
+  Review follow-up made Veros expose its active native variable universe,
+  preserved every CAMulator model substep for period means while keeping the
+  final prediction for runtime fields and native snapshots, removed obsolete
+  output-owned state/configuration and test-only adapter helpers, normalized
+  public `Coupler.run` annotations, and reduced signal and final-filename
+  ownership to one path. Independent test-quality, gradient, code-quality, and
+  documentation reviews are clean. The focused output/runtime/native suite
+  passes 274 tests with two known third-party warnings; the final fast suite
+  passes 480 tests with 585 deselected and the full suite passes all 1065 tests
+  with the same two warnings. Black leaves all 239 files unchanged, strict
+  flake8 reports zero findings, full mypy reports no issues in 235 source files,
+  and compileall and whitespace checks pass. Exact evidence is in
+  `.superpowers/sdd/task-7-v4-report.md`; the required commit title is
+  `feat!: unify component output providers`.
 - VerCOR 4 milestone 1 Task 6 completed locally on 2026-07-14 from base commit
   `ed5fccf`. The canonical public runtime surface is now the frozen workflow
   planning and chunk execution contract: `WorkflowContext`, `StepPlan`,
@@ -80,8 +108,9 @@ historical commands, failure messages, or detailed validation notes.
   `vercor._interpolators`). Runtime setup/step/topology contexts and private
   preparation no longer carry Settings or a reflective configuration snapshot.
   An empty run order is explicit setup-only behavior and does not synthesize an
-  execution order. Current output remains on `OutputConfig`/`PeriodOutput`,
-  `Coupler.run()`, and `Coupler.write_outputs()`; current custom backends remain
+  execution order. At that milestone, output still remained on
+  `OutputConfig`/`PeriodOutput`, `Coupler.run()`, and
+  `Coupler.write_outputs()`; custom backends still remained
   on `RuntimeOptions.execution` plus `ExecutionBackend.run`. Route IDs were
   outside Task 4; workflow, unified output-provider, and `vercor.compat.v3`
   APIs were not yet implemented. Final review closed imported-object/module namespace leaks,

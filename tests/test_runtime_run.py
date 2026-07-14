@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 from datetime import datetime
 import inspect
 import importlib
@@ -28,8 +27,7 @@ from vercor.setups._slab.ocean import make_slab_ocean
 from vercor.setups._slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
-from vercor.output import OutputConfig, PeriodOutput
-import vercor.output._session as output_session_module
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.runtime import RuntimeOptions
 from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
@@ -290,7 +288,7 @@ def _make_output_component(
             outputs=("temperature",),
             initial_fields={"temperature": 0.0},
             execution="jax",
-            output=OutputConfig(
+            output=OutputSpec(
                 snapshot_writer=snapshot_writer,
                 period=PeriodOutput(
                     frequency=cast(Any, frequency),
@@ -332,6 +330,14 @@ def _read_period_temperatures(output_dir: Path) -> list[np.ndarray]:
     return values
 
 
+def _period_target(output_dir: Path) -> OutputTarget:
+    return OutputTarget(
+        output_dir,
+        write_final_fields=False,
+        write_snapshots=False,
+    )
+
+
 @pytest.mark.parametrize("execution", ["host", "auto", "jax"])
 def test_period_output_values_and_cadence_are_backend_consistent(
     execution: str,
@@ -342,7 +348,9 @@ def test_period_output_values_and_cadence_are_backend_consistent(
     output_dir.mkdir()
     monkeypatch.chdir(output_dir)
 
-    _make_period_output_coupler(execution=execution).run()
+    _make_period_output_coupler(execution=execution).run(
+        output=_period_target(output_dir)
+    )
 
     actual = _read_period_temperatures(output_dir)
     assert len(actual) == 2
@@ -377,7 +385,7 @@ def test_period_output_precomputes_all_frequency_boundaries_and_resets(
         start=start,
         dt_seconds=dt_seconds,
         steps=steps,
-    ).run()
+    ).run(output=_period_target(tmp_path))
 
     actual = _read_period_temperatures(tmp_path)
     assert len(actual) == expected_files
@@ -396,13 +404,13 @@ def test_subdaily_step_output_keeps_one_file_per_step(
         frequency="step",
         steps=3,
         dt_seconds=3_600.0,
-    ).run()
+    ).run(output=_period_target(tmp_path))
 
     paths = sorted(tmp_path.glob("model.averages.*.nc"))
     assert [path.name for path in paths] == [
-        "model.averages.2000-01-01T000000.000000.step00000000.nc",
-        "model.averages.2000-01-01T010000.000000.step00000001.nc",
-        "model.averages.2000-01-01T020000.000000.step00000002.nc",
+        "model.averages.2000-01-01T010000.000000.step00000000.schema0000.nc",
+        "model.averages.2000-01-01T020000.000000.step00000001.schema0000.nc",
+        "model.averages.2000-01-01T030000.000000.step00000002.schema0000.nc",
     ]
     for index, path in enumerate(paths, start=1):
         with h5netcdf.File(path, "r") as dataset:
@@ -434,44 +442,27 @@ def test_period_output_paths_are_unique_across_schemas(
                     "temperature": jnp.full(grid.shape, initial_value),
                 },
                 execution="jax",
-                output=OutputConfig(period=PeriodOutput(frequency="day")),
+                output=OutputSpec(period=PeriodOutput(frequency="day")),
             ),
         )
 
-        def shared_path_schema(
-            selected_component: Any,
-            state: ComponentRuntimeState,
-        ) -> Any:
-            period = selected_component.spec.output.period
-            assert period is not None
-            schema = output_session_module._generic_period_output_schema(
-                selected_component,
-                state,
-                period,
-            )
-            return replace(
-                schema,
-                filename=lambda time: "shared.averages.2000-01-01.nc",
-            )
-
-        cast(Any, component)._period_output_schema_factory = shared_path_schema
         return component
 
-    first = make_component("first/model", 10.0)
-    second = make_component("second model", 20.0)
+    first = make_component("shared/model", 10.0)
+    second = make_component("shared model", 20.0)
     Coupler(
         clock=Clock(datetime(2000, 1, 1), 86_400.0, 1),
         components=(first, second),
         run_order=(first.name, second.name),
         runtime=RuntimeOptions(backend="jax"),
         log_level="WARNING",
-    ).run()
+    ).run(output=_period_target(tmp_path))
 
     expected = {
-        "shared.averages.2000-01-01.component-first-model.schema0000.nc": 11.0,
-        "shared.averages.2000-01-01.component-second-model.schema0001.nc": 21.0,
+        "shared-model.averages.2000-01-02T000000.000000.step00000000.schema0000.nc": 11.0,
+        "shared-model.averages.2000-01-02T000000.000000.step00000000.schema0001.nc": 21.0,
     }
-    paths = sorted(tmp_path.glob("shared.averages.*.nc"))
+    paths = sorted(tmp_path.glob("shared-model.averages.*.nc"))
     assert [path.name for path in paths] == sorted(expected)
     for path in paths:
         with h5netcdf.File(path, "r") as dataset:
@@ -496,7 +487,7 @@ def test_mixed_component_period_frequencies_coexist(
         log_level="WARNING",
     )
 
-    coupler.run()
+    coupler.run(output=_period_target(tmp_path))
 
     assert len(tuple(tmp_path.glob("daily.averages.*.nc"))) == 3
     monthly_paths = tuple(tmp_path.glob("monthly.averages.*.nc"))
@@ -534,7 +525,7 @@ def test_generic_period_output_qualifies_heterogeneous_leading_dimensions(
                 "long_profile": long_values,
             },
             execution="jax",
-            output=OutputConfig(period=PeriodOutput(frequency="day")),
+            output=OutputSpec(period=PeriodOutput(frequency="day")),
         ),
     )
     coupler = _make_period_output_coupler(
@@ -543,9 +534,9 @@ def test_generic_period_output_qualifies_heterogeneous_leading_dimensions(
         component=component,
     )
 
-    coupler.run()
+    coupler.run(output=_period_target(tmp_path))
 
-    with h5netcdf.File(tmp_path / "model.averages.2000-01-01.nc", "r") as dataset:
+    with h5netcdf.File(tmp_path / "model.averages.2000-01-02.nc", "r") as dataset:
         short_variable = dataset.variables["short_profile"]
         long_variable = dataset.variables["long_profile"]
         assert short_variable.dimensions == (
@@ -581,20 +572,20 @@ def test_zero_step_and_incomplete_periods_do_not_write(
         frequency=frequency,
         steps=steps,
         dt_seconds=3_600.0,
-    ).run()
+    ).run(output=_period_target(tmp_path))
 
     assert not tuple(tmp_path.glob("model.averages.*.nc"))
 
 
-def test_period_output_rejects_unknown_variable_before_stepping() -> None:
+def test_period_output_rejects_unknown_variable() -> None:
     component = _make_output_component(variables=("missing",))
     coupler = _make_period_output_coupler(execution="jax", component=component)
 
     with pytest.raises(
         ComponentError,
-        match="component 'model'.*unknown runtime field 'missing'",
+        match="component 'model'.*unknown output variable 'missing'",
     ):
-        coupler.initial_state()
+        coupler.run(output=_period_target(Path(".")))
 
 
 def test_period_output_empty_variable_selection_defaults_to_declared_outputs(
@@ -603,18 +594,21 @@ def test_period_output_empty_variable_selection_defaults_to_declared_outputs(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    _make_period_output_coupler(execution="jax", steps=1).run()
+    _make_period_output_coupler(execution="jax", steps=1).run(
+        output=_period_target(tmp_path)
+    )
 
-    with h5netcdf.File(tmp_path / "model.averages.2000-01-01.nc", "r") as dataset:
+    with h5netcdf.File(tmp_path / "model.averages.2000-01-02.nc", "r") as dataset:
         assert "temperature" in dataset.variables
 
 
 def test_period_output_rejects_outer_jit_and_grad() -> None:
     coupler = _make_period_output_coupler(execution="jax", steps=1)
     state = coupler.initial_state()
+    target = _period_target(Path("."))
 
-    with pytest.raises(CouplerError, match="Period output is an I/O workflow"):
-        jax.jit(coupler.run)(state)
+    with pytest.raises(CouplerError, match="Output is an I/O workflow"):
+        jax.jit(lambda run_state: coupler.run(run_state, output=target))(state)
 
     def objective(value: jax.Array) -> jax.Array:
         traced_state = state.replace_fields(
@@ -622,10 +616,12 @@ def test_period_output_rejects_outer_jit_and_grad() -> None:
             {"temperature": jnp.full((2, 2), value)},
         )
         return jnp.sum(
-            coupler.run(traced_state).component("model").field("temperature")
+            coupler.run(traced_state, output=target)
+            .component("model")
+            .field("temperature")
         )
 
-    with pytest.raises(CouplerError, match="Differentiated.*disable"):
+    with pytest.raises(CouplerError, match="Differentiated.*output=None"):
         jax.grad(objective)(jnp.asarray(1.0))
 
 
@@ -662,10 +658,10 @@ def test_period_output_supports_custom_backend_at_core_boundary(
     )
     monkeypatch.chdir(tmp_path)
 
-    coupler.run()
+    coupler.run(output=_period_target(tmp_path))
 
     assert backend.called
-    assert (tmp_path / "model.averages.2000-01-01.nc").is_file()
+    assert (tmp_path / "model.averages.2000-01-02.nc").is_file()
 
 
 def test_snapshot_output_still_runs_with_period_output_configured(
@@ -685,8 +681,7 @@ def test_snapshot_output_still_runs_with_period_output_configured(
     )
     monkeypatch.chdir(tmp_path)
 
-    final_state = coupler.run()
-    coupler.write_outputs(final_state, output_dir=tmp_path)
+    coupler.run(output=OutputTarget(tmp_path))
 
     assert snapshots == [tmp_path / "model.snapshot.nc"]
 
@@ -697,10 +692,10 @@ def test_period_file_io_stays_outside_scanned_chunk_body() -> None:
     backend_source = inspect.getsource(backends.execute_jax_chunk)
     execution_source = inspect.getsource(execution.execute_plan)
 
-    assert "write_period_output_boundary" not in backend_source
+    assert "write_output_boundary" not in backend_source
     assert "write_netcdf" not in backend_source
     assert "io_callback" not in backend_source
-    assert "write_period_output_boundary" in execution_source
+    assert "write_output_boundary" in execution_source
 
 
 def test_run_executes_pure_scanned_runtime_for_same_shapes_and_metadata() -> None:

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import csv
-from collections.abc import Mapping
-from datetime import datetime, timedelta
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,14 +15,10 @@ import jax.numpy as jnp
 
 from vercor.calendar import ModelDateTime
 from vercor.dtypes import as_jax_index_array, as_jax_real_array, jax_index_dtype
-from vercor.jax_logging import LoggerLike
-from vercor.output._component_adapter import (
-    _ComponentOutputAdapter as ComponentOutputAdapter,
-)
-from vercor.output import SnapshotContext
+from vercor.output import OutputContext, OutputFrame, SnapshotContext
 from vercor.output._dataset import time_coordinate_variable
-from vercor.output._period import AccumulatedPeriodVariable, TIME_NAME
-from vercor.output._session import _PeriodOutputAccumulator, _PeriodOutputSchema
+from vercor.output._netcdf import write_netcdf_dataset
+from vercor.output._period import TIME_NAME
 from vercor.output import OutputVariable
 from vercor.types import RuntimeArray
 
@@ -35,9 +31,6 @@ _LAT_MODE_NAME = "total_wavenumber"
 _WVI_NAME = "wvi_id"
 _HSG_LEVEL_NAME = "hsg_level"
 _SURFACE_NAME = "surface"
-JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE = (
-    "JAXGCM average output requires at least one prediction."
-)
 JAX_GCM_OUTPUT_DIMENSION_ORDER = (
     JAX_GCM_TIME_DIM,
     _WVI_NAME,
@@ -350,47 +343,6 @@ def _with_leading_time_dim(value: Any) -> Any:
     return jnp.asarray(value)[jnp.newaxis, ...]
 
 
-def jax_gcm_period_output_accumulator_template(
-    jcm_state: Any,
-    *,
-    coords: Any,
-    physics_module: _PhysicsModuleLike | None = None,
-) -> _PeriodOutputAccumulator:
-    """Create stable empty JAXGCM output sums/counts during preparation."""
-
-    selected_physics_module = physics_module or _default_physics_module()
-    selected_physics_module.cache_coords(coords)
-    variables = _jax_gcm_state_output_variables(
-        jcm_state,
-        coords=coords,
-        physics_module=selected_physics_module,
-    )
-    return _PeriodOutputAccumulator.zeros_from_samples(
-        variables,
-        summation_dim=JAX_GCM_TIME_DIM,
-    )
-
-
-def accumulate_jax_gcm_prediction_output(
-    accumulator: _PeriodOutputAccumulator,
-    prediction: Any,
-    *,
-    coords: Any,
-    physics_module: _PhysicsModuleLike,
-) -> _PeriodOutputAccumulator:
-    """Return exact per-prediction sums/counts using pre-cached coordinates."""
-
-    variables = _jax_gcm_prediction_output_variables(
-        prediction,
-        coords=coords,
-        physics_module=physics_module,
-    )
-    return accumulator.reset().add_samples(
-        variables,
-        summation_dim=JAX_GCM_TIME_DIM,
-    )
-
-
 def _read_units_table(path: Path) -> dict[str, dict[str, str]]:
     metadata: dict[str, dict[str, str]] = {}
     with path.open(newline="", encoding="utf-8") as csv_file:
@@ -444,126 +396,48 @@ def jax_gcm_data_variables_with_unit_metadata(
     }
 
 
-def record_jax_gcm_period_output(
-    adapter: ComponentOutputAdapter,
-    prediction: Any,
-    *,
-    coords: Any,
-    physics_module: _PhysicsModuleLike | None = None,
-    output_time: datetime | ModelDateTime,
-    dt: timedelta,
-    output_frequency: str | None,
-    logger: LoggerLike | None = None,
-) -> bool:
-    """Record one JAXGCM prediction and write a period average when due."""
+class _JAXGCMOutputProvider:
+    """Ordinary provider adapting the runtime JCM payload into a native frame."""
 
-    variables = jax_gcm_prediction_output_variables(
-        prediction,
-        coords=coords,
-        physics_module=physics_module,
-    )
-
-    def build_coordinate_variables(
-        mean_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        _ = mean_variables
-        return jax_gcm_coordinate_variables(
-            coords=coords,
-            output_time=output_time,
+    def __init__(self, state: Any) -> None:
+        self._coords = state.model.coords
+        self._physics = (
+            getattr(state.model, "physics", None) or _default_physics_module()
         )
+        if hasattr(self._coords, "nodal_shape"):
+            self._physics.cache_coords(self._coords)
+        self._unit_metadata = jax_gcm_unit_metadata(self._physics)
 
-    def build_data_variables(
-        mean_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        unit_metadata = jax_gcm_unit_metadata(physics_module)
-        return jax_gcm_data_variables_with_unit_metadata(
-            mean_variables,
-            unit_metadata,
-        )
+    def sample(self, context: OutputContext) -> OutputFrame:
+        """Extract one post-step JCM state using native dimensions and metadata."""
 
-    return adapter.record_period_average_if_due(
-        variables,
-        summation_dim=JAX_GCM_TIME_DIM,
-        time=output_time,
-        dt=dt,
-        output_frequency=output_frequency,
-        output=lambda time: f"jcm.averages.{time.strftime('%Y-%m-%d')}.nc",
-        build_coordinate_variables=build_coordinate_variables,
-        build_data_variables=build_data_variables,
-        logger=logger,
-    )
-
-
-def jax_gcm_period_output_schema(
-    state: Any,
-    component: Any,
-    runtime_state: Any,
-) -> _PeriodOutputSchema:
-    """Return the private runtime schema for native JAXGCM period output."""
-
-    period = component.spec.output.period
-    if period is None:
-        raise ValueError("JAXGCM period schema requires configured period output.")
-    coords = state.model.coords
-    physics_module = getattr(state.model, "physics", None) or _default_physics_module()
-    physics_module.cache_coords(coords)
-    unit_metadata = jax_gcm_unit_metadata(physics_module)
-
-    def sample(component_state: Any) -> dict[str, OutputVariable]:
-        payload = component_state.payload
-        jcm_state = getattr(payload, "jcm_state", None)
+        jcm_state = getattr(context.payload, "jcm_state", None)
         if jcm_state is None:
-            raise ValueError("JAXGCM period output requires a post-step JCM state.")
-        return _jax_gcm_state_output_variables(
+            raise ValueError("JAXGCM output requires a post-step JCM state.")
+        variables = _jax_gcm_state_output_variables(
             jcm_state,
-            coords=coords,
-            physics_module=physics_module,
+            coords=self._coords,
+            physics_module=self._physics,
+        )
+        return OutputFrame(
+            jax_gcm_data_variables_with_unit_metadata(
+                variables,
+                self._unit_metadata,
+            ),
+            coordinates=jax_gcm_coordinate_variables(
+                coords=self._coords,
+                output_time=context.time,
+            ),
+            sample_dimension=JAX_GCM_TIME_DIM,
+            time_dimension=JAX_GCM_TIME_DIM,
+            dimension_order=JAX_GCM_OUTPUT_DIMENSION_ORDER,
         )
 
-    def sample_accumulator(
-        component_state: Any,
-    ) -> _PeriodOutputAccumulator | None:
-        return getattr(component_state.payload, "period_output", None)
 
-    def coordinate_variables(
-        output_time: datetime | ModelDateTime,
-        mean_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        _ = mean_variables
-        return jax_gcm_coordinate_variables(
-            coords=coords,
-            output_time=output_time,
-        )
+def jax_gcm_output_provider(state: Any) -> _JAXGCMOutputProvider:
+    """Return the native JAXGCM provider installed by the setup factory."""
 
-    def take_initial_accumulated_variables() -> Mapping[str, AccumulatedPeriodVariable]:
-        adapter = getattr(state, "output_adapter", None)
-        if adapter is None:
-            return {}
-        variables = dict(adapter.variables)
-        adapter.accumulator.clear()
-        return variables
-
-    representative_variables = sample(runtime_state)
-    return _PeriodOutputSchema(
-        component_name=component.name,
-        period=period,
-        variable_names=tuple(representative_variables),
-        variable_dims=tuple(
-            variable.dims for variable in representative_variables.values()
-        ),
-        sample=sample,
-        build_coordinate_variables=coordinate_variables,
-        decorate_data_variables=lambda variables: (
-            jax_gcm_data_variables_with_unit_metadata(variables, unit_metadata)
-        ),
-        filename=lambda time: f"jcm.averages.{time.strftime('%Y-%m-%d')}.nc",
-        summation_dim=JAX_GCM_TIME_DIM,
-        time_dim=JAX_GCM_TIME_DIM,
-        dimension_order=JAX_GCM_OUTPUT_DIMENSION_ORDER,
-        empty_error_message=JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE,
-        take_initial_accumulated_variables=take_initial_accumulated_variables,
-        sample_accumulator=sample_accumulator,
-    )
+    return _JAXGCMOutputProvider(state)
 
 
 def write_jax_gcm_snapshot_output(
@@ -585,50 +459,48 @@ def write_jax_gcm_snapshot_output(
         coords=state.model.coords,
         physics_module=physics_module,
     )
-    state.output_adapter.record_snapshot(
-        variables,
-        summation_dim=JAX_GCM_TIME_DIM,
-        time=context.time,
-    )
     unit_metadata = jax_gcm_unit_metadata(physics_module)
-
-    def build_coordinate_variables(
-        snapshot_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        _ = snapshot_variables
-        return jax_gcm_coordinate_variables(
+    data_variables = jax_gcm_data_variables_with_unit_metadata(
+        variables,
+        unit_metadata,
+    )
+    write_netcdf_dataset(
+        output=str(context.output_path),
+        coordinate_variables=jax_gcm_coordinate_variables(
             coords=state.model.coords,
             output_time=context.time,
-        )
-
-    def build_data_variables(
-        snapshot_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return jax_gcm_data_variables_with_unit_metadata(
-            snapshot_variables,
-            unit_metadata,
-        )
-
-    state.output_adapter.write_snapshot(
-        str(context.output_path),
-        build_coordinate_variables=build_coordinate_variables,
-        build_data_variables=build_data_variables,
+        ),
+        data_variables={
+            name: _ordered_variable(variable, JAX_GCM_OUTPUT_DIMENSION_ORDER)
+            for name, variable in data_variables.items()
+        },
         logger=context.logger,
     )
 
 
+def _ordered_variable(
+    variable: OutputVariable,
+    dimension_order: Sequence[str],
+) -> OutputVariable:
+    """Return one variable transposed into the native JAXGCM dimension order."""
+
+    output_dims = tuple(dim for dim in dimension_order if dim in variable.dims)
+    output_dims += tuple(dim for dim in variable.dims if dim not in output_dims)
+    axes = tuple(variable.dims.index(dim) for dim in output_dims)
+    values = variable.values
+    if axes != tuple(range(len(axes))):
+        values = jnp.transpose(values, axes)
+    return OutputVariable(output_dims, values, variable.attrs)
+
+
 __all__ = [
-    "JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE",
     "JAX_GCM_OUTPUT_DIMENSION_ORDER",
     "JAX_GCM_TIME_DIM",
-    "accumulate_jax_gcm_prediction_output",
     "jax_gcm_coordinate_variables",
     "jax_gcm_data_variables_with_unit_metadata",
     "jax_gcm_prediction_output_variables",
-    "jax_gcm_period_output_schema",
-    "jax_gcm_period_output_accumulator_template",
+    "jax_gcm_output_provider",
     "jax_gcm_state_snapshot_output_variables",
     "jax_gcm_unit_metadata",
-    "record_jax_gcm_period_output",
     "write_jax_gcm_snapshot_output",
 ]

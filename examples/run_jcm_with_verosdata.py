@@ -6,7 +6,7 @@ from vercor import (
     Exchange,
     RuntimeOptions,
 )
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.setups import make_erainterim_ocean
 from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
@@ -28,7 +28,7 @@ if __name__ == "__main__":
         config=JCMLandAtmosphereConfig(
             atmosphere=JAXGCMConfig(
                 spinup=Spinup(enabled=True),
-                output=OutputConfig(period=PeriodOutput(frequency="month")),
+                output=OutputSpec(period=PeriodOutput(frequency="month")),
                 jitted=True,
             ),
         ),
@@ -86,5 +86,4 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    cpl.run(output=OutputTarget("."))

@@ -14,23 +14,15 @@ import numpy as np
 import torch
 import yaml
 
-from vercor.jax_logging import LoggerLike, get_default_logger
-from vercor.output._component_adapter import (
-    _ComponentOutputAdapter as ComponentOutputAdapter,
-)
-from vercor.output import SnapshotContext
+from vercor.output import OutputContext, OutputFrame, SnapshotContext
 from vercor.output._dataset import time_coordinate_variable, used_dimension_names
 from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output import OutputVariable
 
 CAMULATOR_TIME_DIM = "time"
-CAMULATOR_AVERAGE_EMPTY_ERROR_MESSAGE = (
-    "CAMulator average output requires at least one prediction."
-)
 _LEVEL_NAME = "level"
 _LATITUDE_NAME = "latitude"
 _LONGITUDE_NAME = "longitude"
-_FORECAST_HOUR_NAME = "forecast_hour"
 _UNSUPPORTED_PREDICT_OPTIONS = (
     "interp_pressure",
     "ua_var_encoding",
@@ -61,134 +53,6 @@ def load_camulator_output_metadata(conf: Mapping[str, Any]) -> dict[str, Any]:
     return dict(metadata)
 
 
-def build_camulator_output_variables(
-    prediction: torch.Tensor,
-    forecast_datetime: datetime,
-    *,
-    latitude: object,
-    longitude: object,
-    forecast_hour: int,
-    metadata: Mapping[str, Any],
-    conf: Mapping[str, Any],
-) -> tuple[dict[str, OutputVariable], dict[str, OutputVariable]]:
-    """Return coordinate and data variables for one CAMulator forecast increment."""
-
-    values, levels, data_conf, data_variables = _data_variables_from_prediction(
-        prediction,
-        metadata=metadata,
-        conf=conf,
-        require_single_time=True,
-    )
-    latitude_values = np.asarray(latitude)
-    longitude_values = np.asarray(longitude)
-    _validate_grid_coordinates(values, latitude_values, longitude_values)
-
-    coordinate_variables = {
-        CAMULATOR_TIME_DIM: _with_metadata(
-            time_coordinate_variable(forecast_datetime, time_dim=CAMULATOR_TIME_DIM),
-            CAMULATOR_TIME_DIM,
-            metadata,
-        ),
-        _LEVEL_NAME: _with_metadata(
-            OutputVariable(
-                (_LEVEL_NAME,),
-                _level_values(data_conf, levels),
-            ),
-            _LEVEL_NAME,
-            metadata,
-        ),
-        _LATITUDE_NAME: _with_metadata(
-            OutputVariable((_LATITUDE_NAME,), latitude_values),
-            _LATITUDE_NAME,
-            metadata,
-        ),
-        _LONGITUDE_NAME: _with_metadata(
-            OutputVariable((_LONGITUDE_NAME,), longitude_values),
-            _LONGITUDE_NAME,
-            metadata,
-        ),
-    }
-
-    data_variables[_FORECAST_HOUR_NAME] = OutputVariable(
-        (),
-        np.asarray(forecast_hour, dtype=np.int32),
-    )
-    return coordinate_variables, data_variables
-
-
-def write_camulator_netcdf_increment(
-    coordinate_variables: Mapping[str, OutputVariable],
-    data_variables: Mapping[str, OutputVariable],
-    *,
-    init_str: str,
-    forecast_hour: int,
-    conf: Mapping[str, Any],
-    logger: LoggerLike | None = None,
-) -> str:
-    """Write one CAMulator forecast increment to the configured NetCDF file."""
-
-    predict_conf = _mapping(conf.get("predict", {}), name="predict")
-    save_forecast = predict_conf.get("save_forecast")
-    if not save_forecast:
-        raise KeyError("'save_forecast' missing in CAMulator config")
-
-    save_location = os.path.join(str(save_forecast), init_str)
-    os.makedirs(save_location, exist_ok=True)
-    output = os.path.join(save_location, f"pred_{init_str}_{forecast_hour:03d}.nc")
-
-    log = logger if logger is not None else get_default_logger()
-    write_netcdf_dataset(
-        output=output,
-        coordinate_variables=coordinate_variables,
-        data_variables=data_variables,
-        global_attrs={"Conventions": "CF-1.11"},
-        logger=log,
-    )
-    return output
-
-
-def write_camulator_prediction_output(
-    prediction: torch.Tensor,
-    utc_datetime: datetime,
-    *,
-    latitude: object,
-    longitude: object,
-    init_str: str,
-    lead_time_periods: int,
-    forecast_hour: int,
-    metadata: Mapping[str, Any],
-    conf: Mapping[str, Any],
-    state_transformer: Any | None,
-    logger: LoggerLike | None = None,
-) -> None:
-    """Write one CAMulator prediction increment through the VerCOR output boundary."""
-
-    _validate_supported_output_options(conf)
-    output_prediction = _prediction_for_output(
-        prediction,
-        conf=conf,
-        state_transformer=state_transformer,
-    )
-    lead_forecast_hour = int(lead_time_periods) * int(forecast_hour)
-    coordinate_variables, data_variables = build_camulator_output_variables(
-        output_prediction,
-        utc_datetime,
-        latitude=latitude,
-        longitude=longitude,
-        forecast_hour=lead_forecast_hour,
-        metadata=metadata,
-        conf=conf,
-    )
-    write_camulator_netcdf_increment(
-        coordinate_variables,
-        data_variables,
-        init_str=init_str,
-        forecast_hour=lead_forecast_hour,
-        conf=conf,
-        logger=logger,
-    )
-
-
 def camulator_period_output_variables(
     prediction: torch.Tensor,
     *,
@@ -211,25 +75,6 @@ def camulator_period_output_variables(
         require_single_time=False,
     )
     return data_variables
-
-
-def camulator_average_output_path(
-    *,
-    output_time: datetime,
-    init_str: str,
-    conf: Mapping[str, Any],
-) -> str:
-    """Return the CAMulator period-average output path for one period."""
-
-    predict_conf = _mapping(conf.get("predict", {}), name="predict")
-    save_forecast = predict_conf.get("save_forecast")
-    if not save_forecast:
-        raise KeyError("'save_forecast' missing in CAMulator config")
-
-    save_location = os.path.join(str(save_forecast), init_str)
-    os.makedirs(save_location, exist_ok=True)
-    date_time = output_time.strftime("%Y-%m-%d")
-    return os.path.join(save_location, f"camulator.averages.{date_time}.nc")
 
 
 def camulator_average_coordinate_variables(
@@ -277,127 +122,83 @@ def camulator_average_data_variables(
     }
 
 
-def record_camulator_period_output(
-    adapter: ComponentOutputAdapter,
-    prediction: torch.Tensor,
-    *,
-    output_time: datetime,
-    dt: timedelta,
-    output_frequency: str | None,
-    latitude: object,
-    longitude: object,
-    init_str: str,
-    metadata: Mapping[str, Any],
-    conf: Mapping[str, Any],
-    state_transformer: Any | None,
-    logger: LoggerLike | None = None,
-) -> bool:
-    """Record one CAMulator prediction and write a period average when due."""
+class _CAMulatorOutputProvider:
+    """Ordinary provider adapting the latest CAMulator prediction tensor."""
 
-    variables = camulator_period_output_variables(
-        prediction,
-        metadata=metadata,
-        conf=conf,
-        state_transformer=state_transformer,
-    )
+    def __init__(self, state: Any, *, latest_only: bool = False) -> None:
+        self._state = state
+        self._latest_only = latest_only
 
-    def build_coordinate_variables(
-        mean_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return camulator_average_coordinate_variables(
-            mean_variables,
-            output_time=output_time,
-            latitude=latitude,
-            longitude=longitude,
-            metadata=metadata,
-            conf=conf,
+    def sample(self, context: OutputContext) -> OutputFrame:
+        """Extract the latest native prediction with CAMulator metadata."""
+
+        prediction = (
+            self._state._output_prediction
+            if self._latest_only
+            else self._state._output_prediction_samples
         )
-
-    def build_data_variables(
-        mean_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return camulator_average_data_variables(
-            mean_variables,
-            metadata=metadata,
-        )
-
-    return adapter.record_period_average_if_due(
-        variables,
-        summation_dim=CAMULATOR_TIME_DIM,
-        time=output_time,
-        dt=dt,
-        output_frequency=output_frequency,
-        output=lambda time: camulator_average_output_path(
-            output_time=time,
-            init_str=init_str,
-            conf=conf,
-        ),
-        build_coordinate_variables=build_coordinate_variables,
-        build_data_variables=build_data_variables,
-        logger=logger,
-    )
-
-
-def record_camulator_snapshot(
-    adapter: ComponentOutputAdapter,
-    prediction: torch.Tensor,
-    *,
-    output_time: datetime,
-    metadata: Mapping[str, Any],
-    conf: Mapping[str, Any],
-    state_transformer: Any | None,
-) -> None:
-    """Record one CAMulator prediction as the latest snapshot sample."""
-
-    adapter.record_snapshot(
-        camulator_period_output_variables(
+        if prediction is None:
+            raise ValueError("CAMulator output requires a completed prediction.")
+        if not isinstance(context.time, datetime):
+            raise TypeError("CAMulator output requires a datetime timestamp.")
+        variables = camulator_period_output_variables(
             prediction,
-            metadata=metadata,
-            conf=conf,
-            state_transformer=state_transformer,
-        ),
-        summation_dim=CAMULATOR_TIME_DIM,
-        time=output_time,
-    )
+            metadata=self._state.metadata,
+            conf=self._state.conf,
+            state_transformer=self._state.state_transformer,
+        )
+        return OutputFrame(
+            camulator_average_data_variables(
+                variables,
+                metadata=self._state.metadata,
+            ),
+            coordinates=camulator_average_coordinate_variables(
+                variables,
+                output_time=context.time,
+                latitude=self._state.latlons.latitude.values,
+                longitude=self._state.latlons.longitude.values,
+                metadata=self._state.metadata,
+                conf=self._state.conf,
+            ),
+            sample_dimension=CAMULATOR_TIME_DIM,
+            time_dimension=CAMULATOR_TIME_DIM,
+        )
+
+
+def camulator_output_provider(
+    state: Any,
+    *,
+    latest_only: bool = False,
+) -> _CAMulatorOutputProvider:
+    """Return the native CAMulator provider installed by the setup factory."""
+
+    return _CAMulatorOutputProvider(state, latest_only=latest_only)
 
 
 def write_camulator_snapshot_output(
     state: Any,
+    provider: _CAMulatorOutputProvider,
     context: SnapshotContext,
 ) -> None:
     """Write one final CAMulator prediction snapshot through the shared adapter."""
 
-    if state.output_adapter.snapshot_empty:
+    if state._output_prediction is None:
         return
-
-    snapshot_time = state.output_adapter.snapshot_time or context.time
-    if not isinstance(snapshot_time, datetime):
-        raise TypeError("CAMulator snapshot output requires a datetime timestamp.")
-
-    def build_coordinate_variables(
-        snapshot_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return camulator_average_coordinate_variables(
-            snapshot_variables,
-            output_time=snapshot_time,
-            latitude=state.latlons.latitude.values,
-            longitude=state.latlons.longitude.values,
-            metadata=state.metadata,
-            conf=state.conf,
+    frame = provider.sample(
+        OutputContext(
+            component=context.component,
+            state=context.state,
+            payload=context.payload,
+            step=0,
+            time=context.time,
+            dt=timedelta(0),
         )
-
-    def build_data_variables(
-        snapshot_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return camulator_average_data_variables(
-            snapshot_variables,
-            metadata=state.metadata,
-        )
-
-    state.output_adapter.write_snapshot(
-        str(context.output_path),
-        build_coordinate_variables=build_coordinate_variables,
-        build_data_variables=build_data_variables,
+    )
+    write_netcdf_dataset(
+        output=str(context.output_path),
+        coordinate_variables=frame.coordinates,
+        data_variables=frame.variables,
+        global_attrs=frame.metadata or None,
         logger=context.logger,
     )
 
@@ -499,7 +300,7 @@ def _data_variables_from_prediction(
         levels=levels,
         metadata=metadata,
     )
-    return values, levels, data_conf, _filtered_data_variables(data_variables, conf)
+    return values, levels, data_conf, data_variables
 
 
 def _validate_prediction_shape(
@@ -514,25 +315,6 @@ def _validate_prediction_shape(
         raise ValueError(
             "CAMulator prediction channel count does not match the config: "
             f"expected {expected_channels}, got {values.shape[1]}."
-        )
-
-
-def _validate_grid_coordinates(
-    values: np.ndarray,
-    latitude: np.ndarray,
-    longitude: np.ndarray,
-) -> None:
-    if latitude.ndim != 1:
-        raise ValueError(f"CAMulator latitude must be 1D, got shape {latitude.shape}.")
-    if longitude.ndim != 1:
-        raise ValueError(
-            f"CAMulator longitude must be 1D, got shape {longitude.shape}."
-        )
-    if values.shape[-2:] != (latitude.shape[0], longitude.shape[0]):
-        raise ValueError(
-            "CAMulator prediction grid does not match latitude/longitude: "
-            f"prediction={values.shape[-2:]}, "
-            f"coordinates={(latitude.shape[0], longitude.shape[0])}."
         )
 
 
@@ -568,23 +350,6 @@ def _prediction_data_variables(
             metadata,
         )
     return variables
-
-
-def _filtered_data_variables(
-    data_variables: Mapping[str, OutputVariable],
-    conf: Mapping[str, Any],
-) -> dict[str, OutputVariable]:
-    predict_conf = _mapping(conf.get("predict", {}), name="predict")
-    save_vars = predict_conf.get("save_vars")
-    if save_vars is None or len(save_vars) == 0:
-        return dict(data_variables)
-
-    selected = set(_string_sequence(save_vars, "predict.save_vars"))
-    return {
-        name: variable
-        for name, variable in data_variables.items()
-        if name == _FORECAST_HOUR_NAME or name in selected
-    }
 
 
 def _with_metadata(
@@ -661,17 +426,11 @@ def _string_sequence(value: Any, name: str) -> tuple[str, ...]:
 
 
 __all__ = [
-    "CAMULATOR_AVERAGE_EMPTY_ERROR_MESSAGE",
     "CAMULATOR_TIME_DIM",
-    "build_camulator_output_variables",
     "camulator_average_coordinate_variables",
     "camulator_average_data_variables",
-    "camulator_average_output_path",
     "camulator_period_output_variables",
     "load_camulator_output_metadata",
-    "record_camulator_period_output",
-    "record_camulator_snapshot",
-    "write_camulator_netcdf_increment",
+    "camulator_output_provider",
     "write_camulator_snapshot_output",
-    "write_camulator_prediction_output",
 ]

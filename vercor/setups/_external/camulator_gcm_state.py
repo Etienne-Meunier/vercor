@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from pathlib import Path
 from typing import Optional
 
 import torch
@@ -17,9 +16,6 @@ from vercor.components import (
 from vercor.dtypes import jax_ones
 from vercor.grids import RectilinearGrid
 from vercor.jax_logging import LoggerLike, get_default_logger
-from vercor.output._component_adapter import (
-    _ComponentOutputAdapter as ComponentOutputAdapter,
-)
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     grid_field_defaults,
@@ -27,7 +23,6 @@ from vercor.setups._time_helpers import (
 import vercor.setups._external.camulator_contracts as _camulator_contracts
 from vercor.setups._external.camulator_forcing import CamulatorRuntimeCursor
 import vercor.setups._external.camulator_init as _camulator_init
-import vercor.setups._external.camulator_output as _camulator_output
 import vercor.setups._external.camulator_tensors as _camulator_tensors
 
 
@@ -37,20 +32,16 @@ class CAMulatorGCMSetupState:
     coupling_timestep: timedelta
     model_timestep: timedelta
     model_substeps: int
-    output_adapter: ComponentOutputAdapter
 
     def __init__(
         self,
         config_path: str,
         name: str = "ATM",
         model_weights_path: str = "checkpoint.pt00091.pt",
-        output_subfolder_name: Optional[str] = None,
         init_noise: Optional[float] = None,
         spinup_time: timedelta = timedelta(days=2),
         do_spinup: bool = False,
         device: str = "cuda",
-        output_cpus_number: int = 8,
-        output_frequency: str | None = None,
         logger: LoggerLike | None = None,
     ) -> None:
         """Build CAMulator model resources and the VerCOR atmosphere grid."""
@@ -59,17 +50,12 @@ class CAMulatorGCMSetupState:
         self.config_path = config_path
         self.model_weights_path = model_weights_path
         self.device = device
-        self.save_append = output_subfolder_name
         self.init_noise = init_noise
-        self.output_cpus_number = output_cpus_number
-        self.output_frequency = output_frequency
         self.spinup_time = spinup_time
         self.do_spinup = do_spinup
         self.runtime_cursor = CamulatorRuntimeCursor()
-        self.output_adapter = ComponentOutputAdapter(
-            empty_error_message=_camulator_output.CAMULATOR_AVERAGE_EMPTY_ERROR_MESSAGE,
-            time_dim=_camulator_output.CAMULATOR_TIME_DIM,
-        )
+        self._output_prediction: torch.Tensor | None = None
+        self._output_prediction_samples: torch.Tensor | None = None
 
         context = _camulator_init.initialize_camulator(
             config_path=self.config_path,
@@ -87,17 +73,6 @@ class CAMulatorGCMSetupState:
         self.metadata = context["metadata"]
         self.device = context["device"]
         self.state_transformer = context["state_transformer"]
-
-        if self.save_append:
-            base = self.conf["predict"].get("save_forecast")
-            if not base:
-                raise KeyError("'save_forecast' missing in config")
-            self.conf["predict"]["save_forecast"] = str(
-                Path(base).expanduser() / self.save_append
-            )
-            self.logger.info(
-                f"Saving outputs to: {self.conf['predict']['save_forecast']}"
-            )
 
         self.df_vars = self.conf["data"]["dynamic_forcing_variables"]
         self.lead_time_periods = self.conf["data"]["lead_time_periods"]
@@ -178,7 +153,8 @@ class CAMulatorGCMSetupState:
         self.accessor_output = _camulator_tensors.StateVariableAccessor(
             self.conf, tensor_type="output"
         )
-        self.output_adapter.reset()
+        self._output_prediction = None
+        self._output_prediction_samples = None
 
         self.forecast_hour = 1
         _ = component

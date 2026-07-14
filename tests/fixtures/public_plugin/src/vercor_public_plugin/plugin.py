@@ -23,7 +23,7 @@ from vercor.components import (
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.grids import RectilinearGrid
-from vercor.output import OutputConfig, SnapshotContext
+from vercor.output import OutputSpec, OutputTarget, SnapshotContext
 from vercor.regridding import bilinear
 from vercor.runtime import (
     ExecutionChunk,
@@ -86,7 +86,7 @@ class StructuralJaxComponent:
             outputs=("temperature",),
             initial_fields={"temperature": 0.0},
             lifecycle=LifecycleHooks(setup=_setup_original_component),
-            output=OutputConfig(snapshot_writer=_write_snapshot),
+            output=OutputSpec(snapshot_writer=_write_snapshot),
         )
         self.lifecycle_events: list[str] = []
         self.lifecycle_owner_ids: list[int] = []
@@ -225,8 +225,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
         runtime=RuntimeOptions(backend=backend, topology=topology),
     )
 
-    final_state = coupler.run()
-    coupler.write_outputs(final_state, output_dir=output_dir)
+    final_state = coupler.run(output=OutputTarget(output_dir))
 
     temperature = float(
         jnp.asarray(final_state.component("JAX").field("temperature"))[0, 0]

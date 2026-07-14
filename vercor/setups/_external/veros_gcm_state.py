@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from datetime import timedelta
 from functools import partial
 from typing import Any, cast
@@ -15,14 +15,10 @@ from vercor.components import (
     SetupResult,
 )
 from vercor.grids import RectilinearGrid
-from vercor.output._component_adapter import (
-    _ComponentOutputAdapter as ComponentOutputAdapter,
-)
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,
 )
-import vercor.setups._external.veros_output as _veros_output
 import vercor.setups._external.veros_setup as _veros_setup
 import vercor.setups._external.veros_state as _veros_state
 from vercor.types import RuntimeArray
@@ -50,7 +46,6 @@ class VerosGCMSetupState:
     model_timestep: timedelta
     model_substeps: int
     _step_function: Callable[[Any], Any]
-    output_adapter: ComponentOutputAdapter
 
     def __init__(
         self,
@@ -59,8 +54,6 @@ class VerosGCMSetupState:
         custom_parameters: Mapping[str, Any] | None = None,
         restore_to_climatology: bool = False,
         do_spinup: bool = False,
-        output_frequency: str | None = None,
-        output_variables: Sequence[str] | None = None,
         jitted: bool = False,
     ) -> None:
         """Build Veros model resources and the VerCOR ocean grid."""
@@ -84,16 +77,6 @@ class VerosGCMSetupState:
         self.spinup_time = spinup_time
         self.restore_to_climatology = restore_to_climatology
         self.jitted = jitted
-        self.output_frequency = output_frequency
-        self.output_variables = _veros_output.normalize_veros_output_variables(
-            output_variables,
-            settings=self._veros_state.settings,
-        )
-        self.output_adapter = ComponentOutputAdapter(
-            empty_error_message=_veros_output.VEROS_AVERAGE_EMPTY_ERROR_MESSAGE,
-            time_dim=_veros_output.VEROS_TIME_DIM,
-            value_dims_for_sample=_veros_output.veros_average_value_dims,
-        )
 
         self.dt_tracer = getattr(self._veros_state.settings, "dt_tracer")
         self.spinup_steps = int(self.spinup_time.total_seconds() // self.dt_tracer)
@@ -127,21 +110,11 @@ class VerosGCMSetupState:
             model_name="dt_tracer",
         )
 
-        self.output_adapter.reset()
-
         if self.do_spinup:
 
             def spinup_step(step_number: int) -> None:
                 _ = step_number
                 self._veros_state = self._step_function(self._veros_state)
-                output_variables = getattr(self, "output_variables", ())
-                if output_variables:
-                    self.output_adapter.accumulate(
-                        _veros_output.extract_veros_output_snapshot(
-                            self._veros_state,
-                            output_variables,
-                        )
-                    )
 
             run_logged_spinup(
                 steps=self.spinup_steps,

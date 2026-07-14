@@ -13,7 +13,6 @@ import jax.numpy as jnp
 import pytest
 
 import vercor
-import vercor._runtime.facade as _runtime_facade
 import vercor.exceptions as exceptions_module
 import vercor.components as components_module
 import vercor.components.base as base_module
@@ -50,6 +49,7 @@ from vercor.fields import (
 )
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
+from vercor.output import OutputTarget
 from vercor.regridding import bilinear
 from vercor.state import ComponentState, RunState
 
@@ -222,7 +222,7 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     import vercor.regridding as regridding_module
     import vercor.state as state_module
     from vercor.output import (
-        OutputConfig,
+        OutputSpec,
         OutputVariable,
         PeriodOutput,
     )
@@ -262,17 +262,20 @@ def test_public_facades_hide_private_implementation_modules() -> None:
         "RunState",
     ]
     assert output_module.__all__ == [
-        "OutputConfig",
-        "OutputFrequency",
+        "OutputContext",
+        "OutputFrame",
+        "OutputProvider",
+        "OutputSpec",
+        "OutputTarget",
         "OutputVariable",
         "PeriodOutput",
         "SnapshotContext",
         "SnapshotWriter",
     ]
-    assert OutputConfig is output_module.OutputConfig
+    assert OutputSpec is output_module.OutputSpec
     assert OutputVariable is output_module.OutputVariable
     assert PeriodOutput is output_module.PeriodOutput
-    assert OutputConfig.__module__ == "vercor.output"
+    assert OutputSpec.__module__ == "vercor.output"
     assert PeriodOutput.__module__ == "vercor.output"
     assert not hasattr(output_module, "ComponentOutputAdapter")
     assert not hasattr(output_module, "ComponentOutput")
@@ -400,7 +403,6 @@ def test_removed_component_setup_attributes_are_blocked() -> None:
 @pytest.mark.fast_always
 def test_coupler_public_methods_return_stable_state_and_views(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component = DataComponent(
         name="ATM",
@@ -426,21 +428,19 @@ def test_coupler_public_methods_return_stable_state_and_views(
     view = state.component("ATM")
     assert isinstance(view, ComponentState)
 
-    calls: list[dict[str, object]] = []
-
-    def fake_finalize(**kwargs: object) -> None:
-        calls.append(kwargs)
-
-    monkeypatch.setattr(_runtime_facade, "finalize", fake_finalize)
-    coupler.write_outputs(
+    output_state = coupler.run(
         state,
-        output_dir=tmp_path,
-        filename_template="{component}.nc",
-        write_snapshots=False,
+        output=OutputTarget(
+            tmp_path,
+            write_period=False,
+            write_final_fields=False,
+            write_snapshots=False,
+        ),
     )
-    assert calls[0]["write_snapshots"] is False
+    assert isinstance(output_state, RunState)
+    assert not hasattr(Coupler, "write_outputs")
     with pytest.raises(TypeError, match="snapshots"):
-        coupler.write_outputs(state, snapshots=False)  # type: ignore[call-arg]
+        coupler.run(state, snapshots=False)  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -583,7 +583,6 @@ def test_breaking_api_cleanup_removes_transitional_public_surfaces() -> None:
 @pytest.mark.fast_always
 def test_public_api_uses_canonical_breaking_names(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import vercor.grids as grids_module
 
@@ -626,24 +625,18 @@ def test_public_api_uses_canonical_breaking_names(
     with pytest.raises(AttributeError):
         coupler.exchanges.append(Exchange("ATM", "ATM", ("temperature",)))  # type: ignore[attr-defined]
 
-    calls: list[dict[str, object]] = []
-
-    def fake_finalize(**kwargs: object) -> None:
-        calls.append(kwargs)
-
-    monkeypatch.setattr(_runtime_facade, "finalize", fake_finalize)
     state = coupler.initial_state()
-    coupler.write_outputs(
+    output_state = coupler.run(
         state,
-        output_dir=tmp_path,
-        filename_template="{component}.nc",
-        write_snapshots=False,
+        output=OutputTarget(
+            tmp_path,
+            write_period=False,
+            write_final_fields=False,
+            write_snapshots=False,
+        ),
     )
-
-    assert calls
-    assert calls[0]["output_dir"] == tmp_path
-    assert calls[0]["filename_template"] == "{component}.nc"
-    assert calls[0]["write_snapshots"] is False
+    assert isinstance(output_state, RunState)
+    assert not hasattr(Coupler, "write_outputs")
 
 
 @pytest.mark.fast_always
@@ -1228,10 +1221,12 @@ def test_component_base_internals_are_private_modules() -> None:
     contracts_source = Path("vercor/components/contracts.py").read_text(
         encoding="utf-8"
     )
+    protocol_source = Path("vercor/components/_protocol.py").read_text(encoding="utf-8")
     data_source = Path("vercor/components/data.py").read_text(encoding="utf-8")
     adapter_source = Path("vercor/components/_adapter.py").read_text(encoding="utf-8")
 
-    assert "class Component(Protocol)" in contracts_source
+    assert "class Component(Protocol)" in protocol_source
+    assert "from vercor.components._protocol import (" in contracts_source
     assert "class CallableComponent" in base_source
     assert "class DataComponent" in data_source
     assert not Path("vercor/components/host.py").exists()
@@ -1861,363 +1856,31 @@ def test_concrete_regridders_own_call_dispatch() -> None:
 
 @pytest.mark.fast_always
 def test_setup_helper_and_external_output_ownership_boundaries() -> None:
-    import vercor.diagnostics as diagnostics_module
-    import vercor._host_arrays as host_arrays_module
-    import vercor.setups._external.camulator as camulator_module
-    import vercor.setups._external.camulator_contracts as camulator_contracts_module
-    import vercor.setups._external.camulator_fields as camulator_fields_module
-    import vercor.setups._external.camulator_land as camulator_land_module
-    import vercor.setups._external.camulator_output as camulator_output_module
-    import vercor.setups._external.camulator_runtime_settings as camulator_runtime_settings_module
-    import vercor.setups._external.jax_gcm as jax_gcm_module
-    import vercor.setups._external.jax_gcm_output as jax_gcm_output_module
-    import vercor.output._component_adapter as output_adapters_module
-    import vercor.output._period as period_averages_module
-    import vercor.output._period_files as period_files_module
-    import vercor.setups._external.veros_output as veros_output_module
-    import vercor.setups._external.veros_fluxes as veros_fluxes_module
-    import vercor.setups._external.veros_gcm as veros_gcm_module
-    import vercor.setups._external.veros_setup as veros_setup_module
-    import vercor.setups._external.veros_state as veros_state_module
-
-    assert callable(host_arrays_module.transposed_host_array)
-    assert callable(diagnostics_module.component_vector_speed)
-    assert callable(camulator_land_module.make_camulator_land)
-    assert camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
-    assert callable(camulator_fields_module.prepare_camulator_surface_forcing)
-    assert callable(camulator_runtime_settings_module.configure_camulator_runtime)
-    assert callable(output_adapters_module._ComponentOutputAdapter)
-    assert callable(period_averages_module.PeriodAverageAccumulator)
-    assert callable(period_files_module.write_period_average_netcdf)
-    assert callable(jax_gcm_output_module.record_jax_gcm_period_output)
-    assert callable(veros_output_module.record_veros_period_output)
-    assert callable(camulator_output_module.record_camulator_period_output)
-    assert callable(veros_fluxes_module.compute_fluxes)
-    assert callable(veros_output_module.extract_veros_output_snapshot)
-    assert not hasattr(veros_output_module, "VerosOutputVariable")
-    assert callable(veros_state_module.copy_state)
-    assert hasattr(veros_setup_module, "CustomGlobalFourDegree")
-    assert not hasattr(jax_gcm_module, "_map_jcm_output_fields")
-    assert not hasattr(jax_gcm_module, "_prepare_surface_temperature_forcing")
-    assert not hasattr(camulator_module, "_map_camulator_prediction_arrays")
-    assert not hasattr(camulator_module, "_prepare_camulator_surface_forcing")
-    assert not hasattr(veros_gcm_module, "compute_fluxes")
-    assert not hasattr(veros_gcm_module, "copy_state")
-    assert not hasattr(veros_gcm_module, "set_variable")
-    jax_gcm_source = Path("vercor/setups/_external/jax_gcm.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_state_source = Path("vercor/setups/_external/jax_gcm_state.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_runtime_source = Path(
-        "vercor/setups/_external/jax_gcm_runtime.py"
-    ).read_text(encoding="utf-8")
-    jax_gcm_fields_source = Path("vercor/setups/_external/jax_gcm_fields.py").read_text(
-        encoding="utf-8"
-    )
-    camulator_source = Path("vercor/setups/_external/camulator.py").read_text(
-        encoding="utf-8"
-    )
-    camulator_runtime_source = Path(
-        "vercor/setups/_external/camulator_runtime.py"
-    ).read_text(encoding="utf-8")
-    camulator_gcm_state_source = Path(
-        "vercor/setups/_external/camulator_gcm_state.py"
-    ).read_text(encoding="utf-8")
-    camulator_fields_source = Path(
-        "vercor/setups/_external/camulator_fields.py"
-    ).read_text(encoding="utf-8")
-    camulator_output_source = Path(
-        "vercor/setups/_external/camulator_output.py"
-    ).read_text(encoding="utf-8")
-    camulator_tensors_source = Path(
-        "vercor/setups/_external/camulator_tensors.py"
-    ).read_text(encoding="utf-8")
-    camulator_wind_filter_source = Path(
-        "vercor/setups/_external/camulator_wind_filter.py"
-    ).read_text(encoding="utf-8")
-    camulator_private_wind_filtering_path = Path(
-        "vercor/setups/_external/_camulator_wind_filtering.py"
-    )
-    camulator_private_wind_filtering_source = (
-        camulator_private_wind_filtering_path.read_text(encoding="utf-8")
-        if camulator_private_wind_filtering_path.exists()
-        else ""
-    )
-    camulator_init_source = Path("vercor/setups/_external/camulator_init.py").read_text(
-        encoding="utf-8"
-    )
-    camulator_runtime_settings_source = Path(
-        "vercor/setups/_external/camulator_runtime_settings.py"
-    ).read_text(encoding="utf-8")
-    veros_gcm_source = Path("vercor/setups/_external/veros_gcm.py").read_text(
-        encoding="utf-8"
-    )
-    veros_gcm_state_source = Path(
-        "vercor/setups/_external/veros_gcm_state.py"
-    ).read_text(encoding="utf-8")
-    veros_runtime_source = Path("vercor/setups/_external/veros_runtime.py").read_text(
-        encoding="utf-8"
-    )
     output_init_source = Path("vercor/output/__init__.py").read_text(encoding="utf-8")
-    facade_source = Path("vercor/_runtime/facade.py").read_text(encoding="utf-8")
-    runtime_output_source = Path("vercor/output/_runtime.py").read_text(
+    output_session_source = Path("vercor/output/_session.py").read_text(
         encoding="utf-8"
     )
-    period_averages_source = Path("vercor/output/_period.py").read_text(
-        encoding="utf-8"
+    native_sources = tuple(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "vercor/setups/_external/jax_gcm_output.py",
+            "vercor/setups/_external/veros_output.py",
+            "vercor/setups/_external/camulator_output.py",
+        )
     )
-    output_adapters_source = Path("vercor/output/_component_adapter.py").read_text(
-        encoding="utf-8"
-    )
-    output_datasets_source = Path("vercor/output/_dataset.py").read_text(
-        encoding="utf-8"
-    )
-    period_files_source = Path("vercor/output/_period_files.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_output_source = Path("vercor/setups/_external/jax_gcm_output.py").read_text(
-        encoding="utf-8"
-    )
-    veros_output_source = Path("vercor/setups/_external/veros_output.py").read_text(
-        encoding="utf-8"
-    )
-    netcdf_output_source = Path("vercor/output/_netcdf.py").read_text(encoding="utf-8")
-    host_arrays_source = Path("vercor/_host_arrays.py").read_text(encoding="utf-8")
-    camulator_imports_source = Path(
-        "vercor/setups/_external/camulator_imports.py"
-    ).read_text(encoding="utf-8")
-    camulator_stepper_source = Path(
-        "vercor/setups/_external/camulator_stepper.py"
-    ).read_text(encoding="utf-8")
 
-    assert Path("vercor/setups/_external/camulator_land.py").exists()
-    assert Path("vercor/setups/_external/camulator_runtime.py").exists()
-    assert Path("vercor/setups/_external/camulator_gcm_state.py").exists()
-    assert not Path("vercor/output/jax_gcm.py").exists()
-    assert Path("vercor/output/_netcdf.py").exists()
-    assert Path("vercor/output/_period.py").exists()
-    assert Path("vercor/output/_component_adapter.py").exists()
-    assert Path("vercor/output/_period_files.py").exists()
-    assert Path("vercor/output/_dataset.py").exists()
-    assert not Path("vercor/output/netcdf.py").exists()
-    assert not Path("vercor/output/period_averages.py").exists()
-    assert not Path("vercor/output/adapters.py").exists()
-    assert not Path("vercor/output/period_files.py").exists()
-    assert not Path("vercor/output/datasets.py").exists()
-    assert not Path("vercor/output/time.py").exists()
-    assert not Path("vercor/output/variables.py").exists()
-    assert not Path("vercor/output/veros.py").exists()
-    assert Path("vercor/setups/_external/jax_gcm_fields.py").exists()
-    assert Path("vercor/setups/_external/jax_gcm_runtime.py").exists()
-    assert Path("vercor/setups/_external/camulator_output.py").exists()
-    assert Path("vercor/setups/_external/camulator_contracts.py").exists()
-    assert Path("vercor/setups/_external/camulator_fields.py").exists()
-    assert Path("vercor/setups/_external/camulator_runtime_settings.py").exists()
-    assert Path("vercor/setups/_external/camulator_wind_filter.py").exists()
-    assert Path("vercor/setups/_external/veros_fluxes.py").exists()
-    assert Path("vercor/setups/_external/veros_setup.py").exists()
-    assert Path("vercor/setups/_external/veros_state.py").exists()
-    assert Path("vercor/setups/_external/veros_runtime.py").exists()
-    assert Path("vercor/setups/_external/jax_gcm_state.py").exists()
-    assert Path("vercor/setups/_external/veros_gcm_state.py").exists()
-    assert Path("vercor/setups/_external/jax_gcm_output.py").exists()
-    assert not Path("vercor/setups/_external/period_averages.py").exists()
-    assert Path("vercor/setups/_external/veros_output.py").exists()
-    assert not Path("vercor/setups/jax_array_helpers.py").exists()
-    assert not Path("vercor/setups/_data/camulator_land.py").exists()
-    assert not Path("vercor/setups/_external/windpp.py").exists()
-    assert "from vercor._runtime.validation import" not in jax_gcm_source
-    assert "class JAXGCMRuntimePayload" not in jax_gcm_source
-    assert "class JAXGCMRuntimePayload" in jax_gcm_runtime_source
-    assert "class JAXGCMSetupState" not in jax_gcm_source
-    assert "class JAXGCMSetupState" in jax_gcm_state_source
-    assert "def create_jax_gcm_runtime_payload(" in jax_gcm_runtime_source
-    assert "def prefill_jax_gcm_runtime_fields(" in jax_gcm_runtime_source
-    assert "def validate_jax_gcm_runtime_state(" in jax_gcm_runtime_source
-    assert "def step_jax_gcm_runtime(" in jax_gcm_runtime_source
-    assert "def record_jax_gcm_host_step(" in jax_gcm_runtime_source
-    assert "def create_runtime_payload(" not in jax_gcm_source
-    assert "def prefill_runtime_state_fields(" not in jax_gcm_source
-    assert "def validate_runtime_state(" not in jax_gcm_source
-    assert "def step_jax_gcm_runtime_callback(" not in jax_gcm_source
-    assert "def create_jax_gcm_runtime_payload_callback(" not in jax_gcm_source
-    assert "def prefill_jax_gcm_runtime_fields_callback(" not in jax_gcm_source
-    assert "def validate_jax_gcm_runtime_state_callback(" not in jax_gcm_source
-    assert "def step_jax_gcm_runtime_callback(" not in jax_gcm_state_source
-    assert "def create_jax_gcm_runtime_payload_callback(" not in jax_gcm_state_source
-    assert "def prefill_jax_gcm_runtime_fields_callback(" not in jax_gcm_state_source
-    assert "def validate_jax_gcm_runtime_state_callback(" not in jax_gcm_state_source
-    assert "def _step_jax_gcm_component_state(" not in jax_gcm_source
-    assert "def _record_jax_gcm_host_step(" not in jax_gcm_source
-    assert "def asfloat(" not in jax_gcm_source
-    assert "def cleanup_surface_temperature_fields(" not in jax_gcm_source
-    assert "def prepare_surface_temperature_forcing(" not in jax_gcm_source
-    assert "def map_jcm_output_fields(" not in jax_gcm_source
-    assert "def cleanup_surface_temperature_fields(" in jax_gcm_fields_source
-    assert "def _should_write_output(" not in jax_gcm_source
-    assert "def _write_output(" not in jax_gcm_source
-    assert "os.environ[" not in camulator_source
-    assert "import torch" not in camulator_source
-    assert "import xarray" not in camulator_source
-    assert "RectilinearGrid" not in camulator_source
-    assert "CamulatorRuntimeCursor" not in camulator_source
-    assert "assign_model_timestep_alignment" not in camulator_source
-    assert "seed_grid_field_defaults" not in camulator_source
-    assert "def configure_camulator_runtime(" in camulator_runtime_settings_source
-    assert "class CAMulatorGCMSetupState" not in camulator_source
-    assert "class CAMulatorGCMSetupState" in camulator_gcm_state_source
-    assert "def coerce_camulator_datetime(" in camulator_runtime_source
-    assert "def run_camulator_prediction_block(" in camulator_runtime_source
-    assert "def step_camulator_runtime(" in camulator_runtime_source
-    assert "def run_camulator_prediction_block(" not in camulator_source
-    assert "def prepare_camulator_surface_forcing(" not in camulator_source
-    assert "def map_camulator_prediction_arrays(" not in camulator_source
-    assert "def prepare_camulator_surface_forcing(" in camulator_fields_source
-    assert "def map_camulator_prediction_arrays(" in camulator_fields_source
-    assert "def torch_tensor_from_jax_array(" not in camulator_source
-    assert "def torch_tensor_from_jax_array(" in camulator_tensors_source
-    assert "def add_init_noise(" not in camulator_source
-    assert "def add_init_noise(" in camulator_init_source
-    assert "def _credit_output_functions(" not in camulator_source
-    assert "def _write_camulator_prediction_output(" not in camulator_source
-    assert "class CustomGlobalFourDegree" not in veros_gcm_source
-    assert "class VerosGCMSetupState" not in veros_gcm_source
-    assert "class VerosGCMSetupState" in veros_gcm_state_source
-    assert "def compute_fluxes(" not in veros_gcm_source
-    assert "def copy_state(" not in veros_gcm_source
-    assert "def set_variable(" not in veros_gcm_source
-    assert "def step_veros_runtime(" in veros_runtime_source
-    assert "compute_fluxes(" in veros_runtime_source
-    assert "apply_veros_forcing_fields(" in veros_runtime_source
-    assert "advance_veros_substeps(" in veros_runtime_source
-    assert "compute_fluxes(" not in veros_gcm_source
-    assert "apply_veros_forcing_fields(" not in veros_gcm_source
-    assert "advance_veros_substeps(" not in veros_gcm_source
-    assert "import h5netcdf" not in veros_gcm_source
-    assert "import h5netcdf" not in veros_runtime_source
-    assert "import h5netcdf" not in jax_gcm_output_source
-    assert "import h5netcdf" not in veros_output_source
-    assert "import h5netcdf" not in period_files_source
-    assert "import numpy" not in veros_gcm_source
-    assert "import numpy" not in veros_runtime_source
-    assert "import h5netcdf" in netcdf_output_source
-    assert "import xarray" not in runtime_output_source
-    assert ".to_netcdf(" not in runtime_output_source
-    assert "from vercor.output._netcdf import write_netcdf_dataset" in (
-        runtime_output_source
-    )
-    assert "from vercor.output._netcdf import write_netcdf_dataset" in (
-        period_files_source
-    )
-    assert "from vercor.output._netcdf import write_netcdf_dataset" not in (
-        jax_gcm_output_source
-    )
-    assert "from vercor.output._netcdf import write_netcdf_dataset" not in (
-        veros_output_source
-    )
-    assert "write_netcdf_dataset(" in runtime_output_source
-    assert "write_netcdf_dataset(" in period_files_source
-    snapshot_output_source = runtime_output_source.split(
-        "def write_coupler_component_snapshots(",
-        1,
-    )[1]
-    assert "component.spec.output.snapshot_writer" in snapshot_output_source
-    assert "spec.outputs" not in snapshot_output_source
-    assert ".fields.get(" not in snapshot_output_source
-    assert "ComponentRuntimeState.from_component_state" not in snapshot_output_source
-    assert "import numpy" not in period_averages_source
-    assert "import numpy" not in period_files_source
-    assert "import numpy" not in jax_gcm_output_source
-    assert "import numpy" not in veros_output_source
-    assert "import jax.numpy as jnp" in period_averages_source
-    assert "import jax.numpy as jnp" in veros_output_source
-    assert "def time_coordinate_variable(" in output_datasets_source
-    assert "def used_dimension_names(" in output_datasets_source
-    assert "def period_mean_output_variables(" in period_averages_source
-    assert "def accumulate_output_variables(" not in period_averages_source
-    assert "def write_period_average_netcdf(" in period_files_source
-    assert "class _ComponentOutputAdapter" in output_adapters_source
-    assert "class ComponentOutput" not in output_adapters_source
-    assert "class OutputConfig" in output_init_source
-    assert "class PeriodOutput" in output_init_source
-    assert "class ComponentOutputAdapter" not in output_init_source
-    assert "accumulate_output_variables(" not in output_adapters_source
-    assert "self._accumulator.add_samples(" in output_adapters_source
-    assert "def record_snapshot(" in output_adapters_source
-    assert "def record_period_average_if_due(" in output_adapters_source
-    assert "period_mean_output_variables(" in output_adapters_source
-    assert "write_period_average_netcdf(" in output_adapters_source
-    assert "should_write_period_output(" in output_adapters_source
-    assert "MeanVariablesBuilder" not in period_files_source
-    assert "CoordinateVariablesBuilder" not in period_files_source
-    assert "DataVariablesBuilder" not in period_files_source
-    assert "accumulate_output_variables(" not in jax_gcm_output_source
-    assert "period_mean_output_variables(" not in jax_gcm_output_source
-    assert "write_period_average_netcdf(" not in jax_gcm_output_source
-    assert "def make_jax_gcm_output_adapter(" not in jax_gcm_output_source
-    assert "OutputConfig(" in jax_gcm_source
-    assert "def record_jax_gcm_period_output(" in jax_gcm_output_source
-    assert "def write_jax_gcm_snapshot_output(" in jax_gcm_output_source
-    assert "time_coordinate_variable(" in jax_gcm_output_source
-    assert "accumulate_output_variables(" not in veros_output_source
-    assert "period_mean_output_variables(" not in veros_output_source
-    assert "write_period_average_netcdf(" not in veros_output_source
-    assert "def make_veros_output_adapter(" not in veros_output_source
-    assert "OutputConfig(" in veros_gcm_source
-    assert "def record_veros_period_output(" in veros_output_source
-    assert "def write_veros_snapshot_output(" in veros_output_source
-    assert "time_coordinate_variable(" in veros_output_source
-    assert "used_dimension_names(" in veros_output_source
-    assert "def make_camulator_output_adapter(" not in camulator_output_source
-    assert "OutputConfig(" in camulator_source
-    assert "def record_camulator_period_output(" in camulator_output_source
-    assert "def write_camulator_snapshot_output(" in camulator_output_source
-    assert "write_period_average_if_due(" not in jax_gcm_runtime_source
-    assert "write_period_average_if_due(" not in veros_runtime_source
-    assert "write_period_average_if_due(" not in camulator_runtime_source
-    assert "def __getattr__(" not in output_init_source
-    assert "def __dir__(" not in output_init_source
-    assert "_RUNTIME_EXPORTS" not in output_init_source
-    assert "OutputConfig" in output_init_source
-    assert '"OutputConfig"' in output_init_source
-    assert '"PeriodOutput"' in output_init_source
-    assert '"ComponentOutputAdapter"' not in output_init_source
-    assert '"OutputVariable"' in output_init_source
-    assert "from vercor.output._runtime import (" not in output_init_source
-    assert "write_coupler_runtime_outputs" not in output_init_source
-    assert "write_runtime_component_view_to_netcdf" not in output_init_source
-    assert "import vercor.output._runtime as _runtime_output" in facade_source
-    assert "def array_to_host(" in host_arrays_source
-    assert "def host_int64_array(" in host_arrays_source
-    assert "from vercor.setups._external.camulator_wind_filter import" not in (
-        camulator_imports_source
-    )
-    assert "from vercor.setups._external.camulator_wind_filter import" in (
-        camulator_stepper_source
-    )
-    assert camulator_private_wind_filtering_path.exists()
-    assert (
-        "import vercor.setups._external._camulator_wind_filtering as _wind_filtering"
-        in camulator_wind_filter_source
-    )
-    assert "torch.nn.functional" not in camulator_wind_filter_source
-    assert "def build_wind_filter_artifacts(" in camulator_private_wind_filtering_source
-    assert "def apply_wind_filter_to_tensor(" in camulator_private_wind_filtering_source
-    assert "F.conv2d(" in camulator_private_wind_filtering_source
-    assert "_jax_gcm_fields._map_jcm_output_fields(" not in jax_gcm_runtime_source
-    assert "_camulator_fields._prepare_camulator_surface_forcing(" not in (
-        camulator_runtime_source
-    )
-    assert "_camulator_tensors._torch_tensor_from_jax_array(" not in (
-        camulator_runtime_source
-    )
-    assert "_veros_state._prepare_surface_forcing_fields(" not in veros_runtime_source
-    assert "_veros_state._advance_veros_substeps(" not in veros_runtime_source
-    import vercor.setups._external as external_module
-
-    assert not hasattr(external_module, "_LAZY_EXPORTS")
+    assert not Path("vercor/output/_component_adapter.py").exists()
+    assert not Path("vercor/output/_period_files.py").exists()
+    assert "class PeriodAverageAccumulator" not in Path(
+        "vercor/output/_period.py"
+    ).read_text(encoding="utf-8")
+    assert output_session_source.count("class _OutputAccumulator") == 1
+    assert "class OutputSpec" in output_init_source
+    assert '"OutputSpec"' in output_init_source
+    assert "class OutputConfig" not in output_init_source
+    for source in native_sources:
+        assert "def sample(self, context: OutputContext) -> OutputFrame:" in source
+        assert "record_period" not in source
 
 
 @pytest.mark.fast_always

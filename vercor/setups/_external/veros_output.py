@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import jax.numpy as jnp
@@ -11,22 +11,26 @@ import jax.numpy as jnp
 from vercor.calendar import ModelDateTime
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor._host_arrays import array_to_host
-from vercor.jax_logging import LoggerLike
-from vercor.output._component_adapter import (
-    _ComponentOutputAdapter as ComponentOutputAdapter,
-)
-from vercor.output import SnapshotContext
+from vercor.output import OutputContext, OutputFrame, SnapshotContext
 from vercor.output._dataset import time_coordinate_variable, used_dimension_names
-from vercor.output._period import TIME_NAME
+from vercor.output._period import TIME_NAME, period_mean_sample_to_output_variable
+from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output import OutputVariable
 from veros import variables as veros_variables
 
 VEROS_TIME_DIM = TIME_NAME
-VEROS_AVERAGE_EMPTY_ERROR_MESSAGE = (
-    "Veros average output requires at least one prediction."
-)
 _TIMESTEP_DIM = "timesteps"
 _GHOST_DIMS = ("xt", "yt", "xu", "yu")
+_DEFAULT_OUTPUT_VARIABLES = (
+    "temp",
+    "salt",
+    "u",
+    "v",
+    "w",
+    "surface_taux",
+    "surface_tauy",
+    "psi",
+)
 
 
 def normalize_veros_output_variables(
@@ -167,12 +171,6 @@ def _extract_coordinate_variable(veros_state: Any, dim: str) -> OutputVariable:
     )
 
 
-def veros_average_value_dims(sample: OutputVariable) -> tuple[str, ...]:
-    """Return Veros NetCDF value dimension order for one mean sample."""
-
-    return tuple(reversed(sample.dims))
-
-
 def veros_average_coordinate_variables(
     *,
     veros_state: Any,
@@ -189,78 +187,116 @@ def veros_average_coordinate_variables(
     return coordinate_variables
 
 
-def record_veros_period_output(
-    adapter: ComponentOutputAdapter,
-    veros_state: Any,
-    *,
-    output_variables: Sequence[str],
-    output_time: datetime | ModelDateTime,
-    dt: timedelta,
-    output_frequency: str | None,
-    logger: LoggerLike | None = None,
-) -> bool:
-    """Record one Veros snapshot and write a period average when due."""
+class _VerosOutputProvider:
+    """Ordinary provider adapting the current mutable Veros host state."""
 
-    variables = extract_veros_output_snapshot(veros_state, output_variables)
+    def __init__(self, state: Any) -> None:
+        self._state = state
 
-    def build_coordinate_variables(
-        mean_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return veros_average_coordinate_variables(
-            veros_state=veros_state,
-            output_time=output_time,
-            variables=mean_variables,
+    def sample(self, context: OutputContext) -> OutputFrame:
+        """Extract the active native variables after one Veros host step."""
+
+        native_variables = _native_output_variables(
+            self._state._veros_state,
+            _active_output_variable_names(self._state._veros_state),
+        )
+        return OutputFrame(
+            native_variables,
+            coordinates=veros_average_coordinate_variables(
+                veros_state=self._state._veros_state,
+                output_time=context.time,
+                variables=native_variables,
+            ),
+            time_dimension=VEROS_TIME_DIM,
         )
 
-    return adapter.record_period_average_if_due(
-        variables,
-        time=output_time,
-        dt=dt,
-        output_frequency=output_frequency,
-        output=lambda time: f"veros.averages.{time.strftime('%Y-%m-%d')}.nc",
-        build_coordinate_variables=build_coordinate_variables,
-        logger=logger,
-    )
+
+def veros_output_provider(state: Any) -> _VerosOutputProvider:
+    """Return the native Veros provider installed by the setup factory."""
+
+    return _VerosOutputProvider(state)
+
+
+def _active_output_variable_names(veros_state: Any) -> tuple[str, ...]:
+    """Return active native variables in Veros manifest order."""
+
+    metadata = getattr(veros_state, "var_meta", None)
+    if metadata is None:
+        return _DEFAULT_OUTPUT_VARIABLES
+    active_metadata = {
+        name: variable
+        for name, variable in metadata.items()
+        if bool(_resolve_metadata(variable.active, veros_state.settings))
+        and hasattr(veros_state.variables, name)
+    }
+    coordinate_names = {
+        dim
+        for name, variable in active_metadata.items()
+        for dim in _resolved_dims(variable, veros_state.settings, name)
+    }
+    return tuple(name for name in active_metadata if name not in coordinate_names)
+
+
+def _native_output_variables(
+    veros_state: Any,
+    variables: Sequence[str],
+) -> dict[str, OutputVariable]:
+    """Extract and transpose selected Veros variables for NetCDF output."""
+
+    extracted = extract_veros_output_snapshot(veros_state, variables)
+    return {
+        name: OutputVariable(
+            tuple(reversed(variable.dims)),
+            (
+                jnp.transpose(variable.values)
+                if len(variable.dims) > 1
+                else variable.values
+            ),
+            variable.attrs,
+        )
+        for name, variable in extracted.items()
+    }
 
 
 def write_veros_snapshot_output(
     state: Any,
     context: SnapshotContext,
+    *,
+    variables: Sequence[str] = _DEFAULT_OUTPUT_VARIABLES,
 ) -> None:
     """Write one final Veros native-state snapshot through the shared adapter."""
 
-    output_variables = getattr(state, "output_variables", ())
-    if not output_variables:
-        return
-
-    state.output_adapter.record_snapshot(
-        extract_veros_output_snapshot(state._veros_state, output_variables),
-        time=context.time,
-    )
-
-    def build_coordinate_variables(
-        snapshot_variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return veros_average_coordinate_variables(
+    selected = tuple(variables) or _DEFAULT_OUTPUT_VARIABLES
+    native_variables = _native_output_variables(state._veros_state, selected)
+    frame = OutputFrame(
+        native_variables,
+        coordinates=veros_average_coordinate_variables(
             veros_state=state._veros_state,
             output_time=context.time,
-            variables=snapshot_variables,
-        )
-
-    state.output_adapter.write_snapshot(
-        str(context.output_path),
-        build_coordinate_variables=build_coordinate_variables,
+            variables=native_variables,
+        ),
+        time_dimension=VEROS_TIME_DIM,
+    )
+    write_netcdf_dataset(
+        output=str(context.output_path),
+        coordinate_variables=frame.coordinates,
+        data_variables={
+            name: period_mean_sample_to_output_variable(
+                variable,
+                time_dim=frame.time_dimension,
+            )
+            for name, variable in frame.variables.items()
+        },
+        global_attrs=frame.metadata or None,
         logger=context.logger,
     )
 
 
 __all__ = [
-    "VEROS_AVERAGE_EMPTY_ERROR_MESSAGE",
     "VEROS_TIME_DIM",
     "extract_veros_output_snapshot",
     "normalize_veros_output_variables",
-    "record_veros_period_output",
     "veros_average_coordinate_variables",
-    "veros_average_value_dims",
+    "veros_output_provider",
     "write_veros_snapshot_output",
 ]

@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 import vercor._runtime.backends as runtime_backends
+import vercor.output._runtime as runtime_output
 import vercor.runtime as runtime
 from tests._coverage_support import make_test_grid
 from tests._workflow_test_support import (
@@ -33,7 +34,7 @@ from vercor.components import (
 )
 from vercor.coupler import Coupler
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.state import RunState
 from vercor._runtime.interrupts import RuntimeInterrupted
 
@@ -491,7 +492,7 @@ def test_output_enabled_uniform_workflow_reuses_one_jitted_executor(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    output = OutputConfig(period=PeriodOutput(frequency="step"))
+    output = OutputSpec(period=PeriodOutput(frequency="step"))
     coupler = Coupler(
         _clock(steps=3, dt_seconds=86_400.0),
         components=(_component("A", output=output),),
@@ -509,10 +510,18 @@ def test_output_enabled_uniform_workflow_reuses_one_jitted_executor(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(jax, "jit", recording_jit)
 
-    final_state = coupler.run(initial_state)
+    final_state = coupler.run(
+        initial_state,
+        output=OutputTarget(
+            tmp_path,
+            write_final_fields=False,
+            write_snapshots=False,
+        ),
+    )
     jax.block_until_ready(final_state.component("A").field("value"))
 
     assert jit_calls == 1
+    assert len(tuple(tmp_path.glob("a.averages.*.nc"))) == 3
     assert_allclose_compact(
         final_state.component("A").field("value"),
         jnp.full((2, 2), 3.0),
@@ -525,7 +534,7 @@ def test_custom_backend_period_output_is_accumulated_and_written_by_core(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     backend = _SequentialBackend()
-    output = OutputConfig(period=PeriodOutput(frequency="step"))
+    output = OutputSpec(period=PeriodOutput(frequency="step"))
     component = _component("A", execution="host", output=output)
     coupler = Coupler(
         _clock(steps=2, dt_seconds=86_400.0),
@@ -535,9 +544,15 @@ def test_custom_backend_period_output_is_accumulated_and_written_by_core(
         log_level="WARNING",
     )
 
-    coupler.run()
+    coupler.run(
+        output=OutputTarget(
+            tmp_path,
+            write_final_fields=False,
+            write_snapshots=False,
+        )
+    )
 
-    paths = sorted(tmp_path.glob("A.averages.*.nc"))
+    paths = sorted(tmp_path.glob("a.averages.*.nc"))
     assert len(paths) == 2
     for expected, path in enumerate(paths, start=1):
         with h5netcdf.File(path, "r") as dataset:
@@ -570,6 +585,48 @@ def test_custom_backend_interruption_is_handled_by_core() -> None:
 
     with pytest.raises(RuntimeInterrupted, match="SIGINT"):
         coupler.run()
+
+
+@pytest.mark.parametrize("output_kind", ["final", "snapshot"])
+def test_run_owned_final_io_remains_inside_interrupt_scope(
+    output_kind: str,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coupler = Coupler(
+        _clock(steps=0),
+        components=(_component("A"),),
+        run_order=("A",),
+        log_level="WARNING",
+    )
+    prepared = cast(Any, coupler)._ensure_prepared()
+
+    def request_interrupt(**kwargs: Any) -> None:
+        _ = kwargs
+        prepared.interrupts.request(signal.SIGINT)
+
+    if output_kind == "final":
+        monkeypatch.setattr(
+            runtime_output,
+            "write_coupler_runtime_outputs",
+            request_interrupt,
+        )
+    else:
+        monkeypatch.setattr(
+            runtime_output,
+            "write_coupler_component_snapshots",
+            request_interrupt,
+        )
+
+    with pytest.raises(RuntimeInterrupted, match="SIGINT.*runtime output"):
+        coupler.run(
+            output=OutputTarget(
+                tmp_path,
+                write_period=False,
+                write_final_fields=output_kind == "final",
+                write_snapshots=output_kind == "snapshot",
+            )
+        )
 
 
 def test_output_free_workflow_preserves_jvp_and_reverse_mode_gradients() -> None:

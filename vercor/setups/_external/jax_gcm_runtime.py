@@ -19,7 +19,6 @@ from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_full, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.field_layout import validate_canonical_grid_field_shape
 from vercor._pytree import PyTreeNodeMixin
-from vercor.output._session import _PeriodOutputAccumulator
 from vercor.physics import PhysicalConstants
 from vercor.setups._external._jax_gcm_pytree import (
     tree_mean,
@@ -28,7 +27,6 @@ from vercor.setups._external._jax_gcm_pytree import (
     tree_unwrap_leading_dims,
 )
 import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
-import vercor.setups._external.jax_gcm_output as _jax_gcm_output
 
 if TYPE_CHECKING:
     from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
@@ -41,11 +39,10 @@ JCM_REFERENCE_PRESSURE = 1.0e5
 class JAXGCMRuntimePayload(PyTreeNodeMixin):
     """Immutable JAXGCM model state carried by runtime component state."""
 
-    pytree_children = ("jcm_state", "forcing", "period_output")
+    pytree_children = ("jcm_state", "forcing")
 
     jcm_state: Any
     forcing: Any
-    period_output: _PeriodOutputAccumulator | None = None
 
 
 def jax_gcm_default_field_names(
@@ -97,17 +94,9 @@ def create_jax_gcm_runtime_payload(
 
     jcm_state = tree_as_runtime_dtype(state._state, state._dtype_policy)
     forcing = tree_as_runtime_dtype(state.forcing, state._dtype_policy)
-    period_output = None
-    if state.output_frequency is not None:
-        period_output = _jax_gcm_output.jax_gcm_period_output_accumulator_template(
-            jcm_state,
-            coords=state.model.coords,
-            physics_module=getattr(state.model, "physics", None),
-        )
     return JAXGCMRuntimePayload(
         jcm_state=jcm_state,
         forcing=forcing,
-        period_output=period_output,
     )
 
 
@@ -223,14 +212,6 @@ def step_jax_gcm_runtime(
         payload.jcm_state,
         applied_forcing,
     )
-    period_output = payload.period_output
-    if period_output is not None:
-        period_output = _jax_gcm_output.accumulate_jax_gcm_prediction_output(
-            period_output,
-            prediction,
-            coords=state.model.coords,
-            physics_module=state.model.physics,
-        )
     averaged_prediction = tree_mean(
         tree_unwrap_leading_dims(tree_stack([prediction])),
         axis=0,
@@ -265,7 +246,6 @@ def step_jax_gcm_runtime(
         payload=JAXGCMRuntimePayload(
             jcm_state=jcm_state,
             forcing=payload.forcing,
-            period_output=period_output,
         ),
     )
 

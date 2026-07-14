@@ -16,6 +16,7 @@ from vercor.diagnostics import (
     print_component_field_means_table,
     total_surface_temperature,
 )
+from vercor.output import OutputTarget
 from vercor.regridding import bilinear, conservative
 from vercor.topology import SurfaceMaskPolicy
 from vercor.setups import make_era5_atmosphere
@@ -94,8 +95,7 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    final_state = cpl.run(output=OutputTarget("."))
     views = final_state.components(("ATM", "OCN"))
 
     variables: list[tuple[ComponentMetric, str]] = [

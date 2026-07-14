@@ -6,7 +6,7 @@ from vercor import (
     Exchange,
     RuntimeOptions,
 )
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.setups import CAMulatorConfig, Spinup, VerosConfig, make_camulator_gcm
 from vercor.setups import make_camulator_land
 from vercor.setups import make_veros_gcm
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     ocn = make_veros_gcm(
         config=VerosConfig(
             spinup=Spinup(enabled=True),
-            output=OutputConfig(
+            output=OutputSpec(
                 period=PeriodOutput(
                     frequency="month",
                     variables=(
@@ -47,8 +47,7 @@ if __name__ == "__main__":
         config=CAMulatorConfig(
             config_path="/glade/u/home/rnuterman/veros_coupling/climate/camulator_config.yml",
             model_weights_path="/glade/u/home/rnuterman/veros_coupling/climate/checkpoint.pt00091.pt",
-            output_subfolder_name="camulator_veros_v2_00091",
-            output=OutputConfig(period=PeriodOutput(frequency="month")),
+            output=OutputSpec(period=PeriodOutput(frequency="month")),
         ),
     )
 
@@ -102,5 +101,4 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    cpl.run(output=OutputTarget("."))

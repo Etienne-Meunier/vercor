@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from datetime import datetime, timedelta
-from types import MappingProxyType
 from typing import Any, Literal, cast
 
 import jax
@@ -107,152 +105,6 @@ def _timedelta_to_microseconds(delta: timedelta) -> int:
     ) * _MICROSECONDS_PER_SECOND + delta.microseconds
 
 
-@dataclass(frozen=True)
-class AccumulatedPeriodVariable:
-    """Running sum and per-element finite-value counts for one variable."""
-
-    dims: tuple[str, ...]
-    sum_values: jax.Array
-    counts: jax.Array
-    attrs: Mapping[str, Any] = field(default_factory=dict)
-
-    def mean_sample(self) -> OutputVariable:
-        """Return the current period mean, preserving ``nanmean`` semantics."""
-
-        mean_dtype = jnp.result_type(self.sum_values.dtype, jnp.float32)
-        denominator = jnp.where(self.counts > 0, self.counts, 1)
-        finite_means = self.sum_values / denominator
-        mean_values = jnp.where(
-            self.counts > 0,
-            finite_means,
-            jnp.full(self.sum_values.shape, jnp.nan, dtype=mean_dtype),
-        )
-        return OutputVariable(
-            dims=self.dims,
-            values=mean_values,
-            attrs=dict(self.attrs),
-        )
-
-
-class PeriodAverageAccumulator:
-    """Accumulate named output variables as running sums and finite counts."""
-
-    def __init__(self) -> None:
-        """Create an empty period-average accumulator."""
-
-        self._variables: dict[str, AccumulatedPeriodVariable] = {}
-
-    @property
-    def empty(self) -> bool:
-        """Return whether no variable samples have been accumulated."""
-
-        return not self._variables
-
-    @property
-    def variables(self) -> Mapping[str, AccumulatedPeriodVariable]:
-        """Return a read-only view of accumulated variables."""
-
-        return MappingProxyType(self._variables)
-
-    def clear(self) -> None:
-        """Reset the accumulator for the next averaging period."""
-
-        self._variables.clear()
-
-    def add_samples(
-        self,
-        samples: Mapping[str, OutputVariable],
-        *,
-        summation_dim: str | None = None,
-    ) -> None:
-        """Add named samples, optionally reducing one dimension as summands."""
-
-        if not samples:
-            raise ValueError(
-                "Period average accumulation requires at least one sample."
-            )
-
-        variable_names = tuple(samples.keys())
-        if self._variables and variable_names != tuple(self._variables.keys()):
-            raise ValueError("Period average variables changed across samples.")
-
-        for name, sample in samples.items():
-            self._add_sample(name, sample, summation_dim=summation_dim)
-
-    def mean_samples(self) -> dict[str, OutputVariable]:
-        """Return period means for all variables in insertion order."""
-
-        if not self._variables:
-            raise ValueError("Period average output requires at least one sample.")
-        return {
-            name: variable.mean_sample() for name, variable in self._variables.items()
-        }
-
-    def _add_sample(
-        self,
-        name: str,
-        sample: OutputVariable,
-        *,
-        summation_dim: str | None,
-    ) -> None:
-        dims, sum_values, counts = _sample_sum_and_counts(
-            name,
-            sample,
-            summation_dim=summation_dim,
-        )
-        existing = self._variables.get(name)
-        if existing is None:
-            self._variables[name] = AccumulatedPeriodVariable(
-                dims=dims,
-                sum_values=sum_values.copy(),
-                counts=counts.copy(),
-                attrs=dict(sample.attrs),
-            )
-            return
-
-        if existing.dims != dims:
-            raise ValueError(f"Period average variable {name!r} dimensions changed.")
-        if existing.sum_values.shape != sum_values.shape:
-            raise ValueError(f"Period average variable {name!r} shape changed.")
-
-        self._variables[name] = AccumulatedPeriodVariable(
-            dims=existing.dims,
-            sum_values=existing.sum_values + sum_values,
-            counts=existing.counts + counts,
-            attrs=existing.attrs,
-        )
-
-
-def period_mean_output_variables(
-    accumulator: PeriodAverageAccumulator,
-    *,
-    empty_error_message: str,
-    time_dim: str = TIME_NAME,
-    value_dims_for_sample: Callable[[OutputVariable], Sequence[str]] | None = None,
-    dimension_order: Sequence[str] | None = None,
-) -> dict[str, OutputVariable]:
-    """Return one-step output variables for all accumulated period means."""
-
-    try:
-        mean_samples = accumulator.mean_samples()
-    except ValueError as exc:
-        raise ValueError(empty_error_message) from exc
-
-    return {
-        name: period_mean_sample_to_output_variable(
-            sample,
-            time_dim=time_dim,
-            value_dims=(
-                tuple(value_dims_for_sample(sample))
-                if value_dims_for_sample is not None
-                else None
-            ),
-            dimension_order=dimension_order,
-        )
-        for name, sample in mean_samples.items()
-    }
-
-
 def period_mean_sample_to_output_variable(
     sample: OutputVariable,
     *,
@@ -345,12 +197,9 @@ def _sample_sum_and_counts(
 
 
 __all__ = [
-    "AccumulatedPeriodVariable",
     "TIME_NAME",
-    "PeriodAverageAccumulator",
     "is_period_end",
     "output_time_value_and_attrs",
-    "period_mean_output_variables",
     "period_mean_sample_to_output_variable",
     "should_write_period_output",
 ]

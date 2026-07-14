@@ -10,6 +10,7 @@ import re
 from typing import TYPE_CHECKING
 
 from vercor.calendar import ModelDateTime
+from vercor.exceptions import ComponentError
 from vercor.exchanges import Exchange
 from vercor.output import SnapshotContext
 from vercor.output._netcdf import write_netcdf_dataset
@@ -91,7 +92,7 @@ def _runtime_data_variables(
     masks: Mapping[str, RuntimeArray],
 ) -> dict[str, OutputVariable]:
     data_variables: dict[str, OutputVariable] = {}
-    for scope, name, value in view.iter_fields("received", "sent"):
+    for scope, name, value in view.iter_fields("state", "received", "sent"):
         data_variables[f"{scope}_{name}"] = _runtime_output_variable(
             view,
             value,
@@ -116,8 +117,16 @@ def _runtime_output_variable(
     runtime_store: str,
     field_name: str,
 ) -> OutputVariable:
+    shape = tuple(value.shape)
+    if view.grid is not None and len(shape) >= 2 and shape[-2:] == view.grid.shape:
+        leading_dims = tuple(
+            f"{field_name}_dim_{index}" for index in range(len(shape) - 2)
+        )
+        dims = (*leading_dims, "nlat", "nlon")
+    else:
+        dims = tuple(f"{field_name}_dim_{index}" for index in range(len(shape)))
     return OutputVariable(
-        ("nlat", "nlon"),
+        dims,
         value,
         {
             "component": view.name,
@@ -134,38 +143,39 @@ def write_coupler_runtime_outputs(
     exchanges: Sequence[Exchange],
     binary_masks: Mapping[str, RuntimeArray],
     fractional_masks: Mapping[str, RuntimeArray],
-    output_file_mask: Path | None = None,
     output_dir: Path = Path("."),
-    filename_template: str = "{component}.runtime_fields.nc",
     logger: "LoggerLike | None" = None,
 ) -> None:
     """Write final runtime component views for all configured components."""
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    filenames = _component_output_filenames(
+        tuple(components),
+        suffix="runtime_fields.nc",
+    )
     for name, component in components.items():
-        if output_file_mask is None:
-            filepath = output_dir / filename_template.format(
-                component=name.lower(),
-                component_name=name,
-                name=name,
-            )
-        else:
-            filepath = output_dir / Path(f"{name.lower()}_{output_file_mask}.nc")
-        view = ComponentState._from_runtime(
-            name,
-            component.grid,
-            final_state._component_state(name),
-        )
-        write_runtime_component_view_to_netcdf(
-            view,
-            filepath,
-            masks=output_masks_for_component(
+        filepath = output_dir / filenames[name]
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            view = ComponentState._from_runtime(
                 name,
-                exchanges,
-                binary_masks,
-                fractional_masks,
-            ),
-        )
+                component.grid,
+                final_state._component_state(name),
+            )
+            write_runtime_component_view_to_netcdf(
+                view,
+                filepath,
+                masks=output_masks_for_component(
+                    name,
+                    exchanges,
+                    binary_masks,
+                    fractional_masks,
+                ),
+            )
+        except Exception as exc:
+            raise ComponentError(
+                "Final-field output for component "
+                f"{name!r} at {str(filepath)!r}: {exc}"
+            ) from exc
         if logger is not None:
             logger.info(f"Finalized {name}")
 
@@ -180,22 +190,59 @@ def write_coupler_component_snapshots(
 ) -> None:
     """Write registered native component snapshots for configured components."""
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    filenames = _component_output_filenames(
+        tuple(components),
+        suffix="snapshot.nc",
+    )
     for name, component in components.items():
         writer = component.spec.output.snapshot_writer
         if writer is None:
             continue
-        runtime_state = final_state._component_state(name)
-        writer(
-            SnapshotContext(
-                component=component._component,
-                state=ComponentState._from_runtime(name, component.grid, runtime_state),
-                payload=runtime_state.payload,
-                output_path=output_dir / f"{name.lower()}.snapshot.nc",
-                time=output_time,
-                logger=logger,
+        output_path = output_dir / filenames[name]
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            runtime_state = final_state._component_state(name)
+            writer(
+                SnapshotContext(
+                    component=component._component,
+                    state=ComponentState._from_runtime(
+                        name,
+                        component.grid,
+                        runtime_state,
+                    ),
+                    payload=runtime_state.payload,
+                    output_path=output_path,
+                    time=output_time,
+                    logger=logger,
+                )
             )
+        except Exception as exc:
+            raise ComponentError(
+                "Snapshot output for component "
+                f"{name!r} at {str(output_path)!r}: {exc}"
+            ) from exc
+
+
+def _component_output_filenames(
+    names: tuple[str, ...],
+    *,
+    suffix: str,
+) -> dict[str, str]:
+    """Return deterministic path-safe unique filenames for components."""
+
+    base_tokens = {
+        name: (re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-_").lower() or "component")
+        for name in names
+    }
+    counts = Counter(base_tokens.values())
+    return {
+        name: (
+            f"{token}.{suffix}"
+            if counts[token] == 1
+            else f"{token}.component{index:04d}.{suffix}"
         )
+        for index, (name, token) in enumerate(base_tokens.items())
+    }
 
 
 __all__ = [

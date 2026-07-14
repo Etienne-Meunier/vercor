@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
@@ -21,6 +20,7 @@ from vercor.jax_logging import (
     setup_logger as _setup_logger,
 )
 from vercor.physics import PhysicalConstants as _PhysicalConstants
+from vercor.output import OutputTarget as _OutputTarget
 from vercor._run_order import normalize_run_order as _normalize_run_order
 from vercor._runtime.contracts import (
     validate_exchange_fan_in as _validate_exchange_fan_in,
@@ -268,30 +268,22 @@ class Coupler:
             prefill_missing=prefill_missing,
         )
 
-    def write_outputs(
+    def run(
         self,
-        state: _RunState,
+        state: _RunState | None = None,
         *,
-        output_dir: Path = Path("."),
-        filename_template: str = "{component}.runtime_fields.nc",
-        write_snapshots: bool = True,
-    ) -> None:
-        """Write final runtime fields and transitional component snapshots."""
+        output: _OutputTarget | None = None,
+    ) -> _RunState:
+        """Run the configured workflow and optionally write selected outputs.
 
-        prepared = self._ensure_prepared()
-        _runtime_facade.validate_runtime_state(state, prepared=prepared)
-        self.logger.info("------------ Writing coupler outputs ------------")
-        _runtime_facade.finalize(
-            final_state=state,
-            prepared=prepared,
-            output_dir=output_dir,
-            filename_template=filename_template,
-            write_snapshots=write_snapshots,
-            logger=self.logger,
-        )
+        ``output=None`` performs no I/O. A bare :class:`OutputTarget` enables
+        period means, final fields, and registered snapshots; its flags disable
+        each kind independently. Enabled I/O rejects traced state leaves, while
+        output-free and all-disabled runs remain JIT- and gradient-compatible.
+        """
 
-    def run(self, state: _RunState | None = None) -> _RunState:
-        """Run the configured active sequence through the unified runtime."""
+        if output is not None and not isinstance(output, _OutputTarget):
+            raise TypeError("output must be OutputTarget or None")
 
         prepared = self._ensure_prepared()
         runtime_state = _runtime_facade.prepare_runtime_state(
@@ -302,6 +294,7 @@ class Coupler:
             runtime_state,
             prepared=prepared,
             logger=self.logger,
+            output=output,
         )
 
     def __str__(self) -> str:
@@ -323,3 +316,14 @@ class Coupler:
             f"{self.__class__.__name__}(runstart={self.clock.start}, "
             f"run_order={' -> '.join(self.run_order)})"
         )
+
+
+# Postponed annotations retain private import aliases in ``inspect.signature``.
+# Publish the canonical runtime objects for the stable run contract.
+Coupler.run.__annotations__.update(
+    {
+        "state": _RunState | None,
+        "output": _OutputTarget | None,
+        "return": _RunState,
+    }
+)

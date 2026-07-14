@@ -389,7 +389,10 @@ def test_task4_documentation_uses_live_ownership_and_dependency_order() -> None:
     assert "copy-owns complete component" not in design
     assert "original author objects" in design + progress
     assert "provider-registered" not in dependencies
-    assert "component-registered snapshot-writer" in dependencies
+    assert "sole immutable period-output plan/session" in dependencies
+    assert "There is no component-output adapter or second period-file lifecycle" in (
+        dependencies
+    )
     assert dependencies.count("`vercor/coupler.py`") == 1
 
     def entry_number(marker: str) -> int:
@@ -459,7 +462,7 @@ def test_readme_python_snippets_run_as_one_quick_start(
     exec(compile(source, str(README_PATH), "exec"), {})
 
     assert (tmp_path / "output" / "output.snapshot.nc").is_file()
-    assert tuple(tmp_path.glob("OUTPUT.averages.*.nc"))
+    assert tuple((tmp_path / "output").glob("output.averages.*.nc"))
 
 
 @pytest.mark.fast_always

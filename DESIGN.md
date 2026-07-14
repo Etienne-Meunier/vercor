@@ -43,13 +43,18 @@ normalization. Production code outside `vercor._interpolators` should depend on
 the public regridder boundary, not these private helpers. The removed primary
 `vercor.interpolators` package is not a compatibility facade.
 
-The output module handles all data saving and logging, ensuring a clean separation between computation and I/O.
+Core output coordination lives in the private runtime/output packages. Public
+providers only sample frames, snapshot writers receive a coordinator-allocated
+path, and model-step implementations do not own cadence or period file paths.
+Logging is injected through public contexts rather than hidden globals.
 
 ### Pure functional style
 
-All functions are pure, jitted with `jax.jit` decorator and stateless. No mutable global state. No side effects.
-This is critical for JAX compatibility and makes reasoning about the code easier.
-Each function takes explicit inputs and returns explicit outputs, which can be easily tested and debugged.
+Differentiable physics and runtime kernels are pure and operate on immutable
+PyTrees. Host adapters, optional model setup, logging, interruption handling,
+and explicitly requested output are deliberate side-effect boundaries and are
+kept outside traced kernels. Not every helper is or should be decorated with
+`jax.jit`; the execution backend owns the transform boundary.
 
 ### One-shot JIT scanned runtime
 
@@ -84,50 +89,34 @@ changing non-array fields, such as dicts with keys that appear or disappear.
 
 ### Input / Output
 
-All I/O is handled by a dedicated module that reads/writes from/to disk.
-The core computational modules are completely decoupled from file formats and storage details.
-This allows us to easily swap out the I/O layer if needed, and keeps the core logic clean and focused on the physics.
+Explicit run output is coordinated by the runtime and implemented by private
+`vercor.output` helpers. Computational kernels remain decoupled from NetCDF and
+host transfer. VerCOR 4 currently writes NetCDF output; a general restart-file
+contract is not part of the v4 alpha API.
 
-The output is done in a structured format, such as NetCDF, HDF5, that can be easily read by visualization tools and post-processing scripts.
+JAXGCM, Veros, CAMulator, third-party period output, native snapshots, and final
+runtime-view files are written directly with `h5netcdf`, bypassing xarray
+conversion so providers preserve calendar timestamps, native coordinates and
+metadata, and runtime-field attrs. Passing no `OutputTarget` performs no I/O.
+One core coordination path owns provider sampling, uniform variable filtering,
+immutable JAX PyTree sum/count accumulation, cadence, collision-safe paths,
+snapshots, host transfer, and writes. Model steps and execution backends never
+own cadence or file paths. The static boundary plan allocates filenames across
+every provider and boundary; repeated same-date records gain deterministic time,
+absolute-step, and schema discriminators instead of overwriting files.
+Providers sample the post-step state and receive a zero-based step index plus
+the end-of-step model time. Period filenames/time coordinates and final
+snapshot contexts use that same represented-state time; zero-step snapshots use
+the clock start. The first provider frame fixes variable, coordinate, metadata,
+sample-axis, time-axis, and dimension-order schema for the run, and later drift
+is rejected with a component-scoped error.
 
-Model restart files are supported and written in compact HDF5 format using `h5py`.
-
-Current example output snapshots are also written in HDF5. JAXGCM, Veros, and
-configured CAMulator averaged period outputs, external-component native
-snapshots, CAMulator forecast increments, and final runtime-view NetCDF files
-are written directly with `h5netcdf`,
-bypassing xarray conversion so adapters can preserve VerCOR calendar
-timestamps, shape-derived JCM coordinates, native Veros/CAMulator metadata, and
-runtime field attrs. Shared
-period-output adapter state, record/write orchestration, cadence, calendar time
-encoding, dataset coordinate helpers, accumulation, variable containers,
-mean-output conversion, single-record snapshot storage, period-file write
-lifecycle, and NetCDF writing live in `vercor.output`;
-private `vercor.output._session` owns backend-neutral static output schemas,
-immutable JAX PyTree sessions/accumulators, generic runtime-field extraction,
-early selected-field validation, coalesced clock boundaries, and host-boundary
-writes. Period-enabled Veros and CAMulator factories privately mark their native
-host step as the period-output owner, so session validation/schema construction
-skips those adapters without disabling tracing/custom-backend I/O policy or
-mixed generic output sessions. Generic schemas default an empty
-`PeriodOutput.variables` selection to
-declared outputs and write `{component}.averages.YYYY-MM-DD.nc`. The static
-boundary plan allocates filenames globally across every schema and boundary.
-A path requested once remains unchanged; repeated records from one schema use a
-deterministic time plus absolute-step discriminator, while paths shared by
-multiple schemas also use a path-safe component token plus stable schema index.
-Thus unique date-only and existing sub-daily names remain compatible without
-allowing one schema to overwrite another. Non-grid dimensions use stable
-variable-qualified names because NetCDF dimensions are dataset-global, while
-`nlat` and `nlon` remain shared grid axes.
-model-specific output helpers live beside their setup adapters in
-`vercor.setups._external` and adapt native model objects into that shared output
-boundary. Setup-state constructors instantiate the private
-`_ComponentOutputAdapter` directly from model-specific output constants and
-helpers; output modules do not keep one-case adapter factories.
-VerCOR-owned period output samples, accumulators, extracted variables, mean
-variables, and runtime-view fields stay JAX-backed until the file boundary;
-`vercor._host_arrays` owns the final host transfer. NetCDF time-coordinate
+Bundled model-specific providers live beside their setup adapters under
+`vercor.setups._external` and adapt native model objects to `OutputFrame`.
+Runtime-field providers and bundled/third-party native providers use the same
+selection and coordinator path. VerCOR-owned samples, accumulators, means, and
+runtime-view fields remain JAX-backed until `vercor.output._netcdf` delegates
+the final transfer to `vercor._host_arrays`. NetCDF time-coordinate
 values intentionally remain host `int64` arrays because the CF microsecond
 offsets can overflow JAX integers when `jax_enable_x64` is disabled.
 
@@ -229,7 +218,7 @@ immutable runtime containers used during traced integration.
   that protocol directly or compose `CallableComponent`; data-only adapters use
   `DataComponent`. `ComponentSpec` exclusively owns declared `inputs`,
   `outputs`, immutable `initial_fields`, the `execution` capability,
-  `LifecycleHooks`, `TransferPolicy`, and `OutputConfig`. Scalar author values
+  `LifecycleHooks`, `TransferPolicy`, and `OutputSpec`. Scalar author values
   expand on the component grid and every prepared field is normalized once to
   the runtime dtype. `LifecycleHooks.setup` runs once against the original
   author object and may return `SetupResult(fields, payload)`; prefill and
@@ -332,14 +321,13 @@ immutable runtime containers used during traced integration.
   `RunState.component(...)` and `RunState.components(...)` are the public
   component-view factories; `RunState.replace_fields(...)` is the sole public
   immutable state-update operation.
-  Final runtime output iteration, output-mask naming/selection, and
-  view writing live in private `vercor.output._runtime` helpers, with
-  `vercor._runtime.facade` validating and delegating output writes for
-  `Coupler.write_outputs()`. `Coupler.finalize()` has been removed; users write
-  outputs through `Coupler.write_outputs()`. `Coupler` delegates to the runtime
-  facade and remains
-  the public setup/output facade rather than the owner of runtime adapter
-  mechanics.
+  Final runtime output iteration, output-mask naming/selection, and view
+  writing live in private `vercor.output._runtime` helpers. `Coupler.run`
+  accepts one optional `OutputTarget`; `output=None` and an all-disabled target
+  perform no I/O. The private runtime facade validates enabled output runs,
+  rejects traced states before providers or writers run, and coordinates period,
+  final-field, and snapshot work across the private output path. `Coupler.write_outputs()`
+  and `Coupler.finalize()` are absent from the primary v4 contract.
   The `vercor._runtime` package initializer does not reexport runtime containers
   or helper functions; internal code should import from the focused owner
   modules listed above.
@@ -417,65 +405,45 @@ names, run order, or whether a counterpart component is present.
 constructs setup state and binds runtime-owned lifecycle hooks directly without
 reexporting state bundles or owning runtime payload/setup-state internals.
 JAXGCM output extraction, coordinate adaptation, and unit metadata live in
-`vercor.setups._external.jax_gcm_output`; `JAXGCMSetupState` owns a private
-`_ComponentOutputAdapter` that streams prediction objects into the shared
-JAX-backed sum/count period accumulator instead of retaining all period samples
-or calling xarray adapters. JAXGCM-specific output helpers construct the
-configured adapter and delegate prediction extraction, coordinate/metadata
-builders, accumulation, cadence checks, and file writes through the shared
-adapter record boundary. Final JAXGCM snapshots are registered by the external
-factory and are written from the final runtime payload's `JCMState`, not from
-runtime data fields or declared component outputs.
-For coupled `run()` period output, the JAXGCM factory installs a private
-setup-owned schema that extracts native prediction-equivalent variables from
-the post-step payload `JCMState`. Host and chunked scanned backends therefore
-share one session path while preserving `jcm.averages.YYYY-MM-DD.nc`, native
-dimension ordering, and metadata; model steps no longer perform period-file
-side effects. Coordinate-dependent physics cache setup occurs before JIT and
-the installed sample extractor is pure. When output is enabled, the private
-`JAXGCMRuntimePayload` also carries a shape-stable immutable per-step output
-accumulator built from raw prediction-time sums and finite counts. Session
-merging therefore weights runtime and spinup samples identically, including
-NaNs and multi-time predictions.
-Shared output extension primitives for adapter authors are exported from
-`vercor.output`: `OutputVariable`, `PeriodOutput`, `OutputConfig`,
-`SnapshotContext`, and `SnapshotWriter`. `OutputConfig.period is None`
-disables period output; `PeriodOutput(frequency="step")` requests every-step
-period output. Custom `ExecutionBackend` objects use the same core-owned
-sampling, accumulation, and write boundaries as built-in backends; they do not
-receive an output-session hook. Snapshot writers receive only public component/result views and
-the component payload. Shared cadence, calendar time metadata, dataset
-coordinate discovery, period-sample/output conversion, period-average file
-orchestration, and direct `h5netcdf` writing live in private
-`vercor.output._period`, `vercor.output._dataset`,
-`vercor.output._component_adapter`, `vercor.output._session`,
-`vercor.output._period_files`, and
-`vercor.output._netcdf`.
+`vercor.setups._external.jax_gcm_output`. JAXGCM, Veros, and CAMulator factories
+install ordinary `OutputProvider` objects that return `OutputFrame` samples;
+their setup/runtime adapters retain only the latest native state needed for
+sampling and never own cadence, output paths, or period writes. Final native
+snapshots are registered through `OutputSpec.snapshot_writer`; JAXGCM samples
+the final runtime payload's `JCMState`, while Veros and CAMulator sample their
+latest native host state.
+
+The stable `vercor.output` contract is `OutputContext`, `OutputFrame`,
+`OutputProvider`, `OutputSpec`, `OutputTarget`, `OutputVariable`, `PeriodOutput`,
+`SnapshotContext`, and `SnapshotWriter`. `OutputSpec.period is None` disables
+period sampling for that component. `PeriodOutput.variables` is applied after
+every provider sample with identical empty/subset/unknown/duplicate semantics
+for runtime fields, bundled native models, and third-party providers. Custom
+`ExecutionBackend` objects use the same core-owned sampling, immutable
+sum/count accumulation, cadence, and write boundaries as built-in backends;
+they receive no output-session hook. Snapshot writers receive only public
+component/state metadata plus the payload.
+
+`vercor.output._session` owns the sole immutable period accumulator and
+run-local output plan/session. `vercor.output._period` owns finite-value mean
+math and cadence predicates, `vercor.output._dataset` owns shared coordinate
+helpers, `vercor.output._runtime` owns final runtime views and snapshots, and
+`vercor.output._netcdf` is the sole host/file write primitive. There is no
+mutable native accumulator, hidden prepared-schema marker, component adapter,
+or second period-file lifecycle.
 Surface-temperature cleanup and output-field mapping live in
 `vercor.setups._external.jax_gcm_fields`. Veros host-runtime flux application and
 substep orchestration live in `vercor.setups._external.veros_runtime` with
 concrete setup-state annotations.
 `vercor.setups._external.veros_gcm_state` owns Veros setup-time model resources,
-spinup policy, grid derivation, and lifecycle callbacks, while
-`vercor.setups._external.veros_gcm` remains the private factory implementation.
-The shared output-period accumulator stores one running sum plus one
-finite-value count array per variable as JAX arrays, preserving current
-`nanmean` semantics without retaining every timestep. Opt-in Veros period-output
-extraction, native Veros variable metadata handling, ghost-cell removal, and
-write-time native Veros spatial-axis ordering policy live in
-`vercor.setups._external.veros_output`; `VerosGCMSetupState` owns the same
-private `_ComponentOutputAdapter`, and `vercor.setups._external.veros_runtime`
-streams selected snapshots through the Veros output helper, which delegates
-accumulation, cadence checks, and file writes to the shared adapter record
-boundary with the same day/month/year cadence policy used by JAXGCM. Veros
-final snapshots use the same native-state extraction helpers through a
-component-registered snapshot writer.
-average files keep VerCOR's
-lowercase `time` dimension while matching native Veros spatial NetCDF dimension
-order, and the accumulator averages only across recorded runtime samples rather
-than reducing horizontal or vertical axes. Private Veros output helpers keep
-variable and coordinate extraction names parallel to make data-variable versus
-coordinate-variable responsibilities explicit.
+spinup policy, grid derivation, lifecycle callbacks, and the latest native host
+state used for sampling, while `vercor.setups._external.veros_gcm` remains the
+private factory implementation. Native Veros variable metadata, ghost-cell
+removal, coordinates, and spatial-axis ordering live in
+`vercor.setups._external.veros_output` behind an ordinary provider. It returns
+frames only; the shared coordinator applies variable selection, accumulation,
+cadence, paths, host transfer, and writes. Final Veros snapshots reuse the same
+native extraction helpers through `OutputSpec.snapshot_writer`.
 Veros host-state mutation helpers and the named tuple-compatible
 `VerosForcingFields` container live in `vercor.setups._external.veros_state`.
 Veros backend settings are imported only inside the explicit configuration
@@ -505,18 +473,11 @@ replaces only a missing forcing value while preserving caller config subclasses
 and explicit forcing objects. The ERA5/JCM example accepts injected ocean,
 JCM-input, and clock objects and provides short-run and initial-state-only CLI
 modes without changing its default workflow.
-CAMulator forecast-increment output remains the default when
-`PeriodOutput.frequency` is unset; when it is `day`, `month`, or `year`,
-`CAMulatorGCMSetupState` owns the same private `_ComponentOutputAdapter` and
-`vercor.setups._external.camulator_runtime` streams native prediction tensors
-through the CAMulator output helper, which delegates average accumulation,
-cadence checks, and file writes to the shared adapter record boundary.
-CAMulator records the latest native prediction as a single snapshot
-record in both increment-output and period-output modes, and final snapshots
-reuse the same adapter/output builders without falling back to VerCOR runtime
-fields. CAMulator tensor reshaping, metadata handling, output filtering from
-`predict.save_vars`, average-file path/coordinate adaptation, and
-forecast-increment writing live in `vercor.setups._external.camulator_output`.
+CAMulator retains the latest native prediction block for its ordinary output
+provider and final snapshot writer. Tensor reshaping, metadata handling,
+configured native-variable extraction, and coordinate adaptation live in
+`vercor.setups._external.camulator_output`; the adapter does not choose cadence,
+construct paths, accumulate means, or write period files.
 
 ### Distribution and external plugin boundary
 
@@ -603,13 +564,10 @@ hard-coded `jnp.float64`, `jnp.float32`, `jnp.float_`, `jnp.int64`, or
 `jnp.int32` annotations. At host boundaries that require NumPy dtype objects,
 derive them explicitly with `np.dtype(jax_real_dtype(policy))` or
 `np.dtype(jax_index_dtype(policy))`. NumPy remains restricted to explicit host
-and dtype boundaries. File-output adapters should keep VerCOR-owned values
-JAX-backed and delegate external component period-average orchestration to
-`vercor.output._component_adapter`, period-file writes to
-`vercor.output._period_files`, and final file-transfer conversion to
-`vercor.output._netcdf`, which calls `vercor._host_arrays` only when a non-JAX
-consumer, such as `h5netcdf` or a host-backed model runtime, requires a host
-array.
+and dtype boundaries. Output providers keep VerCOR-owned values JAX-backed and
+return immutable `OutputFrame` samples. `vercor.output._netcdf` calls
+`vercor._host_arrays` only when a non-JAX consumer such as `h5netcdf` requires
+a host array.
 
 ### Logging across JAX runtime transforms
 
@@ -628,10 +586,10 @@ logger-like contracts and level checks, `host` owns host-side formatting and
 emission, and `callback` owns traced-value partitioning plus
 `JaxCallbackLogger`. Production code outside the facade should import from
 `vercor.jax_logging`, not from `vercor._logging`.
-Initialization, runtime, and finalization helpers that are reached outside a
+Initialization, runtime, and output helpers that are reached outside a
 coupler context use the default `VerCOR` Python logger from
 `vercor.jax_logging.get_default_logger()`. Helpers reached from
-`Coupler.initial_state()`, `Coupler.run()`, `Coupler.write_outputs()`, or
+`Coupler.initial_state()`, `Coupler.run()`, or
 component runtime contexts receive the coupler logger explicitly instead of
 writing directly to stdout.
 The host and scanned coupler runtime paths share progress formatting and traced

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 
@@ -13,7 +13,7 @@ from vercor.components import (
     LifecycleHooks,
     ComponentSpec,
 )
-from vercor.output import OutputConfig
+from vercor.output import OutputSpec
 from vercor.setups.config import JAXGCMConfig
 
 if TYPE_CHECKING:
@@ -46,7 +46,6 @@ def make_jax_gcm(
     from vercor.setups._external.jax_gcm_state import JAXGCMSetupState
 
     config = JAXGCMConfig() if config is None else config
-    period_output = config.output.period
     state = JAXGCMSetupState(
         coords=coords,
         terrain=terrain,
@@ -56,7 +55,6 @@ def make_jax_gcm(
         save_interval=config.save_interval,
         spinup_time=config.spinup.duration,
         forcing_data=config.forcing_data,
-        output_frequency=None if period_output is None else period_output.frequency,
         do_spinup=config.spinup.enabled,
         jitted=config.jitted,
     )
@@ -89,16 +87,17 @@ def make_jax_gcm(
                     state,
                 ),
             ),
-            output=OutputConfig(
+            output=OutputSpec(
+                provider=(
+                    _jax_gcm_output.jax_gcm_output_provider(state)
+                    if config.output.provider is None
+                    else config.output.provider
+                ),
                 snapshot_writer=config.output.snapshot_writer
                 or partial(_jax_gcm_output.write_jax_gcm_snapshot_output, state),
                 period=config.output.period,
             ),
         ),
-    )
-    cast(Any, component)._period_output_schema_factory = partial(
-        _jax_gcm_output.jax_gcm_period_output_schema,
-        state,
     )
     return component
 

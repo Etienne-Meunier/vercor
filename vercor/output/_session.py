@@ -1,11 +1,12 @@
-"""Private backend-neutral period-output schemas and runtime sessions."""
+"""Private provider normalization and immutable run-level output sessions."""
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import re
 from typing import TYPE_CHECKING, Any
 
 import jax
@@ -15,249 +16,344 @@ from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.jax_logging import LoggerLike
-from vercor.output import OutputVariable, PeriodOutput
+from vercor.output import (
+    OutputContext,
+    OutputFrame,
+    OutputTarget,
+    OutputVariable,
+    PeriodOutput,
+)
 from vercor.output._dataset import time_coordinate_variable
+from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output._period import (
-    AccumulatedPeriodVariable,
-    PeriodAverageAccumulator,
     _sample_sum_and_counts,
-    period_mean_output_variables,
+    period_mean_sample_to_output_variable,
     should_write_period_output,
 )
-from vercor.output._period_files import write_period_output_netcdf
 from vercor._pytree import PyTreeNodeMixin
+from vercor.state import ComponentState
 
 if TYPE_CHECKING:
     from vercor.components._adapter import _ComponentBinding
     from vercor.state import RunState
-    from vercor._runtime.state import ComponentRuntimeState
 
 _Time = datetime | ModelDateTime
 _ClockStep = tuple[int, _Time, timedelta]
-_SampleExtractor = Callable[["ComponentRuntimeState"], Mapping[str, OutputVariable]]
-_CoordinateBuilder = Callable[
-    [_Time, Mapping[str, OutputVariable]], Mapping[str, OutputVariable]
-]
-_DataDecorator = Callable[[Mapping[str, OutputVariable]], Mapping[str, OutputVariable]]
-_FilenamePolicy = Callable[[_Time], str]
-
-
-@dataclass(frozen=True)
-class _PeriodOutputSchema:
-    """Static extraction and file-decoration policy for one component."""
-
-    component_name: str
-    period: PeriodOutput
-    variable_names: tuple[str, ...]
-    variable_dims: tuple[tuple[str, ...], ...]
-    sample: _SampleExtractor
-    build_coordinate_variables: _CoordinateBuilder
-    decorate_data_variables: _DataDecorator
-    filename: _FilenamePolicy
-    summation_dim: str | None = None
-    time_dim: str = "time"
-    dimension_order: tuple[str, ...] | None = None
-    empty_error_message: str = "Period output requires at least one sample."
-    writer: Callable[..., None] = write_period_output_netcdf
-    take_initial_accumulated_variables: (
-        Callable[[], Mapping[str, AccumulatedPeriodVariable]] | None
-    ) = None
-    sample_accumulator: (
-        Callable[["ComponentRuntimeState"], "_PeriodOutputAccumulator | None"] | None
-    ) = None
 
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
-class _PeriodOutputAccumulator(PyTreeNodeMixin):
-    """Immutable JAX PyTree of running sums and finite-value counts."""
+class _OutputAccumulator(PyTreeNodeMixin):
+    """The sole immutable sum/count accumulator used by output coordination."""
 
-    pytree_children = ("sum_values", "counts")
-    pytree_aux_data = ("names", "dims", "attrs")
+    pytree_children = ("sum_values", "counts", "coordinate_values")
+    pytree_aux_data = (
+        "names",
+        "select_all",
+        "dims",
+        "dtypes",
+        "attrs",
+        "coordinate_names",
+        "coordinate_dims",
+        "coordinate_shapes",
+        "coordinate_dtypes",
+        "coordinate_attrs",
+        "metadata",
+        "sample_dimension",
+        "time_dimension",
+        "dimension_order",
+    )
 
     names: tuple[str, ...]
+    select_all: bool
     dims: tuple[tuple[str, ...], ...]
+    dtypes: tuple[str, ...]
     attrs: tuple[tuple[tuple[str, Any], ...], ...]
     sum_values: tuple[jax.Array, ...]
     counts: tuple[jax.Array, ...]
+    coordinate_names: tuple[str, ...]
+    coordinate_dims: tuple[tuple[str, ...], ...]
+    coordinate_shapes: tuple[tuple[int, ...], ...]
+    coordinate_dtypes: tuple[str, ...]
+    coordinate_values: tuple[Any, ...]
+    coordinate_attrs: tuple[tuple[tuple[str, Any], ...], ...]
+    metadata: tuple[tuple[str, Any], ...]
+    sample_dimension: str | None
+    time_dimension: str
+    dimension_order: tuple[str, ...] | None
 
     @classmethod
-    def zeros_from_samples(
+    def zeros_from_frame(
         cls,
-        samples: Mapping[str, OutputVariable],
+        frame: OutputFrame,
         *,
-        summation_dim: str | None,
-    ) -> "_PeriodOutputAccumulator":
-        """Create a shape-stable empty accumulator from representative samples."""
+        selected: Sequence[str] = (),
+    ) -> "_OutputAccumulator":
+        """Create an empty shape-stable accumulator from one provider frame."""
 
-        if not samples:
-            raise ValueError("Period output requires at least one sampled variable.")
-        names: list[str] = []
+        names = _selected_names(frame, selected)
         dims: list[tuple[str, ...]] = []
         attrs: list[tuple[tuple[str, Any], ...]] = []
+        dtypes: list[str] = []
         sums: list[jax.Array] = []
         counts: list[jax.Array] = []
-        for name, sample in samples.items():
+        for name in names:
             sample_dims, sum_values, sample_counts = _sample_sum_and_counts(
                 name,
-                sample,
-                summation_dim=summation_dim,
+                frame.variables[name],
+                summation_dim=frame.sample_dimension,
             )
-            names.append(name)
             dims.append(sample_dims)
-            attrs.append(tuple(sample.attrs.items()))
+            dtypes.append(_value_dtype(frame.variables[name].values))
+            attrs.append(tuple(frame.variables[name].attrs.items()))
             sums.append(jnp.zeros_like(sum_values))
             counts.append(jnp.zeros_like(sample_counts))
+        coordinate_names, coordinate_dims, coordinate_values, coordinate_attrs = (
+            _coordinate_parts(frame)
+        )
         return cls(
-            names=tuple(names),
+            names=names,
+            select_all=not tuple(selected),
             dims=tuple(dims),
+            dtypes=tuple(dtypes),
             attrs=tuple(attrs),
             sum_values=tuple(sums),
             counts=tuple(counts),
+            coordinate_names=coordinate_names,
+            coordinate_dims=coordinate_dims,
+            coordinate_shapes=_coordinate_shapes(coordinate_values),
+            coordinate_dtypes=_coordinate_dtypes(coordinate_values),
+            coordinate_values=coordinate_values,
+            coordinate_attrs=coordinate_attrs,
+            metadata=tuple(frame.metadata.items()),
+            sample_dimension=frame.sample_dimension,
+            time_dimension=frame.time_dimension,
+            dimension_order=frame.dimension_order,
         )
 
-    @classmethod
-    def from_accumulated_variables(
-        cls,
-        variables: Mapping[str, AccumulatedPeriodVariable],
-    ) -> "_PeriodOutputAccumulator":
-        """Copy an existing host-owned window into immutable JAX storage."""
+    def add_frame(self, frame: OutputFrame) -> "_OutputAccumulator":
+        """Return a new accumulator containing one selected provider frame."""
 
-        return cls(
-            names=tuple(variables),
-            dims=tuple(variable.dims for variable in variables.values()),
-            attrs=tuple(
-                tuple(variable.attrs.items()) for variable in variables.values()
-            ),
-            sum_values=tuple(variable.sum_values for variable in variables.values()),
-            counts=tuple(variable.counts for variable in variables.values()),
+        selected = _selected_names(frame, self.names)
+        if selected != self.names or (
+            self.select_all and tuple(frame.variables) != self.names
+        ):
+            raise ValueError("Output provider variables changed across samples.")
+        if frame.sample_dimension != self.sample_dimension:
+            raise ValueError("Output provider sample dimension changed across samples.")
+        if frame.time_dimension != self.time_dimension:
+            raise ValueError("Output provider time dimension changed across samples.")
+        if frame.dimension_order != self.dimension_order:
+            raise ValueError("Output provider dimension order changed across samples.")
+        if tuple(frame.metadata.items()) != self.metadata:
+            raise ValueError("Output provider metadata changed across samples.")
+        coordinate_names, coordinate_dims, coordinate_values, coordinate_attrs = (
+            _coordinate_parts(frame)
         )
-
-    def add_samples(
-        self,
-        samples: Mapping[str, OutputVariable],
-        *,
-        summation_dim: str | None,
-    ) -> "_PeriodOutputAccumulator":
-        """Return a new accumulator containing one additional sample mapping."""
-
-        if tuple(samples) != self.names:
-            raise ValueError("Period output variables changed across samples.")
+        if (
+            coordinate_names,
+            coordinate_dims,
+            coordinate_attrs,
+        ) != (
+            self.coordinate_names,
+            self.coordinate_dims,
+            self.coordinate_attrs,
+        ) or (
+            _coordinate_shapes(coordinate_values) != self.coordinate_shapes
+            or _coordinate_dtypes(coordinate_values) != self.coordinate_dtypes
+        ):
+            raise ValueError(
+                "Output provider coordinate schema changed across samples."
+            )
         sums: list[jax.Array] = []
         counts: list[jax.Array] = []
-        for index, (name, sample) in enumerate(samples.items()):
+        for index, name in enumerate(self.names):
             dims, sample_sum, sample_counts = _sample_sum_and_counts(
                 name,
-                sample,
-                summation_dim=summation_dim,
+                frame.variables[name],
+                summation_dim=self.sample_dimension,
             )
             if dims != self.dims[index]:
-                raise ValueError(f"Period output variable {name!r} dimensions changed.")
+                raise ValueError(f"Output variable {name!r} dimensions changed.")
             if sample_sum.shape != self.sum_values[index].shape:
-                raise ValueError(f"Period output variable {name!r} shape changed.")
+                raise ValueError(f"Output variable {name!r} shape changed.")
+            if _value_dtype(frame.variables[name].values) != self.dtypes[index]:
+                raise ValueError(f"Output variable {name!r} dtype changed.")
+            if tuple(frame.variables[name].attrs.items()) != self.attrs[index]:
+                raise ValueError(f"Output variable {name!r} attributes changed.")
             sums.append(self.sum_values[index] + sample_sum)
             counts.append(self.counts[index] + sample_counts)
-        return _PeriodOutputAccumulator(
+        return _OutputAccumulator(
             names=self.names,
+            select_all=self.select_all,
             dims=self.dims,
+            dtypes=self.dtypes,
             attrs=self.attrs,
             sum_values=tuple(sums),
             counts=tuple(counts),
+            coordinate_names=coordinate_names,
+            coordinate_dims=coordinate_dims,
+            coordinate_shapes=_coordinate_shapes(coordinate_values),
+            coordinate_dtypes=_coordinate_dtypes(coordinate_values),
+            coordinate_values=coordinate_values,
+            coordinate_attrs=coordinate_attrs,
+            metadata=tuple(frame.metadata.items()),
+            sample_dimension=self.sample_dimension,
+            time_dimension=self.time_dimension,
+            dimension_order=self.dimension_order,
         )
 
-    def merge(
-        self,
-        other: "_PeriodOutputAccumulator",
-    ) -> "_PeriodOutputAccumulator":
-        """Return the exact sum/count merge of two compatible accumulators."""
+    def reset(self) -> "_OutputAccumulator":
+        """Return an empty accumulator with unchanged static schema."""
 
-        if self.names != other.names:
-            raise ValueError("Period output variables changed across accumulators.")
-        if self.dims != other.dims:
-            raise ValueError("Period output dimensions changed across accumulators.")
-        if tuple(value.shape for value in self.sum_values) != tuple(
-            value.shape for value in other.sum_values
-        ):
-            raise ValueError("Period output shapes changed across accumulators.")
-        return _PeriodOutputAccumulator(
+        return _OutputAccumulator(
             names=self.names,
+            select_all=self.select_all,
             dims=self.dims,
-            attrs=self.attrs,
-            sum_values=tuple(
-                left + right
-                for left, right in zip(self.sum_values, other.sum_values, strict=True)
-            ),
-            counts=tuple(
-                left + right
-                for left, right in zip(self.counts, other.counts, strict=True)
-            ),
-        )
-
-    def reset(self) -> "_PeriodOutputAccumulator":
-        """Return an empty accumulator with the same static variable schema."""
-
-        return _PeriodOutputAccumulator(
-            names=self.names,
-            dims=self.dims,
+            dtypes=self.dtypes,
             attrs=self.attrs,
             sum_values=tuple(jnp.zeros_like(value) for value in self.sum_values),
             counts=tuple(jnp.zeros_like(value) for value in self.counts),
+            coordinate_names=self.coordinate_names,
+            coordinate_dims=self.coordinate_dims,
+            coordinate_shapes=self.coordinate_shapes,
+            coordinate_dtypes=self.coordinate_dtypes,
+            coordinate_values=self.coordinate_values,
+            coordinate_attrs=self.coordinate_attrs,
+            metadata=self.metadata,
+            sample_dimension=self.sample_dimension,
+            time_dimension=self.time_dimension,
+            dimension_order=self.dimension_order,
         )
 
-    def mean_samples(self) -> dict[str, OutputVariable]:
-        """Return reduced variables using the shared finite-count semantics."""
+    def mean_frame(self) -> OutputFrame:
+        """Return the finite-count mean as one immutable provider frame."""
 
-        return {
-            name: AccumulatedPeriodVariable(
-                dims=self.dims[index],
-                sum_values=self.sum_values[index],
-                counts=self.counts[index],
-                attrs=dict(self.attrs[index]),
-            ).mean_sample()
-            for index, name in enumerate(self.names)
-        }
-
-
-@jax.tree_util.register_pytree_node_class
-@dataclass(frozen=True)
-class _PeriodOutputSession(PyTreeNodeMixin):
-    """Immutable per-run accumulator bundle carried across scan chunks."""
-
-    pytree_children = ("accumulators",)
-
-    accumulators: tuple[_PeriodOutputAccumulator, ...]
-
-    def accumulate(
-        self,
-        schemas: Sequence[_PeriodOutputSchema],
-        state: "RunState",
-    ) -> "_PeriodOutputSession":
-        """Sample every configured component from one post-step runtime state."""
-
-        accumulated = []
-        for schema, accumulator in zip(schemas, self.accumulators, strict=True):
-            component_state = state._component_state(schema.component_name)
-            sampled_accumulator = (
-                schema.sample_accumulator(component_state)
-                if schema.sample_accumulator is not None
-                else None
+        variables = {}
+        for index, name in enumerate(self.names):
+            mean_dtype = jnp.result_type(self.sum_values[index].dtype, jnp.float32)
+            denominator = jnp.where(self.counts[index] > 0, self.counts[index], 1)
+            finite_means = self.sum_values[index] / denominator
+            mean_values = jnp.where(
+                self.counts[index] > 0,
+                finite_means,
+                jnp.full(self.sum_values[index].shape, jnp.nan, dtype=mean_dtype),
             )
-            if sampled_accumulator is not None:
-                accumulated.append(accumulator.merge(sampled_accumulator))
-            else:
-                accumulated.append(
-                    accumulator.add_samples(
-                        schema.sample(component_state),
-                        summation_dim=schema.summation_dim,
-                    )
+            variables[name] = OutputVariable(
+                self.dims[index],
+                mean_values,
+                dict(self.attrs[index]),
+            )
+        return OutputFrame(
+            variables,
+            coordinates={
+                name: OutputVariable(dims, values, dict(attrs))
+                for name, dims, values, attrs in zip(
+                    self.coordinate_names,
+                    self.coordinate_dims,
+                    self.coordinate_values,
+                    self.coordinate_attrs,
+                    strict=True,
                 )
-        return _PeriodOutputSession(accumulators=tuple(accumulated))
+            },
+            metadata=dict(self.metadata),
+            time_dimension=self.time_dimension,
+            dimension_order=self.dimension_order,
+        )
+
+
+def _selected_names(frame: OutputFrame, selected: Sequence[str]) -> tuple[str, ...]:
+    """Apply the one provider-independent variable selection rule."""
+
+    names = tuple(selected) or tuple(frame.variables)
+    if not names:
+        raise ValueError("Output provider returned no variables.")
+    missing = next((name for name in names if name not in frame.variables), None)
+    if missing is not None:
+        available = ", ".join(frame.variables) or "<none>"
+        raise KeyError(f"unknown output variable {missing!r}; available: {available}")
+    return names
+
+
+def _coordinate_parts(
+    frame: OutputFrame,
+) -> tuple[
+    tuple[str, ...],
+    tuple[tuple[str, ...], ...],
+    tuple[Any, ...],
+    tuple[tuple[tuple[str, Any], ...], ...],
+]:
+    """Split non-time coordinate values from their static PyTree schema."""
+
+    coordinates = tuple(
+        (name, variable)
+        for name, variable in frame.coordinates.items()
+        if name != frame.time_dimension
+    )
+    return (
+        tuple(name for name, _ in coordinates),
+        tuple(variable.dims for _, variable in coordinates),
+        tuple(variable.values for _, variable in coordinates),
+        tuple(tuple(variable.attrs.items()) for _, variable in coordinates),
+    )
+
+
+def _coordinate_shapes(values: tuple[Any, ...]) -> tuple[tuple[int, ...], ...]:
+    """Return coordinate shapes without moving their values out of PyTree leaves."""
+
+    return tuple(tuple(jnp.shape(value)) for value in values)
+
+
+def _coordinate_dtypes(values: tuple[Any, ...]) -> tuple[str, ...]:
+    """Return stable coordinate dtypes for cross-sample schema validation."""
+
+    return tuple(_value_dtype(value) for value in values)
+
+
+def _value_dtype(value: Any) -> str:
+    """Return a hashable dtype token without moving array values to the host."""
+
+    return str(jnp.asarray(value).dtype)
+
+
+class _RuntimeFieldProvider:
+    """Default provider exposing only declared component output fields."""
+
+    def __init__(self, component: "_ComponentBinding") -> None:
+        self._component = component
+
+    def sample(self, context: OutputContext) -> OutputFrame:
+        variables = {
+            name: OutputVariable(
+                _generic_field_dims(
+                    name,
+                    tuple(context.state.field(name).shape),
+                    self._component.grid.shape,
+                ),
+                context.state.field(name),
+                {"component": self._component.name, "field_name": name},
+            )
+            for name in self._component.spec.outputs
+        }
+        return OutputFrame(
+            variables,
+            coordinates={
+                "latitude": OutputVariable(("nlat",), self._component.grid.latitude),
+                "longitude": OutputVariable(("nlon",), self._component.grid.longitude),
+            },
+        )
 
 
 @dataclass(frozen=True)
-class _PeriodOutputBoundary:
-    """One ordered scan stop and the component outputs due at that stop."""
+class _OutputSchema:
+    component: "_ComponentBinding"
+    provider: Any
+    period: PeriodOutput
+    index: int
 
+
+@dataclass(frozen=True)
+class _OutputBoundary:
     stop_step: int
     time: _Time
     due_schema_indices: tuple[int, ...]
@@ -265,242 +361,193 @@ class _PeriodOutputBoundary:
 
 
 @dataclass(frozen=True)
-class _PeriodOutputPlan:
-    """Static schemas, initial accumulators, and coalesced clock boundaries."""
-
-    schemas: tuple[_PeriodOutputSchema, ...]
-    initial_session: _PeriodOutputSession
-    boundaries: tuple[_PeriodOutputBoundary, ...]
+class _OutputPlan:
+    schemas: tuple[_OutputSchema, ...]
+    boundaries: tuple[_OutputBoundary, ...]
+    target: OutputTarget
 
 
-def has_period_output(components: Mapping[str, "_ComponentBinding"]) -> bool:
-    """Return whether any configured component requests period output."""
+@dataclass(frozen=True)
+class _OutputSession:
+    """Immutable per-run optional accumulator bundle."""
 
-    return any(
-        component.spec.output.period is not None for component in components.values()
+    accumulators: tuple[_OutputAccumulator | None, ...]
+
+    def accumulate(
+        self,
+        plan: _OutputPlan,
+        state: "RunState",
+        *,
+        step: int,
+        time: _Time,
+        dt: timedelta,
+    ) -> "_OutputSession":
+        accumulated: list[_OutputAccumulator] = []
+        for schema, accumulator in zip(plan.schemas, self.accumulators, strict=True):
+            runtime_state = state._component_state(schema.component.name)
+            context = OutputContext(
+                component=schema.component._component,
+                state=ComponentState._from_runtime(
+                    schema.component.name,
+                    schema.component.grid,
+                    runtime_state,
+                ),
+                payload=runtime_state.payload,
+                step=step,
+                time=time,
+                dt=dt,
+            )
+            try:
+                frame = schema.provider.sample(context)
+                if not isinstance(frame, OutputFrame):
+                    raise TypeError(
+                        "must return OutputFrame; " f"got {type(frame).__name__}"
+                    )
+                current = (
+                    _OutputAccumulator.zeros_from_frame(
+                        frame,
+                        selected=schema.period.variables,
+                    )
+                    if accumulator is None
+                    else accumulator
+                )
+                accumulated.append(current.add_frame(frame))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ComponentError(
+                    f"Output provider for component {schema.component.name!r}: {exc}"
+                ) from exc
+        return _OutputSession(tuple(accumulated))
+
+
+def has_period_output(
+    components: Mapping[str, "_ComponentBinding"],
+    target: OutputTarget | None,
+) -> bool:
+    """Return whether the explicit target enables any declared period output."""
+
+    return bool(
+        target is not None
+        and target.write_period
+        and any(
+            component.spec.output.period is not None
+            for component in components.values()
+        )
     )
 
 
-def validate_period_output_run_state_not_traced(state: "RunState") -> None:
-    """Reject differentiated period-output runs before schema extraction."""
+def validate_output_run_state_not_traced(state: "RunState") -> None:
+    """Reject any enabled I/O run carrying traced state leaves."""
 
     if any(
         isinstance(leaf, jax.core.Tracer) for leaf in jax.tree_util.tree_leaves(state)
     ):
         raise CouplerError(
-            "Period output is an I/O workflow and cannot run with traced "
-            "RunState leaves. Differentiated or outer-jitted runs must "
-            "disable component period output."
+            "Output is an I/O workflow and cannot run with traced RunState leaves. "
+            "Differentiated or outer-jitted runs must pass output=None."
         )
 
 
-def validate_period_output_component_state(
-    component: "_ComponentBinding",
-    state: "ComponentRuntimeState",
-) -> None:
-    """Validate generic selected fields against initialized runtime state."""
-
-    period = component.spec.output.period
-    if (
-        period is None
-        or hasattr(component, "_period_output_schema_factory")
-        or _period_output_handled_by_step(component)
-    ):
-        return
-    selected = tuple(period.variables) or tuple(component.spec.outputs)
-    if not selected:
-        raise ComponentError(
-            f"Period output for component {component.name!r} has no variables. "
-            "Select PeriodOutput.variables or declare component outputs."
-        )
-    missing = tuple(name for name in selected if name not in state.fields)
-    if missing:
-        available = ", ".join(state.fields.field_names) or "<none>"
-        raise ComponentError(
-            f"Period output for component {component.name!r} selected unknown "
-            f"runtime field {missing[0]!r}. Available state fields: {available}."
-        )
-
-
-def build_period_output_plan(
+def build_output_plan(
     components: Mapping[str, "_ComponentBinding"],
-    state: "RunState",
     clock: Clock,
+    target: OutputTarget,
     *,
     clock_steps: Sequence[_ClockStep] | None = None,
-) -> _PeriodOutputPlan:
-    """Build static schemas and ordered chunk boundaries before execution."""
+) -> _OutputPlan:
+    """Normalize component providers and allocate all period filenames."""
 
-    schemas: list[_PeriodOutputSchema] = []
-    accumulators: list[_PeriodOutputAccumulator] = []
-    for name, component in components.items():
+    schemas: list[_OutputSchema] = []
+    for component in components.values():
         period = component.spec.output.period
-        if period is None or _period_output_handled_by_step(component):
+        if period is None:
             continue
-        component_state = state._component_state(name)
-        validate_period_output_component_state(component, component_state)
-        factory = getattr(component, "_period_output_schema_factory", None)
-        schema = (
-            factory(component, component_state)
-            if callable(factory)
-            else _generic_period_output_schema(component, component_state, period)
-        )
-        schemas.append(schema)
-        initial_variables = (
-            schema.take_initial_accumulated_variables()
-            if schema.take_initial_accumulated_variables is not None
-            else {}
-        )
-        if initial_variables:
-            accumulators.append(
-                _PeriodOutputAccumulator.from_accumulated_variables(initial_variables)
-            )
-        else:
-            sampled_accumulator = (
-                schema.sample_accumulator(component_state)
-                if schema.sample_accumulator is not None
-                else None
-            )
-            accumulators.append(
-                sampled_accumulator.reset()
-                if sampled_accumulator is not None
-                else _PeriodOutputAccumulator.zeros_from_samples(
-                    schema.sample(component_state),
-                    summation_dim=schema.summation_dim,
-                )
-            )
-
-    boundaries = _period_output_boundaries(
+        provider = component.spec.output.provider or _RuntimeFieldProvider(component)
+        schemas.append(_OutputSchema(component, provider, period, len(schemas)))
+    boundaries = _output_boundaries(
         tuple(schemas),
         clock,
         clock_steps=clock_steps,
     )
-    return _PeriodOutputPlan(
-        schemas=tuple(schemas),
-        initial_session=_PeriodOutputSession(tuple(accumulators)),
-        boundaries=boundaries,
-    )
+    return _OutputPlan(tuple(schemas), boundaries, target)
 
 
-def write_period_output_boundary(
-    plan: _PeriodOutputPlan,
-    session: _PeriodOutputSession,
-    boundary: _PeriodOutputBoundary,
+def initial_output_session(plan: _OutputPlan) -> _OutputSession:
+    """Return a lazy immutable accumulator slot for every provider."""
+
+    return _OutputSession(tuple(None for _ in plan.schemas))
+
+
+def write_output_boundary(
+    plan: _OutputPlan,
+    session: _OutputSession,
+    boundary: _OutputBoundary,
     *,
     logger: LoggerLike | None,
-) -> _PeriodOutputSession:
-    """Write completed reductions and reset only schemas due at this boundary."""
+) -> _OutputSession:
+    """Write due means and reset only the completed accumulator windows."""
 
     accumulators = list(session.accumulators)
-    for index, output_filename in zip(
+    for index, filename in zip(
         boundary.due_schema_indices,
         boundary.output_filenames,
         strict=True,
     ):
         schema = plan.schemas[index]
+        output_path = plan.target.directory / filename
         accumulator = accumulators[index]
-        mean_accumulator = PeriodAverageAccumulator()
-        mean_accumulator.add_samples(accumulator.mean_samples())
-        mean_variables = period_mean_output_variables(
-            mean_accumulator,
-            empty_error_message=schema.empty_error_message,
-            time_dim=schema.time_dim,
-            dimension_order=schema.dimension_order,
-        )
-        schema.writer(
-            output_filename,
-            mean_variables=mean_variables,
-            build_coordinate_variables=lambda variables, schema=schema: (
-                schema.build_coordinate_variables(boundary.time, variables)
-            ),
-            build_data_variables=schema.decorate_data_variables,
-            logger=logger,
-        )
-        accumulators[index] = accumulator.reset()
-    return _PeriodOutputSession(tuple(accumulators))
-
-
-def _generic_period_output_schema(
-    component: "_ComponentBinding",
-    state: "ComponentRuntimeState",
-    period: PeriodOutput,
-) -> _PeriodOutputSchema:
-    selected = tuple(period.variables) or tuple(component.spec.outputs)
-    dims = {
-        name: _generic_field_dims(
-            name,
-            tuple(state.fields.get(name).shape),
-            component.grid.shape,
-        )
-        for name in selected
-    }
-
-    def sample(component_state: "ComponentRuntimeState") -> dict[str, OutputVariable]:
-        return {
-            name: OutputVariable(
-                dims[name],
-                component_state.fields.get(name),
-                {"component": component.name, "field_name": name},
+        try:
+            plan.target.directory.mkdir(parents=True, exist_ok=True)
+            if accumulator is None:
+                raise ValueError("Period output requires at least one sample.")
+            frame = accumulator.mean_frame()
+            variables = {
+                name: period_mean_sample_to_output_variable(
+                    variable,
+                    time_dim=frame.time_dimension,
+                    dimension_order=frame.dimension_order,
+                )
+                for name, variable in frame.variables.items()
+            }
+            coordinates = dict(frame.coordinates)
+            coordinates[frame.time_dimension] = time_coordinate_variable(
+                boundary.time,
+                time_dim=frame.time_dimension,
             )
-            for name in selected
-        }
-
-    def coordinates(
-        time: _Time,
-        variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        _ = variables
-        return {
-            "time": time_coordinate_variable(time),
-            "latitude": OutputVariable(("nlat",), component.grid.latitude),
-            "longitude": OutputVariable(("nlon",), component.grid.longitude),
-        }
-
-    return _PeriodOutputSchema(
-        component_name=component.name,
-        period=period,
-        variable_names=selected,
-        variable_dims=tuple(dims[name] for name in selected),
-        sample=sample,
-        build_coordinate_variables=coordinates,
-        decorate_data_variables=dict,
-        filename=lambda time: (
-            f"{component.name}.averages.{time.strftime('%Y-%m-%d')}.nc"
-        ),
-    )
-
-
-def _period_output_handled_by_step(component: "_ComponentBinding") -> bool:
-    """Return whether a bundled host adapter owns its native period writes."""
-
-    return bool(
-        component.spec.output.period is not None
-        and getattr(component, "_period_output_handled_by_step", False)
-    )
+            write_netcdf_dataset(
+                output=str(output_path),
+                coordinate_variables=coordinates,
+                data_variables=variables,
+                global_attrs=dict(frame.metadata) or None,
+                logger=logger,
+            )
+        except Exception as exc:
+            raise ComponentError(
+                "Period output for component "
+                f"{schema.component.name!r} at {str(output_path)!r}: {exc}"
+            ) from exc
+        accumulators[index] = accumulator.reset()
+    return _OutputSession(tuple(accumulators))
 
 
 def _generic_field_dims(
-    variable_name: str,
+    name: str,
     shape: tuple[int, ...],
     grid_shape: tuple[int, int],
 ) -> tuple[str, ...]:
     if len(shape) >= 2 and shape[-2:] == grid_shape:
-        prefix = tuple(
-            f"{variable_name}_dim_{index}" for index in range(len(shape) - 2)
-        )
+        prefix = tuple(f"{name}_dim_{index}" for index in range(len(shape) - 2))
         return (*prefix, "nlat", "nlon")
-    return tuple(f"{variable_name}_dim_{index}" for index in range(len(shape)))
+    return tuple(f"{name}_dim_{index}" for index in range(len(shape)))
 
 
-def _period_output_boundaries(
-    schemas: tuple[_PeriodOutputSchema, ...],
+def _output_boundaries(
+    schemas: tuple[_OutputSchema, ...],
     clock: Clock,
     *,
-    clock_steps: Sequence[_ClockStep] | None = None,
-) -> tuple[_PeriodOutputBoundary, ...]:
-    steps = tuple(clock.iter()) if clock_steps is None else clock_steps
-    raw_boundaries: list[tuple[int, _Time, tuple[int, ...]]] = []
-    last_stop = 0
+    clock_steps: Sequence[_ClockStep] | None,
+) -> tuple[_OutputBoundary, ...]:
+    steps = tuple(clock.iter()) if clock_steps is None else tuple(clock_steps)
+    raw: list[tuple[int, _Time, tuple[int, ...], tuple[str, ...]]] = []
     for step, time, dt in steps:
         due = tuple(
             index
@@ -508,149 +555,45 @@ def _period_output_boundaries(
             if should_write_period_output(schema.period, time=time, dt=dt)
         )
         if due:
-            last_stop = step + 1
-            raw_boundaries.append((last_stop, time, due))
-    if last_stop < clock.steps:
-        final_time = steps[-1][1] if steps else clock.start
-        raw_boundaries.append((clock.steps, final_time, ()))
-
-    base_filenames = tuple(
-        tuple(schemas[index].filename(time) for index in due)
-        for _, time, due in raw_boundaries
-    )
-    path_counts = Counter(
-        filename for filenames in base_filenames for filename in filenames
-    )
-    schema_path_counts = Counter(
-        (index, filename)
-        for (_, _, due), filenames in zip(
-            raw_boundaries,
-            base_filenames,
-            strict=True,
-        )
-        for index, filename in zip(due, filenames, strict=True)
-    )
-    schema_indices_by_path: dict[str, set[int]] = {}
-    for (_, _, due), filenames in zip(
-        raw_boundaries,
-        base_filenames,
-        strict=True,
-    ):
-        for index, filename in zip(due, filenames, strict=True):
-            schema_indices_by_path.setdefault(filename, set()).add(index)
-
-    reserved_unique_paths = {
-        filename for filename, count in path_counts.items() if count == 1
-    }
-    allocated_paths = set(reserved_unique_paths)
-    allocated_filenames: list[tuple[str, ...]] = []
-    request_index = 0
-    for (stop_step, time, due), filenames in zip(
-        raw_boundaries,
-        base_filenames,
-        strict=True,
-    ):
-        boundary_filenames = []
-        for index, filename in zip(due, filenames, strict=True):
-            if path_counts[filename] == 1:
-                allocated = filename
-            else:
-                allocated = filename
-                if schema_path_counts[(index, filename)] > 1:
-                    allocated = _disambiguated_period_filename(
-                        allocated,
-                        time=time,
-                        step=stop_step - 1,
-                    )
-                if len(schema_indices_by_path[filename]) > 1:
-                    allocated = _schema_disambiguated_period_filename(
-                        allocated,
-                        component_name=schemas[index].component_name,
-                        schema_index=index,
-                    )
-                collision_index = 0
-                candidate = allocated
-                while candidate in allocated_paths:
-                    candidate = _record_disambiguated_period_filename(
-                        allocated,
-                        request_index=request_index,
-                        collision_index=collision_index,
-                    )
-                    collision_index += 1
-                allocated = candidate
-                allocated_paths.add(allocated)
-            boundary_filenames.append(allocated)
-            request_index += 1
-        allocated_filenames.append(tuple(boundary_filenames))
-
-    return tuple(
-        _PeriodOutputBoundary(
-            stop_step=stop_step,
-            time=time,
-            due_schema_indices=due,
-            output_filenames=filenames,
-        )
-        for (stop_step, time, due), filenames in zip(
-            raw_boundaries,
-            allocated_filenames,
-            strict=True,
-        )
-    )
+            output_time = time + dt
+            bases = tuple(
+                f"{_safe_token(schemas[index].component.name)}.averages."
+                f"{output_time.strftime('%Y-%m-%d')}.nc"
+                for index in due
+            )
+            raw.append((step + 1, output_time, due, bases))
+    counts = Counter(filename for *_, filenames in raw for filename in filenames)
+    used: set[str] = set()
+    result: list[_OutputBoundary] = []
+    request = 0
+    for stop, time, due, filenames in raw:
+        allocated: list[str] = []
+        for schema_index, filename in zip(due, filenames, strict=True):
+            candidate = filename
+            if counts[filename] > 1:
+                stem = filename[:-3]
+                candidate = (
+                    f"{stem}T{time.hour:02d}{time.minute:02d}{time.second:02d}."
+                    f"{time.microsecond:06d}.step{stop - 1:08d}."
+                    f"schema{schema_index:04d}.nc"
+                )
+            collision = 0
+            while candidate in used:
+                stem = candidate[:-3]
+                candidate = f"{stem}.record{request:08d}.collision{collision:04d}.nc"
+                collision += 1
+            used.add(candidate)
+            allocated.append(candidate)
+            request += 1
+        result.append(_OutputBoundary(stop, time, due, tuple(allocated)))
+    return tuple(result)
 
 
-def _disambiguated_period_filename(
-    filename: str,
-    *,
-    time: _Time,
-    step: int,
-) -> str:
-    """Return a deterministic sub-daily filename for a colliding date path."""
+def _safe_token(value: str) -> str:
+    """Return a deterministic path-safe component token."""
 
-    stem = filename[:-3] if filename.endswith(".nc") else filename
-    timestamp = (
-        f"{time.hour:02d}{time.minute:02d}{time.second:02d}." f"{time.microsecond:06d}"
-    )
-    return f"{stem}T{timestamp}.step{step:08d}.nc"
+    token = re.sub(r"[^A-Za-z0-9_-]+", "-", value).strip("-_").lower()
+    return token or "component"
 
 
-def _schema_disambiguated_period_filename(
-    filename: str,
-    *,
-    component_name: str,
-    schema_index: int,
-) -> str:
-    """Add a path-safe component/schema discriminator to a filename."""
-
-    stem = filename[:-3] if filename.endswith(".nc") else filename
-    component_token = _sanitize_period_filename_token(component_name)
-    return f"{stem}.component-{component_token}.schema{schema_index:04d}.nc"
-
-
-def _record_disambiguated_period_filename(
-    filename: str,
-    *,
-    request_index: int,
-    collision_index: int,
-) -> str:
-    """Resolve a generated-name collision with a stable record discriminator."""
-
-    stem = filename[:-3] if filename.endswith(".nc") else filename
-    return f"{stem}.record{request_index:08d}.collision{collision_index:04d}.nc"
-
-
-def _sanitize_period_filename_token(value: str) -> str:
-    """Return an ASCII filename token without path separators."""
-
-    characters: list[str] = []
-    replacing = False
-    for character in value:
-        if character.isascii() and (character.isalnum() or character in "-_"):
-            characters.append(character)
-            replacing = False
-        elif not replacing:
-            characters.append("-")
-            replacing = True
-    return "".join(characters).strip("-_") or "component"
-
-
-__all__ = []
+__all__: list[str] = []

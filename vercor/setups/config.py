@@ -6,7 +6,7 @@ from datetime import timedelta
 from types import MappingProxyType
 from typing import Any
 
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, PeriodOutput
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class JAXGCMConfig:
     save_interval: timedelta = timedelta(days=1)
     forcing_data: Any | None = None
     spinup: Spinup = field(default_factory=Spinup)
-    output: OutputConfig = field(default_factory=OutputConfig)
+    output: OutputSpec = field(default_factory=OutputSpec)
     jitted: bool = True
 
     def __post_init__(self) -> None:
@@ -49,7 +49,7 @@ class VerosConfig:
     custom_parameters: Mapping[str, Any] | None = None
     restore_to_climatology: bool = False
     spinup: Spinup = field(default_factory=Spinup)
-    output: OutputConfig = field(default_factory=OutputConfig)
+    output: OutputSpec = field(default_factory=OutputSpec)
     jitted: bool = False
 
     def __post_init__(self) -> None:
@@ -70,12 +70,10 @@ class CAMulatorConfig:
     config_path: str
     name: str = "ATM"
     model_weights_path: str = "checkpoint.pt00091.pt"
-    output_subfolder_name: str | None = None
     init_noise: float | None = None
     spinup: Spinup = field(default_factory=Spinup)
-    output: OutputConfig = field(default_factory=OutputConfig)
+    output: OutputSpec = field(default_factory=OutputSpec)
     device: str = "cuda"
-    output_cpus_number: int = 8
     logger: Any | None = None
 
 
@@ -84,7 +82,7 @@ def _default_jcm_atmosphere_config() -> JAXGCMConfig:
 
     return JAXGCMConfig(
         spinup=Spinup(enabled=True),
-        output=OutputConfig(period=PeriodOutput(frequency="month")),
+        output=OutputSpec(period=PeriodOutput(frequency="month")),
         jitted=True,
     )
 

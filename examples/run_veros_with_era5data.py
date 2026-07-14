@@ -6,7 +6,7 @@ from vercor import (
     Exchange,
     RuntimeOptions,
 )
-from vercor.output import OutputConfig, PeriodOutput
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import VerosConfig, make_veros_gcm
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     ocn = make_veros_gcm(
         config=VerosConfig(
             restore_to_climatology=True,
-            output=OutputConfig(
+            output=OutputSpec(
                 period=PeriodOutput(
                     frequency="month",
                     variables=(
@@ -88,5 +88,4 @@ if __name__ == "__main__":
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    final_state = cpl.run()
-    cpl.write_outputs(final_state)
+    cpl.run(output=OutputTarget("."))

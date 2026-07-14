@@ -11,7 +11,7 @@ from vercor.components import (
     LifecycleHooks,
     ComponentSpec,
 )
-from vercor.output import OutputConfig
+from vercor.output import OutputSpec
 from vercor.setups.config import VerosConfig
 
 
@@ -54,15 +54,12 @@ def make_veros_gcm(
     ) = _load_veros_implementation()
 
     config = VerosConfig() if config is None else config
-    period_output = config.output.period
     state = VerosGCMSetupState(
         name=config.name,
         spinup_time=config.spinup.duration,
         custom_parameters=config.custom_parameters,
         restore_to_climatology=config.restore_to_climatology,
         do_spinup=config.spinup.enabled,
-        output_frequency=None if period_output is None else period_output.frequency,
-        output_variables=() if period_output is None else period_output.variables,
         jitted=config.jitted,
     )
     component = CallableComponent(
@@ -75,15 +72,18 @@ def make_veros_gcm(
             initial_fields=_veros_gcm_state.veros_default_fields(),
             execution="host",
             lifecycle=LifecycleHooks(setup=state.setup),
-            output=OutputConfig(
+            output=OutputSpec(
+                provider=(
+                    _veros_output.veros_output_provider(state)
+                    if config.output.provider is None
+                    else config.output.provider
+                ),
                 snapshot_writer=config.output.snapshot_writer
                 or partial(_veros_output.write_veros_snapshot_output, state),
                 period=config.output.period,
             ),
         ),
     )
-    if period_output is not None:
-        setattr(component, "_period_output_handled_by_step", True)
     return component
 
 

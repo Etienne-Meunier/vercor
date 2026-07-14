@@ -29,7 +29,8 @@ from vercor.components import (
 )
 from vercor.dtypes import DTypePolicy
 from vercor.output import (
-    OutputConfig,
+    OutputSpec,
+    OutputTarget,
     OutputVariable,
     PeriodOutput,
     SnapshotContext,
@@ -152,19 +153,22 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     def writer(context: SnapshotContext) -> None:
         calls.append((context.state, context.output_path, context.time, context.logger))
 
-    assert hasattr(vercor.output, "OutputConfig")
-    output = vercor.output.OutputConfig(snapshot_writer=writer)
+    assert hasattr(vercor.output, "OutputSpec")
+    output = vercor.output.OutputSpec(snapshot_writer=writer)
     period = vercor.output.PeriodOutput()
 
     assert output.snapshot_writer is writer
     assert output.period is None
     assert period.frequency == "step"
     assert OutputVariable(dims=("time",), values=jnp.asarray([1.0])).dims == ("time",)
-    assert vercor.output.OutputConfig.__module__ == "vercor.output"
+    assert vercor.output.OutputSpec.__module__ == "vercor.output"
     assert vercor.output.PeriodOutput.__module__ == "vercor.output"
     assert vercor.output.__all__ == [
-        "OutputConfig",
-        "OutputFrequency",
+        "OutputContext",
+        "OutputFrame",
+        "OutputProvider",
+        "OutputSpec",
+        "OutputTarget",
         "OutputVariable",
         "PeriodOutput",
         "SnapshotContext",
@@ -280,7 +284,7 @@ def test_public_component_contracts_do_not_expose_runtime_implementation_types()
         signature(contracts_module.ValidationContext).parameters["state"].annotation
         == "ComponentState"
     )
-    assert get_type_hints(components_module.ComponentSpec)["output"] is OutputConfig
+    assert get_type_hints(components_module.ComponentSpec)["output"] is OutputSpec
 
 
 @pytest.mark.fast_always
@@ -347,7 +351,7 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
         outputs=("sea_surface_temperature",),
         initial_fields={"temperature": 280.0, "sea_surface_temperature": 281.0},
         lifecycle=LifecycleHooks(prefill=prefill),
-        output=OutputConfig(snapshot_writer=writer),
+        output=OutputSpec(snapshot_writer=writer),
     )
     component = CallableComponent(
         "OCN",
@@ -363,9 +367,9 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     assert spec.lifecycle.prefill is prefill
     assert "ComponentSpec" not in vercor.__all__
     assert "LifecycleHooks" not in vercor.__all__
-    assert "OutputConfig" not in vercor.__all__
+    assert "OutputSpec" not in vercor.__all__
     assert ComponentSpec.__module__ == "vercor.components.contracts"
-    assert OutputConfig.__module__ == "vercor.output"
+    assert OutputSpec.__module__ == "vercor.output"
     assert "FieldSpec" not in vercor.__all__
     assert "ComponentHooks" not in vercor.__all__
     assert "OutputSpec" not in vercor.__all__
@@ -418,7 +422,7 @@ def test_state_views_use_domain_scopes_not_runtime_store_names() -> None:
 @pytest.mark.fast_always
 def test_output_and_setup_configs_use_final_names() -> None:
     period = PeriodOutput(frequency="month", variables=("temp",))
-    output = OutputConfig(period=period)
+    output = OutputSpec(period=period)
     spinup = vercor.setups.Spinup(enabled=True)
     veros = vercor.setups.VerosConfig(spinup=spinup, output=output)
     jax_gcm = vercor.setups.JAXGCMConfig(spinup=spinup, output=output)
@@ -427,7 +431,7 @@ def test_output_and_setup_configs_use_final_names() -> None:
     )
 
     assert PeriodOutput().frequency == "step"
-    assert OutputConfig().period is None
+    assert OutputSpec().period is None
     assert output.period is period
     assert spinup.duration.days == 2
     assert veros.output.period is period
@@ -464,7 +468,7 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
             lifecycle=LifecycleHooks(
                 setup=lambda owner, context: SetupResult(payload=jnp.asarray(7.0))
             ),
-            output=OutputConfig(snapshot_writer=writer),
+            output=OutputSpec(snapshot_writer=writer),
         ),
     )
     coupler = Coupler(
@@ -473,8 +477,7 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
         run_order=("ATM",),
     )
 
-    final_state = coupler.run()
-    coupler.write_outputs(final_state, output_dir=tmp_path)
+    coupler.run(output=OutputTarget(tmp_path))
 
     assert len(contexts) == 1
     assert contexts[0].component.name == component.name

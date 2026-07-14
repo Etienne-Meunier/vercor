@@ -31,7 +31,7 @@ from vercor.components import (
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.exceptions import CouplerError
-from vercor.output import OutputConfig, SnapshotContext
+from vercor.output import OutputSpec, OutputTarget, SnapshotContext
 from vercor.runtime import ExecutionContext, RuntimeDriver, RuntimeOptions
 from vercor.state import RunState
 
@@ -621,7 +621,7 @@ def test_snapshot_writer_receives_original_component(tmp_path: Path) -> None:
             inputs=("temperature",),
             outputs=("temperature",),
             initial_fields={"temperature": 280.0},
-            output=OutputConfig(snapshot_writer=writer),
+            output=OutputSpec(snapshot_writer=writer),
         ),
     )
     coupler = Coupler(
@@ -630,7 +630,7 @@ def test_snapshot_writer_receives_original_component(tmp_path: Path) -> None:
         run_order=("MODEL",),
     )
 
-    coupler.write_outputs(coupler.run(), output_dir=tmp_path)
+    coupler.run(output=OutputTarget(tmp_path))
 
     assert len(seen) == 1
     assert seen[0].name == "MODEL"

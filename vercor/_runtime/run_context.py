@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from vercor.clock import Clock
 from vercor.runtime import RuntimeOptions
+from vercor.output import OutputTarget
 from vercor.jax_logging import LoggerLike
 from vercor._runtime.dispatch_context import RuntimeDispatchContext
 from vercor._runtime.interrupts import RuntimeInterruptController
@@ -20,6 +21,7 @@ class RuntimeRunContext:
     dispatch_context: RuntimeDispatchContext
     interrupts: RuntimeInterruptController
     options: RuntimeOptions
+    output: OutputTarget | None = None
 
 
 __all__ = ["RuntimeRunContext"]
