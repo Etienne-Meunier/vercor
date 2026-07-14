@@ -232,6 +232,7 @@ PUBLIC_MODULE_EXPORTS = {
     "vercor.regridding": (
         "Regridder",
         "RegridderFactory",
+        "VectorRegridder",
         "bilinear",
         "conservative",
     ),
@@ -277,7 +278,6 @@ PUBLIC_MODULE_EXPORTS = {
         "get_periodic_interval",
     ),
     "vercor.topology": (
-        "ExchangeKey",
         "ExchangeTopologyPatch",
         "SurfaceMaskPolicy",
         "TopologyContext",
@@ -593,7 +593,9 @@ def test_constructor_rejects_duplicate_exchanges_and_unknown_endpoints() -> None
     equal_exchange = Exchange("MODEL", "MODEL", ("value",))
     assert equal_exchange is not exchange
     assert equal_exchange == exchange
-    with pytest.raises(CouplerError, match="Duplicate exchange declaration"):
+    with pytest.raises(
+        CouplerError, match="Exchange route ID 'MODEL->MODEL' must be unique"
+    ):
         Coupler(
             _clock(),
             components=(component,),
@@ -631,8 +633,8 @@ def test_constructor_rejects_exchange_fan_in_before_component_setup() -> None:
                 _component("DST", setup=setup),
             ),
             exchanges=(
-                Exchange("SRC_A", "DST", ("value",), label="route-a"),
-                Exchange("SRC_B", "DST", ("value",), label="route-b"),
+                Exchange("SRC_A", "DST", ("value",), route_id="route-a"),
+                Exchange("SRC_B", "DST", ("value",), route_id="route-b"),
             ),
             run_order=("SRC_A", "SRC_B", "DST"),
         )
@@ -640,7 +642,7 @@ def test_constructor_rejects_exchange_fan_in_before_component_setup() -> None:
     assert setup_calls == 0
 
 
-def test_constructor_rejects_duplicate_topology_key_before_component_setup() -> None:
+def test_constructor_rejects_duplicate_route_id_before_component_setup() -> None:
     setup_calls = 0
 
     def setup(component: Any, context: Any) -> SetupResult:
@@ -649,7 +651,9 @@ def test_constructor_rejects_duplicate_topology_key_before_component_setup() -> 
         setup_calls += 1
         return SetupResult()
 
-    with pytest.raises(CouplerError, match="Duplicate exchange topology key"):
+    with pytest.raises(
+        CouplerError, match="Exchange route ID 'SRC->DST' must be unique"
+    ):
         Coupler(
             _clock(),
             components=(
@@ -666,7 +670,7 @@ def test_constructor_rejects_duplicate_topology_key_before_component_setup() -> 
     assert setup_calls == 0
 
 
-def test_constructor_rejects_noncallable_regrid_before_component_setup() -> None:
+def test_exchange_rejects_noncallable_factory_before_component_setup() -> None:
     setup_calls = 0
 
     def setup(component: Any, context: Any) -> SetupResult:
@@ -675,21 +679,12 @@ def test_constructor_rejects_noncallable_regrid_before_component_setup() -> None
         setup_calls += 1
         return SetupResult()
 
-    invalid_exchange = Exchange(
-        "SRC",
-        "DST",
-        ("value",),
-        regrid=object(),  # type: ignore[arg-type]
-    )
-    with pytest.raises(CouplerError, match="regrid must be callable"):
-        Coupler(
-            _clock(),
-            components=(
-                _component("SRC", setup=setup),
-                _component("DST", setup=setup),
-            ),
-            exchanges=(invalid_exchange,),
-            run_order=("SRC", "DST"),
+    with pytest.raises(TypeError, match="regridder_factory must be callable"):
+        Exchange(
+            "SRC",
+            "DST",
+            ("value",),
+            regridder_factory=object(),  # type: ignore[arg-type]
         )
 
     assert setup_calls == 0
@@ -799,7 +794,7 @@ def test_setup_runs_once_across_initial_state_and_run_reuse() -> None:
     coupler.run(first)
 
     assert setup_calls == 1
-    assert first.component_names == second.component_names == ("MODEL",)
+    assert tuple(first.components()) == tuple(second.components()) == ("MODEL",)
 
 
 def test_empty_run_order_is_explicit_setup_only_and_run_is_noop() -> None:
@@ -839,8 +834,8 @@ def test_empty_run_order_is_explicit_setup_only_and_run_is_noop() -> None:
     assert setup_calls == 1
     assert validate_calls == 2
     assert step_calls == 0
-    assert initial.component_names == ("MODEL",)
-    assert final.component_names == initial.component_names
+    assert tuple(initial.components()) == ("MODEL",)
+    assert tuple(final.components()) == tuple(initial.components())
     assert float(initial.component("MODEL").field("value")[0, 0]) == 4.0
     assert float(final.component("MODEL").field("value")[0, 0]) == 4.0
 

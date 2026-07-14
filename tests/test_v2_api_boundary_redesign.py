@@ -75,18 +75,17 @@ def test_runtime_module_owns_public_runtime_contracts() -> None:
 def test_topology_module_owns_public_topology_contracts() -> None:
     policy = topology.SurfaceMaskPolicy(mode="disabled")
     patch = topology.ExchangeTopologyPatch(
-        fractional_masks={("SRC", "DST", "custom"): jnp.asarray(1.0)}
+        fractional_masks={"custom": jnp.asarray(1.0)}
     )
 
     assert topology.__all__ == [
-        "ExchangeKey",
         "ExchangeTopologyPatch",
         "SurfaceMaskPolicy",
         "TopologyContext",
         "TopologyPolicy",
     ]
     assert policy.mode == "disabled"
-    assert patch.fractional_masks[("SRC", "DST", "custom")].shape == ()
+    assert patch.fractional_masks["custom"].shape == ()
     assert "TopologyPolicy" not in vercor.__all__
     assert "SurfaceMaskPolicy" not in vercor.__all__
 
@@ -372,9 +371,7 @@ def test_custom_backend_validates_returned_run_state_schema(case: str) -> None:
             DataComponent("MODEL", wide_grid, {"value": 1.0}),
             run_order=("MODEL",),
         )
-        message = (
-            r"MODEL.*value.*shape \(2, 3\).*expected.*trailing grid shape \(2, 2\)"
-        )
+        message = r"MODEL.*runtime grid name.*custom-backend-schema-wide"
 
     coupler = Coupler(
         _clock(),

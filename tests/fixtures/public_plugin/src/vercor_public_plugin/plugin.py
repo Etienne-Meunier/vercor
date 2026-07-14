@@ -179,12 +179,6 @@ class RecordingTopologyPolicy:
     def __init__(self) -> None:
         self.events: list[str] = []
 
-    def applies(self, context: TopologyContext) -> bool:
-        """Record policy selection for the plugin component graph."""
-
-        self.events.append("applies")
-        return tuple(context.components) == ("FORCING", "JAX", "HOST")
-
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         """Record policy construction and return an empty patch."""
 
@@ -219,7 +213,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
                 "FORCING",
                 "JAX",
                 ("forcing",),
-                regrid=bilinear,
+                regridder_factory=bilinear,
             ),
         ),
         run_order=(forcing_component.name, jax_component.name, host_component.name),
@@ -249,7 +243,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
         raise AssertionError("lifecycle hook did not receive the original object")
     if backend.calls != 1:
         raise AssertionError("custom backend was not invoked exactly once")
-    if topology.events != ["applies", "build"]:
+    if topology.events != ["build"]:
         raise AssertionError("custom topology policy was not applied")
     if temperature != 13.0 or host_value != 14.0 or exchange_forcing != 1.0:
         raise AssertionError("sequential backend produced unexpected fields")

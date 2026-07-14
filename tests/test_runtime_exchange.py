@@ -20,8 +20,16 @@ from vercor.physics import PhysicalConstants
 
 
 class _ScalingRegridder:
-    def __init__(self, scale: float = 1.0) -> None:
+    def __init__(
+        self,
+        scale: float = 1.0,
+        source_grid: Any = None,
+        target_grid: Any = None,
+    ) -> None:
         self.scale = scale
+        self.source_grid = source_grid
+        self.target_grid = target_grid
+        self.has_identical_grids = source_grid is target_grid
 
     def regrid(self, field: Any) -> Any:
         return jnp.asarray(field) * self.scale
@@ -31,8 +39,12 @@ class _ScalingRegridder:
 
 
 def _factory(*args: Any, **kwargs: Any) -> _ScalingRegridder:
-    _ = args, kwargs
-    return _ScalingRegridder()
+    _ = kwargs
+    source_grid, target_grid = args
+    return _ScalingRegridder(
+        source_grid=source_grid,
+        target_grid=target_grid,
+    )
 
 
 def _component(
@@ -54,9 +66,9 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=cast(Any, _factory),
+        regridder_factory=cast(Any, _factory),
     )
-    regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder(scale=2.0)}
+    regridders = {"OCN->ATM": _ScalingRegridder(scale=2.0)}
 
     def loss(source: jax.Array, mask: jax.Array) -> jax.Array:
         state = RunState._from_runtime(
@@ -67,7 +79,7 @@ def test_dispatch_component_exchanges_handles_scalar_masks_and_gradients() -> No
                     "ATM", sent={}, received={"temperature": jnp.zeros_like(source)}
                 ),
             ),
-            fractional_masks=FieldStore.from_mapping({"OCN|ATM|_factory": mask}),
+            fractional_masks=FieldStore.from_mapping({"OCN->ATM": mask}),
         )
         dispatched = dispatch_component_exchanges(
             state,
@@ -96,9 +108,9 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
         source="OCN",
         target="ATM",
         fields=[vector("u_velocity", "v_velocity")],
-        regrid=cast(Any, _factory),
+        regridder_factory=cast(Any, _factory),
     )
-    regridders = {("OCN", "ATM", "_factory"): _ScalingRegridder()}
+    regridders = {"OCN->ATM": _ScalingRegridder()}
     u_velocity = jnp.full((2, 2), 5.0)
     v_velocity = jnp.full((2, 2), -2.0)
     state = RunState._from_runtime(
@@ -117,9 +129,7 @@ def test_dispatch_component_exchanges_preserves_vector_regridding_behavior() -> 
                 },
             ),
         ),
-        fractional_masks=FieldStore.from_mapping(
-            {"OCN|ATM|_factory": jnp.full((2, 2), 0.25)}
-        ),
+        fractional_masks=FieldStore.from_mapping({"OCN->ATM": jnp.full((2, 2), 0.25)}),
     )
 
     dispatched = dispatch_component_exchanges(state, "ATM", (exchange,), regridders)
@@ -138,17 +148,18 @@ def test_runtime_dispatch_context_groups_exchanges_by_destination() -> None:
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=cast(Any, _factory),
+        regridder_factory=cast(Any, _factory),
     )
     land_exchange = Exchange(
         source="ATM",
         target="LND",
         fields=["temperature"],
-        regrid=cast(Any, _factory),
+        regridder_factory=cast(Any, _factory),
     )
 
     context = RuntimeDispatchContext(
         components={},
+        exchanges=(atm_exchange, land_exchange),
         exchanges_by_destination={
             "ATM": (atm_exchange,),
             "LND": (land_exchange,),
@@ -159,6 +170,7 @@ def test_runtime_dispatch_context_groups_exchanges_by_destination() -> None:
         constants=PhysicalConstants(),
         dtype=DTypePolicy(),
     )
+    assert context.exchanges == (atm_exchange, land_exchange)
 
     assert context.destination_exchanges("ATM") == (atm_exchange,)
     assert context.destination_exchanges("OCN") == ()

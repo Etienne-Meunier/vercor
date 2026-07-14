@@ -53,7 +53,7 @@ def validate_exchange_fan_in(exchanges: Sequence[Exchange]) -> None:
         flattened_fields = set(flatten_exchange_fields(exchange.fields))
         for field_name in flattened_fields:
             producers.setdefault((exchange.target, field_name), []).append(
-                exchange.label
+                exchange.route_id
             )
 
     conflicts = [
@@ -119,9 +119,3 @@ def build_exchange_contracts(
             sends=destination_contract.sends,
         )
     return contracts
-
-
-def exchange_key(source: str, destination: str, regrid_key: str) -> str:
-    """Return a stable field-store key for exchange metadata arrays."""
-
-    return f"{source}|{destination}|{regrid_key}"

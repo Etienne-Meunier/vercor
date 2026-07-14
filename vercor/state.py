@@ -1,3 +1,5 @@
+"""Opaque public run state and immutable component field views."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
@@ -8,8 +10,6 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 import jax
 
 from vercor.grids import RectilinearGrid as _RectilinearGrid
-from vercor._pytree import PyTreeNodeMixin as _PyTreeNodeMixin
-from vercor._runtime.contracts import exchange_key as _exchange_key
 from vercor._runtime.stores import FieldStore as _FieldStore
 from vercor.types import RuntimeArray as _RuntimeArray
 
@@ -25,19 +25,19 @@ FieldScope: TypeAlias = Literal["state", "received", "sent"]
 FieldLookupScope: TypeAlias = Literal["any", "state", "received", "sent"]
 
 
-@jax.tree_util.register_pytree_node_class
-@dataclass(frozen=True, init=False)
-class RunState(_PyTreeNodeMixin):
+@dataclass(frozen=True, init=False, repr=False)
+class RunState:
     """Immutable coupled model state returned by the public coupler facade."""
 
-    pytree_children = ("component_grids", "_components", "_fractional_masks")
-    pytree_aux_data = ("component_names",)
-
-    component_names: tuple[str, ...]
-    component_grids: tuple[_RectilinearGrid | None, ...]
+    _component_names: tuple[str, ...]
+    _component_grids: tuple[_RectilinearGrid | None, ...]
     _components: tuple["_ComponentRuntimeState", ...]
     _fractional_masks: _StateFieldStore
-    component_indices: dict[str, int] = field(init=False, repr=False, compare=False)
+    _component_indices: dict[str, int] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __init__(self) -> None:
         """Block direct public construction of opaque runtime state."""
@@ -77,10 +77,10 @@ class RunState(_PyTreeNodeMixin):
     ) -> None:
         """Assign private runtime containers after construction is authorized."""
 
-        object.__setattr__(self, "component_names", component_names)
+        object.__setattr__(self, "_component_names", component_names)
         object.__setattr__(
             self,
-            "component_grids",
+            "_component_grids",
             component_grids or tuple(None for _ in component_names),
         )
         object.__setattr__(self, "_components", components)
@@ -90,29 +90,24 @@ class RunState(_PyTreeNodeMixin):
     def __post_init__(self) -> None:
         """Validate that component names and states stay aligned."""
 
-        if len(self.component_names) != len(self._components):
+        if len(self._component_names) != len(self._components):
             raise ValueError("component_names and components must have equal length")
-        if len(self.component_names) != len(self.component_grids):
+        if len(self._component_names) != len(self._component_grids):
             raise ValueError(
                 "component_names and component_grids must have equal length"
             )
         object.__setattr__(
             self,
-            "component_indices",
-            {name: index for index, name in enumerate(self.component_names)},
+            "_component_indices",
+            {name: index for index, name in enumerate(self._component_names)},
         )
-
-    def _pytree_post_unflatten(self) -> None:
-        """Validate that component names and states stay aligned."""
-
-        self.__post_init__()
 
     def component(self, name: str) -> "ComponentState":
         """Return a public field view for one component."""
 
         return ComponentState._from_runtime(
             name,
-            self.component_grids[self._component_index(name)],
+            self._component_grids[self._component_index(name)],
             self._component_state(name),
         )
 
@@ -122,7 +117,7 @@ class RunState(_PyTreeNodeMixin):
     ) -> Mapping[str, "ComponentState"]:
         """Return public field views for selected components."""
 
-        selected_names = self.component_names if names is None else tuple(names)
+        selected_names = self._component_names if names is None else tuple(names)
         return MappingProxyType({name: self.component(name) for name in selected_names})
 
     def replace_fields(
@@ -144,7 +139,7 @@ class RunState(_PyTreeNodeMixin):
 
     def _component_index(self, name: str) -> int:
         try:
-            return self.component_indices[name]
+            return self._component_indices[name]
         except KeyError as exc:
             raise KeyError(f"Runtime component {name!r} not found") from exc
 
@@ -163,23 +158,52 @@ class RunState(_PyTreeNodeMixin):
         components = list(self._components)
         components[self._component_index(name)] = component_state
         return RunState._from_runtime(
-            component_names=self.component_names,
+            component_names=self._component_names,
             components=tuple(components),
             fractional_masks=self._fractional_masks,
-            component_grids=self.component_grids,
+            component_grids=self._component_grids,
         )
 
     def _fractional_mask(
         self,
-        source: str,
-        destination: str,
-        regrid_key: str,
+        route_id: str,
     ) -> _RuntimeArray:
         """Return the fractional mask for an exchange."""
 
-        return self._fractional_masks.get(
-            _exchange_key(source, destination, regrid_key)
-        )
+        return self._fractional_masks.get(route_id)
+
+
+def _flatten_run_state(
+    state: RunState,
+) -> tuple[tuple[object, ...], tuple[str, ...]]:
+    """Return dynamic runtime leaves and static component-name metadata."""
+
+    return (
+        (state._component_grids, state._components, state._fractional_masks),
+        state._component_names,
+    )
+
+
+def _unflatten_run_state(
+    component_names: tuple[str, ...],
+    children: tuple[object, ...],
+) -> RunState:
+    """Rebuild opaque runtime state after a JAX PyTree transformation."""
+
+    component_grids, components, fractional_masks = children
+    return RunState._from_runtime(
+        component_names=component_names,
+        component_grids=component_grids,  # type: ignore[arg-type]
+        components=components,  # type: ignore[arg-type]
+        fractional_masks=fractional_masks,  # type: ignore[arg-type]
+    )
+
+
+jax.tree_util.register_pytree_node(
+    RunState,
+    _flatten_run_state,
+    _unflatten_run_state,
+)
 
 
 @dataclass(frozen=True, init=False)

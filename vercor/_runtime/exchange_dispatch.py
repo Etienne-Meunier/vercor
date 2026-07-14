@@ -4,7 +4,6 @@ from typing import Any, Mapping, Sequence
 
 from vercor.exceptions import ExchangeError
 from vercor.exchanges import Exchange
-from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.fields import VectorField
 from vercor.state import RunState
 from vercor._runtime.stores import FieldStore
@@ -50,7 +49,7 @@ def dispatch_component_exchanges(
     state: RunState,
     destination_name: str,
     exchanges: Sequence[Exchange],
-    regridders: Mapping[tuple[str, str, str], Any],
+    regridders: Mapping[str, Any],
 ) -> RunState:
     """Dispatch destination-specific exchanges into one component."""
 
@@ -61,9 +60,8 @@ def dispatch_component_exchanges(
     for exchange in exchanges:
         source_component = state._component_state(exchange.source)
         source_fields = source_component.sent
-        key = (exchange.source, exchange.target, exchange_regrid_key(exchange))
-        regrid = regridders[key]
-        fractional_mask = state._fractional_mask(*key)
+        regrid = regridders[exchange.route_id]
+        fractional_mask = state._fractional_mask(exchange.route_id)
 
         for field_name in exchange.fields:
             if isinstance(field_name, VectorField):

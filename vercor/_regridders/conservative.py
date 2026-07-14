@@ -72,15 +72,6 @@ class ConservativeRectilinearRegridder(_BaseRegridder):
             raise RegridderError("Regridder not properly set up")
         return interpolator.apply_scalar(field)
 
-    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
-        """Reject vector conservative regridding."""
-
-        _ = u, v
-        raise TypeError(
-            "Conservative regridding supports scalar fields only; use bilinear "
-            "regridding for vector fields."
-        )
-
 
 def conservative(
     source_grid: RectilinearGrid,

@@ -238,7 +238,8 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     assert "_exchange" not in exchange_signature
     assert "_regridders" not in exchange_signature
     assert "RegridderFactory" in exchange_signature
-    assert exchange_parameters["regrid"].kind is Parameter.KEYWORD_ONLY
+    assert exchange_parameters["route_id"].kind is Parameter.KEYWORD_ONLY
+    assert exchange_parameters["regridder_factory"].kind is Parameter.KEYWORD_ONLY
     assert regridding_module.bilinear.__module__ == "vercor.regridding"
     assert regridding_module.conservative.__module__ == "vercor.regridding"
     assert not hasattr(vercor, "bilinear")
@@ -250,6 +251,7 @@ def test_public_facades_hide_private_implementation_modules() -> None:
     assert regridding_module.__all__ == [
         "Regridder",
         "RegridderFactory",
+        "VectorRegridder",
         "bilinear",
         "conservative",
     ]
@@ -508,7 +510,7 @@ def test_component_constructor_hides_raw_setup_internals() -> None:
 
 @pytest.mark.fast_always
 def test_regridders_expose_explicit_scalar_and_vector_methods() -> None:
-    from vercor.regridding import Regridder
+    from vercor.regridding import Regridder, VectorRegridder
 
     grid = vercor.RectilinearGrid.from_coordinates(
         "regrid-methods",
@@ -521,6 +523,7 @@ def test_regridders_expose_explicit_scalar_and_vector_methods() -> None:
     v = -jnp.ones(grid.shape)
 
     assert isinstance(regridder, Regridder)
+    assert isinstance(regridder, VectorRegridder)
     assert regridder.target_grid is grid
     assert regridder.regrid(scalar) is scalar
     assert regridder.regrid_vector(u, v) == (u, v)
@@ -723,21 +726,22 @@ def test_exchange_accepts_supported_names_only() -> None:
         "ATM",
         "OCN",
         ("temperature", vector("u_velocity", "v_velocity")),
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
 
     assert exchange.source == "ATM"
     assert exchange.target == "OCN"
     assert exchange.fields == ("temperature", vector("u_velocity", "v_velocity"))
-    assert exchange.regrid is bilinear
-    assert exchange.label == "ATM --(bilinear)--> OCN"
+    assert exchange.regridder_factory is bilinear
+    assert exchange.route_id == "ATM->OCN"
 
     for removed_attribute in (
         "destination",
         "field_names",
         "interpolation_type",
         "name",
-        "regridder_factory",
+        "regrid",
+        "label",
     ):
         assert not hasattr(exchange, removed_attribute)
 
@@ -745,13 +749,6 @@ def test_exchange_accepts_supported_names_only() -> None:
         Exchange(source="ATM", destination="OCN", fields=("temperature",))  # type: ignore[call-arg]
     with pytest.raises(TypeError, match="field_names"):
         Exchange(source="ATM", target="OCN", field_names=("temperature",))  # type: ignore[call-arg]
-    with pytest.raises(TypeError, match="regridder_factory"):
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=("temperature",),
-            regridder_factory=bilinear,
-        )  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -1614,7 +1611,6 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
     import vercor.grid_masks as grid_masks_module
     import vercor.physics as physics_module
     import vercor.exchanges as exchange_module
-    import vercor._runtime.exchange_keys as exchange_keys_module
     import vercor.time_selection as time_selection_module
 
     from vercor._interpolators.conservative_remap_rectilinear import (
@@ -1665,7 +1661,8 @@ def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None
         importlib.import_module("vercor._pytree_utils")
     assert "gravity" in physics_module.PhysicalConstants.__dataclass_fields__
     assert not hasattr(exchange_module, "VALID_EXCHANGE_FIELD_NAMES")
-    assert callable(exchange_keys_module.exchange_regrid_key)
+    with pytest.raises(ModuleNotFoundError, match="vercor._runtime.exchange_keys"):
+        importlib.import_module("vercor._runtime.exchange_keys")
     assert "sea_surface_temperature" in COMMON_FIELD_NAMES
 
     assert not hasattr(vercor.exchanges, "ExchangeField")
@@ -1849,7 +1846,7 @@ def test_concrete_regridders_own_call_dispatch() -> None:
 
     assert "def __call__(" not in regridder_base_source
     assert "def regrid(" in regridder_base_source
-    assert "def regrid_vector(" in regridder_base_source
+    assert "def regrid_vector(" not in regridder_base_source
     assert "def _ensure_ready(" not in regridder_base_source
     assert "def __call__(" not in bilinear_source
     assert "def regrid(" in bilinear_source
@@ -1857,7 +1854,7 @@ def test_concrete_regridders_own_call_dispatch() -> None:
     assert "apply_vector" in bilinear_source
     assert "def __call__(" not in conservative_source
     assert "def regrid(" in conservative_source
-    assert "def regrid_vector(" in conservative_source
+    assert "def regrid_vector(" not in conservative_source
     assert "def _ensure_ready(" not in conservative_source
     assert "apply_vector" not in conservative_source
 

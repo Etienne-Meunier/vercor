@@ -570,7 +570,7 @@ print(json.dumps({{
     assert evidence["exchange_forcing"] == 1.0
     assert evidence["state_replacement"] is True
     assert evidence["lifecycle"] == ["user-setup", "hook-setup"]
-    assert evidence["topology"] == ["applies", "build"]
+    assert evidence["topology"] == ["build"]
     assert evidence["snapshot"] == {"component": "JAX", "temperature": 13.0}
 
     frozen_smoke = subprocess.run(

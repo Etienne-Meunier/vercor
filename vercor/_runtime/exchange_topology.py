@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 from vercor.dtypes import DTypePolicy, jax_ones
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
-from vercor._runtime.exchange_keys import exchange_regrid_key
+from vercor.fields import VectorField
 from vercor.jax_logging import LoggerLike
+from vercor.regridding import Regridder, VectorRegridder
 from vercor._runtime.topology_state import RuntimeTopologyMaps
 
 if TYPE_CHECKING:
@@ -29,26 +30,37 @@ def build_exchange_topology_maps(
     fractional_masks = (
         {} if topology_maps is None else dict(topology_maps.fractional_masks)
     )
-    configured_keys: set[tuple[str, str, str]] = set()
+    configured_route_ids: set[str] = set()
 
     for exchange in exchanges:
-        key = (exchange.source, exchange.target, exchange_regrid_key(exchange))
-        if key in configured_keys:
+        route_id = exchange.route_id
+        if route_id in configured_route_ids:
             raise CouplerError(
-                f"Duplicate exchange topology key {key!r}; merge field declarations "
-                "into one Exchange or give the exchanges distinct regrid factories."
+                f"Duplicate exchange route ID {route_id!r}; route IDs must be unique."
             )
-        configured_keys.add(key)
-        if key not in regridders:
-            regridders[key] = exchange.regrid(
-                components[exchange.source].grid,
-                components[exchange.target].grid,
+        configured_route_ids.add(route_id)
+        if route_id not in regridders:
+            regridder = exchange.regridder_factory(
+                components[exchange.source].grid, components[exchange.target].grid
             )
-            binary_masks[key] = jax_ones(
+            needs_scalar = any(isinstance(field, str) for field in exchange.fields)
+            needs_vector = any(
+                isinstance(field, VectorField) for field in exchange.fields
+            )
+            if needs_scalar and not isinstance(regridder, Regridder):
+                raise CouplerError(
+                    f"Exchange route '{route_id}' requires a Regridder capability."
+                )
+            if needs_vector and not isinstance(regridder, VectorRegridder):
+                raise CouplerError(
+                    f"Exchange route '{route_id}' requires a VectorRegridder capability."
+                )
+            regridders[route_id] = regridder
+            binary_masks[route_id] = jax_ones(
                 components[exchange.target].grid.shape,
                 dtype,
             )
-            fractional_masks[key] = jax_ones(
+            fractional_masks[route_id] = jax_ones(
                 components[exchange.target].grid.shape,
                 dtype,
             )

@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
+import jax.numpy as jnp
+
 import vercor._runtime.facade as runtime_facade
 import vercor._runtime.preparation as runtime_preparation
 from vercor.coupler import Coupler
@@ -24,17 +26,32 @@ def prepared_coupling(coupler: Coupler) -> PreparedCoupling:
 def replace_runtime_topology_maps(
     coupler: Coupler,
     *,
-    regridders: Mapping[tuple[str, str, str], Any],
-    binary_masks: Mapping[tuple[str, str, str], RuntimeArray] | None = None,
-    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray] | None = None,
+    regridders: Mapping[str, Any],
+    binary_masks: Mapping[str, RuntimeArray] | None = None,
+    fractional_masks: Mapping[str, RuntimeArray] | None = None,
 ) -> None:
     """Install synthetic topology maps for focused runtime tests."""
 
     prepared = prepared_coupling(coupler)
+    runtime_dtype = prepared.runtime.dtype.jax_real
     topology_maps = RuntimeTopologyMaps(
         regridders=dict(regridders),
-        binary_masks={} if binary_masks is None else dict(binary_masks),
-        fractional_masks={} if fractional_masks is None else dict(fractional_masks),
+        binary_masks=(
+            {}
+            if binary_masks is None
+            else {
+                route_id: jnp.asarray(mask, dtype=runtime_dtype)
+                for route_id, mask in binary_masks.items()
+            }
+        ),
+        fractional_masks=(
+            {}
+            if fractional_masks is None
+            else {
+                route_id: jnp.asarray(mask, dtype=runtime_dtype)
+                for route_id, mask in fractional_masks.items()
+            }
+        ),
     )
     dispatch_context = build_runtime_dispatch_context(
         prepared.components,

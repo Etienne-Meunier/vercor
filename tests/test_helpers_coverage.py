@@ -157,14 +157,14 @@ def test_exchange_stores_factory_and_formatting_without_create_wrapper() -> None
         source="OCN",
         target="ATM",
         fields=["temperature", vector("u_velocity", "v_velocity")],
-        regrid=cast(Any, dummy_factory),
+        regridder_factory=cast(Any, dummy_factory),
     )
 
-    created = exchange.regrid(source_grid, destination_grid)
+    created = exchange.regridder_factory(source_grid, destination_grid)
 
     assert not hasattr(exchange, "create")
     assert not hasattr(exchange, "name")
-    assert exchange.label == "OCN --(dummy_factory)--> ATM"
+    assert exchange.route_id == "OCN->ATM"
     assert not hasattr(exchange, "interpolation_type")
     assert "Source component: OCN" in str(exchange)
     assert (
@@ -197,14 +197,14 @@ def test_exchange_uses_wrapped_factory_name_and_keeps_partial_options() -> None:
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=regridder_factory,
+        regridder_factory=regridder_factory,
     )
-    created = exchange.regrid(source_grid, destination_grid)
+    created = exchange.regridder_factory(source_grid, destination_grid)
     private_created = cast(Any, created)
 
     assert not hasattr(exchange, "create")
     assert not hasattr(exchange, "name")
-    assert exchange.label == "OCN --(bilinear)--> ATM"
+    assert exchange.route_id == "OCN->ATM"
     assert not hasattr(exchange, "interpolation_type")
     assert created.source_grid is source_grid
     assert created.target_grid is destination_grid

@@ -13,7 +13,7 @@ from vercor.types import RuntimeArray as _RuntimeArray
 
 @runtime_checkable
 class Regridder(Protocol):
-    """Public protocol for grid-to-grid transfer objects."""
+    """Public capability for scalar grid-to-grid transfer objects."""
 
     source_grid: _RectilinearGrid
 
@@ -27,6 +27,11 @@ class Regridder(Protocol):
 
     def regrid(self, field: _RuntimeArray) -> _RuntimeArray:
         """Transfer one scalar field to the target grid."""
+
+
+@runtime_checkable
+class VectorRegridder(Regridder, Protocol):
+    """Public capability for scalar and paired-vector grid transfer."""
 
     def regrid_vector(
         self,
@@ -100,6 +105,7 @@ def conservative(
 __all__ = [
     "Regridder",
     "RegridderFactory",
+    "VectorRegridder",
     "bilinear",
     "conservative",
 ]

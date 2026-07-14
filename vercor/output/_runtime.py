@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import TYPE_CHECKING
 
 from vercor.calendar import ModelDateTime
 from vercor.exchanges import Exchange
-from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.output import SnapshotContext
 from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output import OutputVariable
@@ -24,20 +25,30 @@ if TYPE_CHECKING:
 def output_masks_for_component(
     name: str,
     exchanges: Sequence[Exchange],
-    binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
-    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
+    binary_masks: Mapping[str, RuntimeArray],
+    fractional_masks: Mapping[str, RuntimeArray],
 ) -> dict[str, RuntimeArray]:
     """Return output mask fields for one destination component."""
 
-    masks = {}
-    for exchange in exchanges:
-        if name != exchange.target:
-            continue
+    masks: dict[str, RuntimeArray] = {}
+    destination_exchanges = tuple(
+        exchange for exchange in exchanges if name == exchange.target
+    )
+    base_tokens = {
+        exchange.route_id: (
+            re.sub(r"[^A-Za-z0-9_]+", "_", exchange.route_id).strip("_") or "route"
+        )
+        for exchange in destination_exchanges
+    }
+    token_counts = Counter(base_tokens.values())
+    for exchange in destination_exchanges:
 
-        key = (exchange.source, name, exchange_regrid_key(exchange))
-        source_destination_name = "_".join(key)
-        masks["bmask_" + source_destination_name] = binary_masks[key]
-        masks["fmask_" + source_destination_name] = fractional_masks[key]
+        route_id = exchange.route_id
+        route_token = base_tokens[route_id]
+        if token_counts[route_token] > 1:
+            route_token = f"{route_token}_{route_id.encode('utf-8').hex()}"
+        masks["bmask_" + route_token] = binary_masks[route_id]
+        masks["fmask_" + route_token] = fractional_masks[route_id]
     return masks
 
 
@@ -121,8 +132,8 @@ def write_coupler_runtime_outputs(
     final_state: RunState,
     components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
-    binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
-    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
+    binary_masks: Mapping[str, RuntimeArray],
+    fractional_masks: Mapping[str, RuntimeArray],
     output_file_mask: Path | None = None,
     output_dir: Path = Path("."),
     filename_template: str = "{component}.runtime_fields.nc",

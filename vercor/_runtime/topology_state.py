@@ -12,9 +12,9 @@ from vercor.types import RuntimeArray
 class RuntimeTopologyMaps:
     """Read-only grouped exchange topology maps used by runtime dispatch."""
 
-    regridders: Mapping[tuple[str, str, str], Any]
-    binary_masks: Mapping[tuple[str, str, str], RuntimeArray]
-    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray]
+    regridders: Mapping[str, Any]
+    binary_masks: Mapping[str, RuntimeArray]
+    fractional_masks: Mapping[str, RuntimeArray]
 
     def __post_init__(self) -> None:
         """Copy and freeze topology mappings at the runtime boundary."""

@@ -43,12 +43,9 @@ class RuntimeOptions:
                 )
 
         if self.topology is not None:
-            applies = getattr(self.topology, "applies", None)
             build = getattr(self.topology, "build", None)
-            if not callable(applies) or not callable(build):
-                raise TypeError(
-                    "topology policy must expose applies(context) and build(context)"
-                )
+            if not callable(build):
+                raise TypeError("topology policy must expose build(context)")
 
 
 @dataclass(frozen=True)

@@ -59,16 +59,10 @@ class _RecordingTopologyPolicy:
     def __init__(
         self,
         *,
-        applies: bool,
         patch: ExchangeTopologyPatch | None = None,
     ) -> None:
-        self._applies = applies
         self._patch = ExchangeTopologyPatch() if patch is None else patch
         self.events: list[tuple[str, TopologyContext]] = []
-
-    def applies(self, context: TopologyContext) -> bool:
-        self.events.append(("applies", context))
-        return self._applies
 
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         self.events.append(("build", context))
@@ -98,14 +92,14 @@ def _topology_policy_coupler(policy: _RecordingTopologyPolicy) -> Coupler:
 
 
 @pytest.mark.fast_always
-def test_custom_topology_policy_uses_applies_then_build_and_patches_maps() -> None:
-    key = ("SRC", "DST", "bilinear")
-    skipped = _RecordingTopologyPolicy(applies=False)
+def test_custom_topology_policy_builds_once_and_patches_route_maps() -> None:
+    key = "SRC->DST"
+    skipped = _RecordingTopologyPolicy()
     skipped_coupler = _topology_policy_coupler(skipped)
 
     skipped_coupler.initial_state()
 
-    assert [event for event, _ in skipped.events] == ["applies"]
+    assert [event for event, _ in skipped.events] == ["build"]
     assert skipped_coupler._prepared is not None
     assert_allclose_compact(
         skipped_coupler._prepared.topology_maps.fractional_masks[key],
@@ -113,7 +107,6 @@ def test_custom_topology_policy_uses_applies_then_build_and_patches_maps() -> No
     )
 
     applied = _RecordingTopologyPolicy(
-        applies=True,
         patch=ExchangeTopologyPatch(
             fractional_masks={key: jnp.full((2, 2), 0.25)},
         ),
@@ -122,8 +115,7 @@ def test_custom_topology_policy_uses_applies_then_build_and_patches_maps() -> No
 
     applied_coupler.initial_state()
 
-    assert [event for event, _ in applied.events] == ["applies", "build"]
-    assert applied.events[0][1] is applied.events[1][1]
+    assert [event for event, _ in applied.events] == ["build"]
     assert applied_coupler._prepared is not None
     assert_allclose_compact(
         applied_coupler._prepared.topology_maps.fractional_masks[key],
@@ -136,16 +128,12 @@ def test_custom_topology_policy_uses_applies_then_build_and_patches_maps() -> No
     ("patch", "message"),
     (
         (
-            ExchangeTopologyPatch(
-                binary_masks={("UNKNOWN", "DST", "bilinear"): jnp.ones((2, 2))}
-            ),
-            "UNKNOWN.*configured topology key",
+            ExchangeTopologyPatch(binary_masks={"UNKNOWN": jnp.ones((2, 2))}),
+            "UNKNOWN.*configured route ID",
         ),
         (
-            ExchangeTopologyPatch(
-                fractional_masks={("SRC", "DST", "bilinear"): jnp.ones((1, 2))}
-            ),
-            r"\('SRC', 'DST', 'bilinear'\).*shape \(1, 2\).*expected \(2, 2\)",
+            ExchangeTopologyPatch(fractional_masks={"SRC->DST": jnp.ones((1, 2))}),
+            r"SRC->DST.*shape \(1, 2\).*expected \(2, 2\)",
         ),
     ),
 )
@@ -153,9 +141,7 @@ def test_topology_policy_patch_rejects_unknown_keys_and_wrong_shapes(
     patch: ExchangeTopologyPatch,
     message: str,
 ) -> None:
-    coupler = _topology_policy_coupler(
-        _RecordingTopologyPolicy(applies=True, patch=patch)
-    )
+    coupler = _topology_policy_coupler(_RecordingTopologyPolicy(patch=patch))
 
     with pytest.raises(CouplerError, match=message):
         coupler.initial_state()
@@ -214,14 +200,12 @@ def test_topology_policy_patch_rejects_invalid_mask_values(
     value: Any,
     message: str,
 ) -> None:
-    key = ("SRC", "DST", "bilinear")
+    key = "SRC->DST"
     patch = ExchangeTopologyPatch(
         binary_masks={key: value} if mask_kind == "binary" else {},
         fractional_masks={key: value} if mask_kind == "fractional" else {},
     )
-    coupler = _topology_policy_coupler(
-        _RecordingTopologyPolicy(applies=True, patch=patch)
-    )
+    coupler = _topology_policy_coupler(_RecordingTopologyPolicy(patch=patch))
 
     with pytest.raises(CouplerError, match=message):
         coupler.initial_state()
@@ -244,11 +228,10 @@ def test_topology_policy_patch_rejects_invalid_mask_values(
 def test_topology_policy_patch_accepts_valid_binary_and_fractional_masks(
     binary_mask: np.ndarray,
 ) -> None:
-    key = ("SRC", "DST", "bilinear")
+    key = "SRC->DST"
     fractional_mask = np.asarray([[0.0, 0.25], [0.75, 1.0]])
     coupler = _topology_policy_coupler(
         _RecordingTopologyPolicy(
-            applies=True,
             patch=ExchangeTopologyPatch(
                 binary_masks={key: binary_mask},
                 fractional_masks={key: fractional_mask},
@@ -464,7 +447,7 @@ def test_component_binding_is_stable_when_setup_mutates_original_owner() -> None
     state = coupler.initial_state()
 
     assert component.name == "CHANGED"
-    assert state.component_names == ("MODEL",)
+    assert tuple(state.components()) == ("MODEL",)
     assert coupler._prepared is not None
     assert coupler._prepared.components["MODEL"].name == "MODEL"
 

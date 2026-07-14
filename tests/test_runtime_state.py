@@ -251,7 +251,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def flatten_exchange_fields" in runtime_contracts_source
     assert "def append_unique_runtime_fields" in runtime_contracts_source
     assert "def build_exchange_contracts" in runtime_contracts_source
-    assert "def exchange_key" in runtime_contracts_source
+    assert "def exchange_key" not in runtime_contracts_source
     assert "class ExchangeContract" not in runtime_source
     assert "def build_exchange_contracts" not in runtime_source
     assert "class FieldStore" in runtime_stores_source
@@ -605,14 +605,6 @@ def test_runtime_contracts_include_all_constructor_exchanges() -> None:
         spec=ComponentSpec(inputs=("temperature", "humidity")),
     )
 
-    def temperature_regrid(source: Any, destination: Any) -> object:
-        _ = source, destination
-        return object()
-
-    def humidity_regrid(source: Any, destination: Any) -> object:
-        _ = source, destination
-        return object()
-
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(atmosphere, ocean),
@@ -621,13 +613,13 @@ def test_runtime_contracts_include_all_constructor_exchanges() -> None:
                 source="ATM",
                 target="OCN",
                 fields=("temperature",),
-                regrid=cast(Any, temperature_regrid),
+                route_id="atmosphere-temperature",
             ),
             Exchange(
                 source="ATM",
                 target="OCN",
                 fields=("humidity",),
-                regrid=cast(Any, humidity_regrid),
+                route_id="atmosphere-humidity",
             ),
         ),
     )
@@ -715,13 +707,9 @@ def test_runtime_topology_maps_copying_stays_at_exchange_topology_boundary() -> 
     assert "RuntimeTopologyMaps.from_mappings" not in exchange_topology_source
     assert "regridders = {}" in exchange_topology_source
 
-    regridders = cast(Any, {("ATM", "OCN", "bilinear"): object()})
-    binary_masks: dict[tuple[str, str, str], RuntimeArray] = {
-        ("ATM", "OCN", "bilinear"): jnp.ones((2, 2))
-    }
-    fractional_masks: dict[tuple[str, str, str], RuntimeArray] = {
-        ("ATM", "OCN", "bilinear"): jnp.full((2, 2), 0.5)
-    }
+    regridders = cast(Any, {"ATM->OCN": object()})
+    binary_masks: dict[str, RuntimeArray] = {"ATM->OCN": jnp.ones((2, 2))}
+    fractional_masks: dict[str, RuntimeArray] = {"ATM->OCN": jnp.full((2, 2), 0.5)}
     topology_maps = RuntimeTopologyMaps(
         regridders=regridders,
         binary_masks=binary_masks,
@@ -952,9 +940,7 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
     state = RunState._from_runtime(
         component_names=("ATM",),
         components=(component,),
-        fractional_masks=FieldStore.from_mapping(
-            {"OCN|ATM|bilinear": jnp.ones((2, 2))}
-        ),
+        fractional_masks=FieldStore.from_mapping({"OCN->ATM": jnp.ones((2, 2))}),
     )
 
     def update(value: RunState) -> RunState:
@@ -966,9 +952,9 @@ def test_runtime_component_and_coupler_state_are_pytrees() -> None:
 
     updated = jax.jit(update)(state)
 
-    assert state.component_indices == {"ATM": 0}
-    assert updated.component_indices == {"ATM": 0}
-    assert updated.component_names == ("ATM",)
+    assert state._component_indices == {"ATM": 0}
+    assert updated._component_indices == {"ATM": 0}
+    assert tuple(updated.components()) == ("ATM",)
     assert_allclose_compact(
         updated._component_state("ATM").fields.get("temperature"),
         np.full((2, 2), 3.0),
@@ -991,7 +977,7 @@ def test_runtime_coupler_state_restores_component_index_cache_after_pytree_round
     leaves, treedef = jax.tree_util.tree_flatten(state)
     restored = jax.tree_util.tree_unflatten(treedef, leaves)
 
-    assert restored.component_indices == {"ATM": 0, "OCN": 1}
+    assert restored._component_indices == {"ATM": 0, "OCN": 1}
     assert restored._component_state("OCN") is restored._components[1]
 
 

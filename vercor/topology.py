@@ -5,14 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from vercor.components import Component as _Component
 from vercor.exchanges import Exchange as _Exchange
 from vercor.jax_logging import LoggerLike as _LoggerLike
 from vercor.types import RuntimeArray as _RuntimeArray
-
-ExchangeKey: TypeAlias = tuple[str, str, str]
 
 
 @dataclass(frozen=True)
@@ -21,16 +19,15 @@ class TopologyContext:
 
     components: Mapping[str, _Component]
     exchanges: Sequence[_Exchange]
-    exchange_keys: Sequence[ExchangeKey]
     logger: _LoggerLike
 
 
 @dataclass(frozen=True)
 class ExchangeTopologyPatch:
-    """Topology mask updates keyed by ``(source, target, regrid_key)``."""
+    """Topology mask updates keyed by stable exchange route IDs."""
 
-    binary_masks: Mapping[ExchangeKey, _RuntimeArray] = field(default_factory=dict)
-    fractional_masks: Mapping[ExchangeKey, _RuntimeArray] = field(default_factory=dict)
+    binary_masks: Mapping[str, _RuntimeArray] = field(default_factory=dict)
+    fractional_masks: Mapping[str, _RuntimeArray] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Freeze caller-provided patch mappings."""
@@ -48,10 +45,6 @@ class ExchangeTopologyPatch:
 @runtime_checkable
 class TopologyPolicy(Protocol):
     """Public protocol for setup-specific exchange-topology customization."""
-
-    def applies(self, context: TopologyContext) -> bool:
-        """Return whether this policy should patch the configured topology."""
-        ...
 
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         """Return exchange mask updates for this topology."""
@@ -80,27 +73,25 @@ class SurfaceMaskPolicy:
             if not isinstance(name, str) or not name:
                 raise ValueError(f"{role} component name must be a non-empty string")
 
-    def applies(self, context: TopologyContext) -> bool:
-        """Return whether the configured run should use bundled surface masks."""
-
-        from vercor._runtime.surface_masks import should_apply_surface_mask_policy
-
-        return should_apply_surface_mask_policy(
-            context.components,
-            context.exchanges,
-            self,
-        )
-
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         """Return exchange mask updates for bundled surface exchanges."""
 
-        from vercor._runtime.surface_masks import build_surface_mask_topology_patch
+        from vercor._runtime.surface_masks import (
+            build_surface_mask_topology_patch,
+            should_apply_surface_mask_policy,
+        )
+
+        if not should_apply_surface_mask_policy(
+            context.components,
+            context.exchanges,
+            self,
+        ):
+            return ExchangeTopologyPatch()
 
         return build_surface_mask_topology_patch(context, self)
 
 
 __all__ = [
-    "ExchangeKey",
     "ExchangeTopologyPatch",
     "SurfaceMaskPolicy",
     "TopologyContext",

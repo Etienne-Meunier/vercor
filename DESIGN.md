@@ -177,6 +177,10 @@ immutable runtime containers used during traced integration.
   objects, which are treated as immutable configuration. It exposes read-only
   public views. Reconfiguration requires a new coupler; there are no primary
   mutators or `CouplerSpec`.
+  Each `Exchange` owns a stable public `route_id` plus an injected
+  `regridder_factory`. The default route ID is `"source->target"`; repeated
+  endpoints therefore require explicit distinct IDs, and all route IDs are
+  validated globally before lifecycle setup or factory invocation.
   Component-name sequences are normalized internally to immutable tuples.
   An empty run order is explicit setup-only semantics: setup, validation,
   topology, state construction, and output preparation occur, but the runtime
@@ -190,9 +194,12 @@ immutable runtime containers used during traced integration.
   setup-agnostic custom exchanges. Public custom execution backends implement
   `vercor.runtime.ExecutionBackend` and receive an `ExecutionContext` plus
   `RuntimeDriver`; the private runtime context is not part of the public
-  contract. Custom backends must return `RunState`. The driver validates the
-  state, prepared component name, and concrete in-range scalar step before it
-  dispatches the normal receive/step/send pipeline; custom orchestration may
+  contract. Custom backends must return `RunState`. Supplied states, every
+  state entering the public driver, and backend-returned states are validated
+  against the private prepared binding: exact component/store/route names,
+  grids and coordinates, array shapes and dtypes, and mask constraints must
+  match. The driver also validates the prepared component name and concrete
+  in-range scalar step before it dispatches the normal receive/step/send pipeline; custom orchestration may
   include host-backed components. Component lifecycle initialization runs for
   any non-empty configured component graph, including custom single-component
   or no-exchange workflows. `vercor.state.RunState` is opaque: users inspect results
@@ -253,10 +260,12 @@ immutable runtime containers used during traced integration.
   whose copied mappings are read-only, and `ExchangeTopologyState`. Generic exchange
   regridder/identity-mask map construction lives in
   `vercor._runtime.exchange_topology`; public topology policies are adapted by
-  `vercor._runtime.topology_policy` through the uniform
-  `applies(context)` then `build(context)` protocol. Policy patches must target
-  configured topology keys and target-grid shapes. Duplicate exchange topology
-  keys are rejected rather than silently sharing a regridder. Optional atmosphere/ocean/land
+  `vercor._runtime.topology_policy` through the single uniform
+  `build(context)` protocol. Policy patches must use configured route IDs and
+  target-grid shapes. Duplicate route IDs are rejected rather than silently
+  sharing a regridder. Scalar routes require the public `Regridder` capability;
+  vector routes require `VectorRegridder`, and mixed routes require both.
+  Optional atmosphere/ocean/land
   surface-mask creation and validation live in
   `vercor._runtime.surface_masks` behind `vercor.topology.SurfaceMaskPolicy`.
   Derived surface-mask values remain local to policy construction rather than
@@ -266,8 +275,9 @@ immutable runtime containers used during traced integration.
   receiving components instead of requiring the advisory common field
   vocabulary. `vercor._runtime.topology` remains the orchestration boundary
   that composes those owners and returns the explicit topology state for the
-  runtime facade to store. Public `RunState` carries
-  component states and fractional masks through `jax.lax.scan`; binary masks
+  runtime facade to store. Public `RunState` carries private component
+  alignment metadata, component states, and fractional masks through
+  `jax.lax.scan`; binary masks
   remain in `RuntimeTopologyMaps` for final output and topology bookkeeping.
   Setup-time component precision synchronization, initialization context construction, component
   setup validation, runtime contract validation, and topology handoff live in
@@ -348,7 +358,8 @@ only when that factory is invoked. Deep adapter modules live under underscore
 packages for package-internal tests and optional-dependency boundaries, but
 supported user workflows enter through `vercor.setups`.
 Examples and setup factories assemble complete runs through `Coupler(...)`
-with direct `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
+with direct `Exchange(source, target, fields,
+regridder_factory=...)` declarations. Shared exchange
 field recipes live in `vercor.recipes` with `*_FIELDS` names. Short recipe aliases and setup orchestration helpers
 such as `ExchangeSpec`, `build_coupler()`, `build_exchanges()`, and
 `add_exchange_specs()` have been removed. Public exchange configuration types,
@@ -357,8 +368,9 @@ exports only the public `Exchange` class. Public regridding protocols,
 including `Regridder` and `RegridderFactory`, are owned by
 `vercor.regridding`; concrete
 bilinear/conservative regridder classes remain private implementation details.
-Regridders expose explicit `regrid(field)` and `regrid_vector(u, v)` methods
-and are not callable.
+`Regridder` exposes scalar `regrid(field)` plus source/target grid metadata;
+`VectorRegridder` extends that capability with `regrid_vector(u, v)`.
+Regridders are not callable.
 
 Core helper ownership follows the same boundary. Calendar constants,
 model-calendar datetime values, leap-year logic, and month/day conversion live

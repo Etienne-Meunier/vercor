@@ -48,7 +48,6 @@ from vercor.jax_logging import (
     setup_logger,
 )
 from vercor._regridders.bilinear import bilinear
-from vercor._regridders.conservative import conservative
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
 from vercor.output._runtime import output_masks_for_component
@@ -409,7 +408,7 @@ def test_coupler_wraps_injected_python_logger_for_scanned_runtime() -> None:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
     assert "scanned ATM 4.0" in stream.getvalue()
 
 
@@ -450,7 +449,7 @@ def test_scanned_runtime_passes_callback_logger_to_components() -> None:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
     assert "scanned ATM 4.0" in stream.getvalue()
 
 
@@ -475,7 +474,7 @@ def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM", "OCN")
+    assert tuple(final_state.components()) == ("ATM", "OCN")
     log_text = stream.getvalue()
     assert (
         "====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
@@ -504,7 +503,7 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
     log_text = stream.getvalue()
     assert "scanned ATM" not in log_text
     assert "====== Step:" not in log_text
@@ -549,7 +548,7 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
                     source=source,
                     target=destination,
                     fields=["temperature"],
-                    regrid=bilinear,
+                    regridder_factory=bilinear,
                 ),
             ),
         )
@@ -617,7 +616,10 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     ) -> Any:
         def factory(source_grid: Any, target_grid: Any) -> RecordingRegridder:
             created_keys.append((source_grid.name, target_grid.name))
-            return RecordingRegridder()
+            return RecordingRegridder(
+                source_grid=source_grid,
+                target_grid=target_grid,
+            )
 
         factory.__name__ = interpolation_type
         return cast(Any, factory)
@@ -630,37 +632,37 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
             source="OCN",
             target="ATM",
             fields=["temperature", "specific_humidity"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ATM",
             target="OCN",
             fields=["downward_longwave_radiation_flux"],
-            regrid=conservative_recording,
+            regridder_factory=conservative_recording,
         ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["soil_moisture"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ATM",
             target="LND",
             fields=["temperature_2m"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ICE",
             target="ATM",
             fields=["ice_fraction"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ATM",
             target="ICE",
             fields=["sensible_heat_flux"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
     ]
     coupler = make_coupler(
@@ -694,11 +696,11 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     topology_maps = coupler._prepared.topology_maps
     assert len(topology_maps.regridders) == 6
     assert isinstance(
-        topology_maps.binary_masks[("ATM", "OCN", "conservative")],
+        topology_maps.binary_masks["ATM->OCN"],
         jax.Array,
     )
     assert isinstance(
-        topology_maps.fractional_masks[("ATM", "OCN", "conservative")],
+        topology_maps.fractional_masks["ATM->OCN"],
         jax.Array,
     )
     assert coupler._prepared.contracts["ATM"] == ExchangeContract(
@@ -715,11 +717,11 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         ),
     )
     assert_allclose_compact(
-        topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
+        topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
     )
     assert_allclose_compact(
-        topology_maps.binary_masks[("LND", "ATM", "bilinear")],
+        topology_maps.binary_masks["LND->ATM"],
         lnd_mask,
     )
     assert not hasattr(coupler, "ocn_fmask_on_atm_grid")
@@ -736,7 +738,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     monkeypatch.setattr(
         surface_masks_module,
@@ -757,9 +759,9 @@ def test_build_exchange_topology_returns_explicit_patched_state(
     )
 
     assert isinstance(state, ExchangeTopologyState)
-    assert set(state.topology_maps.regridders) == {("OCN", "ATM", "bilinear")}
+    assert set(state.topology_maps.regridders) == {"OCN->ATM"}
     assert_allclose_compact(
-        state.topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
+        state.topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
     )
     assert not hasattr(state, "surface_masks")
@@ -774,18 +776,18 @@ def test_build_exchange_topology_rejects_duplicate_topology_keys() -> None:
             source="OCN",
             target="ATM",
             fields=["temperature"],
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="OCN",
             target="ATM",
             fields=["specific_humidity"],
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
     )
     with pytest.raises(
         CouplerError,
-        match="Duplicate exchange topology key.*merge field declarations.*distinct regrid factories",
+        match="Duplicate exchange route ID 'OCN->ATM'",
     ):
         build_exchange_topology(
             components=cast(Any, components),
@@ -796,7 +798,7 @@ def test_build_exchange_topology_rejects_duplicate_topology_keys() -> None:
 
 
 @pytest.mark.fast_always
-def test_surface_mask_policy_uses_uniform_applies_then_build_protocol(
+def test_surface_mask_policy_uses_one_build_protocol(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     components = _topology_components()
@@ -804,21 +806,15 @@ def test_surface_mask_policy_uses_uniform_applies_then_build_protocol(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     events: list[str] = []
-    original_applies = SurfaceMaskPolicy.applies
     original_build = SurfaceMaskPolicy.build
-
-    def recording_applies(self: SurfaceMaskPolicy, context: Any) -> bool:
-        events.append("applies")
-        return original_applies(self, context)
 
     def recording_build(self: SurfaceMaskPolicy, context: Any) -> Any:
         events.append("build")
         return original_build(self, context)
 
-    monkeypatch.setattr(SurfaceMaskPolicy, "applies", recording_applies)
     monkeypatch.setattr(SurfaceMaskPolicy, "build", recording_build)
     monkeypatch.setattr(
         surface_masks_module,
@@ -838,9 +834,9 @@ def test_surface_mask_policy_uses_uniform_applies_then_build_protocol(
         logger=cast(Any, _RecordingLogger()),
     )
 
-    assert events == ["applies", "build"]
+    assert events == ["build"]
     assert_allclose_compact(
-        state.topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
+        state.topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
     )
 
@@ -854,11 +850,11 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
         source="LND",
         target="ATM",
         fields=["soil_moisture"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
-    existing_regridders: dict[tuple[str, str, str], Any] = {}
-    existing_binary_masks: dict[tuple[str, str, str], Any] = {}
-    existing_fractional_masks: dict[tuple[str, str, str], Any] = {}
+    existing_regridders: dict[str, Any] = {}
+    existing_binary_masks: dict[str, Any] = {}
+    existing_fractional_masks: dict[str, Any] = {}
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
@@ -887,7 +883,7 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
     assert existing_fractional_masks == {}
     assert state.topology_maps.regridders is not existing_regridders
     assert_allclose_compact(
-        state.topology_maps.binary_masks[("LND", "ATM", "bilinear")],
+        state.topology_maps.binary_masks["LND->ATM"],
         np.asarray([[1.0, 0.0], [0.0, 1.0]]),
     )
 
@@ -993,22 +989,22 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     lnd_exchange = Exchange(
         source="LND",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     exchanges = (ocn_exchange, lnd_exchange)
     binary_masks = {
-        ("OCN", "ATM", "bilinear"): np.zeros((2, 2)),
-        ("LND", "ATM", "bilinear"): np.ones((2, 2)),
+        "OCN->ATM": np.zeros((2, 2)),
+        "LND->ATM": np.ones((2, 2)),
     }
     fractional_masks = {
-        ("OCN", "ATM", "bilinear"): np.full((2, 2), 0.25),
-        ("LND", "ATM", "bilinear"): np.full((2, 2), 0.75),
+        "OCN->ATM": np.full((2, 2), 0.25),
+        "LND->ATM": np.full((2, 2), 0.75),
     }
     assert not hasattr(Coupler, "_output_masks_for_component")
 
@@ -1020,12 +1016,42 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
     )
 
     assert set(masks) == {
-        "bmask_OCN_ATM_bilinear",
-        "fmask_OCN_ATM_bilinear",
-        "bmask_LND_ATM_bilinear",
-        "fmask_LND_ATM_bilinear",
+        "bmask_OCN_ATM",
+        "fmask_OCN_ATM",
+        "bmask_LND_ATM",
+        "fmask_LND_ATM",
     }
-    assert_allclose_compact(masks["fmask_LND_ATM_bilinear"], np.full((2, 2), 0.75))
+    assert_allclose_compact(masks["fmask_LND_ATM"], np.full((2, 2), 0.75))
+
+
+def test_output_mask_names_remain_unique_after_route_token_sanitizing() -> None:
+    exchanges = (
+        Exchange("OCN", "ATM", ("temperature",), route_id="a-b"),
+        Exchange("LND", "ATM", ("temperature",), route_id="a_b"),
+    )
+    binary_masks = {
+        "a-b": np.zeros((2, 2)),
+        "a_b": np.ones((2, 2)),
+    }
+    fractional_masks = {
+        "a-b": np.full((2, 2), 0.25),
+        "a_b": np.full((2, 2), 0.75),
+    }
+
+    masks = output_masks_for_component(
+        "ATM",
+        exchanges,
+        binary_masks,
+        fractional_masks,
+    )
+
+    assert len(masks) == 4
+    assert sorted(float(np.mean(value)) for value in masks.values()) == [
+        0.0,
+        0.25,
+        0.75,
+        1.0,
+    ]
 
 
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
@@ -1044,13 +1070,15 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        route_id="ocn-atm-scalar",
+        regridder_factory=bilinear,
     )
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
         fields=[vector("u_velocity", "v_velocity")],
-        regrid=conservative,
+        route_id="ocn-atm-vector",
+        regridder_factory=bilinear,
     )
     coupler = make_coupler(
         components=(cast(Any, source), cast(Any, destination)),
@@ -1059,10 +1087,10 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "bilinear"): RecordingRegridder(
+            "ocn-atm-scalar": RecordingRegridder(
                 scalar_result=jnp.asarray([[2.0, 4.0], [6.0, 8.0]])
             ),
-            ("OCN", "ATM", "conservative"): RecordingRegridder(
+            "ocn-atm-vector": RecordingRegridder(
                 vector_result=(
                     np.full((2, 2), 9.0),
                     np.full((2, 2), -9.0),
@@ -1074,8 +1102,8 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         coupler,
         regridders=regridders,
         fractional_masks={
-            ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
-            ("OCN", "ATM", "conservative"): np.ones((2, 2)),
+            "ocn-atm-scalar": np.asarray([[1.0, 0.5], [0.0, 1.0]]),
+            "ocn-atm-vector": np.ones((2, 2)),
         },
     )
 
@@ -1111,7 +1139,7 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     coupler = make_coupler(
         components=(cast(Any, source), cast(Any, destination)),
@@ -1120,7 +1148,7 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "bilinear"): RecordingRegridder(
+            "OCN->ATM": RecordingRegridder(
                 scalar_result=jnp.asarray([[2.0, 4.0], [6.0, 8.0]])
             )
         },
@@ -1129,7 +1157,7 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         coupler,
         regridders=regridders,
         fractional_masks={
-            ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
+            "OCN->ATM": np.asarray([[1.0, 0.5], [0.0, 1.0]]),
         },
     )
 
@@ -1156,7 +1184,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     coupler = make_coupler(
         components=(cast(Any, scalar_source), cast(Any, scalar_destination)),
@@ -1164,12 +1192,12 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     )
     regridders = cast(
         Any,
-        {("OCN", "ATM", "bilinear"): RecordingRegridder(scalar_result=np.ones((2, 2)))},
+        {"OCN->ATM": RecordingRegridder(scalar_result=np.ones((2, 2)))},
     )
     replace_runtime_topology_maps(
         coupler,
         regridders=regridders,
-        fractional_masks={("OCN", "ATM", "bilinear"): np.ones((2, 2))},
+        fractional_masks={"OCN->ATM": np.ones((2, 2))},
     )
 
     with pytest.raises(ExchangeError, match="Field temperature not present"):
@@ -1188,7 +1216,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         source="OCN",
         target="ATM",
         fields=[vector("u_velocity", "v_velocity")],
-        regrid=conservative,
+        regridder_factory=bilinear,
     )
     coupler = make_coupler(
         components=(cast(Any, vector_source), cast(Any, vector_destination)),
@@ -1197,7 +1225,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "conservative"): RecordingRegridder(
+            "OCN->ATM": RecordingRegridder(
                 vector_result=(np.ones((2, 2)), np.ones((2, 2)))
             )
         },
@@ -1205,7 +1233,7 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     replace_runtime_topology_maps(
         coupler,
         regridders=regridders,
-        fractional_masks={("OCN", "ATM", "conservative"): np.ones((2, 2))},
+        fractional_masks={"OCN->ATM": np.ones((2, 2))},
     )
 
     with pytest.raises(ExchangeError, match="Not all fields in vector"):
@@ -1389,7 +1417,7 @@ def test_coupler_string_representations_include_registered_state() -> None:
                 source="ATM",
                 target="OCN",
                 fields=["temperature"],
-                regrid=bilinear,
+                regridder_factory=bilinear,
             ),
         ),
         run_order=("ATM", "OCN"),
@@ -1400,7 +1428,7 @@ def test_coupler_string_representations_include_registered_state() -> None:
 
     assert "Coupler:" in rendered
     assert "<DummyComponent>(ATM)" in rendered
-    assert "ATM --(bilinear)--> OCN" in rendered
+    assert "ATM->OCN" in rendered
     assert "ATM, OCN" in rendered
     assert "run_order=ATM -> OCN" in representation
 

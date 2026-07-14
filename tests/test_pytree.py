@@ -23,7 +23,6 @@ def test_registered_pytree_classes_inherit_shared_flatten_methods() -> None:
         RuntimeStepInfo,
         FieldStore,
         ComponentRuntimeState,
-        RunState,
         RectilinearGrid,
         BilinearRectilinearInterpolator,
         ConservativeRectilinearRemapper,
@@ -34,6 +33,15 @@ def test_registered_pytree_classes_inherit_shared_flatten_methods() -> None:
         assert issubclass(registered_class, PyTreeNodeMixin)
         assert "tree_flatten" not in registered_class.__dict__
         assert "tree_unflatten" not in registered_class.__dict__
+
+    assert not issubclass(RunState, PyTreeNodeMixin)
+    state = RunState._from_runtime(
+        component_names=(),
+        components=(),
+        fractional_masks=FieldStore.empty(),
+    )
+    leaves, tree = jax.tree_util.tree_flatten(state)
+    assert isinstance(jax.tree_util.tree_unflatten(tree, leaves), RunState)
 
 
 def test_array_only_pytree_round_trip_uses_declared_children() -> None:

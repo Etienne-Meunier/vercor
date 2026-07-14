@@ -272,5 +272,5 @@ def test_interrupt_checkpoints_preserve_repeated_scanned_runs() -> None:
     first = _block_until_ready(coupler.run())
     second = _block_until_ready(coupler.run())
 
-    assert first.component_names == ("ATM",)
-    assert second.component_names == ("ATM",)
+    assert tuple(first.components()) == ("ATM",)
+    assert tuple(second.components()) == ("ATM",)

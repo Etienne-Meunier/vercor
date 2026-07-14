@@ -51,11 +51,6 @@ class _BaseRegridder:
 
         raise NotImplementedError
 
-    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
-        """Transfer one vector field pair from the source grid to the target grid."""
-
-        raise NotImplementedError
-
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:"

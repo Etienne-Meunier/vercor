@@ -118,9 +118,14 @@ class RecordingRegridder:
         *,
         scalar_result: RuntimeArray | None = None,
         vector_result: tuple[RuntimeArray, RuntimeArray] | None = None,
+        source_grid: RectilinearGrid | None = None,
+        target_grid: RectilinearGrid | None = None,
     ) -> None:
         self.scalar_result = scalar_result
         self.vector_result = vector_result
+        self.source_grid = source_grid
+        self.target_grid = target_grid
+        self.has_identical_grids = source_grid is target_grid
         self.calls: list[tuple[NDArray, ...]] = []
 
     def regrid(self, field: RuntimeArray) -> RuntimeArray:

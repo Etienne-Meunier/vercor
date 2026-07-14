@@ -19,8 +19,9 @@ class RuntimeDispatchContext:
     """Static runtime plumbing shared by per-component dispatch helpers."""
 
     components: Mapping[str, _ComponentBinding]
+    exchanges: tuple[Exchange, ...]
     exchanges_by_destination: Mapping[str, tuple[Exchange, ...]]
-    regridders: Mapping[tuple[str, str, str], Any]
+    regridders: Mapping[str, Any]
     contracts: Mapping[str, ExchangeContract]
     dt_seconds: float
     constants: PhysicalConstants
@@ -35,7 +36,7 @@ class RuntimeDispatchContext:
 def build_runtime_dispatch_context(
     components: Mapping[str, _ComponentBinding],
     exchanges: Sequence[Exchange],
-    regridders: Mapping[tuple[str, str, str], Any],
+    regridders: Mapping[str, Any],
     contracts: Mapping[str, ExchangeContract],
     *,
     dt_seconds: float,
@@ -50,6 +51,7 @@ def build_runtime_dispatch_context(
 
     return RuntimeDispatchContext(
         components=components,
+        exchanges=tuple(exchanges),
         exchanges_by_destination=MappingProxyType(
             {
                 name: tuple(destination_exchanges)

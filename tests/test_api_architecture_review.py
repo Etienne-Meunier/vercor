@@ -259,7 +259,7 @@ def test_docs_bound_custom_backend_schema_claim_to_implemented_checks() -> None:
     review = REVIEW_PATH.read_text(encoding="utf-8")
     sections = _review_sections(review)
     dependencies = DEPENDENCIES_PATH.read_text(encoding="utf-8")
-    required_claims = (
+    historical_claims = (
         "exact component, store-field, and fractional-mask names",
         "per-field and mask shapes",
         "component grid shapes",
@@ -269,17 +269,28 @@ def test_docs_bound_custom_backend_schema_claim_to_implemented_checks() -> None:
     for owner, text in (
         ("2. Duplication map", sections["2. Duplication map"]),
         ("5. Private API redesign", sections["5. Private API redesign"]),
-        ("DEPENDENCIES.md", dependencies),
     ):
         normalized = _normalized(text).casefold()
-        for claim in required_claims:
+        for claim in historical_claims:
             assert claim in normalized, f"{owner}: {claim}"
 
-    for overclaim in (
-        "prepared components, stores, grids, masks, and shapes",
-        "exact input stores/grids/masks",
+    current_claims = (
+        "supplied, pre-driver, and backend-returned states",
+        "exact component/store/route names",
+        "grid type/name/coordinates/edges/masks",
+        "array shapes and dtypes",
+        "finite binary/fractional mask constraints",
+    )
+    normalized_dependencies = _normalized(dependencies).casefold()
+    for claim in current_claims:
+        assert claim in normalized_dependencies, f"DEPENDENCIES.md: {claim}"
+
+    for stale_limit in (
+        "not grid coordinates or identity",
+        "not mask values",
+        "not dtypes",
     ):
-        assert overclaim not in review + dependencies
+        assert stale_limit not in normalized_dependencies
 
 
 @pytest.mark.fast_always

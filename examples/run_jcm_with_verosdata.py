@@ -56,25 +56,25 @@ if __name__ == "__main__":
             source="ATM",
             target="OCN",
             fields=ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="OCN",
             target="ATM",
             fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="LND",
             target="ATM",
             fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="ATM",
             target="LND",
             fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
     )
     components = [ocn, lnd, atm]

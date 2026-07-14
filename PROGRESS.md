@@ -9,6 +9,25 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 5 completed locally on 2026-07-14 from base commit
+  `166f021`. `Exchange` now owns stable global `route_id` identity and an
+  injected `regridder_factory`; default `source->target` collisions fail before
+  setup or factory calls. Runtime topology maps and public topology patches are
+  route-ID keyed, and `TopologyPolicy` has one `build(context)` method.
+  Preparation validates the scalar `Regridder` capability and its
+  scalar-plus-vector `VectorRegridder` refinement, while deterministic fan-in diagnostics name
+  sorted route IDs. `RunState` exposes only `component()`, `components()`, and
+  `replace_fields()` publicly; component names, grids, stores, and fractional
+  masks are private PyTree state, and component indices are a derived private
+  lookup. Supplied, pre-driver,
+  and backend-returned states are strictly checked for exact names/order,
+  grids/coordinates/edges, store and JAX-payload schemas, and finite mask
+  constraints using transform-safe runtime assertions. The focused Task 5
+  contract suite passes 51/51, the fast suite passes 441 tests with 550
+  deselected, and the full suite passes 991 tests with only the two known third-party
+  `FutureWarning`s. Final static checks and independent reviews are recorded in
+  `.superpowers/sdd/task-5-v4-report.md`. The required commit title is
+  `refactor!: add stable route and state contracts`.
 - VerCOR 4 milestone 1 Task 4 completed on 2026-07-14 from base commit
   `638cd7a`. The primary package root is now exactly `Clock`, `Coupler`,
   `Exchange`, `RectilinearGrid`, `RunState`, and `RuntimeOptions`; advanced
@@ -26,9 +45,9 @@ historical commands, failure messages, or detailed validation notes.
   An empty run order is explicit setup-only behavior and does not synthesize an
   execution order. Current output remains on `OutputConfig`/`PeriodOutput`,
   `Coupler.run()`, and `Coupler.write_outputs()`; current custom backends remain
-  on `RuntimeOptions.execution` plus `ExecutionBackend.run`. Later workflow,
-  route-ID, unified output-provider, and `vercor.compat.v3` APIs are not yet
-  implemented. Final review closed imported-object/module namespace leaks,
+  on `RuntimeOptions.execution` plus `ExecutionBackend.run`. Route IDs were
+  outside Task 4; workflow, unified output-provider, and `vercor.compat.v3`
+  APIs were not yet implemented. Final review closed imported-object/module namespace leaks,
   public annotation resolution, eager graph validation, strict run-order
   typing, installed-wheel manifest coverage, and documentation ownership
   accuracy. The import-order audit covers all 149 production Python modules

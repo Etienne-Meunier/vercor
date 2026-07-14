@@ -96,9 +96,7 @@ def test_custom_named_components_can_exchange_custom_fields_without_surface_mask
 
 
 @pytest.mark.fast_always
-def test_duplicate_exchange_topology_key_requires_merged_fields_or_distinct_factory() -> (
-    None
-):
+def test_duplicate_exchange_route_id_requires_explicit_distinct_ids() -> None:
     grid = make_test_grid(name="duplicate-topology-key")
     source = DataComponent(
         "SRC",
@@ -113,7 +111,7 @@ def test_duplicate_exchange_topology_key_requires_merged_fields_or_distinct_fact
     )
     with pytest.raises(
         CouplerError,
-        match="Duplicate exchange topology key.*merge field declarations.*distinct regrid factories",
+        match="Exchange route ID 'SRC->DST' must be unique",
     ):
         Coupler(
             clock=_clock(),
@@ -141,13 +139,13 @@ def test_exchange_fan_in_rejects_scalar_conflicts_independent_of_order_and_regri
         spec=ComponentSpec(inputs=("flux",)),
     )
     exchanges = (
-        Exchange("SRC_A", "DST", ("flux",), label="alpha route"),
+        Exchange("SRC_A", "DST", ("flux",), route_id="alpha route"),
         Exchange(
             "SRC_B",
             "DST",
             ("flux",),
-            regrid=conservative,
-            label="omega route",
+            regridder_factory=conservative,
+            route_id="omega route",
         ),
     )
 
@@ -195,9 +193,9 @@ def test_exchange_fan_in_flattens_vector_declarations() -> None:
                     "SRC_A",
                     "DST",
                     (vector("u", "v"),),
-                    label="vector route",
+                    route_id="vector route",
                 ),
-                Exchange("SRC_B", "DST", ("v",), label="scalar route"),
+                Exchange("SRC_B", "DST", ("v",), route_id="scalar route"),
             ),
             run_order=("SRC_A", "SRC_B", "DST"),
             runtime=RuntimeOptions(topology=None),
@@ -258,7 +256,7 @@ def test_slab_driver_has_one_bilinear_ocean_to_seaice_temperature_route() -> Non
     )[
         1
     ].split("),", maxsplit=1)[0]
-    assert "regrid=bilinear" in exchange_block
+    assert "regridder_factory=bilinear" in exchange_block
 
 
 @pytest.mark.fast_always

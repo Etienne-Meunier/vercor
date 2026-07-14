@@ -163,7 +163,7 @@ def test_write_outputs_rejects_incompatible_supplied_state_before_output(
     assert output_calls == []
     assert error is not None
     assert "MODEL" in str(error)
-    assert "missing from runtime state" in str(error)
+    assert "missing MODEL" in str(error)
 
 
 @pytest.mark.fast_always
@@ -222,7 +222,7 @@ def test_prepared_binding_is_stable_after_original_component_mutation(
     final_state = coupler.run(state=state)
 
     assert coupler._ensure_prepared() is prepared
-    assert final_state.component_names == ("MODEL",)
+    assert tuple(final_state.components()) == ("MODEL",)
     assert jnp.all(final_state.component("MODEL").field("temperature") == 280.0)
 
 
@@ -264,16 +264,12 @@ def test_v4_callable_component_prepared_binding_is_stable(
     final_state = coupler.run(state=state)
 
     assert coupler._ensure_prepared() is prepared
-    assert final_state.component_names == ("MODEL",)
+    assert tuple(final_state.components()) == ("MODEL",)
 
 
 class _MutablePreparedTopologyPolicy:
     def __init__(self) -> None:
         self.enabled = False
-
-    def applies(self, context: TopologyContext) -> bool:
-        _ = context
-        return self.enabled
 
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         _ = context
@@ -285,10 +281,6 @@ class _SlotsPreparedTopologyPolicy:
 
     def __init__(self) -> None:
         self.enabled = False
-
-    def applies(self, context: TopologyContext) -> bool:
-        _ = context
-        return self.enabled
 
     def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
         _ = context
@@ -765,7 +757,7 @@ def test_coupler_public_configuration_is_read_only() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_topology_maps_are_frozen_read_only_views() -> None:
-    key = ("SRC", "DST", "bilinear")
+    key = "SRC->DST"
     maps = RuntimeTopologyMaps(
         regridders={key: object()},
         binary_masks={key: jnp.ones((2, 2))},

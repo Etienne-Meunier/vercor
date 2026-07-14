@@ -8,7 +8,6 @@ from vercor._runtime.component_state import create_runtime_component_state
 from vercor._runtime.contracts import (
     ExchangeContract,
     build_exchange_contracts,
-    exchange_key,
 )
 from vercor.state import RunState
 from vercor._runtime.stores import FieldStore
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
 def runtime_state_from_components(
     components: Mapping[str, _ComponentBinding],
     exchanges: Sequence[Exchange],
-    fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
+    fractional_masks: Mapping[str, RuntimeArray],
     *,
     contracts: Mapping[str, ExchangeContract] | None = None,
     prefill_missing: bool = False,
@@ -45,12 +44,9 @@ def runtime_state_from_components(
         )
         for name, component in components.items()
     )
-    runtime_fractional_masks = {
-        exchange_key(*key): value for key, value in fractional_masks.items()
-    }
     return RunState._from_runtime(
         component_names=tuple(components.keys()),
         components=runtime_components,
-        fractional_masks=FieldStore.from_mapping(runtime_fractional_masks),
+        fractional_masks=FieldStore.from_mapping(fractional_masks),
         component_grids=tuple(component.grid for component in components.values()),
     )

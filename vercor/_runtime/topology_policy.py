@@ -11,13 +11,13 @@ from vercor.components import Component
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
-from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor.topology import (
     ExchangeTopologyPatch,
     TopologyContext,
     TopologyPolicy,
 )
+from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
     from vercor.components._adapter import _ComponentBinding
@@ -40,10 +40,6 @@ def build_topology_context(
     return TopologyContext(
         components=public_components,
         exchanges=tuple(exchanges),
-        exchange_keys=tuple(
-            (exchange.source, exchange.target, exchange_regrid_key(exchange))
-            for exchange in exchanges
-        ),
         logger=logger,
     )
 
@@ -66,14 +62,18 @@ def apply_topology_policy(
         exchanges=exchanges,
         logger=logger,
     )
-    if not policy.applies(context):
-        return topology_maps
-
     patch = policy.build(context)
+    if not isinstance(patch, ExchangeTopologyPatch):
+        raise CouplerError(
+            f"Topology policy {policy.__class__.__qualname__}.build(...) must "
+            "return ExchangeTopologyPatch; "
+            f"got {type(patch).__name__}."
+        )
     prepared_maps = _apply_exchange_topology_patch(
         topology_maps,
         patch,
         components=context.components,
+        exchanges=context.exchanges,
     )
     logger.info("Exchange topology policy patching complete")
     return prepared_maps
@@ -84,17 +84,31 @@ def _apply_exchange_topology_patch(
     patch: ExchangeTopologyPatch,
     *,
     components: Mapping[str, Component],
+    exchanges: Sequence[Exchange],
 ) -> RuntimeTopologyMaps:
     """Apply public topology mask patches to runtime topology maps."""
 
     binary_masks = dict(topology_maps.binary_masks)
     fractional_masks = dict(topology_maps.fractional_masks)
+    route_targets = {exchange.route_id: exchange.target for exchange in exchanges}
     for key, value in patch.binary_masks.items():
-        _validate_patch_item(topology_maps, components, key, value, "binary")
-        binary_masks[key] = value
+        binary_masks[key] = _validate_patch_item(
+            topology_maps,
+            components,
+            route_targets,
+            key,
+            value,
+            "binary",
+        )
     for key, value in patch.fractional_masks.items():
-        _validate_patch_item(topology_maps, components, key, value, "fractional")
-        fractional_masks[key] = value
+        fractional_masks[key] = _validate_patch_item(
+            topology_maps,
+            components,
+            route_targets,
+            key,
+            value,
+            "fractional",
+        )
     return RuntimeTopologyMaps(
         regridders=topology_maps.regridders,
         binary_masks=binary_masks,
@@ -105,16 +119,17 @@ def _apply_exchange_topology_patch(
 def _validate_patch_item(
     topology_maps: RuntimeTopologyMaps,
     components: Mapping[str, Component],
-    key: tuple[str, str, str],
+    route_targets: Mapping[str, str],
+    key: str,
     value: object,
     mask_kind: str,
-) -> None:
+) -> RuntimeArray:
     """Validate one public topology patch item before map replacement."""
 
     if key not in topology_maps.regridders:
         raise CouplerError(
-            f"Topology policy {mask_kind} mask key {key!r} does not match a "
-            "configured topology key."
+            f"Topology policy {mask_kind} mask route ID {key!r} does not match a "
+            "configured route ID."
         )
     try:
         mask_array = jnp.asarray(value)
@@ -133,12 +148,14 @@ def _validate_patch_item(
             f"Topology policy {mask_kind} mask for key {key!r} must be a "
             "concrete numeric or bool array."
         )
-    target_shape = components[key[1]].grid.shape
+    target_name = route_targets[key]
+    target_shape = components[target_name].grid.shape
     mask_shape = mask_array.shape
     if mask_shape != target_shape:
         raise CouplerError(
             f"Topology policy {mask_kind} mask for key {key!r} has shape "
-            f"{mask_shape}, expected {target_shape} for target component {key[1]!r}."
+            f"{mask_shape}, expected {target_shape} for target component "
+            f"{target_name!r}."
         )
     try:
         all_finite = bool(jnp.all(jnp.isfinite(mask_array)))
@@ -166,6 +183,12 @@ def _validate_patch_item(
             f"Topology policy fractional mask for key {key!r} must contain "
             "values in [0, 1]."
         )
+    reference = (
+        topology_maps.binary_masks[key]
+        if mask_kind == "binary"
+        else topology_maps.fractional_masks[key]
+    )
+    return jnp.asarray(mask_array, dtype=jnp.asarray(reference).dtype)
 
 
 __all__ = [

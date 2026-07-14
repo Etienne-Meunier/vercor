@@ -8,6 +8,7 @@ from vercor._runtime.prepared import PreparedCoupling
 from vercor._runtime.state_validation import (
     validate_runtime_state as _validate_runtime_state,
 )
+from vercor.exceptions import CouplerError
 from vercor.state import RunState
 from vercor._runtime.time import initial_runtime_step_info
 from vercor.output._session import validate_period_output_component_state
@@ -95,6 +96,11 @@ def prepare_runtime_state(
         return create_runtime_state(
             prepared=prepared,
             prefill_missing=True,
+        )
+    if not isinstance(initial_state, RunState):
+        raise CouplerError(
+            "Coupler.run state must be a RunState or None; "
+            f"got {type(initial_state).__name__}."
         )
     if validate_state:
         validate_runtime_state(

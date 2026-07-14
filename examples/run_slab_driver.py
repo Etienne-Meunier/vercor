@@ -87,37 +87,37 @@ if __name__ == "__main__":
             source="ATM",
             target="OCN",
             fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="OCN",
             target="ATM",
             fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="OCN",
             target="ICE",
             fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="LND",
             target="ATM",
             fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="ATM",
             target="LND",
             fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-            regrid=conservative,
+            regridder_factory=conservative,
         ),
         Exchange(
             source="ICE",
             target="OCN",
             fields=SEAICE_TO_OCEAN_FIELDS,
-            regrid=conservative,
+            regridder_factory=conservative,
         ),
     )
     components: list[Any] = [atm, ocn, ice, lnd]

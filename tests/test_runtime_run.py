@@ -37,6 +37,15 @@ from vercor._runtime.stores import FieldStore
 
 
 class _IdentityRegridder:
+    def __init__(
+        self,
+        source_grid: Any = None,
+        target_grid: Any = None,
+    ) -> None:
+        self.source_grid = source_grid
+        self.target_grid = target_grid
+        self.has_identical_grids = source_grid is target_grid
+
     def regrid(self, field: Any) -> Any:
         return jnp.asarray(field)
 
@@ -45,8 +54,8 @@ class _IdentityRegridder:
 
 
 def _identity_factory(*args: Any, **kwargs: Any) -> _IdentityRegridder:
-    _ = args, kwargs
-    return _IdentityRegridder()
+    _ = kwargs
+    return _IdentityRegridder(*args)
 
 
 def _component_state(
@@ -88,25 +97,25 @@ def _make_coupler(steps: int) -> Coupler:
                 source="OCN",
                 target="ATM",
                 fields=["sea_surface_temperature"],
-                regrid=cast(Any, _identity_factory),
+                regridder_factory=cast(Any, _identity_factory),
             ),
             Exchange(
                 source="ATM",
                 target="OCN",
                 fields=["sensible_heat_flux", "latent_heat_flux"],
-                regrid=cast(Any, _identity_factory),
+                regridder_factory=cast(Any, _identity_factory),
             ),
             Exchange(
                 source="ATM",
                 target="LND",
                 fields=["latent_heat_flux"],
-                regrid=cast(Any, _identity_factory),
+                regridder_factory=cast(Any, _identity_factory),
             ),
             Exchange(
                 source="OCN",
                 target="ICE",
                 fields=["sea_surface_temperature"],
-                regrid=cast(Any, _identity_factory),
+                regridder_factory=cast(Any, _identity_factory),
             ),
         ),
         run_order=(
@@ -119,10 +128,10 @@ def _make_coupler(steps: int) -> Coupler:
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "_identity_factory"): _IdentityRegridder(),
-            ("ATM", "OCN", "_identity_factory"): _IdentityRegridder(),
-            ("ATM", "LND", "_identity_factory"): _IdentityRegridder(),
-            ("OCN", "ICE", "_identity_factory"): _IdentityRegridder(),
+            "OCN->ATM": _IdentityRegridder(),
+            "ATM->OCN": _IdentityRegridder(),
+            "ATM->LND": _IdentityRegridder(),
+            "OCN->ICE": _IdentityRegridder(),
         },
     )
     replace_runtime_topology_maps(
@@ -135,7 +144,10 @@ def _make_coupler(steps: int) -> Coupler:
     return coupler
 
 
-def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
+def _make_initial_state(
+    coupler: Coupler,
+    sea_surface_temperature: jax.Array,
+) -> RunState:
     zeros = jnp.zeros_like(sea_surface_temperature)
     temperature_2m = jnp.full_like(sea_surface_temperature, 288.15)
     components = (
@@ -202,22 +214,49 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RunState:
             sends=("ice_fraction",),
         ),
     )
-    return RunState._from_runtime(
-        component_names=("ATM", "OCN", "LND", "ICE"),
-        components=components,
-        fractional_masks=FieldStore.from_mapping(
-            {
-                "OCN|ATM|_identity_factory": jnp.ones_like(sea_surface_temperature),
-                "ATM|OCN|_identity_factory": jnp.ones_like(sea_surface_temperature),
-                "ATM|LND|_identity_factory": jnp.ones_like(sea_surface_temperature),
-                "OCN|ICE|_identity_factory": jnp.ones_like(sea_surface_temperature),
-            }
-        ),
+    state = coupler.initial_state()
+    for component_name, desired in zip(
+        ("ATM", "OCN", "LND", "ICE"),
+        components,
+        strict=True,
+    ):
+        current = state._component_state(component_name)
+        current = current.with_fields(
+            current.fields.replace_many(
+                {
+                    name: desired.fields.get(name)
+                    for name in current.fields.field_names
+                    if name in desired.fields
+                }
+            )
+        )
+        current = current.with_received(
+            current.received.replace_many(
+                {
+                    name: desired.received.get(name)
+                    for name in current.received.field_names
+                    if name in desired.received
+                }
+            )
+        )
+        current = current.with_sent(
+            current.sent.replace_many(
+                {
+                    name: desired.sent.get(name)
+                    for name in current.sent.field_names
+                    if name in desired.sent
+                }
+            )
+        )
+        state = state._with_component_state(component_name, current)
+    return state
+
+
+def _runtime_state_with_sst(coupler: Coupler, value: float) -> RunState:
+    return _make_initial_state(
+        coupler,
+        jnp.full((2, 2), value, dtype=jnp.float64),
     )
-
-
-def _runtime_state_with_sst(value: float) -> RunState:
-    return _make_initial_state(jnp.full((2, 2), value, dtype=jnp.float64))
 
 
 def _block_until_ready(value: RunState) -> RunState:
@@ -654,8 +693,8 @@ def test_period_file_io_stays_outside_scanned_chunk_body() -> None:
 def test_run_executes_pure_scanned_runtime_for_same_shapes_and_metadata() -> None:
     coupler = _make_coupler(steps=2)
 
-    first = _block_until_ready(coupler.run(_runtime_state_with_sst(288.15)))
-    second = _block_until_ready(coupler.run(_runtime_state_with_sst(291.15)))
+    first = _block_until_ready(coupler.run(_runtime_state_with_sst(coupler, 288.15)))
+    second = _block_until_ready(coupler.run(_runtime_state_with_sst(coupler, 291.15)))
 
     assert first._component_state("OCN").fields.get(
         "sea_surface_temperature"
@@ -680,8 +719,8 @@ def test_run_api_does_not_expose_state_donation() -> None:
 def test_run_preserves_runtime_treedef() -> None:
     coupler = _make_coupler(steps=1)
 
-    first_state = _runtime_state_with_sst(287.15)
-    second_state = _runtime_state_with_sst(292.15)
+    first_state = _runtime_state_with_sst(coupler, 287.15)
+    second_state = _runtime_state_with_sst(coupler, 292.15)
     first_final = _block_until_ready(coupler.run(first_state))
     second_final = _block_until_ready(coupler.run(second_state))
 
@@ -689,7 +728,7 @@ def test_run_preserves_runtime_treedef() -> None:
     assert _runtime_treedef_repr(second_state) == expected_treedef
     assert _runtime_treedef_repr(first_final) == expected_treedef
     assert _runtime_treedef_repr(second_final) == expected_treedef
-    assert first_final.component_names == first_state.component_names
+    assert tuple(first_final.components()) == tuple(first_state.components())
 
     for before, after in zip(first_state._components, first_final._components):
         assert after.fields.field_names == before.fields.field_names

@@ -1,3 +1,5 @@
+"""Canonical public constructor-only coupler assembly and run facade."""
+
 from __future__ import annotations
 
 import logging
@@ -23,7 +25,6 @@ from vercor._run_order import normalize_run_order as _normalize_run_order
 from vercor._runtime.contracts import (
     validate_exchange_fan_in as _validate_exchange_fan_in,
 )
-from vercor._runtime.exchange_keys import exchange_regrid_key as _exchange_regrid_key
 import vercor._runtime.facade as _runtime_facade
 from vercor._runtime.prepared import PreparedCoupling as _PreparedCoupling
 from vercor.runtime import RuntimeOptions as _RuntimeOptions
@@ -124,45 +125,32 @@ class Coupler:
 
         exchange_values = _materialize_configuration(exchanges, label="exchanges")
         normalized_exchanges: list[_Exchange] = []
-        topology_keys: set[tuple[str, str, str]] = set()
+        route_ids: set[str] = set()
         for index, exchange in enumerate(exchange_values):
             if not isinstance(exchange, _Exchange):
                 raise _CouplerError(
                     "exchanges contains invalid exchange at index "
                     f"{index}: expected Exchange, got {type(exchange).__name__}."
                 )
-            if not callable(exchange.regrid):
+            if exchange.route_id in route_ids:
                 raise _CouplerError(
-                    f"Exchange '{exchange.label}' regrid must be callable."
+                    f"Exchange route ID '{exchange.route_id}' must be unique; "
+                    "provide explicit distinct route_id values for routes with "
+                    "the same endpoints."
                 )
-            if exchange in normalized_exchanges:
-                raise _CouplerError(
-                    f"Duplicate exchange declaration '{exchange.label}'."
-                )
+            route_ids.add(exchange.route_id)
             if exchange.source not in declarations:
                 raise _CouplerError(
-                    f"Exchange '{exchange.label}' has unknown source component "
+                    f"Exchange '{exchange.route_id}' has unknown source component "
                     f"'{exchange.source}'."
                 )
             if exchange.target not in declarations:
                 raise _CouplerError(
-                    f"Exchange '{exchange.label}' has unknown target component "
+                    f"Exchange '{exchange.route_id}' has unknown target component "
                     f"'{exchange.target}'."
                 )
-            topology_key = (
-                exchange.source,
-                exchange.target,
-                _exchange_regrid_key(exchange),
-            )
-            if topology_key in topology_keys:
-                raise _CouplerError(
-                    f"Duplicate exchange topology key {topology_key!r}; merge "
-                    "field declarations into one Exchange or give the exchanges "
-                    "distinct regrid factories."
-                )
-            topology_keys.add(topology_key)
             normalized_exchanges.append(exchange)
-            self.logger.info(f"Added exchange {exchange.label}")
+            self.logger.info(f"Added exchange {exchange.route_id}")
         _validate_exchange_fan_in(normalized_exchanges)
 
         try:
@@ -326,7 +314,7 @@ class Coupler:
                 for name, component in self.components.items()
             )
             + "\n"
-            f"├── Exchanges: {', '.join(exchange.label for exchange in self.exchanges)}\n"
+            f"├── Exchanges: {', '.join(exchange.route_id for exchange in self.exchanges)}\n"
             f"└── Run order: {', '.join(self.run_order)}"
         )
 
