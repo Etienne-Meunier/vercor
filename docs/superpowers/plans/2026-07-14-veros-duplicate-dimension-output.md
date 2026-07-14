@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent the bundled Veros provider from sampling active variables with repeated dimension names or unavailable effective coordinates, so selected output from `run_jcm_with_veros.py` accumulates successfully.
+**Goal:** Prevent the bundled Veros provider from sampling active variables with repeated dimension names, unavailable effective coordinates, or adapter-coordinate name collisions, so selected output from `run_jcm_with_veros.py` accumulates successfully.
 
-**Architecture:** Keep provider sampling and coordinator-owned variable selection unchanged. Resolve each active Veros candidate's dimensions once during provider-universe enumeration, use that mapping for coordinate discovery, and omit candidates that violate `OutputVariable`'s unique-dimension invariant or require a non-timestep coordinate that the Veros adapter cannot construct.
+**Architecture:** Keep provider sampling and coordinator-owned variable selection unchanged. Resolve each active Veros candidate's dimensions once during provider-universe enumeration, use that mapping for coordinate discovery, and omit candidates that violate `OutputVariable`'s unique-dimension invariant, require a non-timestep coordinate that the Veros adapter cannot construct, or collide with the adapter-owned time coordinate.
 
 **Tech Stack:** Python 3.13, Veros 1.6.2, JAX, NumPy, pytest, Black, flake8, mypy.
 
@@ -16,6 +16,7 @@
 - Do not invent distinct names for `line_psin`'s two `isle` axes.
 - Do not invent definitions for the absent `tensor1` and `tensor2` coordinates.
 - Preserve variables with a `timesteps` dimension because extraction removes that axis before coordinate construction.
+- Reserve `VEROS_TIME_DIM` for the adapter-owned coordinate; do not emit native scalar `time` as a data variable.
 - Write the regression test before production code and observe the intended RED failure.
 - Use the direct `/Users/romannuterman/miniforge3/envs/scipy/bin/` executables because the local `conda run` path panics while loading Rattler.
 - Update `PROGRESS.md` after the tested implementation is complete.
@@ -31,7 +32,7 @@
 
 **Interfaces:**
 - Consumes: `_resolved_dims(variable: Any, settings: Any, name: str) -> tuple[str, ...]` and the insertion-ordered `veros_state.var_meta` mapping.
-- Produces: `_active_output_variable_names(veros_state: Any) -> tuple[str, ...]`, restricted to active, present, globally registered, non-coordinate variables whose resolved dimensions are unique and whose effective non-timestep coordinates are constructible.
+- Produces: `_active_output_variable_names(veros_state: Any) -> tuple[str, ...]`, restricted to active, present, globally registered, non-coordinate variables whose resolved dimensions are unique, whose effective non-timestep coordinates are constructible, and whose names do not collide with adapter-owned coordinates.
 
 - [ ] **Step 1: Add the real repeated-dimension candidate to the provider regression**
 
@@ -160,6 +161,52 @@ Run:
 
 Expected: PASS. The existing supported tuple remains unchanged, `sss_clim`, `line_psin`, and `Ai_ez` are absent, and the setup-local dimension resolver remains uncalled.
 
+- [ ] **Step 4e: Add the reserved native time collision to the provider regression**
+
+In the same test, add this fixture immediately after `Ai_ez`:
+
+```python
+    state.variables.time = np.asarray(259_200.0, dtype=np.float32)
+    state.var_meta["time"] = SimpleNamespace(active=True, dims=None)
+```
+
+After `assert "Ai_ez" not in frame.variables`, add:
+
+```python
+    assert "time" not in frame.variables
+    assert "time" in frame.coordinates
+```
+
+- [ ] **Step 4f: Run the reserved-name regression and verify RED**
+
+Run:
+
+```bash
+/Users/romannuterman/miniforge3/envs/scipy/bin/pytest tests/test_external_components_coverage.py::test_veros_output_provider_exposes_active_native_variable_universe -q
+```
+
+Expected: FAIL during frame construction with `ValueError: OutputFrame name 'time' is both a variable and coordinate`.
+
+- [ ] **Step 4g: Reserve the adapter-owned time coordinate name**
+
+Change coordinate-name construction to:
+
+```python
+    coordinate_names = {VEROS_TIME_DIM} | {
+        dim for dims in dimensions_by_name.values() for dim in dims
+    }
+```
+
+- [ ] **Step 4h: Run the complete provider regression and verify GREEN**
+
+Run:
+
+```bash
+/Users/romannuterman/miniforge3/envs/scipy/bin/pytest tests/test_external_components_coverage.py::test_veros_output_provider_exposes_active_native_variable_universe -q
+```
+
+Expected: PASS. Supported variables remain ordered; `sss_clim`, `line_psin`, `Ai_ez`, and native `time` are absent from variables; the adapter-owned `time` coordinate remains present.
+
 - [ ] **Step 5: Run focused Veros output coverage**
 
 Run:
@@ -214,10 +261,11 @@ After confirming the expected counts in Steps 5, 6, and 8, add this dated entry 
   native provider now resolves each supported active variable's dimensions
   once, excludes `line_psin`, whose repeated `("isle", "isle")` axes cannot
   satisfy the shared `OutputVariable` contract, and excludes four `Ai_*`
-  variables whose `tensor1` and `tensor2` coordinates are unavailable. The
+  variables whose `tensor1` and `tensor2` coordinates are unavailable, and
+  reserves `time` for the adapter-owned coordinate. The
   focused provider regression and Veros output selection pass 6/6; a bounded one-step
   `run_jcm_with_veros.py` execution passes; the fast suite passes 480 tests with
-  585 deselected, and the full suite passes all 1065 tests. Black, flake8, mypy,
+  586 deselected, and the full suite passes all 1066 tests. Black, flake8, mypy,
   and whitespace checks pass.
 ```
 

@@ -16,15 +16,20 @@ variables extract successfully, but coordinate construction exposes four more
 unrepresentable candidates: `Ai_ez`, `Ai_nz`, `Ai_bx`, and `Ai_by` use
 `tensor1` and `tensor2`, neither of which is registered as a Veros coordinate.
 Excluding those four leaves 113 variables whose extraction and coordinate
-construction both pass against the real Veros 1.6.2 state.
+construction pass against the real Veros 1.6.2 state. Complete frame
+construction then exposes one final collision: Veros's scalar native `time`
+data variable has the same name as the adapter-owned `time` coordinate.
+Excluding that reserved name leaves 112 native variables and eight coordinates;
+the complete frame, selected accumulator, and bounded example all pass.
 
 ## Intended Behavior
 
 The Veros provider universe contains only variables representable by the
 shared `OutputVariable` and NetCDF pipeline. Active variables with repeated
 dimension names or unavailable effective coordinate definitions are excluded
-before extraction. The configured period-variable selection remains
-coordinator-owned and unchanged.
+before extraction. Native data names that collide with adapter-owned
+coordinates are also excluded. The configured period-variable selection
+remains coordinator-owned and unchanged.
 
 The `run_jcm_with_veros.py` example must complete its first output accumulation
 without attempting to extract `line_psin`, while its requested `temp`, `salt`,
@@ -48,11 +53,18 @@ exist in `veros_state.variables`. This excludes the four `Ai_*` tensor
 variables without removing supported time-dependent fields such as `temp`,
 `salt`, `u`, `v`, `w`, and `psi`.
 
+The coordinate-name set always includes `VEROS_TIME_DIM` because
+`veros_average_coordinate_variables` creates that adapter-owned coordinate even
+though no native variable uses it as a dimension. This keeps the scalar Veros
+`time` value out of `OutputFrame.variables` and prevents a data-coordinate name
+collision.
+
 This filter belongs at provider-universe enumeration because:
 
 - the provider must return a valid complete frame before coordinator selection;
 - repeated dimensions violate the existing shared output contract;
 - missing tensor coordinates prevent construction of the complete frame;
+- the native `time` value collides with the adapter-owned time coordinate;
 - passing selections into providers would change the unified provider API;
 - renaming `line_psin` axes would invent semantics not supplied by Veros; and
 - weakening `OutputVariable` would affect every provider and downstream writer.
@@ -74,6 +86,7 @@ must verify that:
 
 - `line_psin` is absent from the provider frame;
 - `Ai_ez` is absent from the provider frame;
+- native `time` is absent from variables while the `time` coordinate remains;
 - all existing supported native variables remain present and ordered; and
 - the resulting frame satisfies the shared output contracts.
 
@@ -87,13 +100,15 @@ This change does not suppress extraction errors for otherwise representable
 variables. Invalid ranks, missing values, invalid metadata types, and failures
 from selected supported variables continue to surface as component-scoped
 provider errors. Only candidates known in advance to violate the unique-
-dimension or effective-coordinate invariants are excluded from the provider
-universe.
+dimension, effective-coordinate, or data-coordinate namespace invariants are
+excluded from the provider universe.
 
 ## Non-Goals
 
 - Exporting `line_psin` by inventing distinct island-axis names.
 - Exporting the four `Ai_*` variables by inventing tensor-coordinate metadata.
+- Exporting Veros's scalar native `time` value as a data variable alongside the
+  adapter-owned `time` coordinate.
 - Allowing repeated dimensions in `OutputVariable`.
 - Passing `PeriodOutput.variables` into native providers.
 - Refactoring the output coordinator or NetCDF writer.
