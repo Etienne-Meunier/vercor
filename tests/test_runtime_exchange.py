@@ -156,7 +156,6 @@ def test_runtime_dispatch_context_groups_exchanges_by_destination() -> None:
         regridders={},
         contracts={},
         dt_seconds=60.0,
-        settings=cast(Any, object()),
         constants=PhysicalConstants(),
         dtype=DTypePolicy(),
     )

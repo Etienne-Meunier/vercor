@@ -59,7 +59,9 @@ def vector(u: str, v: str) -> VectorField:
     return VectorField(u, v)
 
 
-def normalize_field_items(fields: Sequence[ExchangeField]) -> tuple[ExchangeField, ...]:
+def _normalize_field_items(
+    fields: Sequence[ExchangeField],
+) -> tuple[ExchangeField, ...]:
     """Validate and freeze exchange field declarations."""
 
     normalized: list[ExchangeField] = []
@@ -84,11 +86,11 @@ def normalize_field_items(fields: Sequence[ExchangeField]) -> tuple[ExchangeFiel
     return tuple(normalized)
 
 
-def flatten_field_items(fields: Sequence[ExchangeField]) -> list[str]:
+def _flatten_field_items(fields: Sequence[ExchangeField]) -> list[str]:
     """Return scalar field names from scalar and vector field declarations."""
 
     flattened: list[str] = []
-    for field in normalize_field_items(fields):
+    for field in _normalize_field_items(fields):
         if isinstance(field, VectorField):
             flattened.extend((field.u, field.v))
         else:

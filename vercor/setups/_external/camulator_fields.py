@@ -8,7 +8,7 @@ import torch
 
 from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_full
 from vercor.fluxes.vertical_coordinates import compute_hybrid_sigma_full_level_altitudes
-from vercor.host_arrays import runtime_array_to_host
+from vercor._host_arrays import runtime_array_to_host
 from vercor.physics import PhysicalConstants
 from vercor.setups._external.camulator_contracts import CAMULATOR_RUNTIME_FIELD_NAMES
 from vercor.setups._external.camulator_tensors import StateVariableAccessor

@@ -6,7 +6,7 @@ from jax import Array, lax
 import jax.numpy as jnp
 
 from vercor.dtypes import jax_full
-import vercor.interpolators._bilinear_geometry as _geometry
+import vercor._interpolators._bilinear_geometry as _geometry
 
 
 def valid_scalar_source_mask(source_values: Array, src_mask: Array | None) -> Array:

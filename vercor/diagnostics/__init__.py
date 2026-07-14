@@ -17,3 +17,7 @@ __all__ = [
     "safe_component_nanmean",
     "total_surface_temperature",
 ]
+
+for _module_name in ("fields", "plotting", "tables"):
+    globals().pop(_module_name, None)
+del _module_name

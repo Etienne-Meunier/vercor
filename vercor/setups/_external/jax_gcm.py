@@ -17,13 +17,16 @@ from vercor.output import OutputConfig
 from vercor.setups.config import JAXGCMConfig
 
 if TYPE_CHECKING:
-    from dinosaur.coordinate_systems import CoordinateSystem
-    from jcm.physics_interface import TerrainData
+    from dinosaur.coordinate_systems import CoordinateSystem as _CoordinateSystem
+    from jcm.physics_interface import TerrainData as _TerrainData
+else:
+    _CoordinateSystem = Any
+    _TerrainData = Any
 
 
 def make_jax_gcm(
-    coords: "CoordinateSystem",
-    terrain: "TerrainData",
+    coords: _CoordinateSystem,
+    terrain: _TerrainData,
     *,
     config: JAXGCMConfig | None = None,
 ) -> Component:

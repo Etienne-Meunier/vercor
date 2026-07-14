@@ -9,6 +9,36 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 4 completed on 2026-07-14 from base commit
+  `638cd7a`. The primary package root is now exactly `Clock`, `Coupler`,
+  `Exchange`, `RectilinearGrid`, `RunState`, and `RuntimeOptions`; advanced
+  component/runtime/physics/grid/output/setup contracts use their canonical
+  owner modules. Assembly is constructor-only with owned immutable collection
+  snapshots for components, exchanges, and run order; read-only public views
+  retain the original author objects, which are treated as immutable
+  configuration. Primary
+  `vercor.coupling`, `vercor.settings`, `vercor.physical_constants`,
+  `vercor.host_arrays`, `vercor.pytree`, and `vercor.interpolators` are removed;
+  their retained implementations are either canonical (`vercor.coupler`,
+  `vercor.physics`) or private (`vercor._host_arrays`, `vercor._pytree`,
+  `vercor._interpolators`). Runtime setup/step/topology contexts and private
+  preparation no longer carry Settings or a reflective configuration snapshot.
+  An empty run order is explicit setup-only behavior and does not synthesize an
+  execution order. Current output remains on `OutputConfig`/`PeriodOutput`,
+  `Coupler.run()`, and `Coupler.write_outputs()`; current custom backends remain
+  on `RuntimeOptions.execution` plus `ExecutionBackend.run`. Later workflow,
+  route-ID, unified output-provider, and `vercor.compat.v3` APIs are not yet
+  implemented. Final review closed imported-object/module namespace leaks,
+  public annotation resolution, eager graph validation, strict run-order
+  typing, installed-wheel manifest coverage, and documentation ownership
+  accuracy. The import-order audit covers all 149 production Python modules
+  exactly once, with no later-layer edges and only the two documented strongly
+  connected pairs. Independent test-quality, gradient, code-quality, and
+  documentation reviews are clean. Black, strict flake8, full mypy (230
+  files), compileall, and whitespace gates pass; the fast suite passes 417
+  tests with 522 deselected, and the full suite passes 939 tests with only the
+  two known third-party `FutureWarning`s. The Task 4 commit title is
+  `refactor!: simplify the VerCOR public assembly API`.
 - VerCOR 4 milestone 1 Task 3 protocol-first component authoring completed
   locally on 2026-07-14. `vercor.components.Component` is now the single
   runtime-checkable structural protocol (`name`, `grid`, `spec`, `step`), with
@@ -52,8 +82,8 @@ historical commands, failure messages, or detailed validation notes.
   JAXGCM, CAMulator, Veros, component-authoring, and exchange-topology paths now
   receive physics and precision separately; production contains zero direct
   physical reads from `Settings` and zero `Settings` arguments to dtype
-  helpers. Legacy `Settings` physical metadata/root exports remain only for the
-  sequenced compatibility/removal tasks. TDD began with 7/7 intended missing-
+  helpers. Task 4 has since removed the primary Settings and legacy physical-
+  constants modules; future v3 compatibility remains explicitly deferred. TDD began with 7/7 intended missing-
   module failures; the later mixed-precision regression also failed before the
   runtime boundary cast. Final focused physics tests pass 8/8, the requested
   precision-owner cluster passes 63/63, the fast suite passes 467 selected

@@ -9,6 +9,7 @@ from tests._architecture_support import (
     package_import_cycles,
     source_for,
 )
+from vercor.components import Component
 
 
 def _imported_names_from(path: str, module: str) -> set[str]:
@@ -128,7 +129,7 @@ def test_runtime_lifecycle_bridge_is_private_binding_surface() -> None:
         "validate_runtime_state",
     )
     for method_name in public_bridge_names:
-        assert not hasattr(__import__("vercor").Component, method_name)
+        assert not hasattr(Component, method_name)
 
     assert not Path("vercor/components/_lifecycle_api.py").exists()
     assert "def _prefill_runtime_state_fields(" in adapter_source

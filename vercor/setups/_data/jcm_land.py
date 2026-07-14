@@ -12,16 +12,19 @@ from vercor.grid_masks import create_lnd_mask_from_ocn
 from vercor.setups._data._field_helpers import canonicalize_surface_field
 
 if TYPE_CHECKING:
-    from dinosaur.coordinate_systems import CoordinateSystem
-    from jcm.forcing import ForcingData
+    from dinosaur.coordinate_systems import CoordinateSystem as _CoordinateSystem
+    from jcm.forcing import ForcingData as _ForcingData
+else:
+    _CoordinateSystem = Any
+    _ForcingData = Any
 
 _JCM_LAND_INPUT_NAMES = ("latent_heat_flux", "sensible_heat_flux")
 _JCM_LAND_FIELD_NAMES = ("land_surface_temperature", "soil_moisture")
 
 
 def make_jcm_land(
-    jcm_coords: "CoordinateSystem | Any",
-    jcm_forcing: "ForcingData | Any",
+    jcm_coords: _CoordinateSystem | Any,
+    jcm_forcing: _ForcingData | Any,
     ocn_grid: RectilinearGrid,
     name: str = "LND",
 ) -> DataComponent:

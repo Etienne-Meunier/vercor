@@ -34,7 +34,7 @@ from vercor.components._adapter import normalize_component, prepare_component
 from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
-from vercor.fields import flatten_field_items
+from vercor.fields import _flatten_field_items
 from vercor.output._component_adapter import (
     _ComponentOutputAdapter as ComponentOutputAdapter,
 )
@@ -50,7 +50,6 @@ from vercor._runtime.component_state import create_runtime_component_state
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
 from vercor._runtime.validation import validate_exchange_fields_declared
-from vercor.settings import Settings
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 
@@ -107,7 +106,6 @@ def _make_coupler(start: datetime) -> SetupContext:
         start=start,
         dt_seconds=21600,
         run_order=(),
-        settings=Settings(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -1278,7 +1276,6 @@ def test_camulator_land_stores_jax_runtime_arrays(
         ),
         StepContext(
             dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
-            settings=coupler.settings,
             time=start,
             logger=coupler.logger,
         ),
@@ -1328,7 +1325,7 @@ def test_camulator_land_declares_radiation_exchange_inputs(
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([0.0, 1.0]),
     )
-    radiation_fields = tuple(flatten_field_items(ATMOSPHERE_TO_LAND_RADIATION_FIELDS))
+    radiation_fields = tuple(_flatten_field_items(ATMOSPHERE_TO_LAND_RADIATION_FIELDS))
     atmosphere = DataComponent(
         name="ATM",
         grid=grid,
@@ -1509,7 +1506,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     component_state = _runtime_component_state("ATM", component._data)
     step_context = StepContext(
         dt_seconds=float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
-        settings=Settings(),
         time=start,
         logger=cast(Any, _RecordingLogger()),
     )

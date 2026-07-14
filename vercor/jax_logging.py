@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging  # noqa: F401  # Runtime namespace for resolved class annotations.
+
 from vercor._logging.callback import JaxCallbackLogger, setup_logger
 from vercor._logging.config import (
     CANONICAL_LOG_DATE_FORMAT,
@@ -15,6 +17,11 @@ from vercor._logging.protocols import (
     effective_log_level,
     logger_enabled_for,
 )
+
+# These implementations live in a private package, but their supported public
+# identity and resolved annotation owner is this module.
+setattr(JaxCallbackLogger, "__module__", __name__)
+setattr(LoggerLike, "__module__", __name__)
 
 __all__ = [
     "CANONICAL_LOG_DATE_FORMAT",

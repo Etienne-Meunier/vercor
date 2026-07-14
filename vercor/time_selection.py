@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from vercor.calendar import ModelDateTime
+from vercor.calendar import ModelDateTime as _ModelDateTime
+
+__all__ = ["datetime_to_seconds_in_year", "get_periodic_interval"]
 
 
 def get_periodic_interval(
@@ -18,7 +20,7 @@ def get_periodic_interval(
     return (t_idx_1, weight_1), (t_idx_2, weight_2)
 
 
-def datetime_to_seconds_in_year(dt: datetime | ModelDateTime) -> float:
+def datetime_to_seconds_in_year(dt: datetime | _ModelDateTime) -> float:
     """Convert a model time to elapsed seconds since the start of its year."""
 
     if isinstance(dt, datetime):

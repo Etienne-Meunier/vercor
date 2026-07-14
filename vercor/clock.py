@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from math import floor
 from typing import Iterator, Literal
@@ -12,7 +12,7 @@ CalendarType = Literal["gregorian", "noleap", "360_day"]
 YearType = Literal["leap", "noleap", "360"]
 
 
-@dataclass(init=False)
+@dataclass(frozen=True, init=False)
 class Clock:
     """Calendar-aware clock with configurable synthetic year/month structure.
 
@@ -27,6 +27,12 @@ class Clock:
     dt_seconds: float
     steps: int
     calendar: CalendarType
+    _datetime_class: type[_calendar.DateTime365] | type[_calendar.DateTime360] = field(
+        init=False, repr=False, compare=False
+    )
+    _start_day_of_year: int = field(init=False, repr=False, compare=False)
+    _start_day_index: int = field(init=False, repr=False, compare=False)
+    _start_seconds_of_day: float = field(init=False, repr=False, compare=False)
 
     def __init__(
         self,
@@ -42,10 +48,10 @@ class Clock:
                 "calendar must be one of: 'gregorian', 'noleap', '360_day'"
             )
 
-        self.start = start
-        self.dt_seconds = dt_seconds
-        self.steps = steps
-        self.calendar = calendar
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "dt_seconds", dt_seconds)
+        object.__setattr__(self, "steps", steps)
+        object.__setattr__(self, "calendar", calendar)
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -57,21 +63,23 @@ class Clock:
 
         forcing_year_type = _forcing_year_type_for_calendar(self.calendar)
         if forcing_year_type in ("noleap", "360"):
-            self._datetime_class: (
-                type[_calendar.DateTime365] | type[_calendar.DateTime360]
-            )
+            datetime_class: type[_calendar.DateTime365] | type[_calendar.DateTime360]
             if forcing_year_type == "noleap":
-                self._datetime_class = _calendar.DateTime365
+                datetime_class = _calendar.DateTime365
             else:
-                self._datetime_class = _calendar.DateTime360
+                datetime_class = _calendar.DateTime360
 
-            self._start_day_of_year = self._day_of_year_for_start(self.start)
-            self._start_day_index = self._start_day_of_year - 1
-            self._start_seconds_of_day = (
+            start_day_of_year = self._day_of_year_for_start(self.start)
+            object.__setattr__(self, "_datetime_class", datetime_class)
+            object.__setattr__(self, "_start_day_of_year", start_day_of_year)
+            object.__setattr__(self, "_start_day_index", start_day_of_year - 1)
+            object.__setattr__(
+                self,
+                "_start_seconds_of_day",
                 self.start.hour * 3600
                 + self.start.minute * 60
                 + self.start.second
-                + self.start.microsecond / 1_000_000.0
+                + self.start.microsecond / 1_000_000.0,
             )
 
     def _day_of_year_for_start(self, start: datetime) -> int:

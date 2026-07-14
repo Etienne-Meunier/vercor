@@ -43,7 +43,6 @@ def step_runtime_component(
     )
     step_context = StepContext(
         dt_seconds=dispatch_context.dt_seconds,
-        settings=dispatch_context.settings,
         constants=dispatch_context.constants,
         dtype=dispatch_context.dtype,
         time=time,

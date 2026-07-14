@@ -62,7 +62,6 @@ from vercor.runtime import RuntimeOptions
 from vercor.setups import VerosConfig
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
-from vercor.settings import Settings
 from vercor.state import ComponentState, RunState
 
 
@@ -272,13 +271,11 @@ def _make_coupler(
     *,
     dt_seconds: float,
     run_order: list[str],
-    settings: Settings | None = None,
 ) -> SetupContext:
     return SetupContext(
         start=datetime(2000, 1, 1),
         dt_seconds=dt_seconds,
         logger=cast(Any, _RecordingLogger()),
-        settings=settings or Settings(),
         run_order=tuple(run_order),
     )
 
@@ -924,7 +921,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
         fake_record_jax_gcm_period_output,
     )
 
-    coupler = _make_coupler(dt_seconds=3600.0, run_order=["ATM"], settings=Settings())
+    coupler = _make_coupler(dt_seconds=3600.0, run_order=["ATM"])
     runtime_data = dict(component.data)
     runtime_incoming: dict[str, Any] = {}
     runtime_outgoing: dict[str, Any] = {}
@@ -952,7 +949,6 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     step_context = StepContext(
         dt_seconds=timedelta(days=1).total_seconds(),
-        settings=coupler.settings,
         time=datetime(2000, 1, 2),
         logger=coupler.logger,
     )
@@ -997,7 +993,10 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     assert_allclose_compact(data.get("sensible_heat_flux"), np.full((2, 2), -10.0))
     assert_allclose_compact(
         data.get("latent_heat_flux"),
-        np.full((2, 2), -2.0 / 1e3 * coupler.settings.latvap * 2.0),
+        np.full(
+            (2, 2),
+            -2.0 / 1e3 * coupler.constants.latent_heat_of_vaporization * 2.0,
+        ),
     )
     assert_allclose_compact(
         data.get("pressure"),
@@ -1010,15 +1009,16 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     )
     assert_allclose_compact(
         data.get("density"),
-        coupler.settings.mwdair
-        / coupler.settings.rgas
+        coupler.constants.dry_air_molecular_weight
+        / coupler.constants.universal_gas_constant
         * np.full((2, 2), 80000.0)
         / np.asarray([[284.0, 286.0], [285.0, 287.0]]),
     )
     assert_allclose_compact(
         data.get("potential_temperature"),
         np.asarray([[284.0, 286.0], [285.0, 287.0]])
-        * (coupler.settings.p0 / 80000.0) ** coupler.settings.cappa,
+        * (coupler.constants.reference_pressure / 80000.0)
+        ** coupler.constants.dry_air_kappa,
     )
     assert_allclose_compact(data.get("model_level_height"), np.full((2, 2), 150.0))
     assert not written
@@ -2243,7 +2243,6 @@ def test_veros_initialize_spinup_follows_enabled_only(
         latitude=np.arange(4.0),
     )
     component.data = {}
-    component.settings = Settings()
     component.output_adapter = _make_veros_output_adapter()
 
     step_calls = {"count": 0}
@@ -2289,7 +2288,6 @@ def test_veros_initialize_spinup_accumulates_selected_outputs(
         latitude=np.arange(4.0),
     )
     component.data = {}
-    component.settings = Settings()
     component.output_adapter = _make_veros_output_adapter()
 
     accumulated_states: list[Any] = []
@@ -2430,7 +2428,6 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         latitude=np.arange(4.0),
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
-    component.settings = Settings()
 
     set_calls: list[tuple[str, np.ndarray]] = []
 
@@ -2463,7 +2460,6 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component_state = _runtime_component_state("OCN", component.data)
     step_context = StepContext(
         dt_seconds=20.0,
-        settings=coupler.settings,
         time=datetime(2000, 1, 1),
         logger=coupler.logger,
     )
@@ -2555,7 +2551,6 @@ def test_veros_step_records_selected_outputs_and_writes_on_gate(
 
     context = StepContext(
         dt_seconds=86400.0,
-        settings=Settings(),
         time=datetime(2000, 1, 2),
         logger=None,
     )
@@ -2612,7 +2607,6 @@ def test_veros_step_skips_output_when_no_variables_selected(
 
     context = StepContext(
         dt_seconds=86400.0,
-        settings=Settings(),
         time=datetime(2000, 1, 2),
         logger=None,
     )
@@ -2639,7 +2633,6 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
         latitude=np.arange(4.0),
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
-    component.settings = Settings()
 
     set_calls: list[tuple[str, np.ndarray]] = []
 
@@ -2668,7 +2661,6 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     component_state = _runtime_component_state("OCN", component.data)
     step_context = StepContext(
         dt_seconds=20.0,
-        settings=coupler.settings,
         time=datetime(2000, 1, 1),
         logger=coupler.logger,
     )

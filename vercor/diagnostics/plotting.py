@@ -12,7 +12,7 @@ from vercor.diagnostics.fields import (
     component_plot_field,
     component_plot_scalar,
 )
-from vercor.host_arrays import runtime_array_to_host
+from vercor._host_arrays import runtime_array_to_host
 from vercor.state import ComponentState
 
 

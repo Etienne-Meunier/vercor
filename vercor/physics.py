@@ -8,16 +8,19 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
-from vercor.dtypes import DTypePolicy, as_jax_real_array
-from vercor.pytree import PyTreeNodeMixin
-from vercor.types import RuntimeArray
+from vercor.dtypes import (
+    DTypePolicy as _DTypePolicy,
+    as_jax_real_array as _as_jax_real_array,
+)
+from vercor._pytree import PyTreeNodeMixin as _PyTreeNodeMixin
+from vercor.types import RuntimeArray as _RuntimeArray
 
-PhysicalValue = float | RuntimeArray
+PhysicalValue = float | _RuntimeArray
 
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, kw_only=True)
-class PhysicalConstants(PyTreeNodeMixin):
+class PhysicalConstants(_PyTreeNodeMixin):
     """Immutable JAX-traced physical values shared by coupled components.
 
     Values use SI units and intentionally carry no dtype policy. The enclosing
@@ -143,14 +146,14 @@ class PhysicalConstants(PyTreeNodeMixin):
 
 def _physical_constants_for_dtype(
     constants: PhysicalConstants,
-    dtype: DTypePolicy,
+    dtype: _DTypePolicy,
 ) -> PhysicalConstants:
     """Cast traced constants at the runtime precision boundary."""
 
     return cast(
         PhysicalConstants,
         jax.tree_util.tree_map(
-            lambda value: as_jax_real_array(value, dtype),
+            lambda value: _as_jax_real_array(value, dtype),
             constants,
         ),
     )

@@ -3,7 +3,7 @@ from typing import Any, Optional
 from vercor.exceptions import RegridderError
 from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges, grids_identical
-from vercor.interpolators.conservative_remap_rectilinear import (
+from vercor._interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor._regridders.base import _BaseRegridder

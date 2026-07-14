@@ -7,7 +7,7 @@ import pytest
 
 from tests.assertions import assert_allclose_compact, assert_array_equal_compact
 from vercor.dtypes import jax_index_dtype
-from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
 
 def _scalar_interp(

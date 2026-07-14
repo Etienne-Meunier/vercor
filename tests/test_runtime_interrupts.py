@@ -20,6 +20,7 @@ from tests._component_test_support import (
 )
 from vercor.coupler import Coupler
 from vercor.components.contexts import StepContext
+from vercor.runtime import ExecutionContext, RuntimeDriver
 from vercor._runtime.interrupts import (
     RuntimeInterruptController,
     RuntimeInterrupted,
@@ -190,8 +191,8 @@ def test_custom_backend_signal_aborts_through_shared_controller() -> None:
             self,
             state: vercor.RunState,
             *,
-            context: vercor.ExecutionContext,
-            driver: vercor.RuntimeDriver,
+            context: ExecutionContext,
+            driver: RuntimeDriver,
         ) -> vercor.RunState:
             _ = context, driver
             signal.raise_signal(signal.SIGINT)

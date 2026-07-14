@@ -6,11 +6,11 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 from vercor.grids import RectilinearGrid
-from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
-from vercor.interpolators.conservative_remap_rectilinear import (
+from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor._interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
-from vercor.pytree import PyTreeNodeMixin
+from vercor._pytree import PyTreeNodeMixin
 from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
 from vercor._runtime.stores import FieldStore

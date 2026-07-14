@@ -13,6 +13,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_PATH = PROJECT_ROOT / "docs" / "api-architecture-review.md"
 README_PATH = PROJECT_ROOT / "README.md"
+DESIGN_PATH = PROJECT_ROOT / "DESIGN.md"
 PROGRESS_PATH = PROJECT_ROOT / "PROGRESS.md"
 DEPENDENCIES_PATH = PROJECT_ROOT / "DEPENDENCIES.md"
 V3_MANIFEST_PATH = PROJECT_ROOT / "tests/contracts/vercor-3.1.1-public-api.json"
@@ -284,20 +285,35 @@ def test_docs_bound_custom_backend_schema_claim_to_implemented_checks() -> None:
 @pytest.mark.fast_always
 def test_readme_distinguishes_configuration_and_assembly_ownership() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
+    normalized = _normalized(readme)
 
     for statement in (
-        "`Settings` remains transitional mutable non-physics",
         "`PhysicalConstants` is the frozen traced PyTree owner",
         "`RuntimeOptions` owns static policy",
+        "`ComponentSpec`",
+        "constructor-only",
+        (
+            "package root intentionally exports exactly `Clock`, `Coupler`, "
+            "`Exchange`, `RectilinearGrid`, `RunState`, and `RuntimeOptions`"
+        ),
+        (
+            "There is no primary `Settings`, `vercor.physical_constants`, or "
+            "`vercor.coupling` module"
+        ),
+    ):
+        assert statement in normalized, statement
+
+    for stale_statement in (
+        "`Settings` remains transitional mutable non-physics",
         "Until Task 4 makes assembly constructor-only",
         "`CouplerSpec` for reusable recipes",
         "mutators for incremental assembly",
     ):
-        assert statement in readme, statement
+        assert stale_statement not in normalized, stale_statement
 
 
 @pytest.mark.fast_always
-def test_repository_memory_records_vercor_3_1_1_ownership() -> None:
+def test_repository_memory_preserves_v3_history_and_records_v4_ownership() -> None:
     progress = PROGRESS_PATH.read_text(encoding="utf-8")
     dependencies = DEPENDENCIES_PATH.read_text(encoding="utf-8")
 
@@ -314,26 +330,72 @@ def test_repository_memory_records_vercor_3_1_1_ownership() -> None:
     ):
         assert evidence in _normalized(progress)
 
+    current_memory = _normalized(progress + "\n" + dependencies)
     for ownership in (
-        "`ComponentSpec.lifecycle`",
-        "`validate_component_contract()`",
-        "fan-in rejection",
-        "legal receive/send overlap",
-        "shape-preserving replacement",
-        "custom-backend result-schema validation",
-        "concrete finite numeric/bool topology masks",
-        "tests/fixtures/public_plugin_3_0/",
-        "90% branch-coverage gate",
-        "structural configuration snapshot",
-        "does not re-execute setup",
-        "array identity, field name, shape, and dtype",
-        "lifecycle/spec callables are identity-only",
-        "hidden closure/global/default mutable state is outside the supported configuration contract",
+        "VerCOR 4 milestone 1 Task 4",
+        (
+            "primary package root is now exactly `Clock`, `Coupler`, `Exchange`, "
+            "`RectilinearGrid`, `RunState`, and `RuntimeOptions`"
+        ),
+        "Assembly is constructor-only",
+        "canonical owner modules",
+        "`vercor._host_arrays`, `vercor._pytree`, `vercor._interpolators`",
     ):
-        assert ownership in dependencies, ownership
+        assert ownership in current_memory, ownership
+
+    for private_owner in (
+        "`vercor/_host_arrays.py`",
+        "`vercor/_pytree.py`",
+        "`vercor/_interpolators/",
+    ):
+        assert private_owner in dependencies, private_owner
+
+    for removed_public_owner in (
+        "`vercor/coupling.py`",
+        "`vercor/host_arrays.py`",
+        "`vercor/interpolators/",
+        "`vercor/physical_constants.py`",
+        "`vercor/pytree.py`",
+        "`vercor/settings.py`",
+    ):
+        assert removed_public_owner not in dependencies, removed_public_owner
+
     assert "fingerprint" not in dependencies.casefold()
     overclaim = "defaults, keyword defaults, closure cells, partial arguments, and bound-owner state"
     assert overclaim not in REVIEW_PATH.read_text(encoding="utf-8") + dependencies
+
+
+@pytest.mark.fast_always
+def test_task4_documentation_uses_live_ownership_and_dependency_order() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+    design = DESIGN_PATH.read_text(encoding="utf-8")
+    progress = PROGRESS_PATH.read_text(encoding="utf-8")
+    dependencies = DEPENDENCIES_PATH.read_text(encoding="utf-8")
+
+    canonical_owner_paragraph = readme.split("Configuration currently", maxsplit=1)[0]
+    assert "`vercor.physics`" in canonical_owner_paragraph
+    assert "copy-owned components" not in progress
+    assert "copy-owns complete component" not in design
+    assert "original author objects" in design + progress
+    assert "provider-registered" not in dependencies
+    assert "component-registered snapshot-writer" in dependencies
+    assert dependencies.count("`vercor/coupler.py`") == 1
+
+    def entry_number(marker: str) -> int:
+        for line in dependencies.splitlines():
+            match = re.match(r"(\d+)\. ", line)
+            if match is not None and marker in line:
+                return int(match.group(1))
+        raise AssertionError(f"missing dependency entry for {marker}")
+
+    for dependency, consumer in (
+        ("`vercor/clock.py`", "`vercor/runtime/__init__.py`"),
+        ("`vercor/_regridders/bilinear.py`", "`vercor/regridding.py`"),
+        ("`vercor/setups/_jcm.py`", "`vercor/setups/__init__.py`"),
+        ("`vercor/_runtime/facade.py`", "`vercor/coupler.py`"),
+        ("`vercor/coupler.py`", "`vercor/__init__.py`"),
+    ):
+        assert entry_number(dependency) < entry_number(consumer)
 
 
 def _python_fences(markdown: str) -> tuple[str, ...]:

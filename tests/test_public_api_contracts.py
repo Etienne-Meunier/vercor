@@ -14,9 +14,28 @@ import vercor
 import vercor.output
 import vercor.setups
 from tests._coverage_support import make_test_grid
-from vercor import Clock, Coupler, DataComponent, RectilinearGrid
-from vercor.output import OutputVariable
+from vercor import Clock, Coupler, RectilinearGrid
+from vercor.components import (
+    CallableComponent,
+    Component,
+    ComponentSpec,
+    DataComponent,
+    LifecycleHooks,
+    PrefillContext,
+    PrefillResult,
+    SetupResult,
+    StepResult,
+    ValidationContext,
+)
+from vercor.dtypes import DTypePolicy
+from vercor.output import (
+    OutputConfig,
+    OutputVariable,
+    PeriodOutput,
+    SnapshotContext,
+)
 from vercor.regridding import bilinear
+from vercor.state import ComponentState, RunState
 
 
 @pytest.mark.fast_always
@@ -65,15 +84,16 @@ def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
     state = coupler.initial_state()
     view = state.component("ATM")
 
-    assert isinstance(view, vercor.ComponentState)
+    assert isinstance(view, ComponentState)
     assert view.field("temperature").shape == component.grid.shape
     assert view.field("temperature", scope="state").shape == component.grid.shape
     assert tuple(view.fields()) == ("temperature",)
-    assert isinstance(state.components()["ATM"], vercor.ComponentState)
+    assert isinstance(state.components()["ATM"], ComponentState)
     assert not hasattr(state, "get_component_state")
     assert not hasattr(view, "data")
     assert not hasattr(vercor, "ComponentView")
-    assert "ComponentState" in vercor.__all__
+    assert "ComponentState" not in vercor.__all__
+    assert ComponentState.__module__ == "vercor.state"
 
 
 @pytest.mark.fast_always
@@ -89,12 +109,12 @@ def test_coupler_uses_initial_state_name() -> None:
         run_order=("ATM",),
     )
 
-    assert isinstance(coupler.initial_state(), vercor.RunState)
-    assert isinstance(coupler.initial_state(prefill_missing=True), vercor.RunState)
+    assert isinstance(coupler.initial_state(), RunState)
+    assert isinstance(coupler.initial_state(prefill_missing=True), RunState)
     with pytest.raises(TypeError):
         coupler.initial_state(prefill=True)  # type: ignore[call-arg]
     assert not hasattr(Coupler, "state")
-    assert isinstance(coupler.initial_state().component("ATM"), vercor.ComponentState)
+    assert isinstance(coupler.initial_state().component("ATM"), ComponentState)
 
 
 @pytest.mark.fast_always
@@ -129,7 +149,7 @@ def test_regridder_public_grid_name_is_target_only() -> None:
 def test_output_public_api_is_spec_not_mutable_adapter() -> None:
     calls: list[tuple[object, ...]] = []
 
-    def writer(context: vercor.SnapshotContext) -> None:
+    def writer(context: SnapshotContext) -> None:
         calls.append((context.state, context.output_path, context.time, context.logger))
 
     assert hasattr(vercor.output, "OutputConfig")
@@ -167,11 +187,11 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
 def test_component_constructors_accept_component_spec_only() -> None:
     grid = make_test_grid(name="v1-spec-only")
 
-    component = vercor.CallableComponent(
+    component = CallableComponent(
         "OCN",
         grid,
         lambda fields: {"sea_surface_temperature": fields["temperature"]},
-        spec=vercor.ComponentSpec(
+        spec=ComponentSpec(
             inputs=("temperature",),
             outputs=("sea_surface_temperature",),
             initial_fields={
@@ -184,7 +204,7 @@ def test_component_constructors_accept_component_spec_only() -> None:
         "ATM",
         grid,
         {"temperature": 280.0},
-        spec=vercor.ComponentSpec(outputs=("temperature",)),
+        spec=ComponentSpec(outputs=("temperature",)),
     )
 
     assert component.spec.inputs == ("temperature",)
@@ -192,7 +212,7 @@ def test_component_constructors_accept_component_spec_only() -> None:
     assert forcing.spec.outputs == ("temperature",)
 
     with pytest.raises(TypeError, match="inputs"):
-        vercor.CallableComponent(  # type: ignore[call-arg]
+        CallableComponent(  # type: ignore[call-arg]
             "OLD",
             grid,
             lambda fields: {},
@@ -260,9 +280,7 @@ def test_public_component_contracts_do_not_expose_runtime_implementation_types()
         signature(contracts_module.ValidationContext).parameters["state"].annotation
         == "ComponentState"
     )
-    assert (
-        get_type_hints(components_module.ComponentSpec)["output"] is vercor.OutputConfig
-    )
+    assert get_type_hints(components_module.ComponentSpec)["output"] is OutputConfig
 
 
 @pytest.mark.fast_always
@@ -271,7 +289,7 @@ def test_validation_context_runtime_type_hints_resolve_public_state() -> None:
 
     type_hints = get_type_hints(contracts_module.ValidationContext)
 
-    assert type_hints["state"] is vercor.ComponentState
+    assert type_hints["state"] is ComponentState
 
 
 @pytest.mark.fast_always
@@ -292,7 +310,7 @@ def test_public_component_step_type_hints_resolve_at_runtime() -> None:
 def test_data_component_rejects_active_step_factory() -> None:
     assert not hasattr(DataComponent, "from_step")
     assert not hasattr(DataComponent, "from_fields")
-    assert vercor.CallableComponent is not DataComponent
+    assert CallableComponent is not DataComponent
 
 
 @pytest.mark.fast_always
@@ -315,25 +333,23 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     events: list[str] = []
 
     def prefill(
-        component: vercor.Component,
-        context: vercor.PrefillContext,
-    ) -> vercor.PrefillResult:
+        component: Component,
+        context: PrefillContext,
+    ) -> PrefillResult:
         events.append(f"prefill:{component.name}:{context.receives}:{context.sends}")
-        return vercor.PrefillResult(
-            fields={"humidity": jnp.full(component.grid.shape, 0.5)}
-        )
+        return PrefillResult(fields={"humidity": jnp.full(component.grid.shape, 0.5)})
 
-    def writer(context: vercor.SnapshotContext) -> None:
+    def writer(context: SnapshotContext) -> None:
         events.append(f"snapshot:{context.component.name}:{context.output_path.name}")
 
-    spec = vercor.ComponentSpec(
+    spec = ComponentSpec(
         inputs=("temperature", "temperature"),
         outputs=("sea_surface_temperature",),
         initial_fields={"temperature": 280.0, "sea_surface_temperature": 281.0},
-        lifecycle=vercor.LifecycleHooks(prefill=prefill),
-        output=vercor.OutputConfig(snapshot_writer=writer),
+        lifecycle=LifecycleHooks(prefill=prefill),
+        output=OutputConfig(snapshot_writer=writer),
     )
-    component = vercor.CallableComponent(
+    component = CallableComponent(
         "OCN",
         grid,
         lambda fields: {"sea_surface_temperature": fields["temperature"]},
@@ -345,9 +361,11 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     assert spec.inputs == ("temperature",)
     assert spec.outputs == ("sea_surface_temperature",)
     assert spec.lifecycle.prefill is prefill
-    assert "ComponentSpec" in vercor.__all__
-    assert "LifecycleHooks" in vercor.__all__
-    assert "OutputConfig" in vercor.__all__
+    assert "ComponentSpec" not in vercor.__all__
+    assert "LifecycleHooks" not in vercor.__all__
+    assert "OutputConfig" not in vercor.__all__
+    assert ComponentSpec.__module__ == "vercor.components.contracts"
+    assert OutputConfig.__module__ == "vercor.output"
     assert "FieldSpec" not in vercor.__all__
     assert "ComponentHooks" not in vercor.__all__
     assert "OutputSpec" not in vercor.__all__
@@ -357,7 +375,7 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     assert not hasattr(component, "field_spec")
 
     with pytest.raises(TypeError, match="hooks"):
-        vercor.ComponentSpec(hooks=vercor.LifecycleHooks())  # type: ignore[call-arg]
+        ComponentSpec(hooks=LifecycleHooks())  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -399,8 +417,8 @@ def test_state_views_use_domain_scopes_not_runtime_store_names() -> None:
 
 @pytest.mark.fast_always
 def test_output_and_setup_configs_use_final_names() -> None:
-    period = vercor.PeriodOutput(frequency="month", variables=("temp",))
-    output = vercor.OutputConfig(period=period)
+    period = PeriodOutput(frequency="month", variables=("temp",))
+    output = OutputConfig(period=period)
     spinup = vercor.setups.Spinup(enabled=True)
     veros = vercor.setups.VerosConfig(spinup=spinup, output=output)
     jax_gcm = vercor.setups.JAXGCMConfig(spinup=spinup, output=output)
@@ -408,8 +426,8 @@ def test_output_and_setup_configs_use_final_names() -> None:
         config_path="config.yml", spinup=spinup, output=output
     )
 
-    assert vercor.PeriodOutput().frequency == "step"
-    assert vercor.OutputConfig().period is None
+    assert PeriodOutput().frequency == "step"
+    assert OutputConfig().period is None
     assert output.period is period
     assert spinup.duration.days == 2
     assert veros.output.period is period
@@ -427,28 +445,26 @@ def test_output_and_setup_configs_use_final_names() -> None:
 @pytest.mark.fast_always
 def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     grid = make_test_grid(name="v1-snapshot-context")
-    contexts: list[vercor.SnapshotContext] = []
+    contexts: list[SnapshotContext] = []
 
-    def writer(context: vercor.SnapshotContext) -> None:
+    def writer(context: SnapshotContext) -> None:
         contexts.append(context)
 
-    component = vercor.CallableComponent(
+    component = CallableComponent(
         "ATM",
         grid,
-        lambda fields, context, payload: vercor.StepResult(
+        lambda fields, context, payload: StepResult(
             fields={"temperature": fields["temperature"]},
             payload=payload,
         ),
-        spec=vercor.ComponentSpec(
+        spec=ComponentSpec(
             inputs=("temperature",),
             outputs=("temperature",),
             initial_fields={"temperature": 280.0},
-            lifecycle=vercor.LifecycleHooks(
-                setup=lambda owner, context: vercor.SetupResult(
-                    payload=jnp.asarray(7.0)
-                )
+            lifecycle=LifecycleHooks(
+                setup=lambda owner, context: SetupResult(payload=jnp.asarray(7.0))
             ),
-            output=vercor.OutputConfig(snapshot_writer=writer),
+            output=OutputConfig(snapshot_writer=writer),
         ),
     )
     coupler = Coupler(
@@ -465,7 +481,7 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     assert contexts[0].component.grid.name == component.grid.name
     assert contexts[0].component.grid.shape == component.grid.shape
     assert contexts[0].component.spec is component.spec
-    assert isinstance(contexts[0].state, vercor.ComponentState)
+    assert isinstance(contexts[0].state, ComponentState)
     assert contexts[0].payload is not None
     assert float(contexts[0].payload) == 7.0
     assert contexts[0].output_path == tmp_path / "atm.snapshot.nc"
@@ -478,17 +494,15 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
     events: list[str] = []
 
     def prefill(
-        component: vercor.Component,
-        context: vercor.PrefillContext,
-    ) -> vercor.PrefillResult:
+        component: Component,
+        context: PrefillContext,
+    ) -> PrefillResult:
         events.append(f"prefill:{component.name}:{context.receives}:{context.sends}")
-        return vercor.PrefillResult(
-            fields={"humidity": jnp.full(component.grid.shape, 0.5)}
-        )
+        return PrefillResult(fields={"humidity": jnp.full(component.grid.shape, 0.5)})
 
     def validate(
-        component: vercor.Component,
-        context: vercor.ValidationContext,
+        component: Component,
+        context: ValidationContext,
     ) -> None:
         events.append(
             f"validate:{component.name}:{'humidity' in context.state.fields()}"
@@ -497,9 +511,9 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
     component = DataComponent(
         "OBS",
         grid,
-        spec=vercor.ComponentSpec(
+        spec=ComponentSpec(
             outputs=("humidity",),
-            lifecycle=vercor.LifecycleHooks(prefill=prefill, validate=validate),
+            lifecycle=LifecycleHooks(prefill=prefill, validate=validate),
         ),
     )
     coupler = Coupler(
@@ -516,21 +530,21 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
 
 @pytest.mark.fast_always
 def test_setup_and_dtype_config_objects_are_public() -> None:
-    output = vercor.PeriodOutput(frequency="month", variables=("temp", "salt"))
+    output = PeriodOutput(frequency="month", variables=("temp", "salt"))
     spinup = vercor.setups.Spinup(enabled=True)
 
     assert output.frequency == "month"
     assert output.variables == ("temp", "salt")
     assert spinup.duration.days == 2
-    assert vercor.DTypePolicy(enable_x64=True).enable_x64
-    assert vercor.PeriodOutput is vercor.output.PeriodOutput
-    assert "PeriodOutput" in vercor.__all__
+    assert DTypePolicy(enable_x64=True).enable_x64
+    assert PeriodOutput is vercor.output.PeriodOutput
+    assert "PeriodOutput" not in vercor.__all__
     assert "Spinup" not in vercor.__all__
     assert "Spinup" in vercor.setups.__all__
     assert "SurfaceMaskPolicy" not in vercor.__all__
     assert "RuntimeOptions" in vercor.__all__
-    assert "DTypePolicy" in vercor.__all__
-    assert "OutputConfig" in vercor.__all__
+    assert "DTypePolicy" not in vercor.__all__
+    assert "OutputConfig" not in vercor.__all__
     assert "setups" not in vercor.__all__
     assert "ComponentOutput" not in vercor.__all__
 

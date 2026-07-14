@@ -9,13 +9,12 @@ from datetime import datetime
 from vercor import (
     Clock,
     Coupler,
-    DataComponent,
     Exchange,
-    OutputConfig,
-    PeriodOutput,
     RunState,
     RuntimeOptions,
 )
+from vercor.components import DataComponent
+from vercor.output import OutputConfig, PeriodOutput
 from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
@@ -68,14 +67,10 @@ def build_coupler(
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere
 
-    coupler = Coupler(
+    return Coupler(
         _default_clock() if clock is None else clock,
         components=[ocn, lnd, atm],
-        run_order=[ocn.name, lnd.name, atm.name],
-        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
-    )
-    coupler.add_exchanges(
-        (
+        exchanges=(
             Exchange(
                 source=atm.name,
                 target=ocn.name,
@@ -101,8 +96,9 @@ def build_coupler(
                 regrid=bilinear,
             ),
         ),
+        run_order=[ocn.name, lnd.name, atm.name],
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
-    return coupler
 
 
 def _parse_args(arguments: Sequence[str] | None) -> argparse.Namespace:

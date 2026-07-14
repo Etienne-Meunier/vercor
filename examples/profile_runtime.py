@@ -118,7 +118,45 @@ def build_slab_coupler(
         latitude=(-90.0, 90.0),
     )
 
-    coupler = Coupler(
+    exchanges = (
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
+            regrid=conservative,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ICE",
+            fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ICE",
+            target="OCN",
+            fields=SEAICE_TO_OCEAN_FIELDS,
+            regrid=conservative,
+        ),
+    )
+    return Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
         components=(
             make_slab_atmosphere(atm_grid),
@@ -126,51 +164,11 @@ def build_slab_coupler(
             make_slab_land(lnd_grid),
             make_slab_seaice(ice_grid),
         ),
+        exchanges=exchanges,
         run_order=("OCN", "ATM", "LND", "ICE"),
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
         log_level=log_level,
     )
-    coupler.add_exchanges(
-        (
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ICE",
-                fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ICE",
-                target="OCN",
-                fields=SEAICE_TO_OCEAN_FIELDS,
-                regrid=conservative,
-            ),
-        ),
-    )
-    return coupler
 
 
 def profile_runtime(

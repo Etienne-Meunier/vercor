@@ -7,10 +7,14 @@ from typing import Any, Self
 import jax
 import jax.numpy as jnp
 
-from vercor.dtypes import PrecisionPolicy, as_jax_real_array, jax_linspace
-from vercor.exceptions import GridError
-from vercor.pytree import PyTreeNodeMixin
-from vercor.types import RuntimeArray
+from vercor.dtypes import (
+    PrecisionPolicy as _PrecisionPolicy,
+    as_jax_real_array as _as_jax_real_array,
+    jax_linspace as _jax_linspace,
+)
+from vercor.exceptions import GridError as _GridError
+from vercor._pytree import PyTreeNodeMixin as _PyTreeNodeMixin
+from vercor.types import RuntimeArray as _RuntimeArray
 
 
 def _is_strictly_increasing(values: jax.Array) -> bool:
@@ -22,13 +26,13 @@ class _Grid(abc.ABC):
     """Base class for public grid containers."""
 
     name: str
-    binary_mask: RuntimeArray | None = None
+    binary_mask: _RuntimeArray | None = None
 
     def __post_init__(self) -> None:
         if self.binary_mask is not None:
             mask = jnp.asarray(self.binary_mask)
             if mask.ndim != 2:
-                raise GridError("Mask must be a 2D array.")
+                raise _GridError("Mask must be a 2D array.")
             object.__setattr__(self, "binary_mask", mask)
 
     @property
@@ -50,7 +54,7 @@ class _Grid(abc.ABC):
 
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, init=False, repr=False, kw_only=True)
-class RectilinearGrid(PyTreeNodeMixin, _Grid):
+class RectilinearGrid(_PyTreeNodeMixin, _Grid):
     """JAX-friendly public rectilinear grid with 1D lon/lat coordinates."""
 
     pytree_children = (
@@ -62,42 +66,42 @@ class RectilinearGrid(PyTreeNodeMixin, _Grid):
     )
     pytree_aux_data = ("name",)
 
-    longitude: RuntimeArray
-    latitude: RuntimeArray
-    longitude_edges: RuntimeArray | None
-    latitude_edges: RuntimeArray | None
+    longitude: _RuntimeArray
+    latitude: _RuntimeArray
+    longitude_edges: _RuntimeArray | None
+    latitude_edges: _RuntimeArray | None
 
     def __init__(
         self,
         name: str,
         *,
-        longitude: RuntimeArray,
-        latitude: RuntimeArray,
-        longitude_edges: RuntimeArray | None = None,
-        latitude_edges: RuntimeArray | None = None,
-        binary_mask: RuntimeArray | None = None,
-        policy: PrecisionPolicy = None,
+        longitude: _RuntimeArray,
+        latitude: _RuntimeArray,
+        longitude_edges: _RuntimeArray | None = None,
+        latitude_edges: _RuntimeArray | None = None,
+        binary_mask: _RuntimeArray | None = None,
+        policy: _PrecisionPolicy = None,
     ) -> None:
         """Create a rectilinear grid from explicit coordinates."""
 
-        longitude_array = as_jax_real_array(longitude, policy)
-        latitude_array = as_jax_real_array(latitude, policy)
+        longitude_array = _as_jax_real_array(longitude, policy)
+        latitude_array = _as_jax_real_array(latitude, policy)
         longitude_edges_array = (
             None
             if longitude_edges is None
-            else as_jax_real_array(longitude_edges, policy)
+            else _as_jax_real_array(longitude_edges, policy)
         )
         latitude_edges_array = (
             None
             if latitude_edges is None
-            else as_jax_real_array(latitude_edges, policy)
+            else _as_jax_real_array(latitude_edges, policy)
         )
         binary_mask_array = (
-            None if binary_mask is None else as_jax_real_array(binary_mask, policy)
+            None if binary_mask is None else _as_jax_real_array(binary_mask, policy)
         )
 
         if longitude_array.ndim != 1 or latitude_array.ndim != 1:
-            raise GridError(
+            raise _GridError(
                 "RectilinearGrid expects both longitude and latitude coordinates to be 1D arrays."
             )
 
@@ -105,7 +109,7 @@ class RectilinearGrid(PyTreeNodeMixin, _Grid):
             _is_strictly_increasing(longitude_array)
             and _is_strictly_increasing(latitude_array)
         ):
-            raise GridError("longitude and latitude must be strictly monotonic.")
+            raise _GridError("longitude and latitude must be strictly monotonic.")
 
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "binary_mask", binary_mask_array)
@@ -121,7 +125,7 @@ class RectilinearGrid(PyTreeNodeMixin, _Grid):
 
         return (int(self.latitude.size), int(self.longitude.size))
 
-    def with_precision(self, policy: PrecisionPolicy) -> "RectilinearGrid":
+    def with_precision(self, policy: _PrecisionPolicy) -> "RectilinearGrid":
         """Return this grid with real arrays converted to ``policy`` precision."""
 
         return RectilinearGrid(
@@ -144,7 +148,7 @@ class RectilinearGrid(PyTreeNodeMixin, _Grid):
         longitude_edges: Any | None = None,
         latitude_edges: Any | None = None,
         binary_mask: Any | None = None,
-        policy: PrecisionPolicy = None,
+        policy: _PrecisionPolicy = None,
     ) -> Self:
         """Build a rectilinear grid from explicit coordinate arrays."""
 
@@ -168,14 +172,14 @@ class RectilinearGrid(PyTreeNodeMixin, _Grid):
         longitude: tuple[float, float],
         latitude: tuple[float, float],
         binary_mask: Any | None = None,
-        policy: PrecisionPolicy = None,
+        policy: _PrecisionPolicy = None,
     ) -> Self:
         """Build a rectilinear grid with equally spaced coordinate centers."""
 
         return cls.from_coordinates(
             name,
-            longitude=jax_linspace(longitude[0], longitude[1], nlon, policy=policy),
-            latitude=jax_linspace(latitude[0], latitude[1], nlat, policy=policy),
+            longitude=_jax_linspace(longitude[0], longitude[1], nlon, policy=policy),
+            latitude=_jax_linspace(latitude[0], latitude[1], nlat, policy=policy),
             binary_mask=binary_mask,
             policy=policy,
         )

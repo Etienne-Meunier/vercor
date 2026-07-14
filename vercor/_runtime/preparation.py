@@ -73,7 +73,6 @@ def create_runtime_state(
             dispatch_context=prepared.dispatch_context,
             step_info=initial_runtime_step_info(
                 prepared.clock,
-                prepared.settings,
                 model_year_seconds=prepared.runtime.model_year_seconds,
             ),
         )

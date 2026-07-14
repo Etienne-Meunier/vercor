@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
-from vercor.dtypes import DTypePolicy
-from vercor.state import ComponentState, RunState
-from vercor.topology import TopologyPolicy
-
-if TYPE_CHECKING:
-    from vercor.clock import Clock
-    from vercor.jax_logging import LoggerLike
-    from vercor.types import RuntimeArray
-
+import vercor.clock as _clock
+import vercor.dtypes as _dtypes
+import vercor.jax_logging as _jax_logging
+import vercor.state as _state
+import vercor.types as _types
+from vercor.topology import TopologyPolicy as _TopologyPolicy
 
 ExecutionMode: TypeAlias = Literal["auto", "jax", "host"]
 
@@ -22,15 +19,15 @@ ExecutionMode: TypeAlias = Literal["auto", "jax", "host"]
 class RuntimeOptions:
     """Public static runtime policy for a coupled VerCOR run."""
 
-    dtype: DTypePolicy = field(default_factory=DTypePolicy)
+    dtype: _dtypes.DTypePolicy = field(default_factory=_dtypes.DTypePolicy)
     execution: ExecutionMode | "ExecutionBackend" = "auto"
-    topology: TopologyPolicy | None = None
+    topology: _TopologyPolicy | None = None
     model_year_seconds: float = 365 * 86400.0
 
     def __post_init__(self) -> None:
         """Validate runtime policy values."""
 
-        if not isinstance(self.dtype, DTypePolicy):
+        if not isinstance(self.dtype, _dtypes.DTypePolicy):
             raise TypeError("dtype must be a DTypePolicy")
 
         if isinstance(self.execution, str):
@@ -58,10 +55,10 @@ class RuntimeOptions:
 class ExecutionContext:
     """Stable public context supplied to custom execution backends."""
 
-    clock: "Clock"
+    clock: _clock.Clock
     run_order: tuple[str, ...]
     options: RuntimeOptions
-    logger: "LoggerLike | None" = None
+    logger: _jax_logging.LoggerLike | None = None
 
 
 @runtime_checkable
@@ -70,11 +67,11 @@ class RuntimeDriver(Protocol):
 
     def step_component(
         self,
-        state: RunState,
+        state: _state.RunState,
         component: str,
         *,
-        step: int | "RuntimeArray",
-    ) -> RunState:
+        step: int | _types.RuntimeArray,
+    ) -> _state.RunState:
         """Advance one component using VerCOR's exchange/step/send pipeline."""
         ...
 
@@ -85,22 +82,19 @@ class ExecutionBackend(Protocol):
 
     def run(
         self,
-        state: RunState,
+        state: _state.RunState,
         *,
         context: ExecutionContext,
         driver: RuntimeDriver,
-    ) -> RunState:
+    ) -> _state.RunState:
         """Run a prepared runtime state and return the final state."""
         ...
 
 
 __all__ = [
-    "ComponentState",
-    "DTypePolicy",
     "ExecutionBackend",
     "ExecutionContext",
     "ExecutionMode",
-    "RunState",
     "RuntimeDriver",
     "RuntimeOptions",
 ]

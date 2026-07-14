@@ -9,7 +9,7 @@ from typing import Any, Literal, Optional
 import torch
 import xarray as xr
 
-from vercor.host_arrays import runtime_array_to_host
+from vercor._host_arrays import runtime_array_to_host
 from vercor.types import RuntimeArray
 
 

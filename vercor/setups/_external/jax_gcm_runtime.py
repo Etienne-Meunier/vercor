@@ -18,7 +18,7 @@ from vercor.components import (
 from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_full, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.field_layout import validate_canonical_grid_field_shape
-from vercor.pytree import PyTreeNodeMixin
+from vercor._pytree import PyTreeNodeMixin
 from vercor.output._session import _PeriodOutputAccumulator
 from vercor.physics import PhysicalConstants
 from vercor.setups._external._jax_gcm_pytree import (

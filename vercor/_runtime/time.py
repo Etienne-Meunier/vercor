@@ -11,8 +11,7 @@ from vercor.calendar import ModelDateTime
 from vercor.clock import Clock, _forcing_year_type_for_calendar
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.forcing_index import daily_forcing_index
-from vercor.pytree import PyTreeNodeMixin
-from vercor.settings import Settings
+from vercor._pytree import PyTreeNodeMixin
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
@@ -100,13 +99,11 @@ def runtime_step_info_from_times(
 
 def build_runtime_step_info(
     clock: Clock,
-    settings: Settings,
     *,
     model_year_seconds: float,
 ) -> RuntimeStepInfo:
     """Build scanned-runtime time metadata for every clock step."""
 
-    _ = settings
     times = [time for _, time, _ in clock.iter()]
     return runtime_step_info_from_times(
         times,
@@ -117,7 +114,6 @@ def build_runtime_step_info(
 
 def initial_runtime_step_info(
     clock: Clock,
-    settings: Settings,
     *,
     model_year_seconds: float,
 ) -> RuntimeStepInfo:
@@ -131,7 +127,6 @@ def initial_runtime_step_info(
     return scalar_runtime_step_info(
         first_time,
         clock,
-        settings,
         model_year_seconds=model_year_seconds,
     )
 
@@ -139,13 +134,11 @@ def initial_runtime_step_info(
 def scalar_runtime_step_info(
     time: datetime | ModelDateTime,
     clock: Clock,
-    settings: Settings,
     *,
     model_year_seconds: float,
 ) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for one clock timestamp."""
 
-    _ = settings
     batched_step_info = runtime_step_info_from_times(
         [time],
         forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),

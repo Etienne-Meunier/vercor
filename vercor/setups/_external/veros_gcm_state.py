@@ -18,7 +18,6 @@ from vercor.grids import RectilinearGrid
 from vercor.output._component_adapter import (
     _ComponentOutputAdapter as ComponentOutputAdapter,
 )
-from vercor.settings import Settings
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,
@@ -47,7 +46,6 @@ class VerosGCMSetupState:
 
     name: str
     data: dict[str, RuntimeArray]
-    settings: Settings
     coupling_timestep: timedelta
     model_timestep: timedelta
     model_substeps: int

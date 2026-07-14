@@ -16,7 +16,6 @@ from vercor.dtypes import as_jax_index_array
 from vercor.exceptions import CouplerError
 from vercor.jax_logging import LoggerLike
 from vercor.runtime import ExecutionBackend, ExecutionContext
-from vercor.settings import Settings
 from vercor.state import RunState
 from vercor.types import RuntimeArray
 from vercor._runtime.dispatch_context import RuntimeDispatchContext
@@ -57,7 +56,6 @@ def run_compiled_scanned_runtime(
                 state,
                 run_order=context.run_order,
                 clock=context.clock,
-                settings=context.dispatch_context.settings,
                 model_year_seconds=context.options.model_year_seconds,
                 logger=context.logger,
                 dispatch_context=context.dispatch_context,
@@ -81,7 +79,6 @@ def run_host_runtime(
     *,
     run_order: Sequence[str],
     clock: Clock,
-    settings: Settings,
     model_year_seconds: float,
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
@@ -95,7 +92,6 @@ def run_host_runtime(
         step_info = scalar_runtime_step_info(
             time,
             clock,
-            settings,
             model_year_seconds=model_year_seconds,
         )
 
@@ -134,7 +130,6 @@ def run_host_period_output_runtime(
         step_info = scalar_runtime_step_info(
             time,
             context.clock,
-            context.dispatch_context.settings,
             model_year_seconds=context.options.model_year_seconds,
         )
         for component_name in context.run_order:
@@ -174,7 +169,6 @@ def run_compiled_period_output_runtime(
 
     step_infos = build_runtime_step_info(
         context.clock,
-        context.dispatch_context.settings,
         model_year_seconds=context.options.model_year_seconds,
     )
     step_indices = as_jax_index_array(range(context.clock.steps))
@@ -288,7 +282,6 @@ def run_scanned_runtime(
     *,
     run_order: Sequence[str],
     clock: Clock,
-    settings: Settings,
     model_year_seconds: float,
     logger: LoggerLike,
     dispatch_context: RuntimeDispatchContext,
@@ -298,7 +291,6 @@ def run_scanned_runtime(
 
     step_infos = build_runtime_step_info(
         clock,
-        settings,
         model_year_seconds=model_year_seconds,
     )
     step_indices = as_jax_index_array(range(clock.steps))
@@ -494,7 +486,6 @@ class _RuntimeDriverAdapter:
         step_info = scalar_runtime_step_info(
             step_time,
             self._context.clock,
-            self._context.dispatch_context.settings,
             model_year_seconds=self._context.options.model_year_seconds,
         )
         label = f"custom runtime component {component}"

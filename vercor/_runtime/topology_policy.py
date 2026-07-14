@@ -13,7 +13,6 @@ from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor._runtime.topology_state import RuntimeTopologyMaps
-from vercor.settings import Settings
 from vercor.topology import (
     ExchangeTopologyPatch,
     TopologyContext,
@@ -28,7 +27,6 @@ def build_topology_context(
     *,
     components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
-    settings: Settings,
     logger: LoggerLike,
 ) -> TopologyContext:
     """Return public topology-policy context from private runtime inputs."""
@@ -46,7 +44,6 @@ def build_topology_context(
             (exchange.source, exchange.target, exchange_regrid_key(exchange))
             for exchange in exchanges
         ),
-        settings=settings,
         logger=logger,
     )
 
@@ -56,7 +53,6 @@ def apply_topology_policy(
     *,
     components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
-    settings: Settings,
     logger: LoggerLike,
     policy: TopologyPolicy | None,
 ) -> RuntimeTopologyMaps:
@@ -68,7 +64,6 @@ def apply_topology_policy(
     context = build_topology_context(
         components=components,
         exchanges=exchanges,
-        settings=settings,
         logger=logger,
     )
     if not policy.applies(context):

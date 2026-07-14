@@ -2,10 +2,11 @@
 
 A fully differentiable coupler in JAX for different Earth system models written in JAX.
 
-The evidence-based public/private inventory, migration plan, and complete 3.1
-extension contract are maintained in
+The evidence-based 3.1 public/private inventory and compatibility baseline are
+maintained in
 [`docs/api-architecture-review.md`](docs/api-architecture-review.md). This file
-records implementation design; the review is the concise API stability guide.
+records the current implementation design; the complete v4 review rewrite is
+deferred to the documentation/release milestone.
 
 ---
 
@@ -32,14 +33,15 @@ The codebase is organized into modules corresponding to physical, numerical and 
 Interpolation, exchangers, grids, model components, output routines etc. are all separate modules with well-defined interfaces. 
 This allows different agents to work on different components in parallel and makes testing easier.
 
-For bilinear rectilinear interpolation, `BilinearRectilinearInterpolator` is the
-public PyTree and user-facing facade. Private helper owners under
-`vercor.interpolators` keep lower-level concerns separate:
+Public interpolation is reached through `vercor.regridding` factories and
+regridder protocols. Private helper owners under `vercor._interpolators` keep
+lower-level concerns separate:
 `_bilinear_geometry` owns spherical geometry and orientation checks,
 `_bilinear_weights` owns target-to-source cell lookup and bilinear weights, and
 `_bilinear_extrapolation` owns nearest/IDW fill policy plus valid-source mask
-normalization. Production code outside `vercor.interpolators` should depend on
-the public interpolator or regridder boundary, not these private helpers.
+normalization. Production code outside `vercor._interpolators` should depend on
+the public regridder boundary, not these private helpers. The removed primary
+`vercor.interpolators` package is not a compatibility facade.
 
 The output module handles all data saving and logging, ensuring a clean separation between computation and I/O.
 
@@ -120,13 +122,14 @@ boundary. Setup-state constructors instantiate the private
 helpers; output modules do not keep one-case adapter factories.
 VerCOR-owned period output samples, accumulators, extracted variables, mean
 variables, and runtime-view fields stay JAX-backed until the file boundary;
-`vercor.host_arrays` owns the final host transfer. NetCDF time-coordinate
+`vercor._host_arrays` owns the final host transfer. NetCDF time-coordinate
 values intentionally remain host `int64` arrays because the CF microsecond
 offsets can overflow JAX integers when `jax_enable_x64` is disabled.
 
 ### Data flow: PyTree-based result objects
 
-Shared PyTree mechanics live in `vercor.pytree.PyTreeNodeMixin`. Immutable
+Shared PyTree mechanics live in private `vercor._pytree.PyTreeNodeMixin`.
+Immutable
 classes registered with `@jax.tree_util.register_pytree_node_class` should
 inherit from the mixin and declare `pytree_children` for traced fields plus
 `pytree_aux_data` for static metadata. The mixin reconstructs objects without
@@ -165,11 +168,19 @@ class RectilinearGrid(PyTreeNodeMixin):
 VerCOR intentionally separates user-facing orchestration objects from the
 immutable runtime containers used during traced integration.
 
-- Public orchestration API: `Coupler`, `Exchange`, `Clock`, grids, regridders,
-  and bundled concrete components are the objects users compose when
-  configuring a coupled run. `Coupler` and setup helpers accept plain
-  component-name sequences for run order and normalize them internally to
-  immutable tuples. Component names are setup-owned identifiers rather than a
+- Public orchestration API: the root exports exactly `Clock`, `Coupler`,
+  `Exchange`, `RectilinearGrid`, `RunState`, and `RuntimeOptions`. Component,
+  runtime-extension, topology, output, regridding, state-view, and setup
+  contracts remain in their canonical public owner modules. `Coupler(...)` is
+  the sole primary assembly path: it owns immutable snapshots of the component,
+  exchange, and run-order collections while retaining the original author
+  objects, which are treated as immutable configuration. It exposes read-only
+  public views. Reconfiguration requires a new coupler; there are no primary
+  mutators or `CouplerSpec`.
+  Component-name sequences are normalized internally to immutable tuples.
+  An empty run order is explicit setup-only semantics: setup, validation,
+  topology, state construction, and output preparation occur, but the runtime
+  loop advances no component. Component names are setup-owned identifiers rather than a
   fixed enum, so custom coupled runs can use names outside the bundled
   ATM/OCN/LND/ICE conventions. `RuntimeOptions` owns static coupler runtime
   policy, including dtype, execution backend, model-year length, and optional
@@ -217,165 +228,6 @@ immutable runtime containers used during traced integration.
   dispatch. There is no primary-v4 `ComponentLike`, `HostComponent`, component
   `initialize`/`initial_fields`, constructor payload, mutable authoring mixin,
   separate payload-creation hook, or duplicate output/import-policy property.
-- Historical VerCOR 3.1 component-author API (superseded by the v4 contract
-  above): `Component`, `DataComponent`, and `HostComponent` are
-  the stable extension points. Custom adapters should use the class-level
-  authoring constructors where possible: `DataComponent.from_fields()` for
-  data-only fields, `Component.from_step()` for pure callable JAX models, and
-  `HostComponent.from_step()` for Python host-side models. These constructors
-  declare fields through `spec=ComponentSpec(...)`: `inputs` declare fields the
-  model reads, `outputs` declare fields the model writes, `defaults` declare
-  concrete runtime defaults for fields the model reads or updates, and
-  `execution` declares whether the component runs through the differentiable
-  JAX path or the Python host path. Scalar default and seeded values expand to
-  grid-shaped constants.
-  `SetupContext` and `StepContext` are public setup and step context payloads
-  passed to author callbacks, with canonical ownership in
-  `vercor.components.contexts`.
-  `from_model()`, `default_fields`, `HostRuntimeComponent`, and
-  component-prefixed context names have been removed from the public API.
-  Component factory lifecycle customization is nested in
-  `spec=ComponentSpec(..., lifecycle=LifecycleHooks(...),
-  output=OutputConfig(...))`; individual hook and output keywords are not
-  public constructor inputs. Runtime prefill and validation hooks receive typed
-  `PrefillContext`, `PrefillResult`, and `ValidationContext` objects instead
-  of mutable runtime-store dictionaries. Lifecycle hook type aliases
-  (`ComponentInitializeHook`, `ComponentCreatePayloadHook`,
-  `ComponentPrefillHook`, and `ComponentValidateHook`) remain public
-  component-author type contracts and are reexported from `vercor.components`
-  and `vercor`.
-  `ComponentSpec`, `component.spec`, and `declare_fields()` provide the same
-  vocabulary and read-only introspection for subclasses. `DataComponent` owns
-  data-import behavior through
-  `DataComponent.from_fields(..., import_policy=FieldImportPolicy(...))`;
-  model-oriented `ComponentSpec` does not carry data selection policy.
-  `field_names` exposes setup-time seeded field names in insertion order;
-  direct `component.data` and `component.setup_metadata` mutation is not
-  public API. Subclass constructors can use `seed_field(...)`,
-  `seed_fields(...)`, `update_settings(...)`, and `grid_field_defaults(...)`
-  to build validated grid-shaped default-field mappings with scalar expansion
-  and field-specific overrides. Components that write native snapshots receive
-  a typed `OutputConfig(snapshot_writer=...)` spec. Snapshot writers receive
-  `SnapshotContext`, which exposes public `ComponentInfo`, the public
-  `ComponentState`, component payload, output path, time, and logger without
-  exposing normalized component adapters or `ComponentRuntimeState`. Mutable
-  period-output adapters live under
-  `vercor.output._component_adapter`.
-  `DataComponent` seeding
-  automatically records seeded fields as declared outputs, so data-only
-  components remain introspectable whether fields are declared up front or added
-  through constructor seeding. The removed `wrap()` classmethods and
-  `make_*_component()` factory functions have been removed. The module-level
-  `data_component()`, `differentiable_component()`, and `host_component()`
-  factory helpers have also been removed. Component authors should use
-  class-level `from_fields()` / `from_step()` constructors, or subclasses with
-  `declare_fields(...)`. `vercor.components` and `vercor` reexport the
-  component-author facade.
-  `ComponentLike` is the canonical structural extension contract: structural
-  components provide a non-empty name, `RectilinearGrid`, `ComponentSpec`,
-  callable `initial_fields`/`initialize`/`step`, and mapping initial fields.
-  Structural initialization calls the user object's `initialize`, refreshes
-  its public state, calls the spec lifecycle initializer with that original
-  object, and refreshes again; payload, prefill, and validation hooks likewise
-  receive the original object. `DataComponent.from_step()` is intentionally
-  rejected because data-only components do not execute steps.
-  `vercor.components.contracts` owns public author-facing context, result,
-  spec, lifecycle-hook types, and `ComponentStepReturn`; the alias is reexported
-  by `vercor.components` but not the root facade. `ValidationContext` exposes
-  public `ComponentState`, while underscored runtime lifecycle bridges keep
-  runtime state/store contracts off inherited public component surfaces.
-  Internal callable/field-normalization type aliases remain private underscored
-  names. `vercor.components.base` owns only
-  the abstract differentiable `Component` contract, `vercor.components.data`
-  owns `DataComponent`, and `vercor.components.host` owns `HostComponent`.
-  Field-name de-duplication lives in private `vercor._field_names`, and
-  component authoring methods for field declarations, setup seeding, and
-  settings updates live in private `vercor.components._field_authoring`.
-  Lifecycle hook storage lives on the private `_lifecycle_hooks` component
-  field; constructors use one public `LifecycleHooks` value and callable/data
-  wrappers assign it directly. Default lifecycle dispatch lives in private
-  `vercor.components._lifecycle_api`, and constructor-installed hooks are
-  stored in one private container rather than as ad-hoc component attributes.
-  Author-value normalization lives in private
-  `vercor.components._contracts`; public constructor option normalization lives
-  in private `vercor.components._constructor_options`; callable signature
-  adaptation, shared callable construction options, and shared callable runtime
-  mechanics live in private `vercor.components._callable_wrappers`, which
-  carries lifecycle hooks as that container and delegates hook
-  precedence/default payload fallback to the lifecycle mixin. The concrete
-  callable-backed
-  differentiable wrapper is owned by `vercor.components.base`, and the concrete
-  callable-backed host wrapper is owned by `vercor.components.host`, keeping
-  each runtime kind beside its public abstract base. Private helper modules use
-  type-only `Component` annotations where they need concrete component shape.
-  Host/scanned runtime selection is driven by the public
-  `ComponentSpec.execution` value, so structural custom components can request
-  host execution without subclassing a VerCOR base class or depending on a
-  private marker protocol. `HostComponent` always enforces host execution;
-  `RuntimeOptions.execution` selects the backend for the whole coupled run and
-  retains precedence over per-component capability. Component-facing
-  runtime-field adapters and runtime-store mutation helpers live in private
-  `vercor.components._runtime_fields`, and component-facing required-field
-  validation lives in private `vercor.components._runtime_validation`.
-  Component host/scanned execution policy lives in internal
-  `vercor.components.runtime_execution`, and setup validation lives in internal
-  `vercor.components.setup_validation`, giving runtime modules explicit
-  component-owned bridge modules instead of importing private component
-  internals. These internals are not exported from `vercor.components`.
-  Subclasses should call the base constructor with `name`, `grid`, and optional
-  `settings`; raw setup `data` and `setup_metadata` are initialized internally
-  rather than accepted as public constructor inputs. The private `_data` store
-  contains grid fields, not a
-  general metadata store: all entries must use one of the canonical layouts
-  `(nLat, nLon)`, `(nTime, nLat, nLon)`, `(nLev, nLat, nLon)`, or
-  `(nTime, nLev, nLat, nLon)`. Setup and runtime-state creation validate this
-  contract before traced execution. Subclasses should seed fields with
-  `seed_field()` or `seed_fields()` for scalar or array-like author values
-  rather than mutating `data` directly; step methods should implement the
-  mapping-based `step(fields, context, payload=None)` contract and return a
-  field-update mapping or `StepResult(fields, payload)` when the runtime payload
-  must be replaced. Private runtime adapters in
-  `vercor.components.runtime_execution` translate between those public mappings
-  and `FieldStore` membership, zero-like fallback, and existing-field
-  replacement mechanics owned by the runtime.
-  `seed_declared_defaults()` seeds fields from a component's declared
-  defaults, and the base `initialize()` hook now does this automatically when
-  subclasses do not need custom setup. Runtime prefill hooks are adapted through
-  private `vercor.components._runtime_fields` helpers for ordinary
-  output/default fields. Non-grid
-  metadata such as hybrid-level coefficients belongs on component attributes or
-  runtime payloads. Factory-created setup adapters should put non-runtime setup
-  metadata in private `_setup_metadata` rather than attaching ad-hoc attributes
-  to the component object. Examples include forcing-file provenance and
-  diagnostic coefficients that should not enter runtime field validation or JAX
-  scan state.
-  `Component` for differentiable active models and implement `step(...)`. Use
-  `DataComponent` for forcing/static data adapters that intentionally keep the
-  shared no-op runtime step and do not create plotting-only runtime fields.
-  Derived diagnostics, such as a combined land/sea surface temperature used only
-  for plots, belong in diagnostics or setups. Use `HostComponent` for
-  non-differentiable adapters and implement the same mapping-based `step(...)`;
-  host-backed adapters must run through `Coupler.run()` so VerCOR can select the
-  Python host runtime path. Optional customization is installed through
-  `LifecycleHooks(initialize=..., create_payload=..., prefill=...,
-  validate=...)`; inherited runtime-store bridge methods remain private. Callable
-  wrappers may accept `(fields)`, `(fields, context)`, or
-  `(fields, context, payload)` and return either a field-update mapping or
-  `StepResult(fields, payload)` when the runtime payload must
-  be replaced. Callable-backed differentiable and host components share
-  signature normalization and step-result application helpers. Internal
-  normalized callable adapters use names that spell out which author arguments
-  they forward, while
-  `Component.from_step()` and `HostComponent.from_step()` construct their own
-  private runtime-kind wrappers directly. Both declare their runtime contract
-  with the same `ComponentSpec` path used by subclasses, and apply step results
-  through the runtime-owned field replacement helpers.
-  Runtime prefill and validation depend only on `inputs`, `outputs`, and
-  `defaults`.
-  These helpers still enforce the same stable runtime-state
-  contract: updated fields must already exist through seeded data, declared
-  outputs/defaults, or exchange prefill, and scanned payload pytrees must keep
-  stable shapes and dtypes.
 - Internal runtime API: the `vercor._runtime` package owns
   `FieldStore`, `ComponentRuntimeState`, runtime contexts, dispatch
   contexts, and runtime helper functions. Public `RunState` is owned by
@@ -422,9 +274,11 @@ immutable runtime containers used during traced integration.
   `vercor._runtime.initialization`. `vercor._runtime.prepared.PreparedCoupling`
   is the single frozen post-lifecycle boundary for normalized components,
   exchanges, run order, contracts, topology maps, destination-grouped dispatch,
-  clock/settings/options, interrupts, and component configuration fingerprints.
-  Component configuration mutation after preparation is rejected instead of
-  silently rerunning lifecycle hooks. Runtime state creation, supplied-state
+  clock, runtime-normalized physical constants, runtime options, and interrupts.
+  It contains no reflective configuration fingerprint or public prepared graph.
+  Author objects are treated as immutable configuration after `Coupler`
+  construction; callers create a new coupler for changed configuration rather
+  than mutating or rebuilding preparation. Runtime state creation, supplied-state
   validation, and initial sent-store priming live in
   `vercor._runtime.preparation` and reuse the prepared contracts and dispatch
   context without rebuilding either.
@@ -453,8 +307,9 @@ immutable runtime containers used during traced integration.
   selection private. Private helpers keep runtime containers out of public
   diagnostics/output APIs. `Coupler` exposes `initial_state()` and `run()` for
   runtime-state creation.
-  `RunState.component(...)` and `RunState.components(...)` are the only public
-  component-view factories.
+  `RunState.component(...)` and `RunState.components(...)` are the public
+  component-view factories; `RunState.replace_fields(...)` is the sole public
+  immutable state-update operation.
   Final runtime output iteration, output-mask naming/selection, and
   view writing live in private `vercor.output._runtime` helpers, with
   `vercor._runtime.facade` validating and delegating output writes for
@@ -492,9 +347,8 @@ CREDIT/Torch/TensorFlow imports plus Veros/CAMulator runtime configuration begin
 only when that factory is invoked. Deep adapter modules live under underscore
 packages for package-internal tests and optional-dependency boundaries, but
 supported user workflows enter through `vercor.setups`.
-Examples and setup factories assemble runs through `Coupler(...)`,
-`Coupler.add_exchange(...)`, `Coupler.add_exchanges(...)`, and direct
-`Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
+Examples and setup factories assemble complete runs through `Coupler(...)`
+with direct `Exchange(source, target, fields, regrid=...)` declarations. Shared exchange
 field recipes live in `vercor.recipes` with `*_FIELDS` names. Short recipe aliases and setup orchestration helpers
 such as `ExchangeSpec`, `build_coupler()`, `build_exchanges()`, and
 `add_exchange_specs()` have been removed. Public exchange configuration types,
@@ -696,44 +550,27 @@ settings. Low-level wind mask artifacts and in-place tensor filtering stay
 behind the private wind-filtering owner; public setup factories and examples
 should not import that private module directly.
 
-### Settings container
+### Configuration ownership
 
-VerCOR uses one metadata-backed `Settings` class for both coupler-level
-and component-level settings. `vercor.settings.DEFAULT_SETTINGS` stores the
-defaults as `SettingSpec(value, description, units)` namedtuple records; unitless
-settings use `"-"` for units. Each `Coupler` and each `Component` receives an
-independent `Settings()` instance populated from those defaults at
-construction time, so setup-time changes on one owner do not leak into another.
-
-Settings support direct attribute reads and assignments: `settings.enable_x64`
-and similar attribute reads resolve setting values dynamically through
-`__getattr__`, and assigning an existing attribute updates only that value
-through `__setattr__`. Known default
-settings are declared as class-level annotations so static type checkers retain
-useful types without per-setting runtime property descriptors. Constructor
-keyword arguments may only override known default settings, so misspelled
-physics/configuration names fail eagerly. New custom settings must be introduced
-explicitly with `add()` or passed through `Settings(custom={...})`; existing
-settings should be updated with `set()` where production code is making an
-intentional configuration change. Use
-`get()`, `get_metadata()`, and `as_dict()` for explicit lookup and
-introspection. `dir(settings)` includes default and custom setting names for
-introspection. The obsolete `ComponentSettings` and `VercorSettings` aliases
-have been removed; use `Settings` directly.
+The primary v4 API has no `Settings` container and no
+`vercor.physical_constants` module. `vercor.physics.PhysicalConstants` owns
+the frozen traced SI values passed through setup and step contexts;
+`RuntimeOptions.dtype` is the sole runtime precision owner; `ComponentSpec`
+owns component fields, lifecycle, transfer, execution capability, and current
+output policy; setup- or plugin-specific options belong in frozen dataclasses
+owned by that setup or plugin. Native third-party objects such as Veros may
+retain their own `.settings`; those are adapter state, not VerCOR's public
+configuration contract.
 
 ### Precision and dtype policy
 
 VerCOR-owned array dtypes are centralized in `vercor.dtypes`. Real-valued JAX
-and NumPy arrays use the `Settings.enable_x64` precision switch whenever a
-settings object is available: `False` maps to 32-bit real arrays and `True` maps
-to 64-bit real arrays. Runtime initialization through
-`Coupler.initial_state()`, `Coupler.run()`, or `Coupler.write_outputs()` treats
-the coupler setting as the run-level precision policy, synchronizes component
-settings to that policy, and recasts component-owned grid/data arrays before
-runtime state creation. Helpers that create arrays without a settings object
-follow the active JAX global
-`jax_enable_x64` configuration; conversion helpers preserve an already-typed
-real array when no settings object is supplied.
+and NumPy arrays use `RuntimeOptions.dtype`: `enable_x64=False` maps to 32-bit
+real arrays and `enable_x64=True` maps to 64-bit real arrays. Runtime
+preparation casts physical constants and component-owned grid/data arrays at
+one boundary before state creation. Helpers without an explicit runtime policy
+follow the active JAX `jax_enable_x64` configuration; conversion helpers
+preserve already-typed real arrays when no policy is supplied.
 Integer/index arrays use the canonical 32-bit index dtype in both
 real-precision modes to keep sparse metadata and interpolation indices compact.
 
@@ -746,7 +583,7 @@ and dtype boundaries. File-output adapters should keep VerCOR-owned values
 JAX-backed and delegate external component period-average orchestration to
 `vercor.output._component_adapter`, period-file writes to
 `vercor.output._period_files`, and final file-transfer conversion to
-`vercor.output._netcdf`, which calls `vercor.host_arrays` only when a non-JAX
+`vercor.output._netcdf`, which calls `vercor._host_arrays` only when a non-JAX
 consumer, such as `h5netcdf` or a host-backed model runtime, requires a host
 array.
 
@@ -804,52 +641,30 @@ preserved.
 
 ## 3. Module Specifications
 
-### 3.1 Constants and Parameters
+### 3.1 Physical and runtime configuration
 
-**File**: `constants.py`
+**File**: `vercor/physics.py`
 
-For physical constants, such as gravitational acceleration, gas constant, etc.
+`PhysicalConstants` is the frozen JAX PyTree of traced SI-valued physical
+constants. Setup and step contexts receive this canonical object; there is no
+parallel parameter container or primary `physical_constants` module.
 
-**File**: `parameters.py`
+**Files**: `vercor/runtime/__init__.py` and `vercor/dtypes.py`
 
-For runtime parameters, such as coupled run identifier, precision, time interpolation type,
-type of year (leap, noleap, 360day), etc.
+`RuntimeOptions` owns static execution, topology, model-year, and precision
+policy. `DTypePolicy` is owned by `vercor.dtypes`, and
+`RuntimeOptions.dtype` is the sole runtime precision selection.
 
-Two parameter containers:
+**Files**: `vercor/components/contracts.py` and `vercor/setups/config.py`
 
-```python
-@dataclass(frozen=True)
-class PhysicsParameters:
-    """All fields are JAX-traceable floats."""
-    # Scalars
-    gravity: float
-    rhoAir: float
-    rgas: float
-    latvap: float
-    zref: float
-    mwdair: float
-    ...
+`ComponentSpec` owns one component's fields, lifecycle, transfer, execution
+capability, and current output declaration. Bundled setup configuration is
+owned by frozen setup-specific dataclasses; third-party plugins use their own
+frozen dataclasses and inject the constructed components explicitly.
 
-
-@dataclass(frozen=True)
-class RuntimeOptions:
-    """Static coupler runtime policy. NOT traced by JAX."""
-    dtype: DTypePolicy
-    execution: str | ExecutionBackend
-    topology: TopologyPolicy | None
-    model_year_seconds: float
-
-
-@dataclass(frozen=True)
-class FieldImportPolicy:
-    """Static component field-import policy."""
-    daily_selection: bool
-    time_interpolation: bool
-```
-
-The split between `PhysicsParameters` (traced) and `ControlParameters` (static) is critical:
-JAX traces through `PhysicsParameters` for AD, while `ControlParameters` controls array
-shapes and solver settings that must be compile-time constants.
+This separation is deliberate: JAX traces the children of
+`PhysicalConstants`, while runtime policy and component/setup structure remain
+static. Physics kernels must not branch in Python on traced physical values.
 
 ## 4. Validation and Testing
 
@@ -906,10 +721,10 @@ For each module, verify that AD gradients match finite-difference gradients.
 
 ### JIT compilation
 
-The entire `run_simulation()` function should be JIT-compiled:
-
-Since `ControlParameters` is static (controls array shapes), it should be passed via
-`static_argnums` or as a `static_field` in an Equinox module.
-
-First call will be slow (~30-60s for XLA compilation). Subsequent calls with the
-same shapes will be fast.
+The output-free JAX runtime executes the complete clock through one JIT-compiled
+scan. `RunState` and traced physical values are array-bearing PyTree inputs;
+`RuntimeOptions`, component declarations, routing, and other shape-controlling
+configuration remain static in the private prepared coupling. Configuration
+must therefore keep stable names, shapes, dtypes, and payload PyTree structure
+for the duration of a coupler. A changed configuration requires construction
+of a new `Coupler` and may trigger a new compilation.

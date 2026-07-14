@@ -6,8 +6,10 @@ import h5netcdf
 import jax.numpy as jnp
 import numpy as np
 
-from vercor.dtypes import as_jax_real_array
-from vercor.types import RuntimeArray
+from vercor.dtypes import as_jax_real_array as _as_jax_real_array
+from vercor.types import RuntimeArray as _RuntimeArray
+
+__all__ = ["read_forcing"]
 
 
 def _resolve_forcing_path(
@@ -40,7 +42,7 @@ def read_forcing(
     flip_y: bool = False,
     *,
     mapping_name: str = "data_files",
-) -> RuntimeArray:
+) -> _RuntimeArray:
     """Read one variable from configured NetCDF forcing files."""
 
     path = _resolve_forcing_path(data_files, where, mapping_name)
@@ -53,7 +55,7 @@ def read_forcing(
             f"Error reading variable '{variable}' from forcing file '{path}'"
         ) from exc
 
-    var_obj = as_jax_real_array(values.T)
+    var_obj = _as_jax_real_array(values.T)
     if flip_y:
         return jnp.flip(var_obj, axis=1)
     return var_obj

@@ -3,7 +3,7 @@ from typing import Any, cast
 from vercor.exceptions import RegridderError
 from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import grids_identical
-from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 from vercor._regridders.base import _BaseRegridder
 
 

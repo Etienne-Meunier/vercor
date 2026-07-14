@@ -30,3 +30,17 @@ __all__ = [
     "TransferPolicy",
     "ValidationContext",
 ]
+
+# Importing package children attaches them to this facade automatically.  They
+# are implementation modules, not additional public owners; keep only the
+# explicit contract above visible from the facade namespace.
+for _module_name in (
+    "base",
+    "contexts",
+    "contracts",
+    "data",
+    "runtime_execution",
+    "setup_validation",
+):
+    globals().pop(_module_name, None)
+del _module_name

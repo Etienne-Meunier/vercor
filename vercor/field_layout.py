@@ -6,9 +6,21 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.dtypes import as_jax_real_array
-from vercor.exceptions import ComponentError
-from vercor.types import RuntimeArray
+from vercor.dtypes import as_jax_real_array as _as_jax_real_array
+from vercor.exceptions import ComponentError as _ComponentError
+from vercor.types import RuntimeArray as _RuntimeArray
+
+__all__ = [
+    "CANONICAL_DATA_LAYOUTS",
+    "canonical_data_layout_description",
+    "canonical_grid_field_shape",
+    "canonical_grid_field_shape_error",
+    "canonicalize_time_last_level_field",
+    "canonicalize_time_last_surface_field",
+    "is_canonical_grid_field_shape",
+    "validate_canonical_grid_field_shape",
+    "validate_component_data_layout",
+]
 
 CANONICAL_DATA_LAYOUTS = (
     "(nLat, nLon)",
@@ -92,7 +104,7 @@ def validate_component_data_layout(
     *,
     component_name: str,
     grid_shape: tuple[int, int],
-    data: Mapping[str, RuntimeArray],
+    data: Mapping[str, _RuntimeArray],
 ) -> None:
     """Validate all component data arrays against canonical grid-field layouts."""
 
@@ -106,7 +118,7 @@ def validate_component_data_layout(
                 owner_name=component_name,
             )
         except ValueError as exc:
-            raise ComponentError(
+            raise _ComponentError(
                 f"{exc}. Non-grid metadata must be stored outside component runtime fields."
             ) from exc
 
@@ -114,7 +126,7 @@ def validate_component_data_layout(
 def canonicalize_time_last_surface_field(field: ArrayLike) -> jax.Array:
     """Convert a ``(nLon, nLat, nTime)`` field to ``(nTime, nLat, nLon)``."""
 
-    field_array = as_jax_real_array(field)
+    field_array = _as_jax_real_array(field)
     if field_array.ndim != 3:
         raise ValueError(
             "Expected a time-last surface field with shape (nLon, nLat, nTime)."
@@ -125,7 +137,7 @@ def canonicalize_time_last_surface_field(field: ArrayLike) -> jax.Array:
 def canonicalize_time_last_level_field(field: ArrayLike) -> jax.Array:
     """Convert ``(nLon, nLat, nLev, nTime)`` to ``(nTime, nLev, nLat, nLon)``."""
 
-    field_array = as_jax_real_array(field)
+    field_array = _as_jax_real_array(field)
     if field_array.ndim != 4:
         raise ValueError(
             "Expected a time-last level field with shape " "(nLon, nLat, nLev, nTime)."

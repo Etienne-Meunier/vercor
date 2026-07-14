@@ -25,7 +25,7 @@ from vercor.output._period import (
     should_write_period_output,
 )
 from vercor.output._period_files import write_period_output_netcdf
-from vercor.pytree import PyTreeNodeMixin
+from vercor._pytree import PyTreeNodeMixin
 
 if TYPE_CHECKING:
     from vercor.components._adapter import _ComponentBinding

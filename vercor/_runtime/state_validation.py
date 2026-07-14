@@ -32,9 +32,6 @@ def validate_runtime_state(
         raise CouplerError("Runtime requires a configured component run sequence")
 
     run_order = tuple(run_order)
-    if not run_order:
-        raise CouplerError("Runtime requires a non-empty component run sequence")
-
     expected_component_names = set(components)
     runtime_component_names = set(runtime_state.component_names)
     missing_components = sorted(expected_component_names - runtime_component_names)

@@ -4,8 +4,9 @@ Versatile Earth system COupleR (VerCOR) is a JAX-first coupler for composing
 Earth-system model components, forcing data, exchanges, regridding, diagnostics,
 and output. The in-progress VerCOR 4 refactor now uses a protocol-first
 component contract with one immutable declaration for fields, lifecycle hooks,
-and runtime capabilities. Assembly and output examples below still describe
-the transitional pre-Task-4/Task-7 facades where noted.
+and runtime capabilities. Assembly is constructor-only; output and custom
+runtime examples below describe the currently implemented transitional
+boundaries and do not imply the later workflow/output-provider design exists.
 
 ## Installation
 
@@ -24,33 +25,38 @@ not pinned until an exact compatible release has been verified.
 
 ## Public API
 
-The current transitional core owner modules are `vercor.components`, `vercor.runtime`,
-`vercor.topology`, `vercor.coupling`, `vercor.exchanges`,
+The package root intentionally exports exactly `Clock`, `Coupler`, `Exchange`,
+`RectilinearGrid`, `RunState`, and `RuntimeOptions`. Advanced contracts live in
+their canonical owner modules: `vercor.components`, `vercor.runtime`,
+`vercor.physics`, `vercor.topology`, `vercor.coupler`, `vercor.exchanges`,
 `vercor.regridding`, `vercor.grids`, `vercor.fields`, `vercor.state`,
 `vercor.output`, and `vercor.setups`. `vercor.types`, `vercor.dtypes`, and
 `vercor.jax_logging` provide supporting public typing, precision, and logging
-contracts. The root `vercor` package keeps convenience exports for common core
-workflows without duplicating setup- or topology-specific aliases.
+contracts. Component, output, topology, and setup-specific names are not
+duplicated at the root.
 
-Configuration currently has five owners:
+Configuration currently has four owners:
 
 - `RuntimeOptions` owns static policy for execution, topology, dtype, and the
   runtime.
 - `PhysicalConstants` is the frozen traced PyTree owner for physical constants.
-- `Settings` remains transitional mutable non-physics runtime/setup metadata.
 - `ComponentSpec`: inputs, outputs, initial fields, lifecycle, transfer,
   execution capability, and output.
 - Setup config dataclasses: construction policy for one bundled model.
 
-Until Task 4 makes assembly constructor-only, the transitional facade supports
-three assembly paths:
+`Coupler(...)` is the sole primary assembly path. Components, exchanges, and
+run order are supplied together and exposed through read-only views; changed
+configuration requires a new coupler. `run_order=()` is valid setup-only
+semantics: setup, validation, state creation, and output preparation still run,
+but no component is advanced by the runtime loop.
 
-- the `Coupler` constructor for complete one-off setups;
-- `CouplerSpec` for reusable recipes;
-- mutators for incremental assembly.
-
-Public mutators safely invalidate preparation; direct configuration mutation
-after preparation is an error.
+There is no primary `Settings`, `vercor.physical_constants`, or
+`vercor.coupling` module. Physical values come from
+`vercor.physics.PhysicalConstants`, runtime precision from
+`vercor.runtime.RuntimeOptions.dtype`, and setup-specific configuration from
+frozen setup/plugin dataclasses. Host transfer, shared PyTree mechanics, and
+interpolation implementations are private under `vercor._host_arrays`,
+`vercor._pytree`, and `vercor._interpolators`.
 
 The following snippets share this small grid and clock:
 
@@ -313,12 +319,12 @@ paths; it does not redirect the period files emitted during `run()`.
 
 ## Further reading
 
-See the [VerCOR 3.1.1 API architecture review](docs/api-architecture-review.md)
-for the complete public/private inventory, execution precedence, and migration
-table. The independently packaged
+The [VerCOR 3.1.1 API architecture review](docs/api-architecture-review.md)
+remains historical compatibility input; its full v4 rewrite is scheduled for
+the documentation/release milestone. The independently packaged
 [`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
-the current protocol-first component contract against transitional assembly and
-output facades, while
+the current protocol-first component and constructor-only assembly contract
+against transitional output/runtime facades, while
 [`tests/fixtures/public_plugin_3_0`](tests/fixtures/public_plugin_3_0) freezes a
 valid 3.0-only workflow that is intentionally rejected by the removed authoring
 surface. The current fixture proves installed-wheel isolation and strict mypy

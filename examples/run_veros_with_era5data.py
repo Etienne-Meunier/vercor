@@ -4,10 +4,9 @@ from vercor import (
     Clock,
     Coupler,
     Exchange,
-    OutputConfig,
-    PeriodOutput,
     RuntimeOptions,
 )
+from vercor.output import OutputConfig, PeriodOutput
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import VerosConfig, make_veros_gcm
@@ -53,42 +52,40 @@ if __name__ == "__main__":
     )
     run_order = ["OCN", "LND", "ATM"]
 
+    # Exchanges
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_BASIC_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+    )
     components = [ocn, lnd, atm]
     cpl = Coupler(
         clock=clock,
         components=components,
+        exchanges=exchanges,
         run_order=run_order,
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
-    )
-
-    # Exchanges
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_LAND_BASIC_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-        ),
     )
 
     final_state = cpl.run()

@@ -5,14 +5,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
-from vercor.fields import normalize_field_items
+import vercor.fields as _fields
+import vercor.regridding as _regridding
+from vercor.fields import _normalize_field_items
 from vercor.regridding import bilinear as _bilinear
-
-if TYPE_CHECKING:
-    from vercor.fields import ExchangeField
-    from vercor.regridding import RegridderFactory
 
 
 def _regridder_factory_name(regridder_factory: Callable[..., object]) -> str:
@@ -36,8 +34,8 @@ class Exchange:
 
     source: str
     target: str
-    fields: Sequence[ExchangeField]
-    regrid: RegridderFactory
+    fields: Sequence[_fields.ExchangeField]
+    regrid: _regridding.RegridderFactory
     _label: str | None
     _regrid_key: str
 
@@ -45,16 +43,16 @@ class Exchange:
         self,
         source: str,
         target: str,
-        fields: Sequence[ExchangeField],
+        fields: Sequence[_fields.ExchangeField],
         *,
-        regrid: RegridderFactory = _bilinear,
+        regrid: _regridding.RegridderFactory = _bilinear,
         label: str | None = None,
     ) -> None:
         """Create an exchange declaration."""
 
         object.__setattr__(self, "source", source)
         object.__setattr__(self, "target", target)
-        object.__setattr__(self, "fields", normalize_field_items(fields))
+        object.__setattr__(self, "fields", _normalize_field_items(fields))
         object.__setattr__(self, "regrid", regrid)
         object.__setattr__(self, "_label", label)
         object.__setattr__(self, "_regrid_key", _regridder_factory_name(regrid))

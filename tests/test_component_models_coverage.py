@@ -53,37 +53,37 @@ from vercor._runtime.stores import FieldStore
 from vercor.dtypes import DTypePolicy
 from vercor._runtime.validation import validate_exchange_fields_declared
 from vercor.exchanges import Exchange
-from vercor.fields import flatten_field_items
+from vercor.fields import _flatten_field_items
 from vercor.regridding import bilinear, conservative
 from vercor.types import RuntimeArray
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 _DATA_ATMOSPHERE_INPUTS = tuple(
-    flatten_field_items(
+    _flatten_field_items(
         (*OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS, *LAND_TO_ATMOSPHERE_SURFACE_FIELDS)
     )
 )
 _DATA_DRIVER_LAND_INPUTS = tuple(
-    flatten_field_items(
+    _flatten_field_items(
         (*ATMOSPHERE_TO_LAND_STATE_FIELDS, *ATMOSPHERE_TO_LAND_RADIATION_FIELDS)
     )
 )
 _DATA_LAND_INPUTS = tuple(
     dict.fromkeys(
-        flatten_field_items(
+        _flatten_field_items(
             (*_DATA_DRIVER_LAND_INPUTS, *ATMOSPHERE_TO_LAND_BASIC_FIELDS)
         )
     )
 )
 _DATA_OCEAN_INPUTS = tuple(
-    flatten_field_items(
+    _flatten_field_items(
         (*ATMOSPHERE_TO_OCEAN_STATE_FIELDS, *ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS)
     )
 )
 _DATA_OCEAN_PUBLIC_RECIPE_INPUTS = tuple(
-    flatten_field_items(ATMOSPHERE_TO_DATA_OCEAN_FIELDS)
+    _flatten_field_items(ATMOSPHERE_TO_DATA_OCEAN_FIELDS)
 )
-_JCM_LAND_INPUTS = tuple(flatten_field_items(ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS))
+_JCM_LAND_INPUTS = tuple(_flatten_field_items(ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS))
 
 
 def _install_data_driver_factory_fakes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -230,7 +230,6 @@ def _step_component(
         component_state,
         StepContext(
             dt_seconds=dt.total_seconds(),
-            settings=coupler.settings,
             time=time,
             logger=coupler.logger,
         ),
@@ -292,11 +291,11 @@ def test_jcm_land_exchange_recipe_fields_are_declared() -> None:
             for field_name in _JCM_LAND_INPUTS
         },
         spec=ComponentSpec(
-            inputs=tuple(flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)),
+            inputs=tuple(_flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)),
             outputs=_JCM_LAND_INPUTS,
             initial_fields={
                 field_name: 0.0
-                for field_name in flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)
+                for field_name in _flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)
             },
         ),
     )
@@ -322,7 +321,7 @@ def test_jcm_land_exchange_recipe_fields_are_declared() -> None:
 
     assert contracts["LND"].receives == _JCM_LAND_INPUTS
     assert contracts["LND"].sends == tuple(
-        flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)
+        _flatten_field_items(JCM_LAND_TO_ATMOSPHERE_FIELDS)
     )
     for name, component in components.items():
         validate_exchange_fields_declared(component, contracts[name])
@@ -482,18 +481,18 @@ def test_slab_driver_exchange_recipes_are_declared_by_slab_factories() -> None:
     )
 
     assert contracts["ATM"].receives == (
-        *flatten_field_items(OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS),
-        *flatten_field_items(LAND_TO_ATMOSPHERE_SOIL_FIELDS),
+        *_flatten_field_items(OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS),
+        *_flatten_field_items(LAND_TO_ATMOSPHERE_SOIL_FIELDS),
     )
     assert contracts["OCN"].receives == (
-        *flatten_field_items(SLAB_ATMOSPHERE_TO_OCEAN_FIELDS),
-        *flatten_field_items(SEAICE_TO_OCEAN_FIELDS),
+        *_flatten_field_items(SLAB_ATMOSPHERE_TO_OCEAN_FIELDS),
+        *_flatten_field_items(SEAICE_TO_OCEAN_FIELDS),
     )
     assert contracts["LND"].receives == tuple(
-        flatten_field_items(SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS)
+        _flatten_field_items(SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS)
     )
     assert contracts["ICE"].receives == tuple(
-        flatten_field_items(OCEAN_TO_SEAICE_SURFACE_FIELDS)
+        _flatten_field_items(OCEAN_TO_SEAICE_SURFACE_FIELDS)
     )
     for name, component in components.items():
         validate_exchange_fields_declared(component, contracts[name])

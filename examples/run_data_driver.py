@@ -4,11 +4,11 @@ import matplotlib.pyplot as plt
 
 from vercor import (
     Clock,
-    Component,
     Coupler,
     Exchange,
     RuntimeOptions,
 )
+from vercor.components import Component
 from vercor.diagnostics import (
     ComponentMetric,
     component_vector_speed,
@@ -40,57 +40,54 @@ if __name__ == "__main__":
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=3600, steps=10)
     run_order = ["OCN", "ATM", "LND"]
 
-    # Coupler
+    # Exchanges
+    # scalar fields (vector field))
+    # ["qbot", "zbot", ("ubot", "vbot")]
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
+            regrid=conservative,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_STATE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
+            regrid=conservative,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+    )
     components: list[Component] = [atm, ocn, lnd]
     cpl = Coupler(
         clock=clock,
         components=components,
+        exchanges=exchanges,
         run_order=run_order,
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
-    )
-
-    # Exchanges
-    # scalar fields (vector field))
-    # ["qbot", "zbot", ("ubot", "vbot")]
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_LAND_STATE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-        ),
     )
 
     final_state = cpl.run()

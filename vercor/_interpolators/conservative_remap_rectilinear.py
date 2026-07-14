@@ -11,7 +11,7 @@ from vercor.dtypes import (
     jax_real_dtype,
     jax_zeros,
 )
-from vercor.pytree import PyTreeNodeMixin
+from vercor._pytree import PyTreeNodeMixin
 from vercor.types import RuntimeArray
 
 

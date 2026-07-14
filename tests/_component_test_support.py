@@ -12,7 +12,6 @@ from vercor.components import ComponentSpec, SetupResult
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.dtypes import DTypePolicy
 from vercor.grids import RectilinearGrid
-from vercor.settings import Settings
 
 
 class LegacyTestComponent:
@@ -25,12 +24,10 @@ class LegacyTestComponent:
         name: str,
         grid: RectilinearGrid,
         *,
-        settings: Settings | None = None,
         spec: ComponentSpec | None = None,
     ) -> None:
         self.name = name
         self.grid = grid
-        self.settings = Settings() if settings is None else settings
         self._dtype_policy = DTypePolicy.from_jax_config()
         self._data: dict[str, Any] = dict({} if spec is None else spec.initial_fields)
         self._declared_spec = ComponentSpec() if spec is None else spec
@@ -85,9 +82,8 @@ class LegacyTestComponent:
         *,
         spec: ComponentSpec | None = None,
         payload: Any | None = None,
-        settings: Settings | None = None,
     ) -> "LegacyTestComponent":
-        component = cls(name, grid, spec=spec, settings=settings)
+        component = cls(name, grid, spec=spec)
         component._author_step = step
         component._legacy_payload = payload
         component.step = step  # type: ignore[method-assign]

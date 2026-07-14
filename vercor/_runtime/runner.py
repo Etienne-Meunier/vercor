@@ -32,6 +32,8 @@ def run_coupler_runtime(
     """Select a validated runtime execution mode and delegate to its backend."""
 
     with context.interrupts.signal_scope():
+        if not context.run_order:
+            return runtime_state
         output_enabled = has_period_output(context.dispatch_context.components)
         if output_enabled:
             validate_period_output_run_state_not_traced(runtime_state)
@@ -114,7 +116,6 @@ def _run_host_backend(
         runtime_state,
         run_order=context.run_order,
         clock=context.clock,
-        settings=context.dispatch_context.settings,
         model_year_seconds=context.options.model_year_seconds,
         logger=context.logger,
         dispatch_context=context.dispatch_context,

@@ -42,7 +42,6 @@ def replace_runtime_topology_maps(
         topology_maps.regridders,
         prepared.contracts,
         dt_seconds=prepared.clock.dt_seconds,
-        settings=prepared.settings,
         constants=prepared.constants,
         dtype=prepared.runtime.dtype,
     )
@@ -71,7 +70,6 @@ def run_scanned_coupler(
         prepared_state,
         run_order=coupling.run_order,
         clock=coupling.clock,
-        settings=coupling.settings,
         model_year_seconds=coupling.runtime.model_year_seconds,
         logger=coupler.logger,
         dispatch_context=coupling.dispatch_context,

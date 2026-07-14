@@ -8,10 +8,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
-from vercor.calendar import ModelDateTime
-from vercor.components.contracts import Component
-from vercor.jax_logging import LoggerLike
-from vercor.state import ComponentState
+from vercor.calendar import ModelDateTime as _ModelDateTime
+from vercor.components.contracts import Component as _Component
+from vercor.jax_logging import LoggerLike as _LoggerLike
+from vercor.state import ComponentState as _ComponentState
 
 OutputFrequency: TypeAlias = Literal["step", "day", "month", "year"]
 
@@ -49,12 +49,12 @@ class PeriodOutput:
 class SnapshotContext:
     """Public payload passed to component snapshot writers."""
 
-    component: Component
-    state: ComponentState
+    component: _Component
+    state: _ComponentState
     payload: Any | None
     output_path: Path
-    time: datetime | ModelDateTime
-    logger: LoggerLike | None
+    time: datetime | _ModelDateTime
+    logger: _LoggerLike | None
 
 
 SnapshotWriter: TypeAlias = Callable[[SnapshotContext], None]

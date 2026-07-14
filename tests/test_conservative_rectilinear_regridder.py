@@ -9,7 +9,7 @@ import pytest
 
 from tests.assertions import assert_allclose_compact, assert_array_equal_compact
 from vercor.grids import RectilinearGrid
-from vercor.interpolators.conservative_remap_rectilinear import (
+from vercor._interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor._regridders.conservative import (

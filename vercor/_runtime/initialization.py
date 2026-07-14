@@ -26,7 +26,6 @@ from vercor._runtime.validation import (
     check_not_empty_import_export_lists,
     validate_exchange_fields_declared,
 )
-from vercor.settings import Settings
 from vercor.topology import TopologyPolicy
 
 if TYPE_CHECKING:
@@ -48,7 +47,6 @@ def initialize_coupler_runtime(
     components: dict[str, _ComponentDeclaration],
     exchanges: Sequence[Exchange],
     run_order: Sequence[str],
-    settings: Settings,
     constants: PhysicalConstants,
     dtype: DTypePolicy,
     logger: LoggerLike,
@@ -65,7 +63,6 @@ def initialize_coupler_runtime(
         start=clock.start,
         dt_seconds=clock.dt_seconds,
         run_order=run_order,
-        settings=settings,
         constants=constants,
         dtype=dtype,
         logger=logger,
@@ -95,7 +92,6 @@ def initialize_coupler_runtime(
         exchanges=exchanges,
         topology_maps=topology_maps,
         topology_policy=topology_policy,
-        settings=settings,
         dtype=dtype,
         logger=logger,
     )

@@ -15,7 +15,6 @@ from tests._component_test_support import LegacyTestComponent
 from vercor.components import ComponentSpec
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.grids import RectilinearGrid
-from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -74,7 +73,6 @@ class CoverageCouplerStub:
             steps=1,
         )
     )
-    settings: Settings = field(default_factory=Settings)
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("coverage-tests")
     )
@@ -85,7 +83,6 @@ class CoverageCouplerStub:
             start=self.clock.start,
             dt_seconds=self.clock.dt_seconds,
             run_order=self.run_order,
-            settings=self.settings,
             logger=self.logger,
         )
 
@@ -94,7 +91,6 @@ class CoverageCouplerStub:
     ) -> StepContext:
         return StepContext(
             dt_seconds=self.clock.dt_seconds,
-            settings=self.settings,
             time=time,
             logger=self.logger if with_logger else None,
         )

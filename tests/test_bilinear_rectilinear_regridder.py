@@ -9,7 +9,7 @@ import pytest
 from tests.assertions import assert_array_equal_compact
 from vercor.grids import RectilinearGrid
 from vercor._regridders.bilinear import BilinearRectilinearRegridder, bilinear
-from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
 
 def _make_grid(

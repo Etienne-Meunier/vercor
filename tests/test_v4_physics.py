@@ -23,11 +23,9 @@ from vercor.components import (
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy, dtype_policy
-from vercor.exceptions import CouplerError
 from vercor.fluxes.utilities import compute_air_density
 from vercor.jax_logging import get_default_logger
 from vercor.runtime import RuntimeOptions
-from vercor.settings import Settings
 
 EXPECTED_CONSTANTS = {
     "earth_radius": 6.371e6,
@@ -204,32 +202,29 @@ def test_dtype_helpers_reject_settings_as_a_precision_owner() -> None:
 
     assert not hasattr(DTypePolicy, "from_settings")
     with pytest.raises(TypeError, match="DTypePolicy"):
-        dtype_policy(Settings(enable_x64=True))  # type: ignore[arg-type]
+        dtype_policy(object())  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         physical_constants_type(dtype=DTypePolicy(enable_x64=True))
 
 
 def test_runtime_options_reject_settings_as_dtype_immediately() -> None:
     with pytest.raises(TypeError, match="dtype.*DTypePolicy"):
-        RuntimeOptions(dtype=Settings())  # type: ignore[arg-type]
+        RuntimeOptions(dtype=object())  # type: ignore[arg-type]
 
 
 def test_setup_and_step_contexts_expose_constants() -> None:
     physical_constants_type = _physical_constants_type()
     constants = physical_constants_type(gravity=10.0)
-    settings = Settings()
 
     setup = SetupContext(
         start=datetime(2000, 1, 1),
         dt_seconds=60.0,
         run_order=("MODEL",),
-        settings=settings,
         constants=constants,
         logger=get_default_logger(),
     )
     step = StepContext(
         dt_seconds=60.0,
-        settings=settings,
         constants=constants,
     )
 
@@ -266,8 +261,6 @@ def test_coupler_wires_constants_while_runtime_options_own_dtype() -> None:
         runtime=RuntimeOptions(dtype=DTypePolicy(enable_x64=False)),
         constants=constants,
     )
-    coupler.settings.enable_x64 = True
-
     state = coupler.initial_state()
     final_state = coupler.run(state)
     result = final_state.component("MODEL").field("value")
@@ -343,7 +336,7 @@ def test_numpy_source_mutation_cannot_stale_prepared_constants() -> None:
 
 
 @pytest.mark.fast_always
-def test_replacing_coupler_constants_after_preparation_is_rejected() -> None:
+def test_coupler_constants_are_read_only_after_construction() -> None:
     physical_constants_type = _physical_constants_type()
     component = CallableComponent(
         "MODEL",
@@ -361,12 +354,5 @@ def test_replacing_coupler_constants_after_preparation_is_rejected() -> None:
         run_order=("MODEL",),
         constants=physical_constants_type(),
     )
-    coupler.initial_state()
-
-    coupler.constants = physical_constants_type(gravity=10.0)
-
-    with pytest.raises(
-        CouplerError,
-        match="physical constants.*changed after preparation",
-    ):
-        coupler.initial_state()
+    with pytest.raises(AttributeError, match="constants.*no setter"):
+        coupler.constants = physical_constants_type(gravity=10.0)  # type: ignore[misc]

@@ -20,7 +20,7 @@ from vercor.components import (
     StepContext,
     StepResult,
 )
-from vercor.coupling import Coupler
+from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.grids import RectilinearGrid
 from vercor.output import OutputConfig, SnapshotContext

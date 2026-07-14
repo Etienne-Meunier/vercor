@@ -10,7 +10,7 @@ ALLOWED_NUMPY_BOUNDARIES = {
     "vercor/diagnostics/plotting.py",
     "vercor/dtypes.py",
     "vercor/forcing_data.py",
-    "vercor/host_arrays.py",
+    "vercor/_host_arrays.py",
     "vercor/setups/_external/camulator_output.py",
     "vercor/types.py",
 }

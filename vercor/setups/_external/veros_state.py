@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
-from vercor.host_arrays import runtime_array_to_host
+from vercor._host_arrays import runtime_array_to_host
 from vercor.types import RuntimeArray
 
 from veros.state import VerosState

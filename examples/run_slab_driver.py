@@ -79,57 +79,54 @@ if __name__ == "__main__":
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=3600, steps=24)
     run_order = ["OCN", "ATM", "ICE", "LND"]
 
-    # Coupler
+    # Exchanges
+    # scalar fields (vector field))
+    # ["SHF", "LHF", ("u10m", "v10m")]
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ICE",
+            fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
+            regrid=conservative,
+        ),
+        Exchange(
+            source="ICE",
+            target="OCN",
+            fields=SEAICE_TO_OCEAN_FIELDS,
+            regrid=conservative,
+        ),
+    )
     components: list[Any] = [atm, ocn, ice, lnd]
     cpl = Coupler(
         clock=clock,
         components=components,
+        exchanges=exchanges,
         run_order=run_order,
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
-    )
-
-    # Exchanges
-    # scalar fields (vector field))
-    # ["SHF", "LHF", ("u10m", "v10m")]
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ICE",
-                fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="ICE",
-                target="OCN",
-                fields=SEAICE_TO_OCEAN_FIELDS,
-                regrid=conservative,
-            ),
-        ),
     )
 
     final_state = cpl.run()

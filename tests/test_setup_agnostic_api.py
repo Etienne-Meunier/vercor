@@ -15,21 +15,25 @@ import vercor.setups._jcm as jcm_setup_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor import (
-    CallableComponent,
     Clock,
+    Coupler,
+    Exchange,
+)
+from vercor.components import (
+    CallableComponent,
     Component,
     ComponentSpec,
-    Coupler,
     DataComponent,
-    Exchange,
     LifecycleHooks,
-    RuntimeOptions,
+    SetupContext,
     SetupResult,
     StepContext,
 )
 from vercor.exceptions import ComponentError, CouplerError
+from vercor.fields import vector
 from vercor.output import OutputConfig, PeriodOutput
 from vercor.regridding import conservative
+from vercor.runtime import RuntimeOptions
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
 from vercor.topology import SurfaceMaskPolicy
 
@@ -107,22 +111,20 @@ def test_duplicate_exchange_topology_key_requires_merged_fields_or_distinct_fact
         {"temperature": 0.0, "humidity": 0.0},
         spec=ComponentSpec(inputs=("temperature", "humidity")),
     )
-    coupler = Coupler(
-        clock=_clock(),
-        components=(source, target),
-        exchanges=(
-            Exchange("SRC", "DST", ("temperature",)),
-            Exchange("SRC", "DST", ("humidity",)),
-        ),
-        run_order=("SRC", "DST"),
-        runtime=RuntimeOptions(topology=None),
-    )
-
     with pytest.raises(
         CouplerError,
         match="Duplicate exchange topology key.*merge field declarations.*distinct regrid factories",
     ):
-        coupler.initial_state()
+        Coupler(
+            clock=_clock(),
+            components=(source, target),
+            exchanges=(
+                Exchange("SRC", "DST", ("temperature",)),
+                Exchange("SRC", "DST", ("humidity",)),
+            ),
+            run_order=("SRC", "DST"),
+            runtime=RuntimeOptions(topology=None),
+        )
 
 
 @pytest.mark.fast_always
@@ -151,15 +153,14 @@ def test_exchange_fan_in_rejects_scalar_conflicts_independent_of_order_and_regri
 
     messages = []
     for declared in (exchanges, tuple(reversed(exchanges))):
-        coupler = Coupler(
-            clock=_clock(),
-            components=(source_a, source_b, target),
-            exchanges=declared,
-            run_order=("SRC_A", "SRC_B", "DST"),
-            runtime=RuntimeOptions(topology=None),
-        )
         with pytest.raises(CouplerError) as error:
-            coupler.initial_state()
+            Coupler(
+                clock=_clock(),
+                components=(source_a, source_b, target),
+                exchanges=declared,
+                run_order=("SRC_A", "SRC_B", "DST"),
+                runtime=RuntimeOptions(topology=None),
+            )
         messages.append(str(error.value))
 
     assert messages[0] == messages[1]
@@ -182,27 +183,25 @@ def test_exchange_fan_in_flattens_vector_declarations() -> None:
         {"u": 0.0, "v": 0.0},
         spec=ComponentSpec(inputs=("u", "v")),
     )
-    coupler = Coupler(
-        clock=_clock(),
-        components=(source_a, source_b, target),
-        exchanges=(
-            Exchange(
-                "SRC_A",
-                "DST",
-                (vercor.vector("u", "v"),),
-                label="vector route",
-            ),
-            Exchange("SRC_B", "DST", ("v",), label="scalar route"),
-        ),
-        run_order=("SRC_A", "SRC_B", "DST"),
-        runtime=RuntimeOptions(topology=None),
-    )
-
     with pytest.raises(
         CouplerError,
         match="DST.*v.*scalar route.*vector route.*distinct field names.*aggregator",
     ):
-        coupler.initial_state()
+        Coupler(
+            clock=_clock(),
+            components=(source_a, source_b, target),
+            exchanges=(
+                Exchange(
+                    "SRC_A",
+                    "DST",
+                    (vector("u", "v"),),
+                    label="vector route",
+                ),
+                Exchange("SRC_B", "DST", ("v",), label="scalar route"),
+            ),
+            run_order=("SRC_A", "SRC_B", "DST"),
+            runtime=RuntimeOptions(topology=None),
+        )
 
 
 @pytest.mark.fast_always
@@ -380,7 +379,7 @@ def test_no_exchange_components_run_initialize_hooks_before_state_creation() -> 
     grid = make_test_grid(name="no-exchange-init-grid")
     events: list[tuple[str, tuple[str, ...]]] = []
 
-    def setup(component: vercor.Component, context: vercor.SetupContext) -> SetupResult:
+    def setup(component: Component, context: SetupContext) -> SetupResult:
         events.append((component.name, tuple(context.run_order)))
         return SetupResult(fields={"temperature": 280.0})
 

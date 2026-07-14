@@ -7,10 +7,10 @@ import jax.numpy as jnp
 from jax import Array, lax
 
 from vercor.dtypes import as_jax_real_array, jax_full, jax_index_dtype
-import vercor.interpolators._bilinear_extrapolation as _extrapolation
-import vercor.interpolators._bilinear_geometry as _geometry
-import vercor.interpolators._bilinear_weights as _weights
-from vercor.pytree import PyTreeNodeMixin
+import vercor._interpolators._bilinear_extrapolation as _extrapolation
+import vercor._interpolators._bilinear_geometry as _geometry
+import vercor._interpolators._bilinear_weights as _weights
+from vercor._pytree import PyTreeNodeMixin
 
 
 @jax.tree_util.register_pytree_node_class

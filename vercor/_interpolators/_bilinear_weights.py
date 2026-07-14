@@ -6,7 +6,7 @@ from jax import Array
 import jax.numpy as jnp
 
 from vercor.dtypes import jax_index_dtype
-import vercor.interpolators._bilinear_geometry as _geometry
+import vercor._interpolators._bilinear_geometry as _geometry
 
 
 @dataclass(frozen=True)

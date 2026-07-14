@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from vercor.host_arrays import transposed_host_array
+from vercor._host_arrays import transposed_host_array
 from vercor.components import Component, DataComponent
 from vercor.grids import RectilinearGrid
 from vercor.setups.config import JCMLandAtmosphereConfig

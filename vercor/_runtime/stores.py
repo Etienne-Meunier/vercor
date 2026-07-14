@@ -6,7 +6,7 @@ from typing import Mapping
 import jax
 import jax.numpy as jnp
 
-from vercor.pytree import PyTreeNodeMixin
+from vercor._pytree import PyTreeNodeMixin
 from vercor.types import RuntimeArray
 
 

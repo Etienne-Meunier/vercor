@@ -64,7 +64,6 @@ from vercor._runtime.topology_state import (
     ExchangeTopologyState,
     RuntimeTopologyMaps,
 )
-from vercor.settings import Settings
 from vercor.topology import SurfaceMaskPolicy
 
 
@@ -82,6 +81,16 @@ class _RecordingLogger:
 
     def debug(self, message: str, *args: Any) -> None:
         self.debug_messages.append(message.format(*args) if args else message)
+
+    def error(self, message: str, *args: Any) -> None:
+        _ = message, args
+
+    def setLevel(self, level: int | str) -> None:
+        _ = level
+
+    def isEnabledFor(self, level: int) -> bool:
+        _ = level
+        return True
 
 
 class _RunComponent(LegacyTestComponent):
@@ -158,6 +167,7 @@ def make_coupler(
     exchanges: Any = (),
     run_order: Any = (),
     runtime: RuntimeOptions | None = None,
+    logger: Any = None,
 ) -> Coupler:
     return Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -165,6 +175,7 @@ def make_coupler(
         exchanges=exchanges,
         run_order=run_order,
         runtime=runtime,
+        logger=logger,
     )
 
 
@@ -172,10 +183,17 @@ def _snapshot_output_time_for_write_outputs(
     coupler: Coupler,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Any:
-    coupler.add_component(
-        cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm")))
+    coupler = Coupler(
+        clock=coupler.clock,
+        components=(
+            cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm"))),
+        ),
+        run_order=("ATM",),
+        runtime=coupler.runtime,
+        constants=coupler.constants,
+        logger=coupler.logger,
+        log_level=coupler.log_level,
     )
-    coupler.set_run_order(("ATM",))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_snapshots: dict[str, Any] = {}
 
@@ -311,20 +329,15 @@ def test_setup_logger_routes_child_loggers_through_parent_canonical_handler() ->
 
 @pytest.mark.fast_always
 def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
-    coupler = make_coupler()
-    for component_name in ("ATM", "OCN", "LND"):
-        coupler.add_component(
+    coupler = make_coupler(
+        components=tuple(
             DummyComponent(
                 name=component_name,
                 grid=make_test_grid(name=component_name.lower()),
             )
-        )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-            "LND",
-        )
+            for component_name in ("ATM", "OCN", "LND")
+        ),
+        run_order=("ATM", "OCN", "LND"),
     )
 
     runtime_state = coupler.initial_state(prefill_missing=True)
@@ -428,9 +441,9 @@ def test_scanned_runtime_passes_callback_logger_to_components() -> None:
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(cast(Any, _LoggingRunComponent("ATM")),),
         run_order=("ATM",),
+        logger=setup_logger(level="INFO", name=logger_name),
         log_level="INFO",
     )
-    coupler.logger = setup_logger(level="INFO", name=logger_name)
     coupler._ensure_prepared()
 
     with capture_logger_output(logger_name) as stream:
@@ -453,9 +466,9 @@ def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
             "ATM",
             "OCN",
         ),
+        logger=setup_logger(level="INFO", name=logger_name),
         log_level="INFO",
     )
-    coupler.logger = setup_logger(level="INFO", name=logger_name)
     coupler._ensure_prepared()
 
     with capture_logger_output(logger_name) as stream:
@@ -482,9 +495,9 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(cast(Any, _LoggingRunComponent("ATM")),),
         run_order=("ATM",),
+        logger=setup_logger(level="WARNING", name=logger_name),
         log_level="WARNING",
     )
-    coupler.logger = setup_logger(level="WARNING", name=logger_name)
     coupler._ensure_prepared()
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
@@ -499,20 +512,16 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
 
 
 @pytest.mark.fast_always
-def test_coupler_register_and_run_order_validation() -> None:
-    coupler = make_coupler()
+def test_coupler_constructor_validates_duplicate_components_and_run_order() -> None:
     atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    coupler.add_component(cast(Any, atmosphere))
 
-    with pytest.raises(CouplerError, match="already registered"):
-        coupler.add_component(cast(Any, atmosphere))
+    with pytest.raises(CouplerError, match="Duplicate component name.*ATM"):
+        make_coupler(components=(cast(Any, atmosphere), cast(Any, atmosphere)))
 
-    with pytest.raises(CouplerError, match="not registered in coupler"):
-        coupler.set_run_order(
-            (
-                "ATM",
-                "OCN",
-            )
+    with pytest.raises(CouplerError, match="Unknown run-order component.*OCN"):
+        make_coupler(
+            components=(cast(Any, atmosphere),),
+            run_order=("ATM", "OCN"),
         )
 
 
@@ -528,35 +537,28 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
     source: str,
     destination: str,
 ) -> None:
-    coupler = make_coupler()
     components = {
         "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
         "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
     }
-    for name in registered_names:
-        coupler.add_component(cast(Any, components[name]))
-
-    coupler.add_exchange(
-        Exchange(
-            source=source,
-            target=destination,
-            fields=["temperature"],
-            regrid=bilinear,
+    with pytest.raises(CouplerError, match="unknown .* component"):
+        make_coupler(
+            components=tuple(cast(Any, components[name]) for name in registered_names),
+            exchanges=(
+                Exchange(
+                    source=source,
+                    target=destination,
+                    fields=["temperature"],
+                    regrid=bilinear,
+                ),
+            ),
         )
-    )
-
-    with pytest.raises(CouplerError, match="not registered in coupler"):
-        coupler._initialize_runtime()
 
 
 def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler(runtime=RuntimeOptions(topology=SurfaceMaskPolicy()))
     logger = _RecordingLogger()
-    coupler.logger = cast(Any, logger)
-    coupler.settings.enable_x64 = False
-
     lnd_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]])
     components = {
         "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
@@ -607,9 +609,6 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         inputs=("sensible_heat_flux",),
         outputs=("ice_fraction",),
     )
-
-    for component in components.values():
-        coupler.add_component(cast(Any, component))
 
     created_keys: list[tuple[str, str]] = []
 
@@ -664,8 +663,15 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
             regrid=bilinear_recording,
         ),
     ]
-    for exchange in exchanges:
-        coupler.add_exchange(exchange)
+    coupler = make_coupler(
+        components=tuple(cast(Any, component) for component in components.values()),
+        exchanges=exchanges,
+        runtime=RuntimeOptions(
+            dtype=DTypePolicy(enable_x64=True),
+            topology=SurfaceMaskPolicy(),
+        ),
+        logger=cast(Any, logger),
+    )
 
     def fake_create_surface_exchange_masks(*args: Any, **kwargs: Any) -> Any:
         _ = args, kwargs
@@ -680,10 +686,9 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         "create_surface_exchange_masks",
         fake_create_surface_exchange_masks,
     )
-    coupler.settings.enable_x64 = True
     coupler._initialize_runtime()
 
-    assert coupler.settings.enable_x64 is True
+    assert coupler.runtime.dtype.enable_x64 is True
     assert len(created_keys) == 6
     assert coupler._prepared is not None
     topology_maps = coupler._prepared.topology_maps
@@ -746,7 +751,6 @@ def test_build_exchange_topology_returns_explicit_patched_state(
     state = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
-        settings=Settings(),
         dtype=DTypePolicy(),
         topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
@@ -786,7 +790,6 @@ def test_build_exchange_topology_rejects_duplicate_topology_keys() -> None:
         build_exchange_topology(
             components=cast(Any, components),
             exchanges=exchanges,
-            settings=Settings(),
             dtype=DTypePolicy(),
             logger=cast(Any, logger),
         )
@@ -830,7 +833,6 @@ def test_surface_mask_policy_uses_uniform_applies_then_build_protocol(
     state = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
-        settings=Settings(),
         dtype=DTypePolicy(),
         topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
@@ -875,7 +877,6 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
             binary_masks=existing_binary_masks,
             fractional_masks=existing_fractional_masks,
         ),
-        settings=Settings(),
         dtype=DTypePolicy(),
         topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
@@ -1000,7 +1001,7 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
         fields=["temperature"],
         regrid=bilinear,
     )
-    coupler = make_coupler(exchanges=(ocn_exchange, lnd_exchange))
+    exchanges = (ocn_exchange, lnd_exchange)
     binary_masks = {
         ("OCN", "ATM", "bilinear"): np.zeros((2, 2)),
         ("LND", "ATM", "bilinear"): np.ones((2, 2)),
@@ -1009,11 +1010,11 @@ def test_output_masks_for_component_returns_destination_exchange_masks() -> None
         ("OCN", "ATM", "bilinear"): np.full((2, 2), 0.25),
         ("LND", "ATM", "bilinear"): np.full((2, 2), 0.75),
     }
-    assert not hasattr(coupler, "_output_masks_for_component")
+    assert not hasattr(Coupler, "_output_masks_for_component")
 
     masks = output_masks_for_component(
         "ATM",
-        coupler.exchanges,
+        exchanges,
         binary_masks,
         fractional_masks,
     )
@@ -1379,24 +1380,19 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
 
 
 def test_coupler_string_representations_include_registered_state() -> None:
-    coupler = make_coupler()
     atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
     ocean = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    coupler.add_component(cast(Any, atmosphere))
-    coupler.add_component(cast(Any, ocean))
-    coupler.add_exchange(
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=["temperature"],
-            regrid=bilinear,
-        )
-    )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-        )
+    coupler = make_coupler(
+        components=(cast(Any, atmosphere), cast(Any, ocean)),
+        exchanges=(
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=["temperature"],
+                regrid=bilinear,
+            ),
+        ),
+        run_order=("ATM", "OCN"),
     )
 
     rendered = str(coupler)
@@ -1421,8 +1417,8 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
             "ATM",
             "OCN",
         ),
+        logger=cast(Any, _RecordingLogger()),
     )
-    coupler.logger = cast(Any, _RecordingLogger())
 
     def fake_dispatch(state: Any, component_name: str, *args: Any) -> Any:
         _ = args
@@ -1493,8 +1489,8 @@ def test_run_warns_when_host_backed_components_make_loop_nondifferentiable() -> 
             cast(Any, _HostRunComponent("OCN")),
         ),
         run_order=("ATM", "OCN"),
+        logger=cast(Any, logger),
     )
-    coupler.logger = cast(Any, logger)
 
     coupler.run()
 

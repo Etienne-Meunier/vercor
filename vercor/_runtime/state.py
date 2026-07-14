@@ -5,7 +5,7 @@ from typing import Any
 
 import jax
 
-from vercor.pytree import PyTreeNodeMixin
+from vercor._pytree import PyTreeNodeMixin
 from vercor._runtime.stores import FieldStore
 
 

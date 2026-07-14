@@ -8,7 +8,6 @@ from vercor.calendar import ModelDateTime
 from vercor.dtypes import DTypePolicy
 from vercor.jax_logging import LoggerLike
 from vercor.physics import PhysicalConstants
-from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
@@ -19,7 +18,6 @@ class SetupContext:
     start: datetime | ModelDateTime
     dt_seconds: float
     run_order: Sequence[str]
-    settings: Settings
     logger: LoggerLike
     constants: PhysicalConstants = field(default_factory=PhysicalConstants)
     dtype: DTypePolicy = field(default_factory=DTypePolicy.from_jax_config)
@@ -30,7 +28,6 @@ class StepContext:
     """Minimal runtime step context passed to component step boundaries."""
 
     dt_seconds: float
-    settings: Settings
     constants: PhysicalConstants = field(default_factory=PhysicalConstants)
     dtype: DTypePolicy = field(default_factory=DTypePolicy.from_jax_config)
     time: datetime | ModelDateTime | None = None

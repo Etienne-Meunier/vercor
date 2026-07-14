@@ -74,7 +74,7 @@ def test_check_remap_conservation_handles_skip_and_mismatch(
             self.interpolator = interpolator
 
     monkeypatch.setattr(
-        grid_masks_module, "ConservativeRectilinearRemapper", DummyRemapper
+        grid_masks_module, "_ConservativeRectilinearRemapper", DummyRemapper
     )
     skip_interp = DummyRemapper(
         src_lon_b=np.array([0.0, 1.0, 2.0]),
@@ -118,7 +118,7 @@ def test_create_lnd_mask_from_ocn_accepts_jax_backed_masks(
 
     monkeypatch.setattr(
         grid_masks_module,
-        "ConservativeRectilinearRegridder",
+        "_ConservativeRectilinearRegridder",
         DummyRegridder,
     )
 

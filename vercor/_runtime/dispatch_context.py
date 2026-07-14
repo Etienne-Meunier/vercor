@@ -9,7 +9,6 @@ from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
 from vercor.physics import PhysicalConstants
 from vercor._runtime.contracts import ExchangeContract
-from vercor.settings import Settings
 
 if TYPE_CHECKING:
     from vercor.components._adapter import _ComponentBinding
@@ -24,7 +23,6 @@ class RuntimeDispatchContext:
     regridders: Mapping[tuple[str, str, str], Any]
     contracts: Mapping[str, ExchangeContract]
     dt_seconds: float
-    settings: Settings
     constants: PhysicalConstants
     dtype: DTypePolicy
 
@@ -41,7 +39,6 @@ def build_runtime_dispatch_context(
     contracts: Mapping[str, ExchangeContract],
     *,
     dt_seconds: float,
-    settings: Settings,
     constants: PhysicalConstants,
     dtype: DTypePolicy,
 ) -> RuntimeDispatchContext:
@@ -62,7 +59,6 @@ def build_runtime_dispatch_context(
         regridders=regridders,
         contracts=contracts,
         dt_seconds=dt_seconds,
-        settings=settings,
         constants=constants,
         dtype=dtype,
     )

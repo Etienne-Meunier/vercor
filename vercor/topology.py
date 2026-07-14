@@ -7,11 +7,10 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
-from vercor.components import Component
-from vercor.exchanges import Exchange
-from vercor.jax_logging import LoggerLike
-from vercor.settings import Settings
-from vercor.types import RuntimeArray
+from vercor.components import Component as _Component
+from vercor.exchanges import Exchange as _Exchange
+from vercor.jax_logging import LoggerLike as _LoggerLike
+from vercor.types import RuntimeArray as _RuntimeArray
 
 ExchangeKey: TypeAlias = tuple[str, str, str]
 
@@ -20,19 +19,18 @@ ExchangeKey: TypeAlias = tuple[str, str, str]
 class TopologyContext:
     """Public read-only context supplied to topology policies."""
 
-    components: Mapping[str, Component]
-    exchanges: Sequence[Exchange]
+    components: Mapping[str, _Component]
+    exchanges: Sequence[_Exchange]
     exchange_keys: Sequence[ExchangeKey]
-    settings: Settings
-    logger: LoggerLike
+    logger: _LoggerLike
 
 
 @dataclass(frozen=True)
 class ExchangeTopologyPatch:
     """Topology mask updates keyed by ``(source, target, regrid_key)``."""
 
-    binary_masks: Mapping[ExchangeKey, RuntimeArray] = field(default_factory=dict)
-    fractional_masks: Mapping[ExchangeKey, RuntimeArray] = field(default_factory=dict)
+    binary_masks: Mapping[ExchangeKey, _RuntimeArray] = field(default_factory=dict)
+    fractional_masks: Mapping[ExchangeKey, _RuntimeArray] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Freeze caller-provided patch mappings."""

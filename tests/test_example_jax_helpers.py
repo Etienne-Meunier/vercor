@@ -6,12 +6,12 @@ import numpy as np
 from numpy.typing import NDArray
 import pytest
 
-import vercor.host_arrays as host_arrays_module
+import vercor._host_arrays as host_arrays_module
 from vercor.diagnostics import component_vector_speed
 from vercor.grids import RectilinearGrid
-from vercor.host_arrays import transposed_host_array
+from vercor._host_arrays import transposed_host_array
 from tests.assertions import assert_allclose_compact
-from vercor.host_arrays import runtime_array_to_host
+from vercor._host_arrays import runtime_array_to_host
 from vercor.state import ComponentState
 
 

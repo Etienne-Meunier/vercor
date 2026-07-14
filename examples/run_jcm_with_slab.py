@@ -80,45 +80,42 @@ if __name__ == "__main__":
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
     run_order = ["OCN", "LND", "ATM"]
 
-    # Coupler
+    # Exchanges
+    # scalar fields (vector field))
+    # ["SHF", "LHF", ("u10m", "v10m")]
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
+            regrid=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+            regrid=conservative,
+        ),
+    )
     components = [atm, ocn, lnd]
     cpl = Coupler(
         clock=clock,
         components=components,
+        exchanges=exchanges,
         run_order=run_order,
         runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
-    )
-
-    # Exchanges
-    # scalar fields (vector field))
-    # ["SHF", "LHF", ("u10m", "v10m")]
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-                regrid=conservative,
-            ),
-        ),
     )
 
     final_state = cpl.run()

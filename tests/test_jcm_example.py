@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from datetime import datetime
 import importlib
 import os
@@ -10,7 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -24,11 +25,9 @@ class _FakeCoupler:
     def __init__(self, *args: object, **kwargs: object) -> None:
         self.args = args
         self.kwargs = kwargs
-        self.exchanges: tuple[object, ...] = ()
-
-    def add_exchanges(self, exchanges: tuple[object, ...]) -> "_FakeCoupler":
-        self.exchanges = exchanges
-        return self
+        self.exchanges: tuple[object, ...] = tuple(
+            cast(Iterable[object], kwargs.get("exchanges", ()))
+        )
 
 
 @pytest.mark.fast_always

@@ -32,6 +32,49 @@ PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
 FROZEN_PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin_3_0"
 EXPECTED_PLUGIN_WHEEL_NAME = "vercor_public_plugin-0.1.0-py3-none-any.whl"
 EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = "vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl"
+EXPECTED_INSTALLED_ROOT = (
+    "Clock",
+    "Coupler",
+    "Exchange",
+    "RectilinearGrid",
+    "RunState",
+    "RuntimeOptions",
+)
+EXPECTED_INSTALLED_OWNER_MANIFESTS = {
+    "vercor.components": (
+        "CallableComponent",
+        "Component",
+        "ComponentSpec",
+        "DataComponent",
+        "LifecycleHooks",
+        "PrefillContext",
+        "PrefillResult",
+        "SetupContext",
+        "SetupResult",
+        "StepContext",
+        "StepResult",
+        "TransferPolicy",
+        "ValidationContext",
+    ),
+    "vercor.coupler": ("Coupler",),
+    "vercor.runtime": (
+        "ExecutionBackend",
+        "ExecutionContext",
+        "ExecutionMode",
+        "RuntimeDriver",
+        "RuntimeOptions",
+    ),
+    "vercor.physics": ("PhysicalConstants",),
+    "vercor.grid_geometry": ("centers_to_edges", "grids_identical"),
+}
+REMOVED_PRIMARY_MODULES = (
+    "vercor.coupling",
+    "vercor.settings",
+    "vercor.physical_constants",
+    "vercor.host_arrays",
+    "vercor.pytree",
+    "vercor.interpolators",
+)
 
 
 @pytest.fixture(scope="module")
@@ -139,7 +182,7 @@ def test_current_public_plugin_uses_canonical_owners_and_v4_workflows() -> None:
     for owner in (
         "vercor.clock",
         "vercor.components",
-        "vercor.coupling",
+        "vercor.coupler",
         "vercor.exchanges",
         "vercor.grids",
         "vercor.output",
@@ -442,16 +485,44 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     )
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(target)
+    probe_source = f"""
+import importlib
+import importlib.metadata
+import json
+import pathlib
+import vercor
+
+owners = {{}}
+for module_name in {tuple(EXPECTED_INSTALLED_OWNER_MANIFESTS)!r}:
+    module = importlib.import_module(module_name)
+    owners[module_name] = {{
+        "all": list(module.__all__),
+        "file": module.__file__,
+    }}
+
+removed = {{}}
+for module_name in {REMOVED_PRIMARY_MODULES!r}:
+    try:
+        importlib.import_module(module_name)
+    except ModuleNotFoundError as error:
+        removed[module_name] = error.name
+    else:
+        removed[module_name] = None
+
+print(json.dumps({{
+    "file": vercor.__file__,
+    "version": importlib.metadata.version("vercor"),
+    "typed": str(pathlib.Path(vercor.__file__).with_name("py.typed")),
+    "root": list(vercor.__all__),
+    "owners": owners,
+    "removed": removed,
+}}))
+"""
     probe = subprocess.run(
         [
             sys.executable,
             "-c",
-            (
-                "import importlib.metadata, json, pathlib, vercor; "
-                "print(json.dumps({'file': vercor.__file__, "
-                "'version': importlib.metadata.version('vercor'), "
-                "'typed': str(pathlib.Path(vercor.__file__).with_name('py.typed'))}))"
-            ),
+            probe_source,
         ],
         cwd=tmp_path,
         env=environment,
@@ -463,6 +534,14 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert Path(installed["file"]).is_relative_to(target)
     assert installed["version"] == EXPECTED_VERSION
     assert Path(installed["typed"]).is_file()
+    assert installed["root"] == list(EXPECTED_INSTALLED_ROOT)
+    for module_name, expected_manifest in EXPECTED_INSTALLED_OWNER_MANIFESTS.items():
+        owner = installed["owners"][module_name]
+        assert owner["all"] == list(expected_manifest)
+        assert Path(owner["file"]).is_relative_to(target)
+    assert installed["removed"] == {
+        module_name: module_name for module_name in REMOVED_PRIMARY_MODULES
+    }
 
     monkeypatch.setenv("VERCOR_TEST_PACKAGE_ROOT", str(target))
     setup_probe = _run_setup_probe("import vercor")
@@ -503,7 +582,9 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         text=True,
     )
     assert frozen_smoke.returncode != 0
-    assert "Component.from_step" in frozen_smoke.stderr
+    assert "ModuleNotFoundError: No module named 'vercor.coupling'" in (
+        frozen_smoke.stderr
+    )
 
     mypy_environment = environment.copy()
     mypy_environment["MYPYPATH"] = str(target)
@@ -600,4 +681,6 @@ def test_supplied_wheels_install_and_run_without_build_environment(
         text=True,
     )
     assert frozen_smoke.returncode != 0
-    assert "Component.from_step" in frozen_smoke.stderr
+    assert "ModuleNotFoundError: No module named 'vercor.coupling'" in (
+        frozen_smoke.stderr
+    )

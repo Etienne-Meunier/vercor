@@ -449,7 +449,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "component_state.fields.to_mapping()" not in base_source
     assert "component_state.fields.to_mapping()" in runtime_fields_source
     assert "def merge(" not in runtime_source
-    assert "_prepared: PreparedCoupling | None" in coupler_source
+    assert "_prepared: _PreparedCoupling | None" in coupler_source
     for field_marker in (
         "    _regridders:",
         "    _binary_masks:",
@@ -592,7 +592,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
 
 
 @pytest.mark.fast_always
-def test_runtime_contracts_refresh_after_exchange_changes() -> None:
+def test_runtime_contracts_include_all_constructor_exchanges() -> None:
     atmosphere = DataComponent(
         name="ATM",
         grid=make_test_grid(name="contract-atm"),
@@ -604,9 +604,6 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
         fields={"sea_surface_temperature": 281.0},
         spec=ComponentSpec(inputs=("temperature", "humidity")),
     )
-    coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
-    coupler.add_component(cast(Any, atmosphere))
-    coupler.add_component(cast(Any, ocean))
 
     def temperature_regrid(source: Any, destination: Any) -> object:
         _ = source, destination
@@ -616,33 +613,28 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
         _ = source, destination
         return object()
 
-    coupler.add_exchange(
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=("temperature",),
-            regrid=cast(Any, temperature_regrid),
-        )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(atmosphere, ocean),
+        exchanges=(
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=("temperature",),
+                regrid=cast(Any, temperature_regrid),
+            ),
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=("humidity",),
+                regrid=cast(Any, humidity_regrid),
+            ),
+        ),
     )
 
     runtime_state_from_coupler_components(coupler, prefill_missing=True)
-    assert coupler._prepared is not None
-    first_prepared = coupler._prepared
-    assert first_prepared.contracts["ATM"].sends == ("temperature",)
-
-    coupler.add_exchange(
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=("humidity",),
-            regrid=cast(Any, humidity_regrid),
-        )
-    )
-    assert coupler._prepared is None
-    runtime_state_from_coupler_components(coupler, prefill_missing=True)
 
     assert coupler._prepared is not None
-    assert coupler._prepared is not first_prepared
     assert coupler._prepared.contracts["ATM"].sends == (
         "temperature",
         "humidity",
@@ -773,10 +765,13 @@ def test_examples_use_coupler_runtime_component_view_factory() -> None:
         assert "final_state.components(" in source
 
 
-def test_examples_import_concrete_components_directly() -> None:
+def test_examples_import_component_contracts_from_canonical_owner() -> None:
     for path in Path("examples").glob("run_*.py"):
         source = path.read_text(encoding="utf-8")
-        assert "from vercor.components import" not in source
+        assert "from vercor import Component" not in source
+        assert "from vercor import DataComponent" not in source
+        assert "from vercor.components.base import" not in source
+        assert "from vercor.components.data import" not in source
 
 
 def test_runtime_field_store_is_immutable_pytree() -> None:

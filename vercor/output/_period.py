@@ -13,7 +13,7 @@ import jax.numpy as jnp
 
 from vercor.calendar import ModelDateTime
 from vercor.dtypes import as_jax_real_array, jax_index_dtype
-from vercor.host_arrays import host_int64_array
+from vercor._host_arrays import host_int64_array
 from vercor.output import OutputVariable, PeriodOutput
 
 TIME_NAME = "time"

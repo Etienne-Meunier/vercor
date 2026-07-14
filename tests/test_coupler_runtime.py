@@ -47,7 +47,7 @@ from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.exchanges import Exchange
-from vercor.fields import flatten_field_items
+from vercor.fields import _flatten_field_items
 from vercor.forcing_index import daily_forcing_index
 from vercor.grids import RectilinearGrid
 from vercor.regridding import bilinear, conservative
@@ -55,7 +55,6 @@ from vercor.runtime import RuntimeOptions
 from vercor._runtime.state import ComponentRuntimeState
 from vercor.state import RunState
 from vercor._runtime.stores import FieldStore
-from vercor.settings import Settings
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
@@ -436,68 +435,55 @@ def _make_initialized_slab_coupler(steps: int) -> Coupler:
         latitude=latitude,
     )
 
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+    components = (
+        make_slab_atmosphere(atmosphere_grid),
+        make_slab_ocean(ocean_grid),
+        make_slab_land(land_grid),
+        make_slab_seaice(ice_grid),
     )
-    coupler.add_component(make_slab_atmosphere(atmosphere_grid))
-    coupler.add_component(make_slab_ocean(ocean_grid))
-    coupler.add_component(make_slab_land(land_grid))
-    coupler.add_component(make_slab_seaice(ice_grid))
-    coupler.add_exchange(
+    exchanges = (
         Exchange(
             source="OCN",
             target="ATM",
             fields=["sea_surface_temperature"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["land_surface_temperature"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="ICE",
             target="ATM",
             fields=["ice_fraction"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="ATM",
             target="OCN",
             fields=["sensible_heat_flux", "latent_heat_flux"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="ATM",
             target="LND",
             fields=["latent_heat_flux"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="OCN",
             target="ICE",
             fields=["sea_surface_temperature"],
             regrid=bilinear,
-        )
+        ),
     )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-            "LND",
-            "ICE",
-        )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=components,
+        exchanges=exchanges,
+        run_order=("ATM", "OCN", "LND", "ICE"),
     )
     coupler._initialize_runtime()
     return coupler
@@ -559,68 +545,55 @@ def _make_initialized_mixed_grid_slab_coupler(steps: int) -> Coupler:
         latitude_edges=ocean_latitude_edges,
     )
 
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+    components = (
+        make_slab_atmosphere(atmosphere_grid),
+        make_slab_ocean(ocean_grid),
+        make_slab_land(land_grid),
+        make_slab_seaice(ice_grid),
     )
-    coupler.add_component(make_slab_atmosphere(atmosphere_grid))
-    coupler.add_component(make_slab_ocean(ocean_grid))
-    coupler.add_component(make_slab_land(land_grid))
-    coupler.add_component(make_slab_seaice(ice_grid))
-    coupler.add_exchange(
+    exchanges = (
         Exchange(
             source="OCN",
             target="ATM",
             fields=["sea_surface_temperature"],
             regrid=conservative,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["land_surface_temperature"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="ICE",
             target="ATM",
             fields=["ice_fraction"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="ATM",
             target="OCN",
             fields=["sensible_heat_flux", "latent_heat_flux"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="ATM",
             target="LND",
             fields=["latent_heat_flux"],
             regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+        ),
         Exchange(
             source="OCN",
             target="ICE",
             fields=["sea_surface_temperature"],
             regrid=bilinear,
-        )
+        ),
     )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-            "LND",
-            "ICE",
-        )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=components,
+        exchanges=exchanges,
+        run_order=("ATM", "OCN", "LND", "ICE"),
     )
     coupler._initialize_runtime()
     return coupler
@@ -851,7 +824,7 @@ def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None
     )
     zeros = jnp.zeros(atmosphere_grid.shape)
     atmosphere_exports = tuple(
-        flatten_field_items(
+        _flatten_field_items(
             (
                 *JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
                 *ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
@@ -864,7 +837,7 @@ def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None
         grid=atmosphere_grid,
         data={field_name: zeros for field_name in atmosphere_exports},
         receives=tuple(
-            flatten_field_items(
+            _flatten_field_items(
                 (
                     *OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
                     *JCM_LAND_TO_ATMOSPHERE_FIELDS,
@@ -880,10 +853,7 @@ def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None
             make_slab_ocean(ocean_grid),
             make_slab_land(land_grid),
         ),
-        run_order=("OCN", "LND", "ATM"),
-    )
-    coupler.add_exchanges(
-        (
+        exchanges=(
             Exchange(
                 source="ATM",
                 target="OCN",
@@ -908,7 +878,8 @@ def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None
                 fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
                 regrid=bilinear,
             ),
-        )
+        ),
+        run_order=("OCN", "LND", "ATM"),
     )
     coupler._initialize_runtime()
 
@@ -1867,13 +1838,14 @@ def test_jax_gcm_runtime_requires_initialized_payload() -> None:
         run_scanned_coupler(payload_coupler, state)
 
 
-def test_run_validates_missing_run_order() -> None:
+def test_run_accepts_empty_constructor_configuration() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
 
-    with pytest.raises(CouplerError, match="run sequence"):
-        run_scanned_coupler(coupler)
+    final_state = run_scanned_coupler(coupler)
+
+    assert final_state.component_names == ()
 
 
 def test_run_accepts_default_runtime_component() -> None:
@@ -2294,39 +2266,6 @@ def test_runtime_state_runs_validation_hooks_outside_run_order() -> None:
 
 
 @pytest.mark.fast_always
-def test_gradient_flows_through_scalar_step_context_setting() -> None:
-    grid = make_test_grid(name="settings-gradient")
-    component = CallableComponent(
-        "MODEL",
-        grid,
-        lambda fields, context: {"value": fields["value"] * context.settings.scale},
-        spec=ComponentSpec(outputs=("value",), initial_fields={"value": 2.0}),
-    )
-    state = ComponentRuntimeState(
-        fields=FieldStore.from_mapping({"value": jnp.full(grid.shape, 2.0)}),
-        received=FieldStore.empty(),
-        sent=FieldStore.empty(),
-    )
-
-    def loss(scale: jax.Array) -> jax.Array:
-        context = StepContext(
-            dt_seconds=60.0,
-            settings=Settings(custom={"scale": scale}),
-        )
-        result = step_component_runtime_state(
-            component,
-            state,
-            context,
-            allow_host_runtime=False,
-        )
-        return jnp.sum(result.fields.get("value"))
-
-    gradient = jax.grad(loss)(jnp.asarray(3.0))
-
-    assert_allclose_compact(gradient, np.asarray(8.0))
-
-
-@pytest.mark.fast_always
 def test_gradient_flows_through_component_payload() -> None:
     grid = make_test_grid(name="payload-gradient")
     component = CallableComponent(
@@ -2340,7 +2279,7 @@ def test_gradient_flows_through_component_payload() -> None:
         received=FieldStore.empty(),
         sent=FieldStore.empty(),
     )
-    context = StepContext(dt_seconds=60.0, settings=Settings())
+    context = StepContext(dt_seconds=60.0)
 
     def loss(payload: jax.Array) -> jax.Array:
         result = step_component_runtime_state(
