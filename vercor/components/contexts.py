@@ -8,6 +8,7 @@ from vercor.calendar import ModelDateTime
 from vercor.dtypes import DTypePolicy
 from vercor.jax_logging import LoggerLike
 from vercor.physics import PhysicalConstants
+from vercor._field_names import freeze_name_sequence as _freeze_name_sequence
 from vercor.types import RuntimeArray
 
 
@@ -21,6 +22,18 @@ class SetupContext:
     logger: LoggerLike
     constants: PhysicalConstants = field(default_factory=PhysicalConstants)
     dtype: DTypePolicy = field(default_factory=DTypePolicy.from_jax_config)
+
+    def __post_init__(self) -> None:
+        """Freeze the public run-order sequence without splitting text."""
+
+        object.__setattr__(
+            self,
+            "run_order",
+            _freeze_name_sequence(
+                self.run_order,
+                label="SetupContext.run_order",
+            ),
+        )
 
 
 @dataclass(frozen=True)

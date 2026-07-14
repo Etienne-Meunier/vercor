@@ -38,6 +38,21 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   public class/protocol methods against source and an isolated installed
   wheel. The focused API/distribution files passed 18/18, fast passed 479/479,
   and full passed 1066/1066 with only the two known third-party warnings.
+- Final whole-branch Important findings were closed on 2026-07-14. One private
+  normalizer now rejects bare `str`/`bytes` at every audited public name-sequence
+  boundary, `RuntimeOptions.model_year_seconds` eagerly requires and
+  canonicalizes a finite positive real scalar, and prepared bindings no longer
+  delegate private author markers. Primary RED was 37 failed/1 passed; the
+  specialist follow-up RED was 5 failed/38 passed; final focused GREEN is
+  43/43. A first full run caught and localized one private-helper namespace
+  leak before commit; the source and installed-wheel regressions then passed.
+- Final-review fix gates: Black 240 files; strict flake8 0; mypy 236 files;
+  compileall clean; fast suite 522/522 with 587 deselected; full suite
+  1109/1109; branch coverage 90.49%; distribution boundaries 16/16 from fresh
+  source-built artifacts; focused JCM/Veros lanes 9/9; output-free JVP/reverse
+  acceptance 3/3; whitespace clean. Full and coverage runs emitted only the
+  two known third-party `FutureWarning`s. Task 9, version `4.0.0a1`, and release
+  publication state remain unchanged.
 - Fresh clean retained artifacts are under
   `/private/tmp/vercor-task10-final-clean.MlF8ue/dist`. Direct `python -m build`
   first reported that `build` is not installed in the scipy environment; the

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 import jax
 
 from vercor.grids import RectilinearGrid as _RectilinearGrid
+from vercor._field_names import freeze_name_sequence as _freeze_name_sequence
 from vercor._runtime.stores import FieldStore as _FieldStore
 from vercor.types import RuntimeArray as _RuntimeArray
 
@@ -117,7 +118,14 @@ class RunState:
     ) -> Mapping[str, "ComponentState"]:
         """Return public field views for selected components."""
 
-        selected_names = self._component_names if names is None else tuple(names)
+        selected_names = (
+            self._component_names
+            if names is None
+            else _freeze_name_sequence(
+                names,
+                label="RunState.components names",
+            )
+        )
         return MappingProxyType({name: self.component(name) for name in selected_names})
 
     def replace_fields(

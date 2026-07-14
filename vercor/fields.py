@@ -4,6 +4,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from vercor._field_names import freeze_name_sequence as _freeze_name_sequence
+
 
 @dataclass(frozen=True)
 class VectorField:
@@ -65,7 +67,7 @@ def _normalize_field_items(
     """Validate and freeze exchange field declarations."""
 
     normalized: list[ExchangeField] = []
-    for field in fields:
+    for field in _freeze_name_sequence(fields, label="Exchange.fields"):
         if isinstance(field, VectorField):
             normalized.append(field)
             continue

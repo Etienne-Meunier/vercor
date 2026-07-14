@@ -12,6 +12,7 @@ from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 from vercor.calendar import ModelDateTime as _ModelDateTime
 from vercor.components._protocol import Component as _Component
 from vercor.jax_logging import LoggerLike as _LoggerLike
+from vercor._field_names import freeze_name_sequence as _freeze_name_sequence
 from vercor.state import ComponentState as _ComponentState
 
 _OutputFrequency: TypeAlias = Literal["step", "day", "month", "year"]
@@ -182,7 +183,14 @@ class OutputFrame:
             raise TypeError("sample_dimension must be a non-empty string or None")
         if not isinstance(time_dimension, str) or not time_dimension:
             raise TypeError("time_dimension must be a non-empty string")
-        normalized_order = None if dimension_order is None else tuple(dimension_order)
+        normalized_order = (
+            None
+            if dimension_order is None
+            else _freeze_name_sequence(
+                dimension_order,
+                label="OutputFrame.dimension_order",
+            )
+        )
         if normalized_order is not None and not all(
             isinstance(dim, str) and dim for dim in normalized_order
         ):
@@ -242,9 +250,14 @@ class PeriodOutput:
 
         if frequency not in ("step", "day", "month", "year"):
             raise ValueError("frequency must be one of 'step', 'day', 'month', 'year'")
-        if isinstance(variables, str):
-            raise ValueError("variables must be a sequence of names, not a string")
-        normalized = tuple(dict.fromkeys(variables))
+        normalized = tuple(
+            dict.fromkeys(
+                _freeze_name_sequence(
+                    variables,
+                    label="PeriodOutput.variables",
+                )
+            )
+        )
         if not all(isinstance(variable, str) and variable for variable in normalized):
             raise ValueError("variables entries must be non-empty strings")
         object.__setattr__(self, "frequency", frequency)

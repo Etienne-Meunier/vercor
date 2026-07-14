@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
+from numbers import Real
 from typing import Literal, Protocol, runtime_checkable
 
 import vercor.clock as _clock
 import vercor.dtypes as _dtypes
 import vercor.jax_logging as _jax_logging
 import vercor.state as _state
+from vercor._field_names import freeze_name_sequence as _freeze_name_sequence
 from vercor.topology import TopologyPolicy as _TopologyPolicy
 
 
@@ -33,8 +36,22 @@ class WorkflowContext:
     def __post_init__(self) -> None:
         """Copy caller-owned component sequences into immutable tuples."""
 
-        object.__setattr__(self, "component_names", tuple(self.component_names))
-        object.__setattr__(self, "default_order", tuple(self.default_order))
+        object.__setattr__(
+            self,
+            "component_names",
+            _freeze_name_sequence(
+                self.component_names,
+                label="WorkflowContext.component_names",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "default_order",
+            _freeze_name_sequence(
+                self.default_order,
+                label="WorkflowContext.default_order",
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -53,7 +70,14 @@ class StepPlan:
     def __post_init__(self) -> None:
         """Copy the ordered component sequence into an immutable tuple."""
 
-        object.__setattr__(self, "components", tuple(self.components))
+        object.__setattr__(
+            self,
+            "components",
+            _freeze_name_sequence(
+                self.components,
+                label="StepPlan.components",
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -169,6 +193,25 @@ class RuntimeOptions:
             getattr(self.topology, "build", None)
         ):
             raise TypeError("topology policy must expose build(context)")
+        if isinstance(self.model_year_seconds, bool) or not isinstance(
+            self.model_year_seconds, Real
+        ):
+            raise TypeError("model_year_seconds must be a finite positive real number")
+        try:
+            normalized_model_year_seconds = float(self.model_year_seconds)
+        except OverflowError as exc:
+            raise ValueError(
+                "model_year_seconds must be a finite positive real number"
+            ) from exc
+        if not isfinite(normalized_model_year_seconds) or (
+            normalized_model_year_seconds <= 0.0
+        ):
+            raise ValueError("model_year_seconds must be a finite positive real number")
+        object.__setattr__(
+            self,
+            "model_year_seconds",
+            normalized_model_year_seconds,
+        )
 
 
 @dataclass(frozen=True)
@@ -190,7 +233,14 @@ class ExecutionContext:
     def __post_init__(self) -> None:
         """Copy registered component names into an immutable tuple."""
 
-        object.__setattr__(self, "component_names", tuple(self.component_names))
+        object.__setattr__(
+            self,
+            "component_names",
+            _freeze_name_sequence(
+                self.component_names,
+                label="ExecutionContext.component_names",
+            ),
+        )
 
 
 @runtime_checkable

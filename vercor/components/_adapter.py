@@ -159,13 +159,6 @@ class _ComponentBinding:
             ),
         )
 
-    def __getattr__(self, name: str) -> Any:
-        """Expose setup-owned private output markers without public duplication."""
-
-        if name.startswith("_"):
-            return getattr(self._component, name)
-        raise AttributeError(name)
-
 
 def validate_component_contract(component: object) -> None:
     """Validate the exact structural component contract immediately."""

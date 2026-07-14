@@ -9,7 +9,10 @@ from typing import Any, Literal, TypeAlias
 
 import jax
 
-from vercor._field_names import unique_field_names as _unique_field_names
+from vercor._field_names import (
+    freeze_name_sequence as _freeze_name_sequence,
+    unique_field_names as _unique_field_names,
+)
 import vercor.components._protocol as _component_protocol
 from vercor.components._protocol import (
     _snapshot_mapping,
@@ -154,6 +157,26 @@ class ValidationContext:
     payload: Any | None = None
     receives: tuple[str, ...] = ()
     sends: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Freeze exchange-name sequences without splitting text scalars."""
+
+        object.__setattr__(
+            self,
+            "receives",
+            _freeze_name_sequence(
+                self.receives,
+                label="ValidationContext.receives",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "sends",
+            _freeze_name_sequence(
+                self.sends,
+                label="ValidationContext.sends",
+            ),
+        )
 
 
 _ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
