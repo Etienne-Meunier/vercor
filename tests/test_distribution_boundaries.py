@@ -200,9 +200,14 @@ def test_current_public_plugin_uses_canonical_owners_and_v4_workflows() -> None:
         assert f"from {owner} import" in source, owner
     for contract in (
         "DataComponent",
+        "PluginConfig",
+        "PluginRegridderFactory",
+        "PluginWorkflow",
         "SetupResult(",
         "Exchange(",
-        "bilinear",
+        "ExchangeTopologyPatch(",
+        "fractional_masks=",
+        "PeriodOutput(",
         "StepResult(",
         ".replace_fields(",
     ):
@@ -574,8 +579,22 @@ print(json.dumps({{
     assert evidence["host_value"] == 14.0
     assert evidence["exchange_forcing"] == 1.0
     assert evidence["state_replacement"] is True
+    assert evidence["config"] == {
+        "forcing": 1.0,
+        "initial_temperature": 0.0,
+        "steps": 2,
+    }
+    assert evidence["config_frozen"] is True
+    assert evidence["factory"] == ["FORCING", "JAX", "HOST"]
     assert evidence["lifecycle"] == ["user-setup", "hook-setup"]
-    assert evidence["topology"] == ["build"]
+    assert evidence["period_files"] == [
+        "jax.averages.2000-01-01T000100.000000.step00000000.schema0000.nc",
+        "jax.averages.2000-01-01T000200.000000.step00000001.schema0000.nc",
+    ]
+    assert evidence["regridder_calls"] == ["plugin-forcing"]
+    assert evidence["topology"] == ["build:plugin-forcing"]
+    assert evidence["topology_patch_routes"] == ["plugin-forcing"]
+    assert evidence["workflow"] == ["build"]
     assert evidence["snapshot"] == {"component": "JAX", "temperature": 13.0}
 
     frozen_smoke = subprocess.run(
@@ -612,6 +631,72 @@ print(json.dumps({{
     mypy_evidence = mypy.stdout + mypy.stderr
     assert str(PROJECT_ROOT) not in mypy_evidence
     assert str(target) in mypy_evidence
+
+
+@pytest.mark.fast_always
+def test_installed_default_slab_factory_runs_v4_component(
+    built_distributions: BuiltDistributions,
+    tmp_path: Path,
+) -> None:
+    """Run the dependency-free slab default strictly from the installed wheel."""
+
+    target = tmp_path / "installed-slab-target"
+    install_local_target(
+        wheel=built_distributions.wheel,
+        plugin_wheel=built_distributions.plugin_wheel,
+        frozen_plugin_wheel=built_distributions.frozen_plugin_wheel,
+        target=target,
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(target)
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import json
+from datetime import datetime
+
+from vercor import Clock, Coupler, RectilinearGrid
+from vercor.components import Component
+from vercor.setups import make_slab_ocean
+
+grid = RectilinearGrid.uniform(
+    "installed-slab",
+    nlon=2,
+    nlat=2,
+    longitude=(0.0, 360.0),
+    latitude=(-90.0, 90.0),
+)
+component = make_slab_ocean(grid)
+coupler = Coupler(
+    Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+    components=(component,),
+    run_order=(component.name,),
+)
+state = coupler.run()
+print(json.dumps({
+    "component": component.name,
+    "is_component": isinstance(component, Component),
+    "shape": list(state.component(component.name).field(
+        "sea_surface_temperature"
+    ).shape),
+}))
+""",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    evidence = json.loads(probe.stdout.splitlines()[-1])
+    assert evidence == {
+        "component": "OCN",
+        "is_component": True,
+        "shape": [2, 2],
+    }
 
 
 def test_supplied_wheels_install_and_run_without_build_environment(

@@ -9,6 +9,31 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 8 completed locally on 2026-07-14 from base commit
+  `b411c35`. The independently installed v4 plugin now owns frozen
+  configuration and an injected assembly factory, supplies a structural scalar
+  regridder on an explicit route ID, returns a non-empty topology patch, builds
+  a public workflow, drives the validated runtime through a custom backend, and
+  exercises per-step period output, snapshot output, lifecycle identity, and
+  immutable `RunState.replace_fields()` without private VerCOR imports. A new
+  installed-wheel smoke proves the dependency-free default slab-ocean factory
+  returns and runs an ordinary v4 structural component. Inventory confirmed
+  that Tasks 3-7 had already migrated bundled slab/data/external factories,
+  native JAXGCM/Veros/CAMulator providers, every example, and the README
+  quick-start contracts, so Task 8 avoided redundant production rewrites and
+  tightened the remaining plugin/installed-artifact acceptance boundary.
+  The focused setup/example/plugin plus JAXGCM/Veros selection passes 114/114,
+  the bounded real one-step JCM+Veros example passes with JCM 1.1.1 and Veros
+  1.6.2, the fast suite passes 481/481, and the full suite passes 1067/1067
+  with only the two known third-party `FutureWarning`s. Black leaves all 239
+  Python files unchanged, strict flake8 reports zero findings, full mypy
+  reports no issues in 235 source files, compileall and whitespace checks pass,
+  and the installed plugin/default-slab artifact pair passes 2/2. The mandated
+  `conda run -n scipy` orientation command again panicked before pytest in
+  `conda_rattler_solver` with `pyo3_runtime.PanicException: Attempted to create
+  a NULL object.`; all actual checks used the approved direct `scipy` Python.
+  One over-broad Black invocation included `README.md`, which Black rejected as
+  non-Python without changing files; the corrected Python-only command passed.
 - Veros native-variable representability regression fixed locally on
   2026-07-14. The
   native provider now resolves each supported active variable's dimensions

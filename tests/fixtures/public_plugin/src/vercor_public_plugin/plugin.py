@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import FrozenInstanceError, dataclass
 from datetime import datetime
 import json
 from pathlib import Path
@@ -12,6 +13,7 @@ import jax.numpy as jnp
 
 from vercor.clock import Clock
 from vercor.components import (
+    Component,
     ComponentSpec,
     DataComponent,
     LifecycleHooks,
@@ -23,13 +25,16 @@ from vercor.components import (
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.grids import RectilinearGrid
-from vercor.output import OutputSpec, OutputTarget, SnapshotContext
-from vercor.regridding import bilinear
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput, SnapshotContext
+from vercor.regridding import Regridder, RegridderFactory
 from vercor.runtime import (
     ExecutionChunk,
     ExecutionContext,
+    ExecutionPlan,
     RuntimeDriver,
     RuntimeOptions,
+    StepPlan,
+    WorkflowContext,
 )
 from vercor.state import RunState
 from vercor.topology import (
@@ -37,6 +42,55 @@ from vercor.topology import (
     TopologyContext,
 )
 from vercor.types import RuntimeArray
+
+
+@dataclass(frozen=True)
+class PluginConfig:
+    """Plugin-owned immutable construction policy."""
+
+    forcing: float = 1.0
+    initial_temperature: float = 0.0
+    steps: int = 2
+
+
+@dataclass
+class PluginRegridder:
+    """Small structural scalar regridder implemented outside VerCOR."""
+
+    source_grid: RectilinearGrid
+    target_grid: RectilinearGrid
+
+    @property
+    def has_identical_grids(self) -> bool:
+        """Return whether this regridder received the same grid object twice."""
+
+        return self.source_grid is self.target_grid
+
+    def regrid(self, field: RuntimeArray) -> RuntimeArray:
+        """Broadcast the source mean over the target grid."""
+
+        values = jnp.asarray(field)
+        return jnp.full(self.target_grid.shape, jnp.mean(values), dtype=values.dtype)
+
+
+class PluginRegridderFactory:
+    """Injected factory recording construction of the plugin route."""
+
+    def __init__(self, route_id: str) -> None:
+        self.route_id = route_id
+        self.calls: list[str] = []
+
+    def __call__(
+        self,
+        source_grid: RectilinearGrid,
+        target_grid: RectilinearGrid,
+        **kwargs: Any,
+    ) -> Regridder:
+        """Return one structural plugin regridder."""
+
+        _ = kwargs
+        self.calls.append(self.route_id)
+        return PluginRegridder(source_grid, target_grid)
 
 
 def _setup_original_component(owner: Any, context: SetupContext) -> SetupResult:
@@ -73,7 +127,7 @@ class StructuralJaxComponent:
 
     name = "JAX"
 
-    def __init__(self) -> None:
+    def __init__(self, config: PluginConfig) -> None:
         self.grid = RectilinearGrid.uniform(
             "plugin-jax-grid",
             nlon=4,
@@ -84,9 +138,15 @@ class StructuralJaxComponent:
         self.spec = ComponentSpec(
             inputs=("forcing",),
             outputs=("temperature",),
-            initial_fields={"temperature": 0.0},
+            initial_fields={"temperature": config.initial_temperature},
             lifecycle=LifecycleHooks(setup=_setup_original_component),
-            output=OutputSpec(snapshot_writer=_write_snapshot),
+            output=OutputSpec(
+                period=PeriodOutput(
+                    frequency="step",
+                    variables=("temperature",),
+                ),
+                snapshot_writer=_write_snapshot,
+            ),
         )
         self.lifecycle_events: list[str] = []
         self.lifecycle_owner_ids: list[int] = []
@@ -165,12 +225,13 @@ class SequentialBackend:
     ) -> RunState:
         """Advance every plan in one core-defined chunk."""
 
-        initial_temperature = state.component("JAX").field("temperature")
-        state = state.replace_fields(
-            "JAX",
-            {"temperature": jnp.full_like(initial_temperature, 10.0)},
-        )
-        self.state_replacement = True
+        if not self.state_replacement:
+            initial_temperature = state.component("JAX").field("temperature")
+            state = state.replace_fields(
+                "JAX",
+                {"temperature": jnp.full_like(initial_temperature, 10.0)},
+            )
+            self.state_replacement = True
         self.calls += 1
         _ = context
         for plan in chunk.steps:
@@ -178,51 +239,127 @@ class SequentialBackend:
         return state
 
 
-class RecordingTopologyPolicy:
-    """Custom topology policy returning an empty public patch."""
+class PluginWorkflow:
+    """Plugin-owned workflow using the constructor order for every step."""
 
     def __init__(self) -> None:
         self.events: list[str] = []
 
-    def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
-        """Record policy construction and return an empty patch."""
+    def build(self, context: WorkflowContext) -> ExecutionPlan:
+        """Build a complete static plan through public workflow contracts."""
 
-        _ = context
         self.events.append("build")
-        return ExchangeTopologyPatch()
+        return ExecutionPlan(
+            tuple(
+                StepPlan(step=step, components=context.default_order)
+                for step in range(context.clock.steps)
+            )
+        )
+
+
+class RecordingTopologyPolicy:
+    """Custom topology policy returning a non-empty route-ID patch."""
+
+    def __init__(self, route_id: str) -> None:
+        self.route_id = route_id
+        self.events: list[str] = []
+        self.patch_routes: tuple[str, ...] = ()
+
+    def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
+        """Patch the configured route with an explicit target-shaped mask."""
+
+        exchange = next(
+            exchange
+            for exchange in context.exchanges
+            if exchange.route_id == self.route_id
+        )
+        target_shape = context.components[exchange.target].grid.shape
+        self.events.append(f"build:{self.route_id}")
+        self.patch_routes = (self.route_id,)
+        return ExchangeTopologyPatch(
+            fractional_masks={self.route_id: jnp.ones(target_shape)}
+        )
+
+
+@dataclass(frozen=True)
+class PluginAssembly:
+    """Components and routes built from one plugin configuration."""
+
+    components: tuple[Component, ...]
+    exchanges: tuple[Exchange, ...]
+    run_order: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PluginFactory:
+    """Compose plugin components with an injected regridder factory."""
+
+    config: PluginConfig
+    regridder_factory: RegridderFactory
+    route_id: str = "plugin-forcing"
+
+    def build(self) -> PluginAssembly:
+        """Build a complete immutable plugin assembly."""
+
+        jax_component = StructuralJaxComponent(self.config)
+        host_component = StructuralHostComponent()
+        forcing_component = DataComponent(
+            "FORCING",
+            RectilinearGrid.uniform(
+                "plugin-forcing-grid",
+                nlon=2,
+                nlat=2,
+                longitude=(0.0, 360.0),
+                latitude=(-90.0, 90.0),
+            ),
+            {"forcing": self.config.forcing},
+        )
+        components: tuple[Component, ...] = (
+            forcing_component,
+            jax_component,
+            host_component,
+        )
+        return PluginAssembly(
+            components=components,
+            exchanges=(
+                Exchange(
+                    "FORCING",
+                    "JAX",
+                    ("forcing",),
+                    route_id=self.route_id,
+                    regridder_factory=self.regridder_factory,
+                ),
+            ),
+            run_order=tuple(component.name for component in components),
+        )
 
 
 def run_smoke(output_dir: Path) -> dict[str, object]:
     """Run all required public extension points and return compact evidence."""
 
-    jax_component = StructuralJaxComponent()
-    host_component = StructuralHostComponent()
-    forcing_component = DataComponent(
-        "FORCING",
-        RectilinearGrid.uniform(
-            "plugin-forcing-grid",
-            nlon=2,
-            nlat=2,
-            longitude=(0.0, 360.0),
-            latitude=(-90.0, 90.0),
-        ),
-        {"forcing": 1.0},
-    )
+    config = PluginConfig()
+    config_frozen = False
+    try:
+        setattr(config, "steps", 3)
+    except FrozenInstanceError:
+        config_frozen = True
+    regridder_factory = PluginRegridderFactory("plugin-forcing")
+    factory = PluginFactory(config, regridder_factory)
+    assembly = factory.build()
+    jax_component = assembly.components[1]
     backend = SequentialBackend()
-    topology = RecordingTopologyPolicy()
+    workflow = PluginWorkflow()
+    topology = RecordingTopologyPolicy(factory.route_id)
     coupler = Coupler(
-        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2),
-        components=(forcing_component, jax_component, host_component),
-        exchanges=(
-            Exchange(
-                "FORCING",
-                "JAX",
-                ("forcing",),
-                regridder_factory=bilinear,
-            ),
+        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=config.steps),
+        components=assembly.components,
+        exchanges=assembly.exchanges,
+        run_order=assembly.run_order,
+        runtime=RuntimeOptions(
+            backend=backend,
+            workflow=workflow,
+            topology=topology,
         ),
-        run_order=(forcing_component.name, jax_component.name, host_component.name),
-        runtime=RuntimeOptions(backend=backend, topology=topology),
     )
 
     final_state = coupler.run(output=OutputTarget(output_dir))
@@ -241,32 +378,58 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
     snapshot_path = output_dir / "jax.snapshot.nc"
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
 
+    if not isinstance(jax_component, StructuralJaxComponent):
+        raise AssertionError("plugin factory did not retain the structural component")
     if jax_component.lifecycle_events != ["user-setup", "hook-setup"]:
         raise AssertionError("structural lifecycle order was not preserved")
     if jax_component.lifecycle_owner_ids != [id(jax_component)]:
         raise AssertionError("lifecycle hook did not receive the original object")
-    if backend.calls != 1:
-        raise AssertionError("custom backend was not invoked exactly once")
-    if topology.events != ["build"]:
+    if backend.calls != config.steps:
+        raise AssertionError("custom backend did not follow period-output chunks")
+    if workflow.events != ["build"]:
+        raise AssertionError("custom workflow was not invoked exactly once")
+    if topology.events != [f"build:{factory.route_id}"]:
         raise AssertionError("custom topology policy was not applied")
     if temperature != 13.0 or host_value != 14.0 or exchange_forcing != 1.0:
         raise AssertionError("sequential backend produced unexpected fields")
     if not backend.state_replacement:
         raise AssertionError("public RunState.replace_fields was not exercised")
 
+    period_files = tuple(
+        path.name for path in sorted(output_dir.glob("jax.averages.*.nc"))
+    )
+    if len(period_files) != config.steps:
+        raise AssertionError("period output did not write one file per step")
+
     return {
         "backend_calls": backend.calls,
+        "config": {
+            "forcing": config.forcing,
+            "initial_temperature": config.initial_temperature,
+            "steps": config.steps,
+        },
+        "config_frozen": config_frozen,
         "exchange_forcing": exchange_forcing,
+        "factory": assembly.run_order,
         "host_value": host_value,
         "lifecycle": tuple(jax_component.lifecycle_events),
+        "period_files": period_files,
+        "regridder_calls": tuple(regridder_factory.calls),
         "snapshot": snapshot,
         "state_replacement": backend.state_replacement,
         "temperature": temperature,
         "topology": tuple(topology.events),
+        "topology_patch_routes": topology.patch_routes,
+        "workflow": tuple(workflow.events),
     }
 
 
 __all__ = [
+    "PluginConfig",
+    "PluginFactory",
+    "PluginRegridder",
+    "PluginRegridderFactory",
+    "PluginWorkflow",
     "RecordingTopologyPolicy",
     "SequentialBackend",
     "StructuralHostComponent",

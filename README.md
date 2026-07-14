@@ -345,8 +345,10 @@ The [VerCOR 3.1.1 API architecture review](docs/api-architecture-review.md)
 remains historical compatibility input; its full v4 rewrite is scheduled for
 the documentation/release milestone. The independently packaged
 [`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
-the current protocol-first component, constructor-only assembly, workflow, and
-explicit output-target contracts, while
+plugin-owned frozen configuration and dependency-injected assembly together
+with a structural component and regridder, a stable route ID, a non-empty
+topology patch, a custom workflow/backend, immutable state replacement, and
+period/snapshot output. It uses only canonical public VerCOR modules, while
 [`tests/fixtures/public_plugin_3_0`](tests/fixtures/public_plugin_3_0) freezes a
 valid 3.0-only workflow that is intentionally rejected by the removed authoring
 surface. The current fixture proves installed-wheel isolation and strict mypy
