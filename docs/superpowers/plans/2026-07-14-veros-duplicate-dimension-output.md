@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent the bundled Veros provider from sampling active variables with repeated dimension names, so selected output from `run_jcm_with_veros.py` accumulates successfully.
+**Goal:** Prevent the bundled Veros provider from sampling active variables with repeated dimension names or unavailable effective coordinates, so selected output from `run_jcm_with_veros.py` accumulates successfully.
 
-**Architecture:** Keep provider sampling and coordinator-owned variable selection unchanged. Resolve each active Veros candidate's dimensions once during provider-universe enumeration, use that mapping for coordinate discovery, and omit candidates that violate `OutputVariable`'s unique-dimension invariant.
+**Architecture:** Keep provider sampling and coordinator-owned variable selection unchanged. Resolve each active Veros candidate's dimensions once during provider-universe enumeration, use that mapping for coordinate discovery, and omit candidates that violate `OutputVariable`'s unique-dimension invariant or require a non-timestep coordinate that the Veros adapter cannot construct.
 
 **Tech Stack:** Python 3.13, Veros 1.6.2, JAX, NumPy, pytest, Black, flake8, mypy.
 
@@ -14,6 +14,8 @@
 - Preserve active-state, value-presence, global-registry, and coordinate-variable filtering.
 - Do not change public provider, coordinator, snapshot-default, `OutputVariable`, or NetCDF contracts.
 - Do not invent distinct names for `line_psin`'s two `isle` axes.
+- Do not invent definitions for the absent `tensor1` and `tensor2` coordinates.
+- Preserve variables with a `timesteps` dimension because extraction removes that axis before coordinate construction.
 - Write the regression test before production code and observe the intended RED failure.
 - Use the direct `/Users/romannuterman/miniforge3/envs/scipy/bin/` executables because the local `conda run` path panics while loading Rattler.
 - Update `PROGRESS.md` after the tested implementation is complete.
@@ -29,7 +31,7 @@
 
 **Interfaces:**
 - Consumes: `_resolved_dims(variable: Any, settings: Any, name: str) -> tuple[str, ...]` and the insertion-ordered `veros_state.var_meta` mapping.
-- Produces: `_active_output_variable_names(veros_state: Any) -> tuple[str, ...]`, restricted to active, present, globally registered, non-coordinate variables whose resolved dimensions are unique.
+- Produces: `_active_output_variable_names(veros_state: Any) -> tuple[str, ...]`, restricted to active, present, globally registered, non-coordinate variables whose resolved dimensions are unique and whose effective non-timestep coordinates are constructible.
 
 - [ ] **Step 1: Add the real repeated-dimension candidate to the provider regression**
 
@@ -90,6 +92,74 @@ Run:
 
 Expected: PASS. The existing supported tuple remains unchanged, `sss_clim` and `line_psin` are absent, and the setup-local dimension resolver remains uncalled.
 
+- [ ] **Step 4a: Add an unavailable-coordinate candidate to the provider regression**
+
+In the same test, add this fixture immediately after `line_psin`:
+
+```python
+    state.variables.Ai_ez = np.ones((6, 7, 2, 2, 2), dtype=float)
+    state.var_meta["Ai_ez"] = SimpleNamespace(
+        active=True,
+        dims=("xt", "yt", "zt", "tensor1", "tensor2"),
+    )
+```
+
+After `assert "line_psin" not in frame.variables`, add:
+
+```python
+    assert "Ai_ez" not in frame.variables
+```
+
+- [ ] **Step 4b: Run the unavailable-coordinate regression and verify RED**
+
+Run:
+
+```bash
+/Users/romannuterman/miniforge3/envs/scipy/bin/pytest tests/test_external_components_coverage.py::test_veros_output_provider_exposes_active_native_variable_universe -q
+```
+
+Expected: FAIL during coordinate construction with `ValueError: Unknown Veros output variable 'tensor2'.`
+
+- [ ] **Step 4c: Filter candidates whose effective coordinates cannot be constructed**
+
+Add this private helper immediately before `_active_output_variable_names`:
+
+```python
+def _coordinate_dimension_is_extractable(veros_state: Any, dim: str) -> bool:
+    if dim == _TIMESTEP_DIM:
+        return True
+    variable = veros_variables.VARIABLES.get(dim)
+    return bool(
+        variable is not None
+        and _resolved_dims(variable, veros_state.settings, dim) == (dim,)
+        and hasattr(veros_state.variables, dim)
+    )
+```
+
+Extend the return condition to:
+
+```python
+    return tuple(
+        name
+        for name, dims in dimensions_by_name.items()
+        if name not in coordinate_names
+        and len(set(dims)) == len(dims)
+        and all(
+            _coordinate_dimension_is_extractable(veros_state, dim) for dim in dims
+        )
+    )
+```
+
+- [ ] **Step 4d: Run the complete provider regression and verify GREEN**
+
+Run:
+
+```bash
+/Users/romannuterman/miniforge3/envs/scipy/bin/pytest tests/test_external_components_coverage.py::test_veros_output_provider_exposes_active_native_variable_universe -q
+```
+
+Expected: PASS. The existing supported tuple remains unchanged, `sss_clim`, `line_psin`, and `Ai_ez` are absent, and the setup-local dimension resolver remains uncalled.
+
 - [ ] **Step 5: Run focused Veros output coverage**
 
 Run:
@@ -139,11 +209,13 @@ Expected: both suites pass completely with only the repository's previously reco
 After confirming the expected counts in Steps 5, 6, and 8, add this dated entry at the top of `PROGRESS.md` under `## Current Status`. If repository collection changes independently before execution, update only the numerical counts to the observed values:
 
 ```markdown
-- Veros repeated-dimension output regression fixed locally on 2026-07-14. The
+- Veros native-variable representability regression fixed locally on
+  2026-07-14. The
   native provider now resolves each supported active variable's dimensions
-  once and excludes `line_psin`, whose repeated `("isle", "isle")` axes cannot
-  satisfy the shared `OutputVariable` contract. The focused provider regression
-  and Veros output selection pass 6/6; a bounded one-step
+  once, excludes `line_psin`, whose repeated `("isle", "isle")` axes cannot
+  satisfy the shared `OutputVariable` contract, and excludes four `Ai_*`
+  variables whose `tensor1` and `tensor2` coordinates are unavailable. The
+  focused provider regression and Veros output selection pass 6/6; a bounded one-step
   `run_jcm_with_veros.py` execution passes; the fast suite passes 480 tests with
   585 deselected, and the full suite passes all 1065 tests. Black, flake8, mypy,
   and whitespace checks pass.
@@ -168,7 +240,7 @@ Run:
 git diff -- vercor/setups/_external/veros_output.py tests/test_external_components_coverage.py PROGRESS.md
 git status --short
 git add vercor/setups/_external/veros_output.py tests/test_external_components_coverage.py PROGRESS.md
-git commit -m "fix: exclude repeated-dimension Veros output"
+git commit -m "fix: filter unrepresentable Veros output"
 ```
 
 Expected: the implementation commit contains only the provider-universe filter, its regression coverage, and the progress entry. The design and plan remain in their preceding documentation commits.
