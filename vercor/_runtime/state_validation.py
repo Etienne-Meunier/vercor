@@ -7,19 +7,20 @@ import jax.numpy as jnp
 
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
+from vercor.field_layout import validate_component_data_layout
 from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor._runtime.contracts import ExchangeContract, exchange_key
 from vercor.state import RunState
 from vercor._runtime.validation import validate_component_runtime_contract_fields
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 def validate_runtime_state(
     runtime_state: RunState,
     *,
-    components: Mapping[str, Component],
+    components: Mapping[str, _ComponentBinding],
     exchanges: Sequence[Exchange],
     regridders: Mapping[tuple[str, str, str], Any],
     contracts: Mapping[str, ExchangeContract],
@@ -71,6 +72,11 @@ def validate_runtime_state(
     for cname, component in components.items():
         component_state = runtime_state._component_state(cname)
         contract = contracts[cname]
+        validate_component_data_layout(
+            component_name=component.name,
+            grid_shape=component.grid.shape,
+            data=component_state.fields.to_mapping(),
+        )
         validate_component_runtime_contract_fields(
             component,
             component_state,

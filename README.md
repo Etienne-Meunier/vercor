@@ -2,8 +2,10 @@
 
 Versatile Earth system COupleR (VerCOR) is a JAX-first coupler for composing
 Earth-system model components, forcing data, exchanges, regridding, diagnostics,
-and output. VerCOR 3.1 keeps the valid 3.0 API while making structural
-`ComponentLike` objects the canonical extension boundary.
+and output. The in-progress VerCOR 4 refactor now uses a protocol-first
+component contract with one immutable declaration for fields, lifecycle hooks,
+and runtime capabilities. Assembly and output examples below still describe
+the transitional pre-Task-4/Task-7 facades where noted.
 
 ## Installation
 
@@ -22,7 +24,7 @@ not pinned until an exact compatible release has been verified.
 
 ## Public API
 
-The stable core owner modules are `vercor.components`, `vercor.runtime`,
+The current transitional core owner modules are `vercor.components`, `vercor.runtime`,
 `vercor.topology`, `vercor.coupling`, `vercor.exchanges`,
 `vercor.regridding`, `vercor.grids`, `vercor.fields`, `vercor.state`,
 `vercor.output`, and `vercor.setups`. `vercor.types`, `vercor.dtypes`, and
@@ -30,17 +32,18 @@ The stable core owner modules are `vercor.components`, `vercor.runtime`,
 contracts. The root `vercor` package keeps convenience exports for common core
 workflows without duplicating setup- or topology-specific aliases.
 
-Configuration has four owners:
+Configuration currently has five owners:
 
 - `RuntimeOptions` owns static policy for execution, topology, dtype, and the
   runtime.
-- `Settings` is mutable setup-time metadata for physics and component/model
-  constants. Its values may be JAX-traced when the container is constructed
-  inside a differentiated workflow.
-- `ComponentSpec`: fields, lifecycle, execution capability, and output.
+- `PhysicalConstants` is the frozen traced PyTree owner for physical constants.
+- `Settings` remains transitional mutable non-physics runtime/setup metadata.
+- `ComponentSpec`: inputs, outputs, initial fields, lifecycle, transfer,
+  execution capability, and output.
 - Setup config dataclasses: construction policy for one bundled model.
 
-Prefer three assembly paths:
+Until Task 4 makes assembly constructor-only, the transitional facade supports
+three assembly paths:
 
 - the `Coupler` constructor for complete one-off setups;
 - `CouplerSpec` for reusable recipes;
@@ -86,15 +89,13 @@ sea_surface_temperature = final_state.component("OCN").field(
 ### Structural custom JAX component
 
 No VerCOR inheritance is required. A structural component supplies `name`,
-`grid`, `spec`, `initial_fields`, `initialize`, and `step`:
+`grid`, `spec`, and `step`:
 
 ```python
 from collections.abc import Mapping
 from typing import Any
 
-import jax.numpy as jnp
-
-from vercor.components import ComponentSpec, SetupContext, StepContext
+from vercor.components import ComponentSpec, StepContext
 from vercor.types import RuntimeArray
 
 
@@ -105,14 +106,8 @@ class WarmingModel:
         self.grid = model_grid
         self.spec = ComponentSpec(
             outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            initial_fields={"temperature": 280.0},
         )
-
-    def initial_fields(self) -> Mapping[str, RuntimeArray]:
-        return {"temperature": jnp.full(self.grid.shape, 280.0)}
-
-    def initialize(self, context: SetupContext) -> None:
-        _ = context
 
     def step(
         self,
@@ -130,18 +125,23 @@ custom_state = custom_coupler.run()
 ```
 
 Structural lifecycle hooks receive the original `WarmingModel`, not a private
-adapter. `Component.from_step(...)` provides the same JAX contract with less
-boilerplate.
+adapter. `CallableComponent(...)` provides the same JAX contract with less
+boilerplate. `LifecycleHooks(setup=...)` may return
+`SetupResult(fields=..., payload=...)`; `TransferPolicy` selects current,
+monthly-linear, or daily source data. A `StepResult` with omitted payload
+preserves it, while an explicit replacement updates it. Compiled scanned JAX
+execution requires every replacement to keep the setup payload's PyTree
+structure; host execution may clear or restructure payload state.
 
 ### Host component
 
-Use `HostComponent.from_step` for a Python or foreign-runtime model. It forces
-host capability, and `RuntimeOptions(execution="auto")` selects the host loop:
+Use `CallableComponent` with `ComponentSpec(execution="host")` for a Python or
+foreign-runtime model. `RuntimeOptions(execution="auto")` selects the host loop:
 
 ```python
 from collections.abc import Mapping
 
-from vercor.components import ComponentSpec, HostComponent
+from vercor.components import CallableComponent, ComponentSpec
 from vercor.types import RuntimeArray
 
 
@@ -151,11 +151,15 @@ def host_step(
     return {"counter": fields["counter"] + 1.0}
 
 
-host = HostComponent.from_step(
+host = CallableComponent(
     "HOST",
     grid,
     host_step,
-    spec=ComponentSpec(outputs=("counter",), defaults={"counter": 0.0}),
+    spec=ComponentSpec(
+        outputs=("counter",),
+        initial_fields={"counter": 0.0},
+        execution="host",
+    ),
 )
 host_state = Coupler(clock, components=(host,), run_order=("HOST",)).run()
 ```
@@ -250,7 +254,7 @@ from pathlib import Path
 from typing import Any
 
 from vercor.components import (
-    Component,
+    CallableComponent,
     ComponentSpec,
     LifecycleHooks,
     SetupContext,
@@ -263,7 +267,7 @@ from vercor.output import (
 from vercor.types import RuntimeArray
 
 
-def initialize_hook(owner: Any, context: SetupContext) -> None:
+def setup_hook(owner: Any, context: SetupContext) -> None:
     assert owner.name == "OUTPUT"
     context.logger.info("Initialized {}", owner.name)
 
@@ -279,14 +283,14 @@ def output_step(
     return {"temperature": fields["temperature"] + 1.0}
 
 
-output_model = Component.from_step(
+output_model = CallableComponent(
     "OUTPUT",
     grid,
     output_step,
     spec=ComponentSpec(
         outputs=("temperature",),
-        defaults={"temperature": 280.0},
-        lifecycle=LifecycleHooks(initialize=initialize_hook),
+        initial_fields={"temperature": 280.0},
+        lifecycle=LifecycleHooks(setup=setup_hook),
         output=OutputConfig(
             snapshot_writer=snapshot_writer,
             period=PeriodOutput(frequency="step", variables=("temperature",)),
@@ -313,7 +317,9 @@ See the [VerCOR 3.1.1 API architecture review](docs/api-architecture-review.md)
 for the complete public/private inventory, execution precedence, and migration
 table. The independently packaged
 [`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
-the current 3.1 API, while
+the current protocol-first component contract against transitional assembly and
+output facades, while
 [`tests/fixtures/public_plugin_3_0`](tests/fixtures/public_plugin_3_0) freezes a
-valid 3.0-only workflow. Both prove installed-wheel isolation and strict mypy
-using public imports only.
+valid 3.0-only workflow that is intentionally rejected by the removed authoring
+surface. The current fixture proves installed-wheel isolation and strict mypy
+using public imports only; the frozen fixture remains compatibility evidence.

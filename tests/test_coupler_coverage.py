@@ -28,9 +28,11 @@ from tests._runtime_helpers import (
 )
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components.base import Component
-from vercor.components.contracts import ComponentInfo, ComponentSpec
-from vercor.components.host import HostComponent
+from vercor.components import ComponentSpec
+from tests._component_test_support import (
+    LegacyTestComponent,
+    LegacyTestHostComponent,
+)
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy
@@ -82,7 +84,7 @@ class _RecordingLogger:
         self.debug_messages.append(message.format(*args) if args else message)
 
 
-class _RunComponent(Component):
+class _RunComponent(LegacyTestComponent):
     def __init__(self, name: str, events: list[str], timestamp: datetime) -> None:
         _ = timestamp
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
@@ -102,7 +104,7 @@ class _RunComponent(Component):
         return {}
 
 
-class _LoggingRunComponent(Component):
+class _LoggingRunComponent(LegacyTestComponent):
     def __init__(self, name: str) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self._data["temperature"] = np.ones((2, 2), dtype=float)
@@ -123,7 +125,7 @@ class _LoggingRunComponent(Component):
         return {}
 
 
-class _HostRunComponent(HostComponent):
+class _HostRunComponent(LegacyTestHostComponent):
     def __init__(self, name: str, events: list[str] | None = None) -> None:
         super().__init__(name=name, grid=make_test_grid(name=name.lower()))
         self.events = events
@@ -1245,9 +1247,11 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
 
     assert captured_runtime["final_state"] is state
     captured_components = captured_runtime["components"]
-    assert tuple(captured_components) == tuple(coupler._runtime_components)
-    for name, component in coupler._runtime_components.items():
+    prepared_components = coupler._ensure_prepared().components
+    assert tuple(captured_components) == tuple(prepared_components)
+    for name, component in prepared_components.items():
         assert captured_components[name] is component
+        assert component._component is coupler._runtime_components[name].component
     assert captured_runtime["exchanges"] is coupler.exchanges
     assert (
         captured_runtime["binary_masks"]
@@ -1263,8 +1267,8 @@ def test_coupler_write_outputs_writes_runtime_outputs_for_all_components(
     assert captured_runtime["logger"] is coupler.logger
     assert captured_snapshots["final_state"] is state
     snapshot_components = captured_snapshots["components"]
-    assert tuple(snapshot_components) == tuple(coupler._runtime_components)
-    for name, component in coupler._runtime_components.items():
+    assert tuple(snapshot_components) == tuple(prepared_components)
+    for name, component in prepared_components.items():
         assert snapshot_components[name] is component
     assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 0)
     assert captured_snapshots["output_dir"] == Path("snapshot")
@@ -1300,6 +1304,7 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
     }
     coupler = make_coupler(components=cast(Any, tuple(components.values())))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
+    prepared = coupler._ensure_prepared()
     captured: list[tuple[str, Any, Path, dict[str, Any]]] = []
 
     def fake_write(
@@ -1316,16 +1321,16 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
 
     output_runtime_module.write_coupler_runtime_outputs(
         final_state=state,
-        components=coupler._runtime_components,
+        components=prepared.components,
         exchanges=coupler.exchanges,
-        binary_masks=coupler._ensure_prepared().topology_maps.binary_masks,
-        fractional_masks=coupler._ensure_prepared().topology_maps.fractional_masks,
+        binary_masks=prepared.topology_maps.binary_masks,
+        fractional_masks=prepared.topology_maps.fractional_masks,
         output_file_mask=Path("snapshot"),
         logger=coupler.logger,
     )
 
     assert [item[0] for item in captured] == ["ATM", "OCN"]
-    assert captured[0][1].grid is components["ATM"].grid
+    assert captured[0][1].grid is prepared.components["ATM"].grid
     assert captured[0][2] == Path("atm_snapshot.nc")
     assert captured[1][2] == Path("ocn_snapshot.nc")
 
@@ -1337,8 +1342,6 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     monkeypatch.chdir(tmp_path)
     component = DummyComponent(name="ATM", grid=make_test_grid(name="snapshot-atm"))
     skipped = DummyComponent(name="OCN", grid=make_test_grid(name="snapshot-ocn"))
-    coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))
-    state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     calls: list[SnapshotContext] = []
 
     def write_snapshot(context: SnapshotContext) -> None:
@@ -1348,25 +1351,25 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
         ComponentSpec(
             inputs=component.spec.inputs,
             outputs=component.spec.outputs,
-            defaults=component.spec.defaults,
+            initial_fields=component.spec.initial_fields,
             lifecycle=component.spec.lifecycle,
             output=OutputConfig(snapshot_writer=write_snapshot),
         )
     )
+    coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))
+    state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
+    prepared_components = coupler._ensure_prepared().components
 
     output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
-        components=coupler._runtime_components,
+        components=prepared_components,
         output_time=datetime(2000, 1, 1, 0, 1),
         logger=coupler.logger,
     )
 
     assert len(calls) == 1
-    assert calls[0].component == ComponentInfo(
-        name=component.name,
-        grid=component.grid,
-        spec=component.spec,
-    )
+    assert calls[0].component.name == component.name
+    assert calls[0].component.spec is component.spec
     assert isinstance(calls[0].state, ComponentState)
     assert calls[0].state.name == "ATM"
     assert calls[0].output_path == Path("atm.snapshot.nc")
@@ -1473,7 +1476,8 @@ def test_host_runtime_components_use_explicit_host_contract() -> None:
     final_state = coupler.run()
     final_component = final_state._component_state("ATM")
 
-    assert isinstance(host_component, HostComponent)
+    assert isinstance(host_component, LegacyTestHostComponent)
+    assert host_component.spec.execution == "host"
     assert "host_time_seen" in final_component.fields.field_names
     assert_allclose_compact(
         final_component.fields.get("temperature"),

@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from vercor.clock import Clock
-from vercor.components._adapter import validate_component_contract
+from vercor.components._adapter import (
+    _ComponentBinding,
+    _ComponentDeclaration,
+    prepare_component,
+)
 from vercor.components.contexts import SetupContext
-from vercor.dtypes import DTypePolicy, as_jax_real_array
+from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
 from vercor.physics import PhysicalConstants
@@ -25,43 +30,22 @@ from vercor.settings import Settings
 from vercor.topology import TopologyPolicy
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    pass
 
 
 @dataclass(frozen=True)
 class RuntimeInitializationState:
     """Validated setup-time state required by the runtime facade."""
 
+    components: MappingProxyType[str, _ComponentBinding]
     runtime_contracts: dict[str, ExchangeContract]
     topology: ExchangeTopologyState
-
-
-def apply_run_precision_to_component(
-    component: Component,
-    dtype: DTypePolicy,
-) -> None:
-    """Synchronize component-owned setup arrays with the coupler precision."""
-
-    component._dtype_policy = dtype
-    component.settings.set("enable_x64", dtype.enable_x64)
-    component.grid = component.grid.with_precision(dtype)
-    component._data = {
-        field_name: as_jax_real_array(field_value, dtype)
-        for field_name, field_value in component._data.items()
-    }
-    spec = component.spec
-    if spec.defaults:
-        component.declare_fields(
-            inputs=spec.inputs,
-            outputs=spec.outputs,
-            defaults=spec.defaults,
-        )
 
 
 def initialize_coupler_runtime(
     *,
     clock: Clock,
-    components: dict[str, Component],
+    components: dict[str, _ComponentDeclaration],
     exchanges: Sequence[Exchange],
     run_order: Sequence[str],
     settings: Settings,
@@ -77,12 +61,6 @@ def initialize_coupler_runtime(
 
     logger.info(f"Setting default precision for JAX computations: {dtype.enable_x64}")
 
-    for component in components.values():
-        validate_component_contract(component)
-
-    for component in components.values():
-        apply_run_precision_to_component(component, dtype)
-
     init_context = SetupContext(
         start=clock.start,
         dt_seconds=clock.dt_seconds,
@@ -93,25 +71,27 @@ def initialize_coupler_runtime(
         logger=logger,
     )
 
-    for name, component in components.items():
-        component.initialize(init_context)
-        validate_component_contract(component)
+    prepared_components = {
+        name: prepare_component(component, init_context, dtype)
+        for name, component in components.items()
+    }
+    for name in prepared_components:
         logger.info(f"Initialized {name}")
 
     runtime_contracts = build_exchange_contracts(
-        tuple(components),
+        tuple(prepared_components),
         exchanges,
         validate_endpoints=True,
     )
 
-    for name, component in components.items():
+    for name, component in prepared_components.items():
         contract = runtime_contracts[name]
         if contract.all_fields:
             check_not_empty_import_export_lists(component, contract)
             validate_exchange_fields_declared(component, contract)
 
     topology = build_exchange_topology(
-        components=components,
+        components=prepared_components,
         exchanges=exchanges,
         topology_maps=topology_maps,
         topology_policy=topology_policy,
@@ -120,6 +100,7 @@ def initialize_coupler_runtime(
         logger=logger,
     )
     return RuntimeInitializationState(
+        components=MappingProxyType(prepared_components),
         runtime_contracts=runtime_contracts,
         topology=topology,
     )

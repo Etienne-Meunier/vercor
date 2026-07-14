@@ -4,11 +4,14 @@ import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Self
+from typing import Self
 
 from vercor.clock import Clock
-from vercor.components._adapter import normalize_component
-from vercor.components.contracts import ComponentInfo
+from vercor.components import Component
+from vercor.components._adapter import (
+    _ComponentDeclaration,
+    normalize_component,
+)
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.fields import VectorField
@@ -25,10 +28,6 @@ from vercor._runtime.prepared import PreparedCoupling
 from vercor.runtime import RuntimeOptions
 from vercor.settings import Settings
 from vercor.state import RunState
-
-if TYPE_CHECKING:
-    from vercor.components.base import Component
-    from vercor.components.contracts import ComponentLike
 
 
 class Coupler:
@@ -55,7 +54,7 @@ class Coupler:
         self,
         clock: Clock,
         *,
-        components: Iterable["ComponentLike"] = (),
+        components: Iterable[Component] = (),
         exchanges: Iterable[Exchange] = (),
         run_order: Sequence[str] = (),
         runtime: RuntimeOptions | None = None,
@@ -73,9 +72,9 @@ class Coupler:
         self.settings = Settings(
             enable_x64=self.runtime.dtype.enable_x64,
         )
-        self._components: dict[str, Component] = {}
-        self._components_view: MappingProxyType[str, Component] = MappingProxyType(
-            self._components
+        self._components: dict[str, _ComponentDeclaration] = {}
+        self._components_view: MappingProxyType[str, _ComponentDeclaration] = (
+            MappingProxyType(self._components)
         )
         self._exchanges: tuple[Exchange, ...] = ()
         self._run_order: tuple[str, ...] = ()
@@ -106,23 +105,19 @@ class Coupler:
         self._prepared = None
 
     @property
-    def components(self) -> MappingProxyType[str, ComponentInfo]:
-        """Return read-only public descriptions of registered components."""
+    def components(self) -> MappingProxyType[str, Component]:
+        """Return the original registered components in a read-only mapping."""
 
         return MappingProxyType(
             {
-                name: ComponentInfo(
-                    name=component.name,
-                    grid=component.grid,
-                    spec=component.spec,
-                )
-                for name, component in self._components.items()
+                name: declaration.component
+                for name, declaration in self._components.items()
             }
         )
 
     @property
-    def _runtime_components(self) -> MappingProxyType[str, "Component"]:
-        """Return normalized component adapters for private runtime use."""
+    def _runtime_components(self) -> MappingProxyType[str, _ComponentDeclaration]:
+        """Return normalized component declarations for private preparation."""
 
         return self._components_view
 
@@ -140,7 +135,7 @@ class Coupler:
 
     def add_component(
         self,
-        component: "ComponentLike",
+        component: Component,
     ) -> Self:
         """Register a component with the coupler."""
 
@@ -265,8 +260,8 @@ class Coupler:
             f"├── Run start: {self.clock.start}\n"
             f"├── Components: "
             + ", ".join(
-                f"<{component.__class__.__name__}>({name})"
-                for name, component in self._components.items()
+                f"<{declaration.component.__class__.__name__}>({name})"
+                for name, declaration in self._components.items()
             )
             + "\n"
             f"├── Exchanges: {', '.join(exchange.label for exchange in self.exchanges)}\n"

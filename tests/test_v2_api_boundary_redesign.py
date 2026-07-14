@@ -95,14 +95,14 @@ def test_custom_execution_backend_receives_public_context_and_driver() -> None:
             return driver.step_component(state, "MODEL", step=0)
 
     backend = StepOnceBackend()
-    component = vercor.Component.from_step(
+    component = vercor.CallableComponent(
         "MODEL",
         grid,
         lambda fields, context: {"temperature": fields["temperature"] + 1.0},
         spec=vercor.ComponentSpec(
             inputs=("temperature",),
             outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            initial_fields={"temperature": 280.0},
         ),
     )
     coupler = vercor.Coupler(
@@ -159,24 +159,26 @@ def test_custom_backend_runs_complete_host_exchange_order_from_supplied_state() 
                     state = driver.step_component(state, component, step=step)
             return state
 
-    source = vercor.HostComponent.from_step(
+    source = vercor.CallableComponent(
         "SRC",
         grid,
         step_source,
         spec=vercor.ComponentSpec(
             inputs=("flux",),
             outputs=("flux",),
-            defaults={"flux": 1.0},
+            initial_fields={"flux": 1.0},
+            execution="host",
         ),
     )
-    target = vercor.HostComponent.from_step(
+    target = vercor.CallableComponent(
         "DST",
         grid,
         step_target,
         spec=vercor.ComponentSpec(
             inputs=("flux", "total"),
             outputs=("total",),
-            defaults={"total": 0.0},
+            initial_fields={"total": 0.0},
+            execution="host",
         ),
     )
     backend = SequentialBackend()
@@ -244,7 +246,7 @@ def test_custom_backend_rejects_non_run_state_return(
     grid = make_test_grid(name=f"v2-invalid-backend-{actual_type}")
     coupler = vercor.Coupler(
         _clock(),
-        components=(vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        components=(vercor.DataComponent("MODEL", grid, {"value": 1.0}),),
         run_order=("MODEL",),
         runtime=vercor.RuntimeOptions(execution=InvalidReturnBackend()),
     )
@@ -287,12 +289,12 @@ def _data_state(
 def test_custom_backend_accepts_structurally_compatible_foreign_run_state() -> None:
     grid = make_test_grid(name="compatible-foreign-state")
     foreign_state = _data_state(
-        vercor.DataComponent.from_fields("MODEL", grid, {"value": 9.0}),
+        vercor.DataComponent("MODEL", grid, {"value": 9.0}),
         run_order=("MODEL",),
     )
     coupler = vercor.Coupler(
         _clock(),
-        components=(vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        components=(vercor.DataComponent("MODEL", grid, {"value": 1.0}),),
         run_order=("MODEL",),
         runtime=vercor.RuntimeOptions(
             topology=None,
@@ -323,20 +325,20 @@ def test_custom_backend_validates_returned_run_state_schema(case: str) -> None:
     grid = make_test_grid(name=f"custom-backend-schema-{case}")
     if case == "missing":
         foreign_state = _data_state(
-            vercor.DataComponent.from_fields("OTHER", grid, {"value": 1.0}),
+            vercor.DataComponent("OTHER", grid, {"value": 1.0}),
             run_order=("OTHER",),
         )
         message = "missing.*MODEL"
     elif case == "extra":
         foreign_state = _data_state(
-            vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),
-            vercor.DataComponent.from_fields("EXTRA", grid, {"value": 2.0}),
+            vercor.DataComponent("MODEL", grid, {"value": 1.0}),
+            vercor.DataComponent("EXTRA", grid, {"value": 2.0}),
             run_order=("MODEL",),
         )
         message = "extra.*EXTRA"
     elif case == "extra-field":
         foreign_state = _data_state(
-            vercor.DataComponent.from_fields(
+            vercor.DataComponent(
                 "MODEL",
                 grid,
                 {"value": 1.0, "extra_field": 2.0},
@@ -350,14 +352,16 @@ def test_custom_backend_validates_returned_run_state_schema(case: str) -> None:
             longitude=np.asarray([0.0, 1.0, 2.0]),
         )
         foreign_state = _data_state(
-            vercor.DataComponent.from_fields("MODEL", wide_grid, {"value": 1.0}),
+            vercor.DataComponent("MODEL", wide_grid, {"value": 1.0}),
             run_order=("MODEL",),
         )
-        message = r"value.*MODEL.*shape \(2, 3\).*expected.*grid shape \(2, 2\)"
+        message = (
+            r"MODEL.*value.*shape \(2, 3\).*expected.*trailing grid shape \(2, 2\)"
+        )
 
     coupler = vercor.Coupler(
         _clock(),
-        components=(vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        components=(vercor.DataComponent("MODEL", grid, {"value": 1.0}),),
         run_order=("MODEL",),
         runtime=vercor.RuntimeOptions(
             topology=None,
@@ -419,7 +423,7 @@ def test_runtime_driver_rejects_invalid_dispatch_before_component_step(
     grid = make_test_grid(name=f"v2-driver-{case}")
     coupler = vercor.Coupler(
         _clock(steps=2),
-        components=(vercor.DataComponent.from_fields("MODEL", grid, {"value": 1.0}),),
+        components=(vercor.DataComponent("MODEL", grid, {"value": 1.0}),),
         run_order=("MODEL",),
         runtime=vercor.RuntimeOptions(execution=InvalidDriverCallBackend()),
     )
@@ -455,14 +459,15 @@ def test_runtime_driver_accepts_integer_jax_scalar_and_uses_requested_time() -> 
                 step=jnp.asarray(1, dtype=jnp.int32),
             )
 
-    component = vercor.HostComponent.from_step(
+    component = vercor.CallableComponent(
         "MODEL",
         grid,
         step_model,
         spec=vercor.ComponentSpec(
             inputs=("value",),
             outputs=("value",),
-            defaults={"value": 1.0},
+            initial_fields={"value": 1.0},
+            execution="host",
         ),
     )
     coupler = vercor.Coupler(
@@ -503,6 +508,13 @@ def test_runtime_backends_own_loops_without_importing_runner() -> None:
 
 @pytest.mark.fast_always
 def test_structural_component_can_request_host_runtime_through_spec() -> None:
+    setup_contexts: list[vercor.SetupContext] = []
+
+    def setup(component: object, context: vercor.SetupContext) -> vercor.SetupResult:
+        _ = component
+        setup_contexts.append(context)
+        return vercor.SetupResult()
+
     class PlainHostComponent:
         name = "MODEL"
 
@@ -511,15 +523,10 @@ def test_structural_component_can_request_host_runtime_through_spec() -> None:
             self.spec = vercor.ComponentSpec(
                 inputs=("temperature",),
                 outputs=("temperature",),
-                defaults={"temperature": 280.0},
+                initial_fields={"temperature": 280.0},
                 execution="host",
+                lifecycle=vercor.LifecycleHooks(setup=setup),
             )
-
-        def initial_fields(self) -> Mapping[str, Any]:
-            return {}
-
-        def initialize(self, context: vercor.SetupContext) -> None:
-            assert context.run_order == ("MODEL",)
 
         def step(
             self,
@@ -541,6 +548,10 @@ def test_structural_component_can_request_host_runtime_through_spec() -> None:
 
     final_state = coupler.run()
 
+    assert len(setup_contexts) == 1
+    assert setup_contexts[0].run_order == ("MODEL",)
+    assert not hasattr(component, "initial_fields")
+    assert not hasattr(component, "initialize")
     assert_allclose_compact(
         final_state.component("MODEL").field("temperature"),
         jnp.full(component.grid.shape, 283.0),
@@ -548,37 +559,35 @@ def test_structural_component_can_request_host_runtime_through_spec() -> None:
 
 
 @pytest.mark.fast_always
-def test_data_import_policy_belongs_to_data_component_not_component_spec() -> None:
-    policy = vercor.FieldImportPolicy(time_interpolation=True)
+def test_transfer_policy_belongs_to_component_spec() -> None:
+    policy = vercor.TransferPolicy(time_selection="linear")
     grid = make_test_grid(name="v2-import-policy")
-    spec = vercor.ComponentSpec(outputs=("temperature",))
+    spec = vercor.ComponentSpec(outputs=("temperature",), transfer=policy)
 
-    component = vercor.DataComponent.from_fields(
+    component = vercor.DataComponent(
         "OBS",
         grid,
         fields={"temperature": 280.0},
         spec=spec,
-        import_policy=policy,
     )
 
     assert not hasattr(spec, "import_policy")
-    assert component.import_policy is policy
+    assert not hasattr(component, "import_policy")
+    assert component.spec.transfer is policy
+    assert not hasattr(vercor, "FieldImportPolicy")
 
 
 @pytest.mark.fast_always
-def test_coupler_components_exposes_component_info_not_internal_adapters() -> None:
+def test_coupler_components_exposes_read_only_private_metadata() -> None:
     class PlainComponent:
         name = "MODEL"
 
         def __init__(self) -> None:
             self.grid = make_test_grid(name="v2-component-info")
-            self.spec = vercor.ComponentSpec(outputs=("temperature",))
-
-        def initial_fields(self) -> Mapping[str, Any]:
-            return {"temperature": 280.0}
-
-        def initialize(self, context: vercor.SetupContext) -> None:
-            _ = context
+            self.spec = vercor.ComponentSpec(
+                outputs=("temperature",),
+                initial_fields={"temperature": 280.0},
+            )
 
         def step(
             self,
@@ -589,39 +598,41 @@ def test_coupler_components_exposes_component_info_not_internal_adapters() -> No
             _ = fields, context, payload
             return {}
 
+    component = PlainComponent()
     coupler = vercor.Coupler(
         _clock(),
-        components=(PlainComponent(),),
+        components=(component,),
         run_order=("MODEL",),
     )
 
     info = coupler.components["MODEL"]
 
-    assert isinstance(info, vercor.ComponentInfo)
+    assert not hasattr(vercor, "ComponentInfo")
+    assert info is component
     assert info.name == "MODEL"
     assert info.grid.name == "v2-component-info"
     assert info.spec.outputs == ("temperature",)
-    assert not isinstance(info, vercor.Component)
+    assert isinstance(info, vercor.Component)
     with pytest.raises(TypeError):
         coupler.components["OTHER"] = info  # type: ignore[index]
 
 
 @pytest.mark.fast_always
-def test_snapshot_writer_receives_component_info(tmp_path: Path) -> None:
+def test_snapshot_writer_receives_original_component(tmp_path: Path) -> None:
     grid = make_test_grid(name="v2-snapshot-component-info")
-    seen: list[vercor.ComponentInfo] = []
+    seen: list[Any] = []
 
     def writer(context: vercor.SnapshotContext) -> None:
         seen.append(context.component)
 
-    component = vercor.Component.from_step(
+    component = vercor.CallableComponent(
         "MODEL",
         grid,
         lambda fields: {"temperature": fields["temperature"]},
         spec=vercor.ComponentSpec(
             inputs=("temperature",),
             outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            initial_fields={"temperature": 280.0},
             output=vercor.OutputConfig(snapshot_writer=writer),
         ),
     )
@@ -633,9 +644,13 @@ def test_snapshot_writer_receives_component_info(tmp_path: Path) -> None:
 
     coupler.write_outputs(coupler.run(), output_dir=tmp_path)
 
-    assert seen == [
-        vercor.ComponentInfo(name="MODEL", grid=grid, spec=component.spec),
-    ]
+    assert len(seen) == 1
+    assert seen[0].name == "MODEL"
+    assert seen[0].grid.name == grid.name
+    assert seen[0].grid.shape == grid.shape
+    assert seen[0].spec is component.spec
+    assert seen[0] is component
+    assert not hasattr(vercor, "ComponentInfo")
 
 
 @pytest.mark.fast_always
@@ -644,7 +659,7 @@ def test_coupling_module_owns_generic_coupler_recipe() -> None:
     import vercor.recipes as recipes
 
     grid = make_test_grid(name="v2-coupler-spec")
-    component = vercor.DataComponent.from_fields(
+    component = vercor.DataComponent(
         "MODEL",
         grid,
         {"temperature": 280.0},

@@ -10,8 +10,9 @@ from typing import Any, cast
 import jax.numpy as jnp
 
 from vercor.components import (
-    HostComponent,
+    Component,
     SetupContext,
+    SetupResult,
 )
 from vercor.grids import RectilinearGrid
 from vercor.output._component_adapter import (
@@ -112,11 +113,11 @@ class VerosGCMSetupState:
             binary_mask=mask[2:-2, 2:-2].T,
         )
 
-    def initialize(
+    def setup(
         self,
-        component: HostComponent,
+        component: Component,
         context: SetupContext,
-    ) -> None:
+    ) -> SetupResult:
         """Align timestep, optionally spin up, and seed the initial SST."""
 
         dt_seconds = context.dt_seconds
@@ -152,9 +153,13 @@ class VerosGCMSetupState:
                 step=spinup_step,
             )
 
-        component.seed_field(
-            "sea_surface_temperature",
-            _veros_state.extract_veros_runtime_sst(self._veros_state),
+        _ = component
+        return SetupResult(
+            fields={
+                "sea_surface_temperature": _veros_state.extract_veros_runtime_sst(
+                    self._veros_state
+                )
+            }
         )
 
 

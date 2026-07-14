@@ -4,12 +4,17 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from vercor.components import Component, ComponentSpec
+from vercor.components import CallableComponent, Component, ComponentSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
-_ATMOSPHERE_INPUTS = ("sea_surface_temperature",)
+_ATMOSPHERE_INPUTS = (
+    "sea_surface_temperature",
+    "land_surface_temperature",
+    "soil_moisture",
+    "ice_fraction",
+)
 _ATMOSPHERE_OUTPUTS = (
     "temperature_2m",
     "sensible_heat_flux",
@@ -91,13 +96,13 @@ def make_slab_atmosphere(grid: RectilinearGrid, name: str = "ATM") -> Component:
             "temperature_2m": updated_temperature_2m,
         }
 
-    return Component.from_step(
-        name=name,
-        grid=grid,
-        step=step,
+    return CallableComponent(
+        name,
+        grid,
+        step,
         spec=ComponentSpec(
             inputs=_ATMOSPHERE_INPUTS,
             outputs=_ATMOSPHERE_OUTPUTS,
-            defaults=_ATMOSPHERE_DEFAULT_FIELDS,
+            initial_fields=_ATMOSPHERE_DEFAULT_FIELDS,
         ),
     )

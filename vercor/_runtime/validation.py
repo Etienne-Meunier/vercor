@@ -11,7 +11,7 @@ from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components.contracts import Component
 
 
 def validate_runtime_store_field(
@@ -75,6 +75,8 @@ def validate_component_runtime_contract_fields(
 ) -> None:
     """Validate generic runtime contract fields before component-specific checks."""
 
+    for field_name in component.spec.outputs:
+        validate_runtime_data_field_exists(component, component_state, field_name)
     for field_name in contract.receives:
         validate_runtime_store_field(
             component,
@@ -123,23 +125,19 @@ def validate_exchange_fields_declared(
     """Check that exchanged fields are declared by the receiving/sending component."""
 
     declared_fields = set(declared_runtime_field_names(component.spec))
-    seeded_fields = set(component.field_names)
-    send_fields = declared_fields | seeded_fields
-    receive_fields = declared_fields
 
     for field_name in contract.sends:
-        if field_name not in send_fields:
+        if field_name not in declared_fields:
             raise ComponentError(
                 f"Exchange send field '{field_name}' for component "
-                f"'{component.name}' is not declared. Seed the field with "
-                "seed_field()/seed_fields(), include it in factory fields, or "
-                "declare it as an output/default in ComponentSpec."
+                f"'{component.name}' is not declared. Add it to ComponentSpec "
+                "inputs or outputs before coupling."
             )
 
     for field_name in contract.receives:
-        if field_name not in receive_fields:
+        if field_name not in declared_fields:
             raise ComponentError(
                 f"Exchange receive field '{field_name}' for component "
                 f"'{component.name}' is not declared. Add it to ComponentSpec "
-                "inputs, outputs, or defaults before coupling."
+                "inputs or outputs before coupling."
             )

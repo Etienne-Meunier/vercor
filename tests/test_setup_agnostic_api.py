@@ -15,15 +15,16 @@ import vercor.setups._jcm as jcm_setup_module
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor import (
+    CallableComponent,
     Clock,
     Component,
     ComponentSpec,
     Coupler,
     DataComponent,
     Exchange,
-    HostComponent,
     LifecycleHooks,
     RuntimeOptions,
+    SetupResult,
     StepContext,
 )
 from vercor.exceptions import ComponentError, CouplerError
@@ -53,7 +54,7 @@ def test_custom_named_components_can_exchange_custom_fields_without_surface_mask
     None
 ):
     grid = make_test_grid(name="custom-grid")
-    source = DataComponent.from_fields(
+    source = DataComponent(
         "SRC",
         grid,
         {"custom_flux": 1.0},
@@ -64,14 +65,14 @@ def test_custom_named_components_can_exchange_custom_fields_without_surface_mask
             "custom_flux": fields["custom_flux"] + context.step,
         }
 
-    target = Component.from_step(
+    target = CallableComponent(
         "DST",
         grid,
         step,
         spec=ComponentSpec(
             inputs=("custom_flux",),
             outputs=("custom_flux",),
-            defaults={"custom_flux": 0.0},
+            initial_fields={"custom_flux": 0.0},
         ),
     )
     coupler = Coupler(
@@ -95,12 +96,12 @@ def test_duplicate_exchange_topology_key_requires_merged_fields_or_distinct_fact
     None
 ):
     grid = make_test_grid(name="duplicate-topology-key")
-    source = DataComponent.from_fields(
+    source = DataComponent(
         "SRC",
         grid,
         {"temperature": 280.0, "humidity": 0.5},
     )
-    target = DataComponent.from_fields(
+    target = DataComponent(
         "DST",
         grid,
         {"temperature": 0.0, "humidity": 0.0},
@@ -129,9 +130,9 @@ def test_exchange_fan_in_rejects_scalar_conflicts_independent_of_order_and_regri
     None
 ):
     grid = make_test_grid(name="fan-in-scalar")
-    source_a = DataComponent.from_fields("SRC_A", grid, {"flux": 1.0})
-    source_b = DataComponent.from_fields("SRC_B", grid, {"flux": 2.0})
-    target = DataComponent.from_fields(
+    source_a = DataComponent("SRC_A", grid, {"flux": 1.0})
+    source_b = DataComponent("SRC_B", grid, {"flux": 2.0})
+    target = DataComponent(
         "DST",
         grid,
         {"flux": 0.0},
@@ -173,9 +174,9 @@ def test_exchange_fan_in_rejects_scalar_conflicts_independent_of_order_and_regri
 @pytest.mark.fast_always
 def test_exchange_fan_in_flattens_vector_declarations() -> None:
     grid = make_test_grid(name="fan-in-vector")
-    source_a = DataComponent.from_fields("SRC_A", grid, {"u": 1.0, "v": 2.0})
-    source_b = DataComponent.from_fields("SRC_B", grid, {"v": 3.0})
-    target = DataComponent.from_fields(
+    source_a = DataComponent("SRC_A", grid, {"u": 1.0, "v": 2.0})
+    source_b = DataComponent("SRC_B", grid, {"v": 3.0})
+    target = DataComponent(
         "DST",
         grid,
         {"u": 0.0, "v": 0.0},
@@ -207,18 +208,18 @@ def test_exchange_fan_in_flattens_vector_declarations() -> None:
 @pytest.mark.fast_always
 def test_component_can_receive_step_and_send_the_same_field() -> None:
     grid = make_test_grid(name="feedback-field")
-    source = DataComponent.from_fields("SRC", grid, {"signal": 2.0})
-    middle = Component.from_step(
+    source = DataComponent("SRC", grid, {"signal": 2.0})
+    middle = CallableComponent(
         "MID",
         grid,
         lambda fields: {"signal": fields["signal"] + 1.0},
         spec=ComponentSpec(
             inputs=("signal",),
             outputs=("signal",),
-            defaults={"signal": 0.0},
+            initial_fields={"signal": 0.0},
         ),
     )
-    target = DataComponent.from_fields(
+    target = DataComponent(
         "DST",
         grid,
         {"signal": 0.0},
@@ -264,19 +265,19 @@ def test_slab_driver_has_one_bilinear_ocean_to_seaice_temperature_route() -> Non
 @pytest.mark.fast_always
 def test_exchanged_fields_must_be_declared_by_receiving_component() -> None:
     grid = make_test_grid(name="undeclared-grid")
-    source = DataComponent.from_fields(
+    source = DataComponent(
         "SRC",
         grid,
         {"custom_flux": 1.0},
     )
-    target = Component.from_step(
+    target = CallableComponent(
         "DST",
         grid,
         lambda fields: {"other": fields["other"]},
         spec=ComponentSpec(
             inputs=("other",),
             outputs=("other",),
-            defaults={"other": 0.0},
+            initial_fields={"other": 0.0},
         ),
     )
     coupler = Coupler(
@@ -294,8 +295,8 @@ def test_exchanged_fields_must_be_declared_by_receiving_component() -> None:
 @pytest.mark.fast_always
 def test_required_surface_mask_policy_preserves_missing_role_errors() -> None:
     grid = make_test_grid(name="required-policy-grid")
-    source = DataComponent.from_fields("SRC", grid, {"temperature": 1.0})
-    target = DataComponent.from_fields(
+    source = DataComponent("SRC", grid, {"temperature": 1.0})
+    target = DataComponent(
         "DST",
         grid,
         {"temperature": 0.0},
@@ -317,7 +318,7 @@ def test_required_surface_mask_policy_preserves_missing_role_errors() -> None:
 def test_step_context_step_increments_in_scanned_runtime() -> None:
     grid = make_test_grid(name="scanned-step-grid")
 
-    component = Component.from_step(
+    component = CallableComponent(
         "MODEL",
         grid,
         lambda fields, context: {
@@ -325,7 +326,7 @@ def test_step_context_step_increments_in_scanned_runtime() -> None:
         },
         spec=ComponentSpec(
             outputs=("temperature",),
-            defaults={"temperature": 0.0},
+            initial_fields={"temperature": 0.0},
         ),
     )
     coupler = Coupler(
@@ -347,7 +348,7 @@ def test_step_context_step_increments_in_scanned_runtime() -> None:
 def test_step_context_step_increments_in_host_runtime() -> None:
     grid = make_test_grid(name="host-step-grid")
 
-    component = HostComponent.from_step(
+    component = CallableComponent(
         "HOST",
         grid,
         lambda fields, context: {
@@ -355,7 +356,8 @@ def test_step_context_step_increments_in_host_runtime() -> None:
         },
         spec=ComponentSpec(
             outputs=("temperature",),
-            defaults={"temperature": 0.0},
+            initial_fields={"temperature": 0.0},
+            execution="host",
         ),
     )
     coupler = Coupler(
@@ -378,14 +380,17 @@ def test_no_exchange_components_run_initialize_hooks_before_state_creation() -> 
     grid = make_test_grid(name="no-exchange-init-grid")
     events: list[tuple[str, tuple[str, ...]]] = []
 
-    def initialize(component: DataComponent, context: vercor.SetupContext) -> None:
+    def setup(component: vercor.Component, context: vercor.SetupContext) -> SetupResult:
         events.append((component.name, tuple(context.run_order)))
-        component.seed_field("temperature", 280.0)
+        return SetupResult(fields={"temperature": 280.0})
 
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "ONLY",
         grid,
-        spec=ComponentSpec(lifecycle=LifecycleHooks(initialize=initialize)),
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            lifecycle=LifecycleHooks(setup=setup),
+        ),
     )
     coupler = Coupler(
         clock=_clock(),
@@ -431,7 +436,7 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
         assert loaded_coords is coords
         assert loaded_forcing is forcing
         assert loaded_ocn_grid is ocn_grid
-        return DataComponent.from_fields(
+        return DataComponent(
             name,
             jcm_grid,
             {"land_surface_temperature": 280.0},
@@ -447,7 +452,7 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
         assert loaded_terrain is terrain
         assert config is not None
         captured_config["value"] = config
-        return Component.from_step(
+        return CallableComponent(
             config.name,
             jcm_grid,
             lambda fields: {},

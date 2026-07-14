@@ -15,11 +15,11 @@ from vercor._runtime.stores import FieldStore
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 def runtime_state_from_components(
-    components: Mapping[str, Component],
+    components: Mapping[str, _ComponentBinding],
     exchanges: Sequence[Exchange],
     fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
     *,

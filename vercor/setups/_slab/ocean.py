@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from vercor.components import (
+    CallableComponent,
     Component,
     ComponentSpec,
     StepContext,
@@ -13,7 +14,20 @@ from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
-_OCEAN_INPUTS = ("sensible_heat_flux", "latent_heat_flux")
+_OCEAN_INPUTS = (
+    "sensible_heat_flux",
+    "latent_heat_flux",
+    "u_velocity_10m",
+    "v_velocity_10m",
+    "u_velocity",
+    "v_velocity",
+    "specific_humidity",
+    "temperature",
+    "model_level_height",
+    "net_shortwave_radiation_flux",
+    "downward_longwave_radiation_flux",
+    "ice_fraction",
+)
 _OCEAN_OUTPUTS = ("sea_surface_temperature",)
 _OCEAN_DEFAULT_FIELDS = {
     "sea_surface_temperature": _REFERENCE_SEA_SURFACE_TEMPERATURE,
@@ -93,13 +107,13 @@ def make_slab_ocean(
         )
         return {"sea_surface_temperature": updated_sst}
 
-    return Component.from_step(
-        name=name,
-        grid=grid,
-        step=step,
+    return CallableComponent(
+        name,
+        grid,
+        step,
         spec=ComponentSpec(
             inputs=_OCEAN_INPUTS,
             outputs=_OCEAN_OUTPUTS,
-            defaults=_OCEAN_DEFAULT_FIELDS,
+            initial_fields=_OCEAN_DEFAULT_FIELDS,
         ),
     )

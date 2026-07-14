@@ -12,14 +12,14 @@ from vercor._runtime.contracts import ExchangeContract
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 @dataclass(frozen=True)
 class RuntimeDispatchContext:
     """Static runtime plumbing shared by per-component dispatch helpers."""
 
-    components: Mapping[str, Component]
+    components: Mapping[str, _ComponentBinding]
     exchanges_by_destination: Mapping[str, tuple[Exchange, ...]]
     regridders: Mapping[tuple[str, str, str], Any]
     contracts: Mapping[str, ExchangeContract]
@@ -35,7 +35,7 @@ class RuntimeDispatchContext:
 
 
 def build_runtime_dispatch_context(
-    components: Mapping[str, Component],
+    components: Mapping[str, _ComponentBinding],
     exchanges: Sequence[Exchange],
     regridders: Mapping[tuple[str, str, str], Any],
     contracts: Mapping[str, ExchangeContract],

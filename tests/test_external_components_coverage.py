@@ -36,7 +36,14 @@ from tests._coverage_support import capture_logger_output, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.calendar import DateTime360, DateTime365
 from vercor.clock import Clock
-from vercor.components import Component, ComponentSpec, StepResult
+from vercor.components import (
+    CallableComponent,
+    Component,
+    ComponentSpec,
+    LifecycleHooks,
+    SetupResult,
+    StepResult,
+)
 from vercor.components.contracts import PrefillContext
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
@@ -586,7 +593,7 @@ def test_jax_gcm_constructor_builds_jax_backed_grid(
         "sea_surface_temperature",
         "soil_moisture",
     )
-    assert "soil_moisture" in component.spec.defaults
+    assert "soil_moisture" in component.spec.initial_fields
     assert component.spec.outputs == (
         "land_surface_temperature",
         "sea_surface_temperature",
@@ -597,7 +604,7 @@ def test_jax_gcm_constructor_builds_jax_backed_grid(
     assert_allclose_compact(component.grid.longitude, np.asarray([0.0, 180.0]))
     assert_allclose_compact(component.grid.latitude, np.asarray([-45.0, 0.0, 45.0]))
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
-    assert callable(component.output.snapshot_writer)
+    assert callable(component.spec.output.snapshot_writer)
 
 
 def test_jax_gcm_initialize_validates_timestep_multiple() -> None:
@@ -610,7 +617,7 @@ def test_jax_gcm_initialize_validates_timestep_multiple() -> None:
     component.grid = make_test_grid()
 
     with pytest.raises(ValueError, match="model_timestep"):
-        component.initialize(
+        component.setup(
             cast(Any, component),
             _make_coupler(dt_seconds=3600.0, run_order=["ATM"]),
         )
@@ -683,7 +690,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
         fake_jax_gcm_prediction_output_variables,
     )
 
-    hook_component = DataComponent.from_fields(
+    hook_component = DataComponent(
         name="CUSTOM_ATMOSPHERE",
         grid=component.grid,
     )
@@ -691,7 +698,7 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
         dt_seconds=3600.0,
         run_order=["CUSTOM_ATMOSPHERE"],
     )
-    component.initialize(cast(Any, hook_component), coupler)
+    setup_result = component.setup(cast(Any, hook_component), coupler)
 
     assert component.coupling_timestep == timedelta(hours=1)
     assert component.spinup_steps == 2
@@ -702,8 +709,10 @@ def test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up(
         component.output_adapter.variables["spinup"].counts,
         np.asarray([2]),
     )
-    assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
-    assert hook_component._data["sea_surface_temperature"].shape == component.grid.shape
+    assert (
+        setup_result.fields["sea_surface_temperature"]
+        == jax_gcm_fields_module.REFERENCE_SURFACE_TEMPERATURE
+    )
 
 
 def test_jax_gcm_initialize_builds_default_forcing_when_missing(
@@ -766,11 +775,11 @@ def test_jax_gcm_initialize_builds_default_forcing_when_missing(
         lambda jitted: disabled_spinup_step,
     )
 
-    hook_component = DataComponent.from_fields(
+    hook_component = DataComponent(
         name="ATM",
         grid=component.grid,
     )
-    component.initialize(
+    component.setup(
         cast(Any, hook_component),
         _make_coupler(dt_seconds=3600.0, run_order=["ATM"]),
     )
@@ -919,7 +928,7 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
     runtime_data = dict(component.data)
     runtime_incoming: dict[str, Any] = {}
     runtime_outgoing: dict[str, Any] = {}
-    hook_component = DataComponent.from_fields(
+    hook_component = DataComponent(
         name="ATM",
         grid=component.grid,
     )
@@ -932,9 +941,9 @@ def test_jax_gcm_step_maps_outputs_and_respects_output_gate(
             sent=runtime_outgoing,
         ),
     )
-    runtime_data.update(prefill_result.fields)
-    runtime_incoming.update(prefill_result.received)
-    runtime_outgoing.update(prefill_result.sent)
+    runtime_data.update(cast(Any, prefill_result.fields))
+    runtime_incoming.update(cast(Any, prefill_result.received))
+    runtime_outgoing.update(cast(Any, prefill_result.sent))
     component_state = ComponentRuntimeState(
         fields=FieldStore.from_mapping(runtime_data),
         received=FieldStore.from_mapping(runtime_incoming),
@@ -1023,7 +1032,7 @@ def test_jax_gcm_period_schema_samples_post_step_payload() -> None:
     setup_state = SimpleNamespace(
         model=SimpleNamespace(coords=coords, physics=physics_module),
     )
-    component = Component.from_step(
+    component = CallableComponent(
         name="ATM",
         grid=make_test_grid(name="atm-output-schema"),
         step=lambda fields: fields,
@@ -1078,7 +1087,7 @@ def test_jax_gcm_period_schema_sample_is_pure_after_preparation() -> None:
     setup_state = SimpleNamespace(
         model=SimpleNamespace(coords=coords, physics=physics_module),
     )
-    component = Component.from_step(
+    component = CallableComponent(
         name="ATM",
         grid=make_test_grid(name="atm-pure-output-schema"),
         step=lambda fields: fields,
@@ -1130,13 +1139,13 @@ def test_jax_gcm_period_schema_seeds_and_consumes_spinup_accumulator() -> None:
         model=SimpleNamespace(coords=coords, physics=physics_module),
         output_adapter=output_adapter,
     )
-    component = Component.from_step(
+    component = CallableComponent(
         name="ATM",
         grid=make_test_grid(name="atm-spinup-output-schema"),
         step=lambda fields: fields,
         spec=ComponentSpec(
             outputs=("surface_temperature",),
-            defaults={"surface_temperature": 280.0},
+            initial_fields={"surface_temperature": 280.0},
             output=OutputConfig(period=PeriodOutput(frequency="day")),
         ),
     )
@@ -1181,7 +1190,7 @@ def test_jax_gcm_period_schema_seeds_and_consumes_spinup_accumulator() -> None:
     )
 
     plan = build_period_output_plan(
-        {"ATM": component},
+        cast(Any, {"ATM": component}),
         run_state,
         Clock(datetime(2000, 1, 1), 86_400.0, 1),
     )
@@ -1235,17 +1244,20 @@ def test_jax_gcm_period_schema_writes_matching_host_and_scanned_files(
                 ),
             )
 
-        component = Component.from_step(
+        initial_payload = jax_gcm_runtime_module.JAXGCMRuntimePayload(
+            jcm_state=initial_jcm_state,
+            forcing=jnp.asarray(0.0),
+        )
+        component = CallableComponent(
             name="ATM",
             grid=make_test_grid(name="fake-jax-gcm"),
             step=step,
-            payload=jax_gcm_runtime_module.JAXGCMRuntimePayload(
-                jcm_state=initial_jcm_state,
-                forcing=jnp.asarray(0.0),
-            ),
             spec=ComponentSpec(
                 outputs=("surface_temperature",),
-                defaults={"surface_temperature": 280.0},
+                initial_fields={"surface_temperature": 280.0},
+                lifecycle=LifecycleHooks(
+                    setup=lambda owner, context: SetupResult(payload=initial_payload)
+                ),
                 output=OutputConfig(period=PeriodOutput(frequency="day")),
             ),
         )
@@ -1397,18 +1409,21 @@ def test_jax_gcm_multitime_nan_weighting_matches_raw_prediction_reduction(
                 ),
             )
 
-        component = Component.from_step(
+        initial_payload = jax_gcm_runtime_module.JAXGCMRuntimePayload(
+            jcm_state=initial_jcm_state,
+            forcing=jnp.asarray(0.0),
+            period_output=initial_accumulator,
+        )
+        component = CallableComponent(
             name="ATM",
             grid=make_test_grid(name="fake-weighted-jax-gcm"),
             step=step,
-            payload=jax_gcm_runtime_module.JAXGCMRuntimePayload(
-                jcm_state=initial_jcm_state,
-                forcing=jnp.asarray(0.0),
-                period_output=initial_accumulator,
-            ),
             spec=ComponentSpec(
                 outputs=("surface_temperature",),
-                defaults={"surface_temperature": 280.0},
+                initial_fields={"surface_temperature": 280.0},
+                lifecycle=LifecycleHooks(
+                    setup=lambda owner, context: SetupResult(payload=initial_payload)
+                ),
                 output=OutputConfig(period=PeriodOutput(frequency="day")),
             ),
         )
@@ -2202,7 +2217,7 @@ def test_veros_initialize_validates_timestep_multiple() -> None:
     component.dt_tracer = 7.0
 
     with pytest.raises(ValueError, match="dt_tracer"):
-        component.initialize(
+        component.setup(
             cast(Any, component),
             _make_coupler(dt_seconds=20.0, run_order=["OCN"]),
         )
@@ -2239,19 +2254,18 @@ def test_veros_initialize_spinup_follows_enabled_only(
 
     component._step_function = fake_step_function
 
-    hook_component = DataComponent.from_fields(
+    hook_component = DataComponent(
         name="CUSTOM_OCEAN",
         grid=component.grid,
-        settings=component.settings,
     )
     coupler = _make_coupler(dt_seconds=20.0, run_order=["CUSTOM_OCEAN"])
-    component.initialize(cast(Any, hook_component), coupler)
+    setup_result = component.setup(cast(Any, hook_component), coupler)
 
     assert component.model_substeps == 2
     assert step_calls["count"] == expected_steps
-    assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
+    assert isinstance(setup_result.fields["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
-        hook_component._data["sea_surface_temperature"],
+        setup_result.fields["sea_surface_temperature"],
         np.full((4, 4), 283.15),
     )
 
@@ -2304,13 +2318,12 @@ def test_veros_initialize_spinup_accumulates_selected_outputs(
         fake_extract_veros_output_snapshot,
     )
 
-    hook_component = DataComponent.from_fields(
+    hook_component = DataComponent(
         name="OCN",
         grid=component.grid,
-        settings=component.settings,
     )
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
-    component.initialize(cast(Any, hook_component), coupler)
+    setup_result = component.setup(cast(Any, hook_component), coupler)
 
     assert [state.variables.step_id for state in accumulated_states] == [1, 2]
     assert accumulated_variables == [("temp",), ("temp",)]
@@ -2318,9 +2331,9 @@ def test_veros_initialize_spinup_accumulates_selected_outputs(
         component.output_adapter.variables["temp"].counts,
         np.asarray([2]),
     )
-    assert isinstance(hook_component._data["sea_surface_temperature"], jax.Array)
+    assert isinstance(setup_result.fields["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
-        hook_component._data["sea_surface_temperature"],
+        setup_result.fields["sea_surface_temperature"],
         np.full((4, 4), 283.15),
     )
 
@@ -2385,7 +2398,7 @@ def test_veros_constructor_builds_jax_backed_grid(
     )
     assert component.spec.outputs == ("sea_surface_temperature",)
     assert component.grid.binary_mask.shape == (4, 4)
-    assert callable(component.output.snapshot_writer)
+    assert callable(component.spec.output.snapshot_writer)
     expected_mask = np.ones((4, 4))
     expected_mask[1, 0] = 0.0
     assert_allclose_compact(component.grid.binary_mask, expected_mask)

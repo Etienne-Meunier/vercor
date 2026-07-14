@@ -17,7 +17,7 @@ from tests._tools_support import DummyComponentA, DummyComponentB
 from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
 import vercor._runtime.component_topology as component_topology_module
-from vercor.components.base import Component
+from vercor.components import Component
 from vercor.exceptions import CouplerError
 from vercor.fields import vector
 from vercor.grids import RectilinearGrid

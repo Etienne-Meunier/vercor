@@ -28,7 +28,7 @@ from vercor.output._period_files import write_period_output_netcdf
 from vercor.pytree import PyTreeNodeMixin
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
     from vercor.state import RunState
     from vercor._runtime.state import ComponentRuntimeState
 
@@ -272,7 +272,7 @@ class _PeriodOutputPlan:
     boundaries: tuple[_PeriodOutputBoundary, ...]
 
 
-def has_period_output(components: Mapping[str, "Component"]) -> bool:
+def has_period_output(components: Mapping[str, "_ComponentBinding"]) -> bool:
     """Return whether any configured component requests period output."""
 
     return any(
@@ -305,7 +305,7 @@ def validate_period_output_execution(execution: object) -> None:
 
 
 def validate_period_output_component_state(
-    component: "Component",
+    component: "_ComponentBinding",
     state: "ComponentRuntimeState",
 ) -> None:
     """Validate generic selected fields against initialized runtime state."""
@@ -333,7 +333,7 @@ def validate_period_output_component_state(
 
 
 def build_period_output_plan(
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     state: "RunState",
     clock: Clock,
 ) -> _PeriodOutputPlan:
@@ -425,7 +425,7 @@ def write_period_output_boundary(
 
 
 def _generic_period_output_schema(
-    component: "Component",
+    component: "_ComponentBinding",
     state: "ComponentRuntimeState",
     period: PeriodOutput,
 ) -> _PeriodOutputSchema:
@@ -474,7 +474,7 @@ def _generic_period_output_schema(
     )
 
 
-def _period_output_handled_by_step(component: "Component") -> bool:
+def _period_output_handled_by_step(component: "_ComponentBinding") -> bool:
     """Return whether a bundled host adapter owns its native period writes."""
 
     return bool(

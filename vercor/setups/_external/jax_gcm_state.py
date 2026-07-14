@@ -28,6 +28,7 @@ from jcm.physics_interface import (
 from vercor.components import (
     Component,
     SetupContext,
+    SetupResult,
 )
 from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_ones
 from vercor.grids import RectilinearGrid
@@ -37,7 +38,7 @@ from vercor.output._component_adapter import (
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     run_logged_spinup,
-    seed_grid_field_defaults,
+    grid_field_defaults,
 )
 from vercor.setups._external._jax_gcm_pytree import tree_as_real_dtype, tree_mean
 import vercor.setups._external.jax_gcm_fields as _jax_gcm_fields
@@ -164,11 +165,11 @@ class JAXGCMSetupState:
 
         return jax.jit(step_function) if jitted else step_function
 
-    def initialize(
+    def setup(
         self,
         component: Component,
         context: SetupContext,
-    ) -> None:
+    ) -> SetupResult:
         """Initialize runtime payload, defaults, and optional spinup state."""
 
         self._dtype_policy = context.dtype
@@ -212,12 +213,10 @@ class JAXGCMSetupState:
 
         self._step_function = self._generate_step_function(jitted=self.jitted)
 
-        seed_grid_field_defaults(
-            component,
+        initial_fields = grid_field_defaults(
             _jax_gcm_runtime.jax_gcm_default_field_names(
                 include_total_surface_temperature=False,
             ),
-            context,
             overrides={
                 "sea_surface_temperature": (
                     _jax_gcm_fields.REFERENCE_SURFACE_TEMPERATURE
@@ -252,6 +251,11 @@ class JAXGCMSetupState:
                 step_message=lambda step, total: f"JCM spinup step {step} / {total}",
                 step=spinup_step,
             )
+
+        return SetupResult(
+            fields=initial_fields,
+            payload=_jax_gcm_runtime.create_jax_gcm_runtime_payload(self, component),
+        )
 
 
 __all__ = [

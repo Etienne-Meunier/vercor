@@ -4,8 +4,10 @@ from typing import Any, cast
 
 from vercor.components import (
     LifecycleHooks,
+    CallableComponent,
+    Component,
     ComponentSpec,
-    HostComponent,
+    SetupResult,
     SetupContext,
     StepContext,
 )
@@ -50,7 +52,7 @@ def make_camulator_land(
     camulator_grid: RectilinearGrid,
     ocn_grid: RectilinearGrid,
     name: str = "LND",
-) -> HostComponent:
+) -> Component:
     """Return a host-backed CAMulator land forcing component."""
 
     longitude = camulator_grid.longitude
@@ -76,10 +78,10 @@ def make_camulator_land(
         binary_mask=lnd_bmask,
     )
 
-    def initialize(
-        component: HostComponent,
+    def setup(
+        component: Component,
         context: SetupContext,
-    ) -> None:
+    ) -> SetupResult:
         logger = context.logger
         state.coupler_start_datetime = context.start
         assign_model_timestep_alignment(
@@ -103,7 +105,8 @@ def make_camulator_land(
             logger=logger,
         )
 
-        component.seed_declared_defaults(component._dtype_policy)
+        _ = component
+        return SetupResult()
 
     def step(
         fields: dict[str, Any],
@@ -123,14 +126,15 @@ def make_camulator_land(
 
         return {"land_surface_temperature": as_jax_real_array(ts["TS"].values)}
 
-    return HostComponent.from_step(
-        name=name,
-        grid=grid,
-        step=step,
+    return CallableComponent(
+        name,
+        grid,
+        step,
         spec=ComponentSpec(
             inputs=_CAMULATOR_LAND_INPUTS,
             outputs=_CAMULATOR_LAND_OUTPUTS,
-            defaults=_CAMULATOR_LAND_DEFAULT_FIELDS,
-            lifecycle=LifecycleHooks(initialize=initialize),
+            initial_fields=_CAMULATOR_LAND_DEFAULT_FIELDS,
+            execution="host",
+            lifecycle=LifecycleHooks(setup=setup),
         ),
     )

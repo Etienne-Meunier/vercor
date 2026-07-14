@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 import re
 import tomllib
 
 import pytest
-import vercor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_PATH = PROJECT_ROOT / "docs" / "api-architecture-review.md"
 README_PATH = PROJECT_ROOT / "README.md"
 PROGRESS_PATH = PROJECT_ROOT / "PROGRESS.md"
 DEPENDENCIES_PATH = PROJECT_ROOT / "DEPENDENCIES.md"
+V3_MANIFEST_PATH = PROJECT_ROOT / "tests/contracts/vercor-3.1.1-public-api.json"
 
 REQUIRED_REVIEW_HEADINGS = [
     "1. Executive summary",
@@ -134,8 +135,11 @@ def test_architecture_review_guards_public_and_private_contracts() -> None:
 @pytest.mark.fast_always
 def test_architecture_review_documents_vercor_3_1_1_hardening() -> None:
     review = REVIEW_PATH.read_text(encoding="utf-8")
+    frozen_v3_contract = json.loads(V3_MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    assert _documented_root_exports(review) == set(vercor.__all__)
+    assert _documented_root_exports(review) == set(
+        frozen_v3_contract["exports"]["vercor"]
+    )
     required_by_section = {
         "1. Executive summary": (
             "VerCOR 3.1.1",
@@ -282,10 +286,10 @@ def test_readme_distinguishes_configuration_and_assembly_ownership() -> None:
     readme = README_PATH.read_text(encoding="utf-8")
 
     for statement in (
-        "`Settings` is mutable setup-time metadata",
-        "values may be JAX-traced",
+        "`Settings` remains transitional mutable non-physics",
+        "`PhysicalConstants` is the frozen traced PyTree owner",
         "`RuntimeOptions` owns static policy",
-        "complete one-off setups",
+        "Until Task 4 makes assembly constructor-only",
         "`CouplerSpec` for reusable recipes",
         "mutators for incremental assembly",
     ):
@@ -321,7 +325,7 @@ def test_repository_memory_records_vercor_3_1_1_ownership() -> None:
         "tests/fixtures/public_plugin_3_0/",
         "90% branch-coverage gate",
         "structural configuration snapshot",
-        "does not re-execute `initial_fields()`",
+        "does not re-execute setup",
         "array identity, field name, shape, and dtype",
         "lifecycle/spec callables are identity-only",
         "hidden closure/global/default mutable state is outside the supported configuration contract",
@@ -386,7 +390,7 @@ def test_readme_python_snippets_run_as_one_quick_start(
 
 
 @pytest.mark.fast_always
-def test_release_metadata_and_plugin_requirement_are_vercor_3_1() -> None:
+def test_release_metadata_stays_3_1_1_while_current_plugin_targets_v4() -> None:
     project = tomllib.loads(
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
@@ -402,5 +406,5 @@ def test_release_metadata_and_plugin_requirement_are_vercor_3_1() -> None:
     )["project"]
 
     assert project["version"] == "3.1.1"
-    assert plugin["dependencies"] == ["vercor>=3.1,<4"]
+    assert plugin["dependencies"] == ["vercor>=4,<5"]
     assert frozen_plugin["dependencies"] == ["vercor>=3.0,<4"]

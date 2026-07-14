@@ -5,22 +5,22 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from vercor import (
-    Clock,
+from vercor.clock import Clock
+from vercor.components import (
+    CallableComponent,
     Component,
-    Coupler,
     DataComponent,
     ComponentSpec,
-    Exchange,
-    ExecutionContext,
-    HostComponent,
-    RectilinearGrid,
-    RuntimeDriver,
-    RunState,
+    LifecycleHooks,
+    SetupResult,
     StepContext,
     StepResult,
-    RuntimeOptions,
 )
+from vercor.coupler import Coupler
+from vercor.exchanges import Exchange
+from vercor.grids import RectilinearGrid
+from vercor.runtime import ExecutionContext, RuntimeDriver, RuntimeOptions
+from vercor.state import RunState
 from vercor.dtypes import as_jax_real_array
 
 
@@ -37,14 +37,14 @@ def make_example_grid() -> RectilinearGrid:
 def make_data_forcing(grid: RectilinearGrid) -> DataComponent:
     """Wrap static or time-dependent forcing fields without a runtime step."""
 
-    return DataComponent.from_fields(
-        name="ATM",
-        grid=grid,
-        fields={
+    return DataComponent(
+        "ATM",
+        grid,
+        {
             "temperature": 288.15,
             "specific_humidity": 0.01,
         },
-    ).update_settings(identifier="example-forcing")
+    )
 
 
 def make_differentiable_model(grid: RectilinearGrid) -> Component:
@@ -62,14 +62,14 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
             )
         }
 
-    return Component.from_step(
-        name="OCN",
-        grid=grid,
-        step=step,
+    return CallableComponent(
+        "OCN",
+        grid,
+        step,
         spec=ComponentSpec(
             inputs=("net_surface_heat_flux",),
             outputs=("sea_surface_temperature",),
-            defaults={
+            initial_fields={
                 "sea_surface_temperature": 288.15,
                 "net_surface_heat_flux": 0.0,
             },
@@ -77,18 +77,22 @@ def make_differentiable_model(grid: RectilinearGrid) -> Component:
     )
 
 
-@dataclass
+@dataclass(frozen=True)
 class ToyHostModel:
-    """Small mutable host-side model used to show host wrapper payloads."""
+    """Small functional host-side model used to show host wrapper payloads."""
 
     offset: float = 0.0
 
-    def advance(self, temperature: Any, dt_seconds: float) -> Any:
-        self.offset += 0.001 * dt_seconds
-        return as_jax_real_array(temperature) + self.offset
+    def advance(
+        self, temperature: Any, dt_seconds: float
+    ) -> tuple[Any, "ToyHostModel"]:
+        """Return the updated field and a replacement immutable payload."""
+
+        next_model = ToyHostModel(self.offset + 0.001 * dt_seconds)
+        return as_jax_real_array(temperature) + next_model.offset, next_model
 
 
-def make_host_model(grid: RectilinearGrid) -> HostComponent:
+def make_host_model(grid: RectilinearGrid) -> Component:
     """Wrap a Python host-side model while keeping VerCOR runtime fields explicit."""
 
     def step(
@@ -98,46 +102,41 @@ def make_host_model(grid: RectilinearGrid) -> HostComponent:
     ) -> StepResult:
         if not isinstance(payload, ToyHostModel):
             raise TypeError("Host wrapper payload must be a ToyHostModel")
-        updated_temperature = payload.advance(fields["temperature"], context.dt_seconds)
+        updated_temperature, next_payload = payload.advance(
+            fields["temperature"], context.dt_seconds
+        )
         return StepResult(
             fields={"temperature": updated_temperature},
-            payload=payload,
+            payload=next_payload,
         )
 
-    return HostComponent.from_step(
-        name="LND",
-        grid=grid,
-        step=step,
-        payload=ToyHostModel(),
+    return CallableComponent(
+        "LND",
+        grid,
+        step,
         spec=ComponentSpec(
             outputs=("temperature",),
-            defaults={"temperature": 283.15},
+            initial_fields={"temperature": 283.15},
+            execution="host",
+            lifecycle=LifecycleHooks(
+                setup=lambda component, context: SetupResult(payload=ToyHostModel())
+            ),
         ),
     )
 
 
 @dataclass
 class StructuralFluxModel:
-    """Small structural component using the public ComponentLike contract."""
+    """Small structural component using the public Component protocol."""
 
     grid: RectilinearGrid
     name: str = "MODEL"
     spec: ComponentSpec = ComponentSpec(
         inputs=("custom_flux",),
         outputs=("custom_flux",),
-        defaults={"custom_flux": 0.0},
+        initial_fields={"custom_flux": 0.0},
         execution="host",
     )
-
-    def initial_fields(self) -> Mapping[str, Any]:
-        """Return setup-time field seeds."""
-
-        return {}
-
-    def initialize(self, context: Any) -> None:
-        """Perform setup-time initialization."""
-
-        _ = context
 
     def step(
         self,
@@ -172,11 +171,7 @@ class SequentialBackend:
 def make_custom_coupler(grid: RectilinearGrid) -> Coupler:
     """Assemble custom-named components without the built-in surface-mask policy."""
 
-    source = DataComponent.from_fields(
-        name="FORCING",
-        grid=grid,
-        fields={"custom_flux": 1.0},
-    )
+    source = DataComponent("FORCING", grid, {"custom_flux": 1.0})
 
     model = StructuralFluxModel(grid)
     return Coupler(

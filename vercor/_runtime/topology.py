@@ -16,12 +16,12 @@ from vercor.settings import Settings
 from vercor.topology import TopologyPolicy
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 def build_exchange_topology(
     *,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
     settings: Settings,
     dtype: DTypePolicy,

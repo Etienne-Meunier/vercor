@@ -9,6 +9,37 @@ historical commands, failure messages, or detailed validation notes.
 
 ## Current Status
 
+- VerCOR 4 milestone 1 Task 3 protocol-first component authoring completed
+  locally on 2026-07-14. `vercor.components.Component` is now the single
+  runtime-checkable structural protocol (`name`, `grid`, `spec`, `step`), with
+  `CallableComponent` and `DataComponent` as the only concrete convenience
+  adapters. Frozen `ComponentSpec` exclusively owns inputs, outputs, initial
+  fields, execution capability, lifecycle, transfer, and output policy;
+  `LifecycleHooks.setup` returns an immutable-mapping
+  `SetupResult(fields, payload)` once during private binding preparation;
+  standard payload containers are rebuilt per state, NumPy leaves are copied,
+  and opaque object leaves are deep-copied or rejected if they cannot be owned;
+  validation callbacks likewise receive a copy-owned payload and cannot mutate
+  initial or caller-supplied runtime state.
+  The inherited/mixin authoring hierarchy,
+  `ComponentLike`, `HostComponent`, component `initialize`/`initial_fields`,
+  constructor payloads, duplicate output/import-policy properties, and their
+  dead private helper modules are removed from the primary v4 implementation.
+  Prefill stores are declaration-, shape-, and dtype-normalized before atomic
+  update; scanned payload replacements must retain the setup payload PyTree
+  structure, while host execution may clear or restructure it. RED coverage
+  includes structural/callable/data authoring, invalid names/mappings,
+  setup/prefill/step declarations and layouts, scalar expansion, defensive
+  NumPy ownership, nested payload ownership, immutable mappings, payload
+  preserve/clear/replace PyTrees, and setup-payload JVP/reverse gradients. The
+  current installed plugin is migrated to strict-mypy v4 authoring; the frozen
+  3.0 plugin and 3.1.1 compatibility baseline remain unchanged and demonstrate
+  the intentional break. Final verification passes the exact 202-test
+  component/API/plugin/gradient focus, all 416 fast-selected tests, and all 872
+  full-suite tests with only the two known third-party `FutureWarning`s. Black
+  leaves all 237 files unchanged, strict flake8 reports zero findings, full
+  mypy reports no issues in 233 source files, and compileall passes. Exact
+  commands and evidence are in `.superpowers/sdd/task-3-report.md`.
 - VerCOR 4 milestone 1 Task 2 physical configuration and precision ownership
   completed locally on 2026-07-13. `vercor.physics.PhysicalConstants` is the
   frozen registered PyTree owner for all 25 traced physical values, using

@@ -10,7 +10,7 @@ from vercor._runtime.time import RuntimeStepInfo
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components.contracts import Component
 
 
 def receive_runtime_fields(
@@ -39,9 +39,9 @@ def _select_runtime_field_for_send(
     if step_info is None:
         return field
 
-    import_policy = component.import_policy
+    time_selection = component.spec.transfer.time_selection
 
-    if import_policy.time_interpolation:
+    if time_selection == "linear":
         arr = jnp.asarray(field)
         left = jnp.take(arr, step_info.monthly_index_left, axis=0)
         right = jnp.take(arr, step_info.monthly_index_right, axis=0)
@@ -50,7 +50,7 @@ def _select_runtime_field_for_send(
             + step_info.monthly_weight_right * right
         )
 
-    if import_policy.daily_selection:
+    if time_selection == "daily":
         return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
 
     return field

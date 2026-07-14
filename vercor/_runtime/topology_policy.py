@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 from jax.errors import TracerBoolConversionError
 
-from vercor.components.contracts import ComponentInfo
+from vercor.components import Component
 from vercor.exceptions import CouplerError
 from vercor.exchanges import Exchange
 from vercor.jax_logging import LoggerLike
@@ -21,30 +21,26 @@ from vercor.topology import (
 )
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 def build_topology_context(
     *,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
     settings: Settings,
     logger: LoggerLike,
 ) -> TopologyContext:
     """Return public topology-policy context from private runtime inputs."""
 
-    component_info = MappingProxyType(
+    public_components = MappingProxyType(
         {
-            name: ComponentInfo(
-                name=component.name,
-                grid=component.grid,
-                spec=component.spec,
-            )
+            name: getattr(component, "_component", component)
             for name, component in components.items()
         }
     )
     return TopologyContext(
-        components=component_info,
+        components=public_components,
         exchanges=tuple(exchanges),
         exchange_keys=tuple(
             (exchange.source, exchange.target, exchange_regrid_key(exchange))
@@ -58,7 +54,7 @@ def build_topology_context(
 def apply_topology_policy(
     topology_maps: RuntimeTopologyMaps,
     *,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
     settings: Settings,
     logger: LoggerLike,
@@ -92,7 +88,7 @@ def _apply_exchange_topology_patch(
     topology_maps: RuntimeTopologyMaps,
     patch: ExchangeTopologyPatch,
     *,
-    components: Mapping[str, ComponentInfo],
+    components: Mapping[str, Component],
 ) -> RuntimeTopologyMaps:
     """Apply public topology mask patches to runtime topology maps."""
 
@@ -113,7 +109,7 @@ def _apply_exchange_topology_patch(
 
 def _validate_patch_item(
     topology_maps: RuntimeTopologyMaps,
-    components: Mapping[str, ComponentInfo],
+    components: Mapping[str, Component],
     key: tuple[str, str, str],
     value: object,
     mask_kind: str,

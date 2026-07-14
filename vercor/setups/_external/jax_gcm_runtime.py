@@ -15,8 +15,7 @@ from vercor.components import (
     StepResult,
     ValidationContext,
 )
-from vercor.components._runtime_fields import prefill_runtime_fields
-from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_zeros
+from vercor.dtypes import DTypePolicy, as_jax_real_array, jax_full, jax_zeros
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.field_layout import validate_canonical_grid_field_shape
 from vercor.pytree import PyTreeNodeMixin
@@ -117,26 +116,21 @@ def prefill_jax_gcm_runtime_fields(
     """Pre-seed JAXGCM output fields so scan carry structure is stable."""
 
     data = dict(context.fields)
-    prefill_runtime_fields(
-        component,
-        data,
-        defaults=component.grid_field_defaults(
-            jax_gcm_default_field_names(
-                include_total_surface_temperature=True,
-            ),
-            overrides={
-                "sea_surface_temperature": (
-                    _jax_gcm_fields.REFERENCE_SURFACE_TEMPERATURE
-                ),
-            },
-        ),
-    )
+    defaults = {
+        name: 0.0
+        for name in jax_gcm_default_field_names(
+            include_total_surface_temperature=True,
+        )
+    }
+    defaults["sea_surface_temperature"] = _jax_gcm_fields.REFERENCE_SURFACE_TEMPERATURE
+    for name, value in defaults.items():
+        data.setdefault(
+            name, jax_full(component.grid.shape, value, state._dtype_policy)
+        )
     sigma_levels = jnp.asarray(state.sigma_levels)
     data.setdefault(
         "pressure",
-        jax_zeros(
-            (sigma_levels.shape[0], *component.grid.shape), component._dtype_policy
-        ),
+        jax_zeros((sigma_levels.shape[0], *component.grid.shape), state._dtype_policy),
     )
     return PrefillResult(fields=data)
 

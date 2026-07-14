@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from functools import partial
 
-from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
+from vercor.components import (
+    CallableComponent,
+    Component,
+    LifecycleHooks,
+    ComponentSpec,
+)
 from vercor.output import OutputConfig
 from vercor.setups.config import CAMulatorConfig
 
@@ -12,7 +17,7 @@ from vercor.setups.config import CAMulatorConfig
 def make_camulator_gcm(
     *,
     config: CAMulatorConfig,
-) -> HostComponent:
+) -> Component:
     """Return a host-backed CAMulator atmosphere component."""
 
     if config.spinup.enabled:
@@ -45,15 +50,16 @@ def make_camulator_gcm(
         output_frequency=None if period_output is None else period_output.frequency,
         logger=config.logger,
     )
-    component = HostComponent.from_step(
-        name=config.name,
-        grid=state.grid,
-        step=partial(_camulator_runtime.step_camulator_runtime, state),
+    component = CallableComponent(
+        config.name,
+        state.grid,
+        partial(_camulator_runtime.step_camulator_runtime, state),
         spec=ComponentSpec(
             inputs=("sea_surface_temperature", "land_surface_temperature"),
             outputs=_camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
-            defaults=_camulator_contracts.camulator_runtime_field_defaults(),
-            lifecycle=LifecycleHooks(initialize=state.initialize),
+            initial_fields=_camulator_contracts.camulator_runtime_field_defaults(),
+            execution="host",
+            lifecycle=LifecycleHooks(setup=state.setup),
             output=OutputConfig(
                 snapshot_writer=config.output.snapshot_writer
                 or partial(_camulator_output.write_camulator_snapshot_output, state),

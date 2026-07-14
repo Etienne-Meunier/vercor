@@ -126,7 +126,7 @@ def test_public_plugin_fixtures_are_isolated_and_never_import_private_modules() 
 
 
 @pytest.mark.fast_always
-def test_current_public_plugin_uses_canonical_owners_and_3_1_workflows() -> None:
+def test_current_public_plugin_uses_canonical_owners_and_v4_workflows() -> None:
     project = tomllib.loads(
         (PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
@@ -135,7 +135,7 @@ def test_current_public_plugin_uses_canonical_owners_and_3_1_workflows() -> None
     )
 
     assert project["version"] == "0.1.0"
-    assert project["dependencies"] == ["vercor>=3.1,<4"]
+    assert project["dependencies"] == ["vercor>=4,<5"]
     for owner in (
         "vercor.clock",
         "vercor.components",
@@ -152,12 +152,21 @@ def test_current_public_plugin_uses_canonical_owners_and_3_1_workflows() -> None
         assert f"from {owner} import" in source, owner
     for contract in (
         "DataComponent",
+        "SetupResult(",
         "Exchange(",
         "bilinear",
         "StepResult(",
         ".replace_fields(",
     ):
         assert contract in source, contract
+    for removed_contract in (
+        "defaults=",
+        "DataComponent.from_fields",
+        "create_payload=",
+        "initialize=",
+        "def initial_fields(",
+    ):
+        assert removed_contract not in source, removed_contract
 
 
 @pytest.mark.fast_always
@@ -407,7 +416,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert "Provides-Extra: dev" in metadata
 
     for plugin_wheel, requirement in (
-        (distributions.plugin_wheel, "Requires-Dist: vercor>=3.1,<4"),
+        (distributions.plugin_wheel, "Requires-Dist: vercor>=4,<5"),
         (distributions.frozen_plugin_wheel, "Requires-Dist: vercor>=3.0,<4"),
     ):
         with zipfile.ZipFile(plugin_wheel) as plugin_archive:
@@ -481,7 +490,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert evidence["host_value"] == 14.0
     assert evidence["exchange_forcing"] == 1.0
     assert evidence["state_replacement"] is True
-    assert evidence["lifecycle"] == ["user-initialize", "hook-initialize"]
+    assert evidence["lifecycle"] == ["user-setup", "hook-setup"]
     assert evidence["topology"] == ["applies", "build"]
     assert evidence["snapshot"] == {"component": "JAX", "temperature": 13.0}
 
@@ -489,28 +498,24 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         [sys.executable, "-m", "vercor_compat_plugin_3_0.smoke"],
         cwd=tmp_path,
         env=environment,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
-    frozen_evidence = json.loads(frozen_smoke.stdout.splitlines()[-1])
-    assert frozen_evidence == {"temperature": 282.0}
+    assert frozen_smoke.returncode != 0
+    assert "Component.from_step" in frozen_smoke.stderr
 
     mypy_environment = environment.copy()
     mypy_environment["MYPYPATH"] = str(target)
     external_use_site = tmp_path / "public_plugin_use_site.py"
-    frozen_external_use_site = tmp_path / "compat_plugin_3_0_use_site.py"
     shutil.copyfile(PLUGIN_ROOT / "use_site.py", external_use_site)
-    shutil.copyfile(FROZEN_PLUGIN_ROOT / "use_site.py", frozen_external_use_site)
     mypy = subprocess.run(
         [
             str(Path(sys.executable).with_name("mypy")),
             "--strict",
             "--verbose",
             str(target / "vercor_public_plugin"),
-            str(target / "vercor_compat_plugin_3_0"),
             str(external_use_site),
-            str(frozen_external_use_site),
         ],
         cwd=tmp_path,
         env=mypy_environment,
@@ -590,8 +595,9 @@ def test_supplied_wheels_install_and_run_without_build_environment(
         [sys.executable, "-m", "vercor_compat_plugin_3_0.smoke"],
         cwd=tmp_path,
         env=environment,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
-    assert json.loads(frozen_smoke.stdout.splitlines()[-1]) == {"temperature": 282.0}
+    assert frozen_smoke.returncode != 0
+    assert "Component.from_step" in frozen_smoke.stderr

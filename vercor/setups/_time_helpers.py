@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, TypeVar
 
-from vercor.components import Component
-
 SpinupResult = TypeVar("SpinupResult")
 
 
@@ -98,19 +96,16 @@ def run_logged_spinup(
     return result
 
 
-def seed_grid_field_defaults(
-    component: Component,
+def grid_field_defaults(
     field_names: Sequence[str],
-    context: Any,
     *,
     overrides: dict[str, object] | None = None,
-) -> None:
-    """Seed a component's grid-shaped default fields through one shared path."""
+) -> dict[str, object]:
+    """Return scalar setup defaults for declared grid fields."""
 
-    component.seed_fields(
-        component.grid_field_defaults(
-            field_names,
-            overrides=overrides,
-            policy=component._dtype_policy,
-        )
-    )
+    defaults: dict[str, object] = {name: 0.0 for name in field_names}
+    for name, value in (overrides or {}).items():
+        if name not in defaults:
+            raise ValueError(f"Default override field '{name}' is not declared")
+        defaults[name] = value
+    return defaults

@@ -5,7 +5,12 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from vercor.components import LifecycleHooks, ComponentSpec, HostComponent
+from vercor.components import (
+    CallableComponent,
+    Component,
+    LifecycleHooks,
+    ComponentSpec,
+)
 from vercor.output import OutputConfig
 from vercor.setups.config import VerosConfig
 
@@ -24,7 +29,7 @@ def _load_veros_implementation() -> tuple[Any, Any, Any, type[Any]]:
 def make_veros_gcm(
     *,
     config: VerosConfig | None = None,
-) -> HostComponent:
+) -> Component:
     """Return a host-backed Veros GCM component."""
 
     try:
@@ -60,15 +65,16 @@ def make_veros_gcm(
         output_variables=() if period_output is None else period_output.variables,
         jitted=config.jitted,
     )
-    component = HostComponent.from_step(
-        name=config.name,
-        grid=state.grid,
-        step=partial(_veros_runtime.step_veros_runtime, state),
+    component = CallableComponent(
+        config.name,
+        state.grid,
+        partial(_veros_runtime.step_veros_runtime, state),
         spec=ComponentSpec(
             inputs=_veros_gcm_state.VEROS_INPUT_FIELD_NAMES,
             outputs=("sea_surface_temperature",),
-            defaults=_veros_gcm_state.veros_default_fields(),
-            lifecycle=LifecycleHooks(initialize=state.initialize),
+            initial_fields=_veros_gcm_state.veros_default_fields(),
+            execution="host",
+            lifecycle=LifecycleHooks(setup=state.setup),
             output=OutputConfig(
                 snapshot_writer=config.output.snapshot_writer
                 or partial(_veros_output.write_veros_snapshot_output, state),

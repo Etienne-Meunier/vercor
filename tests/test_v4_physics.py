@@ -13,7 +13,13 @@ import pytest
 from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components import Component, ComponentSpec, LifecycleHooks
+from vercor.components import (
+    CallableComponent,
+    Component,
+    ComponentSpec,
+    LifecycleHooks,
+    SetupResult,
+)
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy, dtype_policy
@@ -238,18 +244,19 @@ def test_coupler_wires_constants_while_runtime_options_own_dtype() -> None:
     constants = physical_constants_type(gravity=jnp.asarray(3.0, dtype=jnp.float64))
     observed_setup_constants: list[Any] = []
 
-    def initialize(component: Component, context: SetupContext) -> None:
+    def setup(component: Component, context: SetupContext) -> SetupResult:
+        _ = component
         observed_setup_constants.append(context.constants)
-        component.seed_declared_defaults()
+        return SetupResult(fields={"value": 2.0})
 
-    component = Component.from_step(
+    component = CallableComponent(
         "MODEL",
         make_test_grid(name="v4-physics"),
         lambda fields, context: {"value": fields["value"] * context.constants.gravity},
         spec=ComponentSpec(
             outputs=("value",),
-            defaults={"value": 2.0},
-            lifecycle=LifecycleHooks(initialize=initialize),
+            execution="jax",
+            lifecycle=LifecycleHooks(setup=setup),
         ),
     )
     coupler = Coupler(
@@ -277,13 +284,17 @@ def test_runtime_dtype_cast_preserves_constant_gradient() -> None:
     jax.config.update("jax_enable_x64", True)
 
     def loss(gravity: Any) -> Any:
-        component = Component.from_step(
+        component = CallableComponent(
             "MODEL",
             make_test_grid(name="v4-physics-gradient"),
             lambda fields, context: {
                 "value": fields["value"] * context.constants.gravity
             },
-            spec=ComponentSpec(outputs=("value",), defaults={"value": 2.0}),
+            spec=ComponentSpec(
+                outputs=("value",),
+                initial_fields={"value": 2.0},
+                execution="jax",
+            ),
         )
         coupler = Coupler(
             Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -307,11 +318,15 @@ def test_numpy_source_mutation_cannot_stale_prepared_constants() -> None:
     physical_constants_type = _physical_constants_type()
     source = np.asarray(3.0)
     constants = physical_constants_type(gravity=source)
-    component = Component.from_step(
+    component = CallableComponent(
         "MODEL",
         make_test_grid(name="v4-numpy-constant"),
         lambda fields, context: {"value": fields["value"]},
-        spec=ComponentSpec(outputs=("value",), defaults={"value": 2.0}),
+        spec=ComponentSpec(
+            outputs=("value",),
+            initial_fields={"value": 2.0},
+            execution="jax",
+        ),
     )
     coupler = Coupler(
         Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -330,11 +345,15 @@ def test_numpy_source_mutation_cannot_stale_prepared_constants() -> None:
 @pytest.mark.fast_always
 def test_replacing_coupler_constants_after_preparation_is_rejected() -> None:
     physical_constants_type = _physical_constants_type()
-    component = Component.from_step(
+    component = CallableComponent(
         "MODEL",
         make_test_grid(name="v4-replaced-constants"),
         lambda fields, context: {"value": fields["value"]},
-        spec=ComponentSpec(outputs=("value",), defaults={"value": 2.0}),
+        spec=ComponentSpec(
+            outputs=("value",),
+            initial_fields={"value": 2.0},
+            execution="jax",
+        ),
     )
     coupler = Coupler(
         Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),

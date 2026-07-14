@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from vercor.clock import Clock
-from vercor.components import ComponentLike
+from vercor.components import Component
 from vercor.coupler import Coupler
 from vercor.exchanges import Exchange
 from vercor.runtime import RuntimeOptions
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class CouplerSpec:
     """Plain reusable recipe for constructing a configured coupler."""
 
-    components: tuple[ComponentLike, ...]
+    components: tuple[Component, ...]
     exchanges: tuple[Exchange, ...] = ()
     run_order: tuple[str, ...] = ()
     runtime: RuntimeOptions = field(default_factory=RuntimeOptions)
@@ -28,7 +28,7 @@ class CouplerSpec:
     def __init__(
         self,
         *,
-        components: Sequence[ComponentLike],
+        components: Sequence[Component],
         exchanges: Sequence[Exchange] = (),
         run_order: Sequence[str] = (),
         runtime: RuntimeOptions | None = None,

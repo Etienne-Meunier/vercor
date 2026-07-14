@@ -20,7 +20,7 @@ from tests._runtime_helpers import (
     replace_runtime_topology_maps,
 )
 from vercor.clock import Clock
-from vercor.components import Component, ComponentSpec
+from vercor.components import CallableComponent, Component, ComponentSpec
 from vercor.exceptions import ComponentError, CouplerError
 from vercor.setups._slab.atmosphere import make_slab_atmosphere
 from vercor.setups._slab.land import make_slab_land
@@ -243,13 +243,14 @@ def _make_output_component(
     def step(fields: Mapping[str, Any]) -> dict[str, Any]:
         return {"temperature": fields["temperature"] + 1.0}
 
-    return Component.from_step(
+    return CallableComponent(
         name=name,
         grid=grid,
         step=step,
         spec=ComponentSpec(
             outputs=("temperature",),
-            defaults={"temperature": 0.0},
+            initial_fields={"temperature": 0.0},
+            execution="jax",
             output=OutputConfig(
                 snapshot_writer=snapshot_writer,
                 period=PeriodOutput(
@@ -384,21 +385,22 @@ def test_period_output_paths_are_unique_across_schemas(
         def step(fields: Mapping[str, Any]) -> dict[str, Any]:
             return {"temperature": fields["temperature"] + 1.0}
 
-        component = Component.from_step(
+        component = CallableComponent(
             name=name,
             grid=grid,
             step=step,
             spec=ComponentSpec(
                 outputs=("temperature",),
-                defaults={
+                initial_fields={
                     "temperature": jnp.full(grid.shape, initial_value),
                 },
+                execution="jax",
                 output=OutputConfig(period=PeriodOutput(frequency="day")),
             ),
         )
 
         def shared_path_schema(
-            selected_component: Component,
+            selected_component: Any,
             state: ComponentRuntimeState,
         ) -> Any:
             period = selected_component.spec.output.period
@@ -482,16 +484,17 @@ def test_generic_period_output_qualifies_heterogeneous_leading_dimensions(
             "long_profile": fields["long_profile"],
         }
 
-    component = Component.from_step(
+    component = CallableComponent(
         name="model",
         grid=grid,
         step=step,
         spec=ComponentSpec(
             outputs=("short_profile", "long_profile"),
-            defaults={
+            initial_fields={
                 "short_profile": short_values,
                 "long_profile": long_values,
             },
+            execution="jax",
             output=OutputConfig(period=PeriodOutput(frequency="day")),
         ),
     )

@@ -5,16 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, runtime_checkable
 
-from vercor.components.contracts import ComponentInfo
+from vercor.components import Component
+from vercor.exchanges import Exchange
+from vercor.jax_logging import LoggerLike
+from vercor.settings import Settings
 from vercor.types import RuntimeArray
-
-if TYPE_CHECKING:
-    from vercor.exchanges import Exchange
-    from vercor.jax_logging import LoggerLike
-    from vercor.settings import Settings
-
 
 ExchangeKey: TypeAlias = tuple[str, str, str]
 
@@ -23,11 +20,11 @@ ExchangeKey: TypeAlias = tuple[str, str, str]
 class TopologyContext:
     """Public read-only context supplied to topology policies."""
 
-    components: Mapping[str, ComponentInfo]
-    exchanges: Sequence["Exchange"]
+    components: Mapping[str, Component]
+    exchanges: Sequence[Exchange]
     exchange_keys: Sequence[ExchangeKey]
-    settings: "Settings"
-    logger: "LoggerLike"
+    settings: Settings
+    logger: LoggerLike
 
 
 @dataclass(frozen=True)

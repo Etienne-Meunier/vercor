@@ -3,14 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 import sys
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import jax.numpy as jnp
 import pytest
 
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
-from vercor.components import Component, ComponentSpec, HostComponent
+from vercor.components import CallableComponent, ComponentSpec, SetupResult
 from vercor.coupler import Coupler
 from vercor.output import OutputConfig, PeriodOutput
 import vercor.output._session as output_session_module
@@ -43,8 +43,9 @@ def test_veros_native_period_variables_prepare_and_run_without_generic_schema(
             _ = kwargs
             self.grid = make_test_grid(name="veros-native-output")
 
-        def initialize(self, component: Any, context: Any) -> None:
+        def setup(self, component: Any, context: Any) -> SetupResult:
             _ = component, context
+            return SetupResult()
 
     def step_veros_runtime(
         state: FakeVerosState,
@@ -100,8 +101,9 @@ def test_camulator_native_period_mode_does_not_build_duplicate_generic_schema(
             _ = kwargs
             self.grid = make_test_grid(name="camulator-native-output")
 
-        def initialize(self, component: Any, context: Any) -> None:
+        def setup(self, component: Any, context: Any) -> SetupResult:
             _ = component, context
+            return SetupResult()
 
     def step_camulator_runtime(
         state: FakeCAMulatorState,
@@ -153,13 +155,14 @@ def test_camulator_native_period_mode_does_not_build_duplicate_generic_schema(
 
 def test_mixed_period_plan_keeps_generic_schema_and_skips_native_host_owner() -> None:
     grid = make_test_grid(name="mixed-period-output")
-    native = HostComponent.from_step(
-        name="native",
-        grid=grid,
-        step=lambda fields: {"runtime_native": fields["runtime_native"]},
+    native = CallableComponent(
+        "native",
+        grid,
+        lambda fields: {"runtime_native": fields["runtime_native"]},
         spec=ComponentSpec(
             outputs=("runtime_native",),
-            defaults={"runtime_native": 1.0},
+            initial_fields={"runtime_native": 1.0},
+            execution="host",
             output=OutputConfig(
                 period=PeriodOutput(
                     frequency="day",
@@ -169,13 +172,13 @@ def test_mixed_period_plan_keeps_generic_schema_and_skips_native_host_owner() ->
         ),
     )
     setattr(native, "_period_output_handled_by_step", True)
-    generic = Component.from_step(
-        name="generic",
-        grid=grid,
-        step=lambda fields: {"temperature": fields["temperature"]},
+    generic = CallableComponent(
+        "generic",
+        grid,
+        lambda fields: {"temperature": fields["temperature"]},
         spec=ComponentSpec(
             outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            initial_fields={"temperature": 280.0},
             output=OutputConfig(period=PeriodOutput(frequency="day")),
         ),
     )
@@ -188,7 +191,7 @@ def test_mixed_period_plan_keeps_generic_schema_and_skips_native_host_owner() ->
     )
 
     plan = build_period_output_plan(
-        {"native": native, "generic": generic},
+        cast(Any, {"native": native, "generic": generic}),
         coupler.initial_state(),
         clock,
     )

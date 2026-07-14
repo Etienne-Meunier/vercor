@@ -1,111 +1,76 @@
+"""Data-only convenience adapter for the structural component protocol."""
+
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Any, NoReturn
+from collections.abc import Mapping
+from typing import Any
 
-from vercor.components.contracts import (
-    ComponentSpec,
-    ComponentStepReturn,
-    FieldImportPolicy,
-)
-from vercor.components._contracts import (
-    merge_component_outputs,
-)
-from vercor.components.base import Component
+from vercor._field_names import unique_field_names
+from vercor.components.contracts import ComponentSpec, StepResult
 from vercor.components.contexts import StepContext
-from vercor.dtypes import PrecisionPolicy
 from vercor.grids import RectilinearGrid
-from vercor.settings import Settings
 from vercor.types import RuntimeArray
 
 
-class DataComponent(Component):
-    """Base class for data-only components that intentionally do not step.
+class DataComponent:
+    """Compose a no-op component from immutable initial data fields.
 
-    Use this for forcing and boundary-condition adapters whose runtime behavior is
-    limited to importing/exporting seeded fields through the coupler contract.
-    Data components must not own active runtime stepping behavior; compute
-    plotting-only diagnostics outside runtime state. Active differentiable models
-    should inherit :class:`Component` and implement :meth:`Component.step`.
+    Supplied ``fields`` are merged with ``spec.initial_fields``, defensively
+    snapshotted, and declared as outputs. Scalar values expand on ``grid`` and
+    all values adopt the runtime dtype during private preparation. The adapter
+    never performs an active model step; time selection and host capability are
+    declared through the optional ``ComponentSpec``.
     """
 
-    @classmethod
-    def from_step(
-        cls,
-        name: str,
-        grid: RectilinearGrid,
-        step: Callable[..., ComponentStepReturn],
-        *,
-        spec: ComponentSpec | None = None,
-        payload: Any | None = None,
-        settings: Settings | None = None,
-    ) -> NoReturn:
-        """Reject active stepping for data-only components."""
+    name: str
+    grid: RectilinearGrid
+    spec: ComponentSpec
 
-        _ = cls, name, grid, step, spec, payload, settings
-        raise TypeError(
-            "DataComponent.from_step is unavailable because data-only "
-            "components do not execute steps. Use DataComponent.from_fields "
-            "for data, Component.from_step for differentiable models, or "
-            "HostComponent.from_step for host-side models."
-        )
-
-    @classmethod
-    def from_fields(
-        cls,
+    def __init__(
+        self,
         name: str,
         grid: RectilinearGrid,
         fields: Mapping[str, object] | None = None,
         *,
-        settings: Settings | None = None,
         spec: ComponentSpec | None = None,
-        import_policy: FieldImportPolicy | None = None,
-    ) -> "DataComponent":
-        """Create a data-only component from user-provided grid fields.
+    ) -> None:
+        """Validate configuration and build the merged immutable spec."""
 
-        Scalar field values expand to grid-shaped constants and seeded field
-        names are exposed as declared outputs. Optional lifecycle hooks mirror
-        the callable component constructors for setup and runtime customization.
-        """
-
-        spec = ComponentSpec() if spec is None else spec
-        if settings is None:
-            component = cls(name=name, grid=grid, spec=spec)
-        else:
-            component = cls(
-                name=name,
-                grid=grid,
-                settings=settings,
-                spec=spec,
-            )
-        if fields is not None:
-            component.seed_fields(fields)
-        component._import_policy = (
-            FieldImportPolicy() if import_policy is None else import_policy
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("name must be a non-empty string")
+        if not isinstance(grid, RectilinearGrid):
+            raise TypeError("grid must be RectilinearGrid")
+        if spec is not None and not isinstance(spec, ComponentSpec):
+            raise TypeError("spec must be ComponentSpec or None")
+        declaration = ComponentSpec() if spec is None else spec
+        supplied_fields = dict(fields or {})
+        merged_fields = dict(declaration.initial_fields)
+        merged_fields.update(supplied_fields)
+        self.name = name
+        self.grid = grid
+        self.spec = ComponentSpec(
+            inputs=declaration.inputs,
+            outputs=unique_field_names((*declaration.outputs, *tuple(supplied_fields))),
+            initial_fields=merged_fields,
+            execution=declaration.execution,
+            lifecycle=declaration.lifecycle,
+            transfer=declaration.transfer,
+            output=declaration.output,
         )
-        return component
-
-    def seed_fields(
-        self,
-        fields: Mapping[str, object],
-        policy: PrecisionPolicy = None,
-    ) -> "DataComponent":
-        """Seed data fields and expose their names as declared outputs."""
-
-        super().seed_fields(fields, policy=policy)
-        self._spec = merge_component_outputs(self.spec, fields.keys())
-        return self
 
     def step(
         self,
-        fields: Mapping[str, "RuntimeArray"],
-        context: "StepContext",
+        fields: Mapping[str, RuntimeArray],
+        context: StepContext,
         payload: Any | None = None,
-    ) -> ComponentStepReturn:
-        """Return no updates for data-only components."""
+    ) -> Mapping[str, RuntimeArray] | StepResult:
+        """Return no updates because data components have no active model step."""
 
         _ = fields, context, payload
         return {}
+
+    def __repr__(self) -> str:
+        return f"DataComponent(name={self.name!r}, grid={self.grid!r})"
 
 
 __all__ = ["DataComponent"]

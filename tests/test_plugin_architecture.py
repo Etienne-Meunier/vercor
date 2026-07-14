@@ -64,12 +64,12 @@ class _RecordingTopologyPolicy:
 
 def _topology_policy_coupler(policy: _RecordingTopologyPolicy) -> Coupler:
     grid = make_test_grid(name="topology-policy")
-    source = vercor.DataComponent.from_fields(
+    source = vercor.DataComponent(
         "SRC",
         grid,
         {"custom_flux": 1.0},
     )
-    target = vercor.DataComponent.from_fields(
+    target = vercor.DataComponent(
         "DST",
         grid,
         {"custom_flux": 0.0},
@@ -258,32 +258,32 @@ def test_topology_policy_patch_accepts_valid_binary_and_fractional_masks(
 
 @pytest.mark.fast_always
 def test_component_spec_freezes_mapping_inputs_and_exposes_execution_policy() -> None:
-    defaults: dict[str, object] = {"temperature": 280.0}
+    initial_fields: dict[str, object] = {"temperature": 280.0}
     spec = ComponentSpec(
         inputs=("temperature", "temperature"),
         outputs=("heat_flux",),
-        defaults=defaults,
+        initial_fields=initial_fields,
         execution="host",
     )
-    defaults["temperature"] = 999.0
+    initial_fields["temperature"] = 999.0
 
     assert spec.inputs == ("temperature",)
-    assert spec.defaults["temperature"] == 280.0
+    assert spec.initial_fields["temperature"] == 280.0
     assert spec.execution == "host"
     assert not hasattr(spec, "import_policy")
     with pytest.raises(TypeError):
-        spec.defaults["temperature"] = 281.0  # type: ignore[index]
+        spec.initial_fields["temperature"] = 281.0  # type: ignore[index]
     with pytest.raises(FrozenInstanceError):
         spec.execution = "jax"  # type: ignore[misc]
 
     grid = make_test_grid(name="execution-precedence")
-    capable_host = vercor.Component.from_step(
+    capable_host = vercor.CallableComponent(
         "CAPABLE_HOST",
         grid,
         lambda fields: fields,
         spec=ComponentSpec(execution="host"),
     )
-    enforced_host = vercor.HostComponent.from_step(
+    explicit_jax = vercor.CallableComponent(
         "ENFORCED_HOST",
         grid,
         lambda fields: fields,
@@ -291,7 +291,7 @@ def test_component_spec_freezes_mapping_inputs_and_exposes_execution_policy() ->
     )
 
     assert capable_host.spec.execution == "host"
-    assert enforced_host.spec.execution == "host"
+    assert explicit_jax.spec.execution == "jax"
 
 
 @pytest.mark.fast_always
@@ -301,17 +301,17 @@ def test_structural_component_like_runs_without_private_component_internals() ->
 
         def __init__(self) -> None:
             self.grid = make_test_grid(name="plain-component")
+
+            def setup(owner: object, context: vercor.SetupContext) -> None:
+                assert owner is self
+                assert tuple(context.run_order) == ("MODEL",)
+
             self.spec = ComponentSpec(
                 inputs=("heat_flux",),
                 outputs=("temperature",),
-                defaults={"temperature": 280.0, "heat_flux": 0.0},
+                initial_fields={"temperature": 280.0, "heat_flux": 1.5},
+                lifecycle=vercor.LifecycleHooks(setup=setup),
             )
-
-        def initial_fields(self) -> Mapping[str, Any]:
-            return {"temperature": 280.0, "heat_flux": 1.5}
-
-        def initialize(self, context: vercor.SetupContext) -> None:
-            assert tuple(context.run_order) == ("MODEL",)
 
         def step(
             self,
@@ -353,10 +353,7 @@ def test_structural_component_like_runs_without_private_component_internals() ->
         ({"name": 7}, "name.*non-empty string"),
         ({"grid": object()}, "grid.*RectilinearGrid"),
         ({"spec": object()}, "spec.*ComponentSpec"),
-        ({"initial_fields": None}, "initial_fields.*callable"),
-        ({"initialize": None}, "initialize.*callable"),
         ({"step": None}, "step.*callable"),
-        ({"initial_fields": lambda: ()}, "initial_fields.*mapping"),
     ),
 )
 def test_structural_component_validation_is_actionable(
@@ -367,8 +364,6 @@ def test_structural_component_validation_is_actionable(
         name="MODEL",
         grid=make_test_grid(name="invalid-plain-component"),
         spec=ComponentSpec(),
-        initial_fields=lambda: {},
-        initialize=lambda context: None,
         step=lambda fields, context, payload=None: {},
     )
     for attribute, value in override.items():
@@ -388,19 +383,16 @@ def test_structural_component_validation_is_actionable(
     ("mutation", "message"),
     (
         ("name", "name.*non-empty string"),
-        ("grid", "Component-like object.*grid.*RectilinearGrid"),
+        ("grid", "grid.*RectilinearGrid"),
         ("spec", "spec.*ComponentSpec"),
-        ("initial_fields", "initial_fields.*callable"),
-        ("initialize", "initialize.*callable"),
         ("step", "step.*callable"),
-        ("initial_fields_result", "initial_fields.*mapping"),
     ),
 )
 def test_vercor_component_validation_uses_the_structural_contract_path(
     mutation: str,
     message: str,
 ) -> None:
-    component = vercor.Component.from_step(
+    component = vercor.CallableComponent(
         "MODEL",
         make_test_grid(name="invalid-vercor-component"),
         lambda fields: fields,
@@ -410,9 +402,7 @@ def test_vercor_component_validation_uses_the_structural_contract_path(
     elif mutation == "grid":
         component.grid = cast(Any, object())
     elif mutation == "spec":
-        component._spec = cast(Any, object())
-    elif mutation == "initial_fields_result":
-        setattr(component, "initial_fields", lambda: ())
+        component.spec = cast(Any, object())
     else:
         setattr(component, mutation, None)
 
@@ -426,11 +416,17 @@ def test_vercor_component_validation_uses_the_structural_contract_path(
 
 
 @pytest.mark.fast_always
-def test_component_contract_mutation_during_initialize_is_rejected() -> None:
-    class InvalidatingComponent(vercor.Component):
-        def initialize(self, context: vercor.SetupContext) -> None:
-            _ = context
-            self.name = "   "
+def test_component_binding_is_stable_when_setup_mutates_original_owner() -> None:
+    class InvalidatingComponent:
+        def __init__(self, name: str, grid: Any) -> None:
+            self.name = name
+            self.grid = grid
+
+            def setup(owner: object, context: vercor.SetupContext) -> None:
+                _ = context
+                owner.name = "CHANGED"  # type: ignore[attr-defined]
+
+            self.spec = ComponentSpec(lifecycle=vercor.LifecycleHooks(setup=setup))
 
         def step(
             self,
@@ -452,8 +448,12 @@ def test_component_contract_mutation_during_initialize_is_rejected() -> None:
         runtime=RuntimeOptions(topology=None),
     )
 
-    with pytest.raises(vercor.ComponentError, match="name.*non-empty string"):
-        coupler.initial_state()
+    state = coupler.initial_state()
+
+    assert component.name == "CHANGED"
+    assert state.component_names == ("MODEL",)
+    assert coupler._prepared is not None
+    assert coupler._prepared.components["MODEL"].name == "MODEL"
 
 
 @pytest.mark.fast_always
@@ -461,26 +461,23 @@ def test_structural_lifecycle_hooks_receive_original_object_in_order() -> None:
     events: list[str] = []
     hook_owners: list[object] = []
 
-    def initialize_hook(owner: object, context: vercor.SetupContext) -> None:
-        component = owner
+    def setup_hook(owner: object, context: vercor.SetupContext) -> vercor.SetupResult:
         hook_owners.append(owner)
-        events.append("lifecycle-initialize")
-        assert component.fields["temperature"] == 281.0  # type: ignore[attr-defined]
-        component.fields["temperature"] = 282.0  # type: ignore[attr-defined]
+        events.append("setup")
         assert context.run_order == ("MODEL",)
-
-    def create_payload_hook(owner: object) -> dict[str, str]:
-        hook_owners.append(owner)
-        events.append("create-payload")
-        return {"owner": owner.name}  # type: ignore[attr-defined]
+        return vercor.SetupResult(
+            fields={"temperature": 282.0},
+            payload={"owner": owner.name},  # type: ignore[attr-defined]
+        )
 
     def prefill_hook(
         owner: object,
         context: vercor.PrefillContext,
-    ) -> None:
+    ) -> vercor.PrefillResult:
         hook_owners.append(owner)
         events.append("prefill")
         assert float(jnp.mean(context.fields["temperature"])) == 282.0
+        return vercor.PrefillResult()
 
     def validate_hook(
         owner: object,
@@ -496,24 +493,15 @@ def test_structural_lifecycle_hooks_receive_original_object_in_order() -> None:
 
         def __init__(self) -> None:
             self.grid = make_test_grid(name="plain-lifecycle")
-            self.fields = {"temperature": 280.0}
             self.spec = ComponentSpec(
                 outputs=("temperature",),
+                initial_fields={"temperature": 280.0},
                 lifecycle=vercor.LifecycleHooks(
-                    initialize=initialize_hook,
-                    create_payload=create_payload_hook,
+                    setup=setup_hook,
                     prefill=prefill_hook,
                     validate=validate_hook,
                 ),
             )
-
-        def initial_fields(self) -> Mapping[str, Any]:
-            return self.fields
-
-        def initialize(self, context: vercor.SetupContext) -> None:
-            events.append("user-initialize")
-            self.fields["temperature"] = 281.0
-            assert context.run_order == ("MODEL",)
 
         def step(
             self,
@@ -539,13 +527,11 @@ def test_structural_lifecycle_hooks_receive_original_object_in_order() -> None:
         jnp.full(component.grid.shape, 282.0),
     )
     assert events == [
-        "user-initialize",
-        "lifecycle-initialize",
+        "setup",
         "prefill",
-        "create-payload",
         "validate",
     ]
-    assert hook_owners == [component, component, component, component]
+    assert hook_owners == [component, component, component]
 
 
 @pytest.mark.fast_always
@@ -553,15 +539,15 @@ def test_coupler_spec_builds_coupler_from_plain_recipe() -> None:
     from vercor.coupling import CouplerSpec
 
     grid = make_test_grid(name="coupler-spec")
-    forcing = vercor.DataComponent.from_fields("SRC", grid, {"flux": 2.0})
-    model = vercor.Component.from_step(
+    forcing = vercor.DataComponent("SRC", grid, {"flux": 2.0})
+    model = vercor.CallableComponent(
         "DST",
         grid,
         lambda fields: {"flux": fields["flux"] + 1.0},
         spec=ComponentSpec(
             inputs=("flux",),
             outputs=("flux",),
-            defaults={"flux": 0.0},
+            initial_fields={"flux": 0.0},
         ),
     )
     recipe = CouplerSpec(
@@ -604,7 +590,7 @@ def test_runtime_options_accept_custom_execution_backend() -> None:
 
     grid = make_test_grid(name="custom-backend")
     backend = RecordingBackend()
-    component = vercor.DataComponent.from_fields(
+    component = vercor.DataComponent(
         "MODEL",
         grid,
         {"temperature": 280.0},

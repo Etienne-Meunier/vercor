@@ -14,17 +14,15 @@ from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
     runtime_forcing_index,
     run_logged_spinup,
-    seed_grid_field_defaults,
+    grid_field_defaults,
 )
 import vercor.setups._external.camulator_forcing as camulator_forcing_module
 from vercor.setups._external.camulator_forcing import (
     initialize_camulator_forcing_cursor,
 )
 from tests._coverage_support import make_test_grid
-from vercor.components import DataComponent
 from vercor.output import OutputConfig, PeriodOutput
 from vercor.setups import JAXGCMConfig, JCMLandAtmosphereConfig, Spinup
-from vercor.settings import Settings
 
 
 class _RecordingLogger:
@@ -114,20 +112,13 @@ def test_run_logged_spinup_logs_each_step_and_returns_callback_result() -> None:
     ]
 
 
-def test_seed_grid_field_defaults_seeds_component_defaults_with_overrides() -> None:
-    component = DataComponent.from_fields("ATM", make_test_grid())
-    context = SimpleNamespace(settings=Settings())
-
-    seed_grid_field_defaults(
-        component,
+def test_grid_field_defaults_returns_defaults_with_overrides() -> None:
+    fields = grid_field_defaults(
         ("temperature", "humidity"),
-        context,
         overrides={"temperature": 280.0},
     )
 
-    assert set(component._data) == {"temperature", "humidity"}
-    assert jnp.all(component._data["temperature"] == 280.0)
-    assert jnp.all(component._data["humidity"] == 0.0)
+    assert fields == {"temperature": 280.0, "humidity": 0.0}
 
 
 def test_load_jcm_inputs_facade_returns_named_payload(

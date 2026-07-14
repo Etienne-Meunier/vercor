@@ -10,8 +10,9 @@ import torch
 import xarray as xr
 
 from vercor.components import (
-    HostComponent,
+    Component,
     SetupContext,
+    SetupResult,
 )
 from vercor.dtypes import jax_ones
 from vercor.grids import RectilinearGrid
@@ -21,7 +22,7 @@ from vercor.output._component_adapter import (
 )
 from vercor.setups._time_helpers import (
     assign_model_timestep_alignment,
-    seed_grid_field_defaults,
+    grid_field_defaults,
 )
 import vercor.setups._external.camulator_contracts as _camulator_contracts
 from vercor.setups._external.camulator_forcing import CamulatorRuntimeCursor
@@ -113,11 +114,11 @@ class CAMulatorGCMSetupState:
             ),
         )
 
-    def initialize(
+    def setup(
         self,
-        component: HostComponent,
+        component: Component,
         context: SetupContext,
-    ) -> None:
+    ) -> SetupResult:
         """Align timestep, initialize runtime forcing, and seed output fields."""
 
         logger = context.logger
@@ -180,10 +181,11 @@ class CAMulatorGCMSetupState:
         self.output_adapter.reset()
 
         self.forecast_hour = 1
-        seed_grid_field_defaults(
-            component,
-            _camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
-            context,
+        _ = component
+        return SetupResult(
+            fields=grid_field_defaults(
+                _camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
+            )
         )
 
 

@@ -30,6 +30,7 @@ from vercor.recipes import ATMOSPHERE_TO_LAND_RADIATION_FIELDS
 from vercor._runtime.contracts import build_exchange_contracts
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.components import ComponentSpec, DataComponent
+from vercor.components._adapter import normalize_component, prepare_component
 from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
@@ -1027,7 +1028,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
         == camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
     )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
-    assert callable(component.output.snapshot_writer)
+    assert callable(component.spec.output.snapshot_writer)
 
 
 def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None:
@@ -1247,13 +1248,17 @@ def test_camulator_land_stores_jax_runtime_arrays(
         ocn_grid=ocean_grid,
     )
 
-    component.initialize(_make_coupler(start))
+    component = prepare_component(
+        normalize_component(component),
+        _make_coupler(start),
+        DTypePolicy.from_jax_config(),
+    )
     assert component.spec.inputs == (
         "net_shortwave_radiation_flux",
         "downward_longwave_radiation_flux",
     )
     assert component.spec.outputs == ("land_surface_temperature",)
-    assert set(component.spec.defaults) == {
+    assert set(component.spec.initial_fields) == {
         "land_surface_temperature",
         "net_shortwave_radiation_flux",
         "downward_longwave_radiation_flux",
@@ -1324,7 +1329,7 @@ def test_camulator_land_declares_radiation_exchange_inputs(
         latitude=jnp.asarray([0.0, 1.0]),
     )
     radiation_fields = tuple(flatten_field_items(ATMOSPHERE_TO_LAND_RADIATION_FIELDS))
-    atmosphere = DataComponent.from_fields(
+    atmosphere = DataComponent(
         name="ATM",
         grid=grid,
         fields={field_name: jnp.zeros(grid.shape) for field_name in radiation_fields},

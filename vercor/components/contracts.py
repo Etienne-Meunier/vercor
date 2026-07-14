@@ -1,63 +1,224 @@
+"""Public protocol-first component authoring contracts."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from inspect import signature
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, Literal, Protocol, TypeAlias
+from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
-from vercor.components.contexts import (
-    SetupContext,
-    StepContext,
-)
+import jax
+
 from vercor._field_names import unique_field_names as _unique_field_names
-from vercor.output import OutputConfig
+from vercor.components.contexts import SetupContext, StepContext
+from vercor.exceptions import ComponentError
+from vercor.grids import RectilinearGrid
 from vercor.state import ComponentState
 from vercor.types import RuntimeArray
 
-if TYPE_CHECKING:
-    from vercor.grids import RectilinearGrid
-
-KEEP_PAYLOAD: Final = object()
-"""Sentinel meaning a component step should preserve the existing payload."""
+_KEEP_PAYLOAD = object()
 
 
-@dataclass(frozen=True)
+def _snapshot_mapping(
+    values: Mapping[str, Any] | None,
+    *,
+    label: str = "field values",
+) -> Mapping[str, Any]:
+    """Return a detached read-only insertion-ordered mapping snapshot."""
+
+    if values is not None and not isinstance(values, Mapping):
+        raise TypeError(
+            f"{label} must be a mapping or None; got {type(values).__name__}"
+        )
+    snapshot: dict[str, Any] = {}
+    for name, value in (values or {}).items():
+        if not isinstance(name, str) or not name:
+            raise TypeError("component field names must be non-empty strings")
+        copy = getattr(value, "copy", None)
+        snapshot[name] = (
+            copy()
+            if callable(copy) and type(value).__module__.startswith("numpy")
+            else value
+        )
+    return MappingProxyType(snapshot)
+
+
+def _validate_callback(name: str, callback: object | None) -> None:
+    """Validate one optional lifecycle callback immediately."""
+
+    if callback is None:
+        return
+    if not callable(callback):
+        raise TypeError(f"LifecycleHooks.{name} must be callable or None")
+    try:
+        callback_signature = signature(callback)
+        callback_signature.bind(object(), object())
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            f"LifecycleHooks.{name} must accept exactly (component, context)"
+        ) from exc
+    try:
+        callback_signature.bind(object(), object(), object())
+    except TypeError:
+        return
+    raise TypeError(f"LifecycleHooks.{name} must accept exactly (component, context)")
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True, init=False)
 class StepResult:
-    """Result returned by callable component wrappers.
+    """Field and optional payload updates returned by a component step.
 
-    Attributes:
-        fields: Runtime data fields to update.
-        payload: Replacement runtime payload, or ``KEEP_PAYLOAD`` to preserve
-            the existing payload. Pass ``None`` explicitly to clear the payload.
+    Omitting ``payload`` preserves the current payload. Passing ``None``
+    explicitly clears it. Differentiable compiled execution requires every
+    replacement payload to preserve the setup payload's PyTree structure;
+    host execution may clear or restructure payload state.
     """
 
-    fields: Mapping[str, RuntimeArray] = field(default_factory=dict)
-    payload: Any = KEEP_PAYLOAD
+    fields: Mapping[str, RuntimeArray]
+    payload: Any
+
+    def __init__(
+        self,
+        fields: Mapping[str, RuntimeArray] | None = None,
+        payload: Any = _KEEP_PAYLOAD,
+    ) -> None:
+        object.__setattr__(
+            self,
+            "fields",
+            _snapshot_mapping(fields, label="StepResult.fields"),
+        )
+        object.__setattr__(self, "payload", payload)
+
+    def tree_flatten(self) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+        """Flatten fields and payload while preserving mapping order."""
+
+        names = tuple(self.fields)
+        preserve_payload = self.payload is _KEEP_PAYLOAD
+        children = tuple(self.fields.values())
+        if not preserve_payload:
+            children = (*children, self.payload)
+        return children, (names, preserve_payload)
+
+    @classmethod
+    def tree_unflatten(
+        cls, aux_data: tuple[Any, ...], children: tuple[Any, ...]
+    ) -> "StepResult":
+        """Restore a result from JAX PyTree leaves."""
+
+        names, preserve_payload = aux_data
+        field_count = len(names)
+        payload = _KEEP_PAYLOAD if preserve_payload else children[field_count]
+        return cls(dict(zip(names, children[:field_count], strict=True)), payload)
 
 
-@dataclass(frozen=True)
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True, init=False)
+class SetupResult:
+    """Return setup-owned field and payload state from a setup callback.
+
+    ``fields`` may contain declared scalar or canonical grid-layout author
+    values. The private preparation boundary expands scalars, applies the
+    runtime dtype, validates layouts, and copy-owns mutable NumPy leaves.
+    ``payload`` may be any JAX PyTree. Preparation and state creation rebuild
+    its standard PyTree containers, copies NumPy leaves, and deep-copies opaque
+    object leaves (or rejects leaves that cannot be copied). The result becomes
+    the initial per-component runtime payload.
+    """
+
+    fields: Mapping[str, object]
+    payload: Any | None
+
+    def __init__(
+        self,
+        fields: Mapping[str, object] | None = None,
+        payload: Any | None = None,
+    ) -> None:
+        object.__setattr__(
+            self,
+            "fields",
+            _snapshot_mapping(fields, label="SetupResult.fields"),
+        )
+        object.__setattr__(self, "payload", payload)
+
+    def tree_flatten(self) -> tuple[tuple[Any, ...], tuple[str, ...]]:
+        """Flatten fields and payload while preserving mapping order."""
+
+        return (*self.fields.values(), self.payload), tuple(self.fields)
+
+    @classmethod
+    def tree_unflatten(
+        cls, names: tuple[str, ...], children: tuple[Any, ...]
+    ) -> "SetupResult":
+        """Restore a setup result from JAX PyTree leaves."""
+
+        field_count = len(names)
+        return cls(
+            dict(zip(names, children[:field_count], strict=True)),
+            children[field_count],
+        )
+
+
+@dataclass(frozen=True, init=False)
 class PrefillContext:
-    """Read-only public context supplied to component runtime-prefill hooks."""
+    """Read-only runtime stores and exchange declarations for prefill.
+
+    The callback receives snapshots of component ``fields`` plus ``received``
+    and ``sent`` exchange stores. ``receives`` and ``sends`` are the exact
+    coupler-owned contract names that a :class:`PrefillResult` may populate.
+    """
 
     fields: Mapping[str, RuntimeArray]
     received: Mapping[str, RuntimeArray]
     sent: Mapping[str, RuntimeArray]
-    receives: tuple[str, ...] = ()
-    sends: tuple[str, ...] = ()
+    receives: tuple[str, ...]
+    sends: tuple[str, ...]
+
+    def __init__(
+        self,
+        fields: Mapping[str, RuntimeArray],
+        received: Mapping[str, RuntimeArray],
+        sent: Mapping[str, RuntimeArray],
+        receives: Iterable[str] = (),
+        sends: Iterable[str] = (),
+    ) -> None:
+        object.__setattr__(self, "fields", _snapshot_mapping(fields))
+        object.__setattr__(self, "received", _snapshot_mapping(received))
+        object.__setattr__(self, "sent", _snapshot_mapping(sent))
+        object.__setattr__(self, "receives", _unique_field_names(receives))
+        object.__setattr__(self, "sends", _unique_field_names(sends))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class PrefillResult:
-    """Field updates returned by component runtime-prefill hooks."""
+    """Return normalized-on-application updates from a prefill callback.
 
-    fields: Mapping[str, RuntimeArray] = field(default_factory=dict)
-    received: Mapping[str, RuntimeArray] = field(default_factory=dict)
-    sent: Mapping[str, RuntimeArray] = field(default_factory=dict)
+    ``fields`` must be declared component inputs or outputs. ``received`` and
+    ``sent`` must be named by the active exchange contract and normalize to the
+    exact component-grid shape. All three mappings are immutable snapshots;
+    scalar values expand and values adopt the prepared runtime dtype before any
+    store is updated.
+    """
+
+    fields: Mapping[str, object]
+    received: Mapping[str, object]
+    sent: Mapping[str, object]
+
+    def __init__(
+        self,
+        fields: Mapping[str, object] | None = None,
+        received: Mapping[str, object] | None = None,
+        sent: Mapping[str, object] | None = None,
+    ) -> None:
+        object.__setattr__(self, "fields", _snapshot_mapping(fields))
+        object.__setattr__(self, "received", _snapshot_mapping(received))
+        object.__setattr__(self, "sent", _snapshot_mapping(sent))
 
 
 @dataclass(frozen=True)
 class ValidationContext:
-    """Public context supplied to component runtime-state validation hooks."""
+    """Public runtime state supplied to a validation callback."""
 
     state: ComponentState
     payload: Any | None = None
@@ -65,44 +226,30 @@ class ValidationContext:
     sends: tuple[str, ...] = ()
 
 
-ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
+_ComponentStepReturn: TypeAlias = Mapping[str, RuntimeArray] | StepResult
 _ComponentStepCallable: TypeAlias = Callable[
-    [Mapping[str, RuntimeArray], StepContext, Any | None],
-    ComponentStepReturn,
+    [Mapping[str, RuntimeArray], StepContext, Any | None], _ComponentStepReturn
 ]
-_AuthorStepCallable: TypeAlias = Callable[..., ComponentStepReturn]
-_FieldNames: TypeAlias = Iterable[str]
-_AuthorFieldValues: TypeAlias = Mapping[str, object] | None
-ComponentInitializeHook = Callable[[Any, SetupContext], None]
-ComponentCreatePayloadHook = Callable[[Any], Any | None]
-ComponentPrefillHook = Callable[[Any, PrefillContext], PrefillResult | None]
-ComponentValidateHook = Callable[[Any, ValidationContext], None]
+_AuthorStepCallable: TypeAlias = Callable[..., _ComponentStepReturn]
 
 
-class ComponentLike(Protocol):
-    """Public structural contract for user-provided model components."""
+@runtime_checkable
+class Component(Protocol):
+    """Structural contract implemented by every VerCOR model component."""
 
     @property
     def name(self) -> str:
-        """Return the component name used in exchanges and run order."""
+        """Return the unique component name."""
         ...
 
     @property
-    def grid(self) -> "RectilinearGrid":
-        """Return the component grid."""
+    def grid(self) -> RectilinearGrid:
+        """Return the component's rectilinear grid."""
         ...
 
     @property
     def spec(self) -> "ComponentSpec":
-        """Return the component runtime field contract."""
-        ...
-
-    def initial_fields(self) -> Mapping[str, RuntimeArray]:
-        """Return setup-time fields used to seed runtime state."""
-        ...
-
-    def initialize(self, context: SetupContext) -> None:
-        """Run setup-time initialization before runtime state is created."""
+        """Return the immutable component declaration."""
         ...
 
     def step(
@@ -110,128 +257,138 @@ class ComponentLike(Protocol):
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None = None,
-    ) -> ComponentStepReturn:
-        """Return runtime field updates for one component step."""
+    ) -> Mapping[str, RuntimeArray] | StepResult:
+        """Return declared field updates for one component step."""
         ...
-
-
-@dataclass(frozen=True, eq=False)
-class ComponentInfo:
-    """Public immutable description of a registered component."""
-
-    name: str
-    grid: "RectilinearGrid"
-    spec: "ComponentSpec"
-
-    def __eq__(self, other: object) -> bool:
-        """Compare component metadata without array-valued grid equality."""
-
-        if not isinstance(other, ComponentInfo):
-            return NotImplemented
-        return (
-            self.name == other.name
-            and self.grid.name == other.grid.name
-            and self.grid.shape == other.grid.shape
-            and self.spec == other.spec
-        )
 
 
 @dataclass(frozen=True)
 class LifecycleHooks:
-    """Optional lifecycle hooks for component setup and runtime customization."""
+    """Optional callbacks at the three component lifecycle boundaries.
 
-    initialize: ComponentInitializeHook | None = None
-    create_payload: ComponentCreatePayloadHook | None = None
-    prefill: ComponentPrefillHook | None = None
-    validate: ComponentValidateHook | None = None
+    ``setup(owner, context)`` runs once during private binding preparation and
+    returns :class:`SetupResult` or ``None``. ``prefill(owner, context)`` runs
+    when runtime stores are initially created and returns
+    :class:`PrefillResult` or ``None``. ``validate(owner, context)`` runs during
+    runtime-state validation and returns ``None``. Every callback receives the
+    original author object, never the private binding.
+    """
+
+    setup: Callable[[Component, SetupContext], SetupResult | None] | None = None
+    prefill: Callable[[Component, PrefillContext], PrefillResult | None] | None = None
+    validate: Callable[[Component, ValidationContext], None] | None = None
+
+    def __post_init__(self) -> None:
+        """Reject invalid nested callbacks at configuration time."""
+
+        _validate_callback("setup", self.setup)
+        _validate_callback("prefill", self.prefill)
+        _validate_callback("validate", self.validate)
 
 
 @dataclass(frozen=True)
-class FieldImportPolicy:
-    """Policy for selecting time-dependent fields when a component sends data."""
+class TransferPolicy:
+    """Select how time-dependent component data is exported.
 
-    time_interpolation: bool = False
-    daily_selection: bool = False
+    ``current`` sends the stored field directly, ``linear`` interpolates the
+    adjacent monthly samples using runtime weights, and ``daily`` selects the
+    active daily sample. The mode is static component policy, not traced
+    physics.
+    """
+
+    time_selection: Literal["current", "linear", "daily"] = "current"
 
     def __post_init__(self) -> None:
-        """Validate mutually exclusive import selection policies."""
+        """Validate the explicit time-selection mode."""
 
-        if self.time_interpolation and self.daily_selection:
-            raise ValueError(
-                "time_interpolation and daily_selection cannot both be enabled"
-            )
+        if self.time_selection not in ("current", "linear", "daily"):
+            raise ValueError("time_selection must be 'current', 'linear', or 'daily'")
 
 
 @dataclass(frozen=True, init=False)
 class ComponentSpec:
-    """Author-facing declaration of a component's runtime data-field contract.
+    """Declare all author-controlled component runtime capabilities.
 
-    Attributes:
-        inputs: Fields the model expects to read from runtime data.
-        outputs: Fields the model may write. These are pre-seeded as grid-shaped
-            zeros before traced runtime execution.
-        defaults: Field defaults used when runtime state is created.
-        execution: Runtime path for this component, either differentiable JAX
-            execution or Python host execution.
+    ``inputs`` are readable fields and ``outputs`` are writable step results;
+    both are validated, deduplicated name tuples. ``initial_fields`` is a
+    defensive immutable snapshot containing only declared names. Scalar values
+    expand on the grid and all values adopt the runtime dtype during private
+    preparation. ``execution`` selects differentiable JAX capability or the
+    Python host path. ``lifecycle``, ``transfer``, and ``output`` own the sole
+    setup/runtime-hook, time-selection, and output policies respectively.
     """
 
-    inputs: Iterable[str] = ()
-    outputs: Iterable[str] = ()
-    defaults: Mapping[str, object] = field(default_factory=dict)
-    execution: Literal["jax", "host"] = "jax"
-    lifecycle: LifecycleHooks = field(default_factory=LifecycleHooks)
-    output: OutputConfig = field(default_factory=OutputConfig)
+    inputs: tuple[str, ...]
+    outputs: tuple[str, ...]
+    initial_fields: Mapping[str, object]
+    execution: Literal["jax", "host"]
+    lifecycle: LifecycleHooks
+    transfer: TransferPolicy
+    output: "OutputConfig"
 
     def __init__(
         self,
         inputs: Iterable[str] = (),
         outputs: Iterable[str] = (),
-        defaults: Mapping[str, object] | None = None,
+        initial_fields: Mapping[str, object] | None = None,
         *,
         execution: Literal["jax", "host"] = "jax",
         lifecycle: LifecycleHooks | None = None,
-        output: OutputConfig | None = None,
+        transfer: TransferPolicy | None = None,
+        output: "OutputConfig | None" = None,
     ) -> None:
-        """Create a field declaration."""
+        """Create and eagerly validate a component declaration."""
 
+        normalized_inputs = _unique_field_names(inputs)
+        normalized_outputs = _unique_field_names(outputs)
+        frozen_initial_fields = _snapshot_mapping(
+            initial_fields,
+            label="ComponentSpec.initial_fields",
+        )
+        declared = set((*normalized_inputs, *normalized_outputs))
+        undeclared = next(
+            (name for name in frozen_initial_fields if name not in declared), None
+        )
+        if undeclared is not None:
+            raise ComponentError(
+                f"ComponentSpec initial field '{undeclared}' is not declared in "
+                "inputs or outputs."
+            )
         if execution not in ("jax", "host"):
             raise ValueError("execution must be 'jax' or 'host'")
-        object.__setattr__(self, "inputs", _unique_field_names(inputs))
-        object.__setattr__(self, "outputs", _unique_field_names(outputs))
-        object.__setattr__(
-            self,
-            "defaults",
-            MappingProxyType(dict(defaults or {})),
-        )
+        if lifecycle is not None and not isinstance(lifecycle, LifecycleHooks):
+            raise TypeError("lifecycle must be LifecycleHooks or None")
+        if transfer is not None and not isinstance(transfer, TransferPolicy):
+            raise TypeError("transfer must be TransferPolicy or None")
+        if output is not None and not isinstance(output, OutputConfig):
+            raise TypeError("output must be OutputConfig or None")
+        object.__setattr__(self, "inputs", normalized_inputs)
+        object.__setattr__(self, "outputs", normalized_outputs)
+        object.__setattr__(self, "initial_fields", frozen_initial_fields)
         object.__setattr__(self, "execution", execution)
         object.__setattr__(
-            self,
-            "lifecycle",
-            LifecycleHooks() if lifecycle is None else lifecycle,
+            self, "lifecycle", LifecycleHooks() if lifecycle is None else lifecycle
         )
         object.__setattr__(
-            self,
-            "output",
-            OutputConfig() if output is None else output,
+            self, "transfer", TransferPolicy() if transfer is None else transfer
         )
+        object.__setattr__(self, "output", OutputConfig() if output is None else output)
 
+
+# This late public-owner import breaks the ComponentSpec/OutputConfig cycle until
+# Task 7 separates output policy declarations from output runtime contexts.
+from vercor.output import OutputConfig  # noqa: E402
 
 __all__ = [
-    "ComponentLike",
-    "ComponentInfo",
-    "ComponentCreatePayloadHook",
-    "FieldImportPolicy",
-    "LifecycleHooks",
-    "ComponentInitializeHook",
-    "ComponentPrefillHook",
-    "ComponentStepReturn",
-    "ComponentValidateHook",
+    "Component",
     "ComponentSpec",
-    "KEEP_PAYLOAD",
+    "LifecycleHooks",
     "PrefillContext",
     "PrefillResult",
     "SetupContext",
+    "SetupResult",
     "StepContext",
     "StepResult",
+    "TransferPolicy",
     "ValidationContext",
 ]

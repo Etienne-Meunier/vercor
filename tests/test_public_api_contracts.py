@@ -51,7 +51,7 @@ def test_grid_constructors_live_on_rectilinear_grid_class() -> None:
 
 @pytest.mark.fast_always
 def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "ATM",
         make_test_grid(name="v1-state"),
         fields={"temperature": 280.0},
@@ -78,7 +78,7 @@ def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
 
 @pytest.mark.fast_always
 def test_coupler_uses_initial_state_name() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "ATM",
         make_test_grid(name="v1-coupler"),
         fields={"temperature": 280.0},
@@ -99,17 +99,18 @@ def test_coupler_uses_initial_state_name() -> None:
 
 @pytest.mark.fast_always
 def test_component_setup_storage_is_not_publicly_mutable() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "ATM",
         make_test_grid(name="v1-component"),
         fields={"temperature": 280.0},
     )
 
-    component.seed_field("humidity", 0.5)
-
-    assert component.field_names == ("temperature", "humidity")
+    assert tuple(component.spec.initial_fields) == ("temperature",)
+    with pytest.raises(TypeError):
+        component.spec.initial_fields["humidity"] = 0.5  # type: ignore[index]
     assert not hasattr(component, "data")
     assert not hasattr(component, "setup_metadata")
+    assert not hasattr(component, "seed_field")
 
 
 @pytest.mark.fast_always
@@ -166,17 +167,20 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
 def test_component_constructors_accept_component_spec_only() -> None:
     grid = make_test_grid(name="v1-spec-only")
 
-    component = vercor.Component.from_step(
+    component = vercor.CallableComponent(
         "OCN",
         grid,
         lambda fields: {"sea_surface_temperature": fields["temperature"]},
         spec=vercor.ComponentSpec(
             inputs=("temperature",),
             outputs=("sea_surface_temperature",),
-            defaults={"temperature": 280.0, "sea_surface_temperature": 280.0},
+            initial_fields={
+                "temperature": 280.0,
+                "sea_surface_temperature": 280.0,
+            },
         ),
     )
-    forcing = DataComponent.from_fields(
+    forcing = DataComponent(
         "ATM",
         grid,
         {"temperature": 280.0},
@@ -188,14 +192,14 @@ def test_component_constructors_accept_component_spec_only() -> None:
     assert forcing.spec.outputs == ("temperature",)
 
     with pytest.raises(TypeError, match="inputs"):
-        vercor.Component.from_step(  # type: ignore[call-arg]
+        vercor.CallableComponent(  # type: ignore[call-arg]
             "OLD",
             grid,
             lambda fields: {},
             inputs=("temperature",),
         )
     with pytest.raises(TypeError, match="outputs"):
-        DataComponent.from_fields(  # type: ignore[call-arg]
+        DataComponent(  # type: ignore[call-arg]
             "OLD",
             grid,
             fields={"temperature": 280.0},
@@ -208,31 +212,25 @@ def test_component_step_return_contract_is_public_in_its_owner_package() -> None
     components_module = importlib.import_module("vercor.components")
     contracts_module = importlib.import_module("vercor.components.contracts")
 
-    assert components_module.ComponentStepReturn is contracts_module.ComponentStepReturn
-    assert "ComponentStepReturn" in contracts_module.__all__
-    assert "ComponentStepReturn" in components_module.__all__
+    assert not hasattr(components_module, "ComponentStepReturn")
+    assert not hasattr(contracts_module, "ComponentStepReturn")
     assert "ComponentStepReturn" not in vercor.__all__
     assert not hasattr(vercor, "ComponentStepReturn")
 
     for step_method in (
-        contracts_module.ComponentLike.step,
         components_module.Component.step,
+        components_module.CallableComponent.step,
         components_module.DataComponent.step,
-        components_module.HostComponent.step,
     ):
-        return_annotation = signature(step_method).return_annotation
-        assert return_annotation == "ComponentStepReturn"
+        return_annotation = str(signature(step_method).return_annotation)
+        assert "Mapping" in return_annotation
+        assert "StepResult" in return_annotation
 
-    for component_type in (
-        components_module.Component,
-        components_module.HostComponent,
-        components_module.DataComponent,
-    ):
-        step_annotation = (
-            signature(component_type.from_step).parameters["step"].annotation
-        )
-        assert "ComponentStepReturn" in str(step_annotation)
-        assert "Mapping[str" not in str(step_annotation)
+    step_annotation = (
+        signature(components_module.CallableComponent).parameters["step"].annotation
+    )
+    assert "Mapping" in str(step_annotation)
+    assert "StepResult" in str(step_annotation)
 
 
 @pytest.mark.fast_always
@@ -243,12 +241,11 @@ def test_public_component_contracts_do_not_expose_runtime_implementation_types()
     contracts_module = importlib.import_module("vercor.components.contracts")
 
     public_signatures = (
-        str(signature(contracts_module.ComponentLike.step)),
         str(signature(components_module.Component.step)),
+        str(signature(components_module.CallableComponent.step)),
         str(signature(components_module.DataComponent.step)),
-        str(signature(components_module.HostComponent.step)),
         str(signature(contracts_module.ValidationContext)),
-        str(signature(components_module.Component.output.fget)),
+        str(signature(components_module.ComponentSpec)),
     )
     for public_signature in public_signatures:
         for private_type in (
@@ -264,8 +261,7 @@ def test_public_component_contracts_do_not_expose_runtime_implementation_types()
         == "ComponentState"
     )
     assert (
-        signature(components_module.Component.output.fget).return_annotation
-        == "OutputConfig"
+        get_type_hints(components_module.ComponentSpec)["output"] is vercor.OutputConfig
     )
 
 
@@ -284,26 +280,19 @@ def test_public_component_step_type_hints_resolve_at_runtime() -> None:
 
     for component_type in (
         components_module.Component,
+        components_module.CallableComponent,
         components_module.DataComponent,
-        components_module.HostComponent,
     ):
         type_hints = get_type_hints(component_type.step)
         assert type_hints["context"] is components_module.StepContext
-        assert type_hints["return"] is components_module.ComponentStepReturn
+        assert "StepResult" in str(type_hints["return"])
 
 
 @pytest.mark.fast_always
 def test_data_component_rejects_active_step_factory() -> None:
-    grid = make_test_grid(name="data-step-rejected")
-
-    with pytest.raises(TypeError) as error:
-        DataComponent.from_step("DATA", grid, lambda fields: fields)
-
-    message = str(error.value)
-    assert "data-only components do not execute steps" in message
-    assert "DataComponent.from_fields" in message
-    assert "Component.from_step" in message
-    assert "HostComponent.from_step" in message
+    assert not hasattr(DataComponent, "from_step")
+    assert not hasattr(DataComponent, "from_fields")
+    assert vercor.CallableComponent is not DataComponent
 
 
 @pytest.mark.fast_always
@@ -340,11 +329,11 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     spec = vercor.ComponentSpec(
         inputs=("temperature", "temperature"),
         outputs=("sea_surface_temperature",),
-        defaults={"temperature": 280.0, "sea_surface_temperature": 281.0},
+        initial_fields={"temperature": 280.0, "sea_surface_temperature": 281.0},
         lifecycle=vercor.LifecycleHooks(prefill=prefill),
         output=vercor.OutputConfig(snapshot_writer=writer),
     )
-    component = vercor.Component.from_step(
+    component = vercor.CallableComponent(
         "OCN",
         grid,
         lambda fields: {"sea_surface_temperature": fields["temperature"]},
@@ -373,7 +362,7 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
 
 @pytest.mark.fast_always
 def test_state_views_use_domain_scopes_not_runtime_store_names() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "ATM",
         make_test_grid(name="scope-state"),
         fields={"temperature": 280.0},
@@ -443,7 +432,7 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     def writer(context: vercor.SnapshotContext) -> None:
         contexts.append(context)
 
-    component = vercor.Component.from_step(
+    component = vercor.CallableComponent(
         "ATM",
         grid,
         lambda fields, context, payload: vercor.StepResult(
@@ -453,10 +442,14 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
         spec=vercor.ComponentSpec(
             inputs=("temperature",),
             outputs=("temperature",),
-            defaults={"temperature": 280.0},
+            initial_fields={"temperature": 280.0},
+            lifecycle=vercor.LifecycleHooks(
+                setup=lambda owner, context: vercor.SetupResult(
+                    payload=jnp.asarray(7.0)
+                )
+            ),
             output=vercor.OutputConfig(snapshot_writer=writer),
         ),
-        payload=jnp.asarray(7.0),
     )
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
@@ -468,11 +461,10 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
     coupler.write_outputs(final_state, output_dir=tmp_path)
 
     assert len(contexts) == 1
-    assert contexts[0].component == vercor.ComponentInfo(
-        name=component.name,
-        grid=component.grid,
-        spec=component.spec,
-    )
+    assert contexts[0].component.name == component.name
+    assert contexts[0].component.grid.name == component.grid.name
+    assert contexts[0].component.grid.shape == component.grid.shape
+    assert contexts[0].component.spec is component.spec
     assert isinstance(contexts[0].state, vercor.ComponentState)
     assert contexts[0].payload is not None
     assert float(contexts[0].payload) == 7.0
@@ -502,10 +494,11 @@ def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
             f"validate:{component.name}:{'humidity' in context.state.fields()}"
         )
 
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "OBS",
         grid,
         spec=vercor.ComponentSpec(
+            outputs=("humidity",),
             lifecycle=vercor.LifecycleHooks(prefill=prefill, validate=validate),
         ),
     )
@@ -573,7 +566,7 @@ def test_active_docs_do_not_advertise_removed_transition_apis() -> None:
 
 @pytest.mark.fast_always
 def test_run_state_remains_a_jax_pytree() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "ATM",
         make_test_grid(name="v1-pytree"),
         fields={"temperature": 280.0},

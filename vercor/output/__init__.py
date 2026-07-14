@@ -6,14 +6,12 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from vercor.calendar import ModelDateTime
+from vercor.components.contracts import Component
 from vercor.jax_logging import LoggerLike
-
-if TYPE_CHECKING:
-    from vercor.components.contracts import ComponentInfo
-    from vercor.state import ComponentState
+from vercor.state import ComponentState
 
 OutputFrequency: TypeAlias = Literal["step", "day", "month", "year"]
 
@@ -51,8 +49,8 @@ class PeriodOutput:
 class SnapshotContext:
     """Public payload passed to component snapshot writers."""
 
-    component: "ComponentInfo"
-    state: "ComponentState"
+    component: Component
+    state: ComponentState
     payload: Any | None
     output_path: Path
     time: datetime | ModelDateTime

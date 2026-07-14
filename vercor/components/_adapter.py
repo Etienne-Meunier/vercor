@@ -1,151 +1,356 @@
+"""Single private normalization bridge for protocol-first components."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
-from vercor.components.base import Component
-from vercor.components.contracts import (
-    ComponentLike,
-    ComponentSpec,
-    ComponentStepReturn,
-    FieldImportPolicy,
+import jax
+import jax.numpy as jnp
+
+from vercor.components._callable_wrappers import normalize_component_step_callable
+from vercor.components._contracts import (
+    normalize_field_values,
+    validate_declared_updates,
 )
-from vercor.components.contexts import SetupContext, StepContext
-from vercor.components.setup_validation import validate_component_setup
+from vercor.components.contracts import (
+    Component,
+    ComponentSpec,
+    PrefillContext,
+    PrefillResult,
+    SetupContext,
+    SetupResult,
+    ValidationContext,
+    _ComponentStepCallable,
+    _ComponentStepReturn,
+)
+from vercor.components.contexts import StepContext
+from vercor.dtypes import DTypePolicy, jax_zeros
 from vercor.exceptions import ComponentError
 from vercor.grids import RectilinearGrid
+from vercor.state import ComponentState
 from vercor.types import RuntimeArray
 
 
-class _ComponentAdapter(Component):
-    """Internal adapter for structural user components."""
+@dataclass(frozen=True)
+class _ComponentDeclaration:
+    """Validated public declaration retained until runtime preparation."""
 
-    def __init__(
-        self,
-        component: ComponentLike,
-        initial_fields: Mapping[str, RuntimeArray],
-    ) -> None:
-        self._component = component
-        super().__init__(
-            name=component.name,
-            grid=component.grid,
-            spec=component.spec,
-        )
-        self._refresh_from_component(initial_fields)
+    component: Component
+    name: str
+    grid: RectilinearGrid
+    spec: ComponentSpec
+    step: _ComponentStepCallable
+    author_step: Any
 
-    def _refresh_from_component(
-        self,
-        initial_fields: Mapping[str, RuntimeArray],
-    ) -> None:
-        """Synchronize public component fields/spec/grid into internal storage."""
 
-        self.name = self._component.name
-        self.grid = self._component.grid
-        self._spec = self._component.spec
-        self._import_policy = getattr(
-            self._component,
-            "import_policy",
-            FieldImportPolicy(),
-        )
-        self._data = {}
-        self.seed_fields(initial_fields)
+@dataclass(frozen=True)
+class _ComponentBinding:
+    """Immutable runtime binding produced once after setup and dtype selection."""
 
-    def _lifecycle_hook_owner(self) -> ComponentLike:
-        """Return the original structural object for public lifecycle hooks."""
+    _component: Component
+    name: str
+    grid: RectilinearGrid
+    spec: ComponentSpec
+    _step: _ComponentStepCallable
+    _author_step: Any
+    _data: Mapping[str, RuntimeArray]
+    _payload: Any | None
+    _dtype_policy: DTypePolicy
 
-        return self._component
+    @property
+    def field_names(self) -> tuple[str, ...]:
+        """Return prepared field names in stable insertion order."""
 
-    def initialize(self, context: SetupContext) -> None:
-        """Initialize the wrapped component and resync its public setup data."""
-
-        self._component.initialize(context)
-        self._refresh_from_component(validate_component_contract(self._component))
-        initialize_hook = self.spec.lifecycle.initialize
-        if initialize_hook is not None:
-            initialize_hook(self._component, context)
-        self._refresh_from_component(validate_component_contract(self._component))
+        return tuple(self._data)
 
     def step(
         self,
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None = None,
-    ) -> ComponentStepReturn:
-        """Delegate one runtime step to the wrapped structural component."""
+    ) -> _ComponentStepReturn:
+        """Delegate one step through the normalized public callback."""
 
-        return self._component.step(fields, context, payload)
+        return self._step(fields, context, payload)
+
+    def _create_runtime_payload(self) -> Any | None:
+        """Return the copy-owned payload produced during setup."""
+
+        return _copy_owned_pytree(self._payload)
+
+    def _prefill_runtime_state_fields(
+        self,
+        data: dict[str, RuntimeArray],
+        received: dict[str, RuntimeArray],
+        sent: dict[str, RuntimeArray],
+        contract: Any,
+    ) -> None:
+        """Apply an optional public prefill result to runtime stores."""
+
+        hook = self.spec.lifecycle.prefill
+        if hook is None:
+            return
+        result = hook(
+            self._component,
+            PrefillContext(
+                fields=data,
+                received=received,
+                sent=sent,
+                receives=contract.receives,
+                sends=contract.sends,
+            ),
+        )
+        if result is None:
+            return
+        if not isinstance(result, PrefillResult):
+            raise ComponentError(
+                f"Component '{self.name}' prefill must return PrefillResult or None; "
+                f"got {type(result).__name__}."
+            )
+        validate_declared_updates(
+            self.name,
+            result.fields,
+            (*self.spec.inputs, *self.spec.outputs),
+            phase="prefill",
+        )
+        normalized_fields = normalize_field_values(
+            component_name=self.name,
+            grid=self.grid,
+            fields=result.fields,
+            policy=self._dtype_policy,
+        )
+        normalized_received = _normalize_prefill_contract_store(
+            component=self,
+            updates=result.received,
+            declared=contract.receives,
+            store_name="received",
+        )
+        normalized_sent = _normalize_prefill_contract_store(
+            component=self,
+            updates=result.sent,
+            declared=contract.sends,
+            store_name="sent",
+        )
+        data.update(normalized_fields)
+        received.update(normalized_received)
+        sent.update(normalized_sent)
+
+    def _validate_runtime_state(self, component_state: Any, contract: Any) -> None:
+        """Run optional author validation with a public immutable state view."""
+
+        hook = self.spec.lifecycle.validate
+        if hook is None:
+            return
+        hook(
+            self._component,
+            ValidationContext(
+                state=ComponentState._from_runtime(
+                    self.name,
+                    self.grid,
+                    component_state,
+                ),
+                payload=_copy_owned_pytree(component_state.payload),
+                receives=contract.receives,
+                sends=contract.sends,
+            ),
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        """Expose setup-owned private output markers without public duplication."""
+
+        if name.startswith("_"):
+            return getattr(self._component, name)
+        raise AttributeError(name)
 
 
-def normalize_component(component: ComponentLike) -> Component:
-    """Return an internal component object for public component-like input."""
-
-    initial_fields = validate_component_contract(component)
-    if isinstance(component, Component):
-        return component
-
-    return _ComponentAdapter(component, initial_fields)
-
-
-def validate_component_contract(component: object) -> Mapping[str, RuntimeArray]:
-    """Validate one public component contract before registration or refresh."""
-
-    if isinstance(component, Component) and any(
-        not hasattr(component, attribute)
-        for attribute in ("name", "grid", "_data", "settings")
-    ):
-        validate_component_setup(component)
+def validate_component_contract(component: object) -> None:
+    """Validate the exact structural component contract immediately."""
 
     missing = [
-        attribute
-        for attribute in (
-            "name",
-            "grid",
-            "spec",
-            "initial_fields",
-            "initialize",
-            "step",
-        )
-        if not hasattr(component, attribute)
+        name
+        for name in ("name", "grid", "spec", "step")
+        if not hasattr(component, name)
     ]
     if missing:
-        missing_names = ", ".join(missing)
         raise ComponentError(
-            f"Component-like object {component.__class__.__name__!r} is missing "
-            f"required public attribute(s): {missing_names}."
+            f"Component object {component.__class__.__name__!r} is missing required "
+            f"attribute(s): {', '.join(missing)}."
         )
     name = getattr(component, "name")
     if not isinstance(name, str) or not name.strip():
+        raise ComponentError("Component name must be a non-empty string.")
+    if not isinstance(getattr(component, "grid"), RectilinearGrid):
+        raise ComponentError(f"Component '{name}' grid must be RectilinearGrid.")
+    if not isinstance(getattr(component, "spec"), ComponentSpec):
+        raise ComponentError(f"Component '{name}' spec must be ComponentSpec.")
+    if not callable(getattr(component, "step")):
+        raise ComponentError(f"Component '{name}' step must be callable.")
+
+
+def normalize_component(component: Component) -> _ComponentDeclaration:
+    """Validate a public component once without running lifecycle setup."""
+
+    validate_component_contract(component)
+    normalized_step = getattr(component, "_normalized_step", None)
+    return _ComponentDeclaration(
+        component=component,
+        name=component.name,
+        grid=component.grid,
+        spec=component.spec,
+        step=(
+            normalize_component_step_callable(component.step)
+            if normalized_step is None
+            else normalized_step
+        ),
+        author_step=getattr(component, "_author_step", component.step),
+    )
+
+
+def prepare_component(
+    declaration: _ComponentDeclaration,
+    context: SetupContext,
+    dtype: DTypePolicy,
+) -> _ComponentBinding:
+    """Run setup once and freeze normalized fields/payload in a runtime binding."""
+
+    grid = declaration.grid.with_precision(dtype)
+    data = normalize_field_values(
+        component_name=declaration.name,
+        grid=grid,
+        fields=declaration.spec.initial_fields,
+        policy=dtype,
+    )
+    zeros = jax_zeros(grid.shape, dtype)
+    for field_name in declaration.spec.outputs:
+        data.setdefault(field_name, zeros)
+
+    hook = declaration.spec.lifecycle.setup
+    result = None if hook is None else hook(declaration.component, context)
+    if result is not None and not isinstance(result, SetupResult):
         raise ComponentError(
-            f"Component-like object {component.__class__.__name__!r} has invalid "
-            "name; expected a non-empty string."
+            f"Component '{declaration.name}' setup must return SetupResult or None; "
+            f"got {type(result).__name__}."
         )
-    grid = getattr(component, "grid")
-    if not isinstance(grid, RectilinearGrid):
-        raise ComponentError(
-            f"Component-like object {component.__class__.__name__!r} has invalid "
-            "grid; expected RectilinearGrid."
+    if result is not None:
+        validate_declared_updates(
+            declaration.name,
+            result.fields,
+            (*declaration.spec.inputs, *declaration.spec.outputs),
+            phase="setup",
         )
-    spec = getattr(component, "spec")
-    if not isinstance(spec, ComponentSpec):
-        raise ComponentError(
-            f"Component-like object {component.__class__.__name__!r} has invalid "
-            "spec; expected ComponentSpec."
-        )
-    for method_name in ("initial_fields", "initialize", "step"):
-        if not callable(getattr(component, method_name)):
-            raise ComponentError(
-                f"Component-like object {component.__class__.__name__!r} has "
-                f"invalid {method_name}; expected a callable."
+        data.update(
+            normalize_field_values(
+                component_name=declaration.name,
+                grid=grid,
+                fields=result.fields,
+                policy=dtype,
             )
-    if isinstance(component, Component):
-        validate_component_setup(component)
-    initial_fields = getattr(component, "initial_fields")()
-    if not isinstance(initial_fields, Mapping):
-        raise ComponentError(
-            f"Component-like object {component.__class__.__name__!r} returned "
-            "invalid initial_fields; expected a mapping of field names to arrays."
         )
-    return initial_fields
+    payload = None if result is None else _copy_owned_pytree(result.payload)
+    return _ComponentBinding(
+        _component=declaration.component,
+        name=declaration.name,
+        grid=grid,
+        spec=declaration.spec,
+        _step=declaration.step,
+        _author_step=declaration.author_step,
+        _data=MappingProxyType(dict(data)),
+        _payload=payload,
+        _dtype_policy=dtype,
+    )
 
 
-__all__ = ["normalize_component"]
+def _copy_owned_pytree(value: Any) -> Any:
+    """Copy mutable array leaves while preserving arbitrary PyTree structure."""
+
+    def copy_leaf(leaf: Any) -> Any:
+        if isinstance(
+            leaf,
+            (str, bytes, int, float, complex, bool, type(None), frozenset, type),
+        ):
+            return leaf
+        if isinstance(leaf, (jax.Array, jax.core.Tracer)):
+            return leaf
+        copy = getattr(leaf, "copy", None)
+        module = type(leaf).__module__
+        if callable(copy) and module.startswith("numpy"):
+            return copy()
+        try:
+            return deepcopy(leaf)
+        except Exception as exc:
+            raise ComponentError(
+                "Component payload leaves must be immutable, JAX arrays/tracers, "
+                "copyable NumPy values, or deepcopy-compatible objects; got "
+                f"{type(leaf).__name__}."
+            ) from exc
+
+    return jax.tree_util.tree_map(copy_leaf, value)
+
+
+def _normalize_prefill_contract_store(
+    *,
+    component: _ComponentBinding,
+    updates: Mapping[str, object],
+    declared: tuple[str, ...],
+    store_name: str,
+) -> dict[str, RuntimeArray]:
+    """Validate and normalize exchange-store updates from one prefill hook."""
+
+    allowed = set(declared)
+    undeclared = next((name for name in updates if name not in allowed), None)
+    if undeclared is not None:
+        raise ComponentError(
+            f"Component '{component.name}' prefill {store_name} field "
+            f"'{undeclared}' is not present in its exchange contract."
+        )
+    try:
+        normalized = normalize_field_values(
+            component_name=component.name,
+            grid=component.grid,
+            fields=updates,
+            policy=component._dtype_policy,
+        )
+    except ComponentError as exc:
+        invalid_name = None
+        invalid_shape = None
+        for name, value in updates.items():
+            try:
+                shape = jnp.asarray(value).shape
+            except (TypeError, ValueError):
+                raise ComponentError(
+                    f"Component '{component.name}' prefill {store_name} field "
+                    f"'{name}' must be a real numeric scalar or grid array."
+                ) from exc
+            if shape not in ((), component.grid.shape):
+                invalid_name = name
+                invalid_shape = shape
+                break
+        if invalid_name is None:
+            raise
+        raise ComponentError(
+            f"Component '{component.name}' prefill {store_name} field "
+            f"'{invalid_name}' has shape {invalid_shape}; expected scalar or "
+            f"grid shape {component.grid.shape}."
+        ) from exc
+    invalid_name = next(
+        (
+            name
+            for name, value in normalized.items()
+            if value.shape != component.grid.shape
+        ),
+        None,
+    )
+    if invalid_name is not None:
+        raise ComponentError(
+            f"Component '{component.name}' prefill {store_name} field "
+            f"'{invalid_name}' has shape {normalized[invalid_name].shape}; expected "
+            f"grid shape {component.grid.shape}."
+        )
+    return normalized
+
+
+__all__: list[str] = []

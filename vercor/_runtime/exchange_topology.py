@@ -11,12 +11,12 @@ from vercor.jax_logging import LoggerLike
 from vercor._runtime.topology_state import RuntimeTopologyMaps
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 def build_exchange_topology_maps(
     *,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
     dtype: DTypePolicy,
     logger: LoggerLike,

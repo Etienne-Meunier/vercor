@@ -4,9 +4,7 @@ from typing import TYPE_CHECKING, Any
 from vercor.components import (
     ComponentSpec,
     DataComponent,
-    FieldImportPolicy,
-    LifecycleHooks,
-    SetupContext,
+    TransferPolicy,
 )
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
@@ -46,23 +44,19 @@ def make_jcm_land(
         binary_mask=lnd_bmask,
     )
 
-    def initialize(component: DataComponent, context: SetupContext) -> None:
-        _ = component, context
-
-    component = DataComponent.from_fields(
-        name=name,
-        grid=grid,
-        fields={
+    component = DataComponent(
+        name,
+        grid,
+        {
             "land_surface_temperature": land_surface_temperature,
             "soil_moisture": soil_moisture,
         },
         spec=ComponentSpec(
             inputs=_JCM_LAND_INPUT_NAMES,
             outputs=_JCM_LAND_FIELD_NAMES,
-            defaults={field_name: 0.0 for field_name in _JCM_LAND_INPUT_NAMES},
-            lifecycle=LifecycleHooks(initialize=initialize),
+            initial_fields={field_name: 0.0 for field_name in _JCM_LAND_INPUT_NAMES},
+            transfer=TransferPolicy(time_selection="daily"),
         ),
-        import_policy=FieldImportPolicy(daily_selection=True),
     )
 
     return component

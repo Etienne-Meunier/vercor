@@ -11,14 +11,13 @@ from vercor.calendar import ModelDateTime
 from vercor.exchanges import Exchange
 from vercor._runtime.exchange_keys import exchange_regrid_key
 from vercor.output import SnapshotContext
-from vercor.components.contracts import ComponentInfo
 from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output import OutputVariable
 from vercor.state import ComponentState, RunState
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
     from vercor.jax_logging import LoggerLike
 
 
@@ -120,7 +119,7 @@ def _runtime_output_variable(
 def write_coupler_runtime_outputs(
     *,
     final_state: RunState,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     exchanges: Sequence[Exchange],
     binary_masks: Mapping[tuple[str, str, str], RuntimeArray],
     fractional_masks: Mapping[tuple[str, str, str], RuntimeArray],
@@ -163,7 +162,7 @@ def write_coupler_runtime_outputs(
 def write_coupler_component_snapshots(
     *,
     final_state: RunState,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentBinding"],
     output_time: datetime | ModelDateTime,
     output_dir: Path = Path("."),
     logger: "LoggerLike | None" = None,
@@ -178,11 +177,7 @@ def write_coupler_component_snapshots(
         runtime_state = final_state._component_state(name)
         writer(
             SnapshotContext(
-                component=ComponentInfo(
-                    name=component.name,
-                    grid=component.grid,
-                    spec=component.spec,
-                ),
+                component=component._component,
                 state=ComponentState._from_runtime(name, component.grid, runtime_state),
                 payload=runtime_state.payload,
                 output_path=output_dir / f"{name.lower()}.snapshot.nc",

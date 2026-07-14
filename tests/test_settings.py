@@ -6,7 +6,7 @@ import pytest
 
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
-from vercor.components import FieldImportPolicy
+from vercor.components import ComponentSpec, TransferPolicy
 from vercor.components.data import DataComponent
 from vercor.coupler import Coupler
 from vercor.settings import (
@@ -140,30 +140,24 @@ def test_settings_do_not_own_runtime_precision_policy() -> None:
     assert not hasattr(settings, "dtype_policy")
 
 
-def test_coupler_and_components_get_independent_settings_containers() -> None:
-    class StaticDataComponent(DataComponent):
-        pass
-
+def test_transfer_policy_is_component_spec_owned_not_settings_owned() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
-    atmosphere = StaticDataComponent.from_fields(
-        name="ATM",
-        grid=make_test_grid(name="atm"),
-        import_policy=FieldImportPolicy(time_interpolation=True),
+    atmosphere = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(transfer=TransferPolicy("linear")),
     )
-    ocean = StaticDataComponent.from_fields(
-        name="OCN",
-        grid=make_test_grid(name="ocn"),
-        import_policy=FieldImportPolicy(daily_selection=True),
+    ocean = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        spec=ComponentSpec(transfer=TransferPolicy("daily")),
     )
 
     coupler.settings.enable_x64 = True
 
-    assert coupler.settings is not atmosphere.settings
-    assert atmosphere.settings is not ocean.settings
     assert coupler.settings.enable_x64 is True
-    assert atmosphere.settings.enable_x64 is False
-    assert atmosphere.import_policy.time_interpolation is True
-    assert ocean.import_policy.time_interpolation is False
-    assert ocean.import_policy.daily_selection is True
+    assert not hasattr(atmosphere, "settings")
+    assert atmosphere.spec.transfer.time_selection == "linear"
+    assert ocean.spec.transfer.time_selection == "daily"

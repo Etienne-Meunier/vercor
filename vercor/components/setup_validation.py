@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from typing import Any
+from collections.abc import Mapping
 
 from vercor.exceptions import ComponentError
 from vercor.field_layout import validate_component_data_layout
 from vercor.grids import RectilinearGrid
-from vercor.settings import Settings
 
 
 def validate_component_setup(component: Any) -> None:
     """Raise a clear error when a component skipped base initialization."""
 
-    required_attributes = ("name", "grid", "_data", "settings")
+    required_attributes = ("name", "grid", "spec", "_data")
     missing = [
         attribute
         for attribute in required_attributes
@@ -21,9 +21,8 @@ def validate_component_setup(component: Any) -> None:
         missing_names = ", ".join(missing)
         raise ComponentError(
             f"Component '{component.__class__.__name__}' is missing required setup "
-            f"attribute(s): {missing_names}. Call super().__init__(name, grid=...) "
-            "from the component constructor before runtime initialization, "
-            "execution, or finalization."
+            f"attribute(s): {missing_names}. Components must be normalized by "
+            "the private preparation bridge before runtime state creation."
         )
 
     if not isinstance(component.grid, RectilinearGrid):
@@ -31,15 +30,10 @@ def validate_component_setup(component: Any) -> None:
             f"Component '{component.name}' has invalid setup attribute 'grid'; "
             "expected RectilinearGrid."
         )
-    if not isinstance(component._data, dict):
+    if not isinstance(component._data, Mapping):
         raise ComponentError(
             f"Component '{component.name}' has invalid setup attribute '_data'; "
-            "expected dict[str, RuntimeArray]."
-        )
-    if not isinstance(component.settings, Settings):
-        raise ComponentError(
-            f"Component '{component.name}' has invalid setup attribute 'settings'; "
-            "expected Settings."
+            "expected an immutable field mapping."
         )
     validate_component_data_layout(
         component_name=component.name,

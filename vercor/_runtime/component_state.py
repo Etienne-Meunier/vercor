@@ -12,11 +12,11 @@ from vercor.output._session import validate_period_output_component_state
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding
 
 
 def prefill_runtime_contract_fields(
-    component: "Component",
+    component: "_ComponentBinding",
     data: dict[str, RuntimeArray],
     received: dict[str, RuntimeArray],
     sent: dict[str, RuntimeArray],
@@ -34,7 +34,7 @@ def prefill_runtime_contract_fields(
 
 
 def create_runtime_component_state(
-    component: "Component",
+    component: "_ComponentBinding",
     *,
     prefill_missing: bool = False,
     contract: ExchangeContract,

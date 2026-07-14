@@ -28,7 +28,7 @@ from vercor.runtime import RuntimeOptions
 from vercor.settings import Settings
 
 if TYPE_CHECKING:
-    from vercor.components.base import Component
+    from vercor.components._adapter import _ComponentBinding, _ComponentDeclaration
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ class _PreparedConfigurationSnapshot:
 class PreparedCoupling:
     """Immutable static runtime resources prepared once for one Coupler."""
 
-    components: Mapping[str, "Component"]
+    components: Mapping[str, "_ComponentBinding"]
     exchanges: tuple[Exchange, ...]
     run_order: tuple[str, ...]
     contracts: Mapping[str, ExchangeContract]
@@ -69,7 +69,7 @@ class PreparedCoupling:
 
     def validate_configuration(
         self,
-        components: Mapping[str, "Component"],
+        components: Mapping[str, "_ComponentDeclaration"],
         *,
         clock: Clock,
         settings: Settings,
@@ -98,7 +98,7 @@ class PreparedCoupling:
 
 def prepare_coupling(
     *,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentDeclaration"],
     exchanges: Sequence[Exchange],
     run_order: Sequence[str],
     clock: Clock,
@@ -110,13 +110,13 @@ def prepare_coupling(
     """Initialize lifecycle state and build one immutable runtime boundary."""
 
     _ensure_jax_precision_capability(runtime)
-    immutable_components = MappingProxyType(dict(components))
+    immutable_declarations = MappingProxyType(dict(components))
     immutable_exchanges = tuple(exchanges)
     immutable_run_order = tuple(run_order)
     runtime_constants = _physical_constants_for_dtype(constants, runtime.dtype)
     initialized = initialize_coupler_runtime(
         clock=clock,
-        components=dict(immutable_components),
+        components=dict(immutable_declarations),
         exchanges=immutable_exchanges,
         run_order=immutable_run_order,
         settings=settings,
@@ -126,6 +126,7 @@ def prepare_coupling(
         topology_policy=runtime.topology,
     )
     contracts = MappingProxyType(dict(initialized.runtime_contracts))
+    immutable_components = initialized.components
     topology_maps = initialized.topology.topology_maps
     dispatch_context = build_runtime_dispatch_context(
         immutable_components,
@@ -138,7 +139,7 @@ def prepare_coupling(
         dtype=runtime.dtype,
     )
     configuration_snapshot = _prepared_configuration_snapshot(
-        components=immutable_components,
+        components=immutable_declarations,
         clock=clock,
         settings=settings,
         constants=constants,
@@ -168,11 +169,11 @@ def _ensure_jax_precision_capability(runtime: RuntimeOptions) -> None:
 
 
 def _component_configuration_snapshot(
-    component: "Component",
+    component: "_ComponentDeclaration",
 ) -> _ComponentConfigurationSnapshot:
     """Return runtime and public-owner structural configuration snapshots."""
 
-    public_component = getattr(component, "_component", component)
+    public_component = component.component
     return _ComponentConfigurationSnapshot(
         runtime_configuration=_object_configuration_snapshot(component),
         public_configuration=_object_configuration_snapshot(public_component),
@@ -181,7 +182,7 @@ def _component_configuration_snapshot(
 
 def _prepared_configuration_snapshot(
     *,
-    components: Mapping[str, "Component"],
+    components: Mapping[str, "_ComponentDeclaration"],
     clock: Clock,
     settings: Settings,
     constants: PhysicalConstants,

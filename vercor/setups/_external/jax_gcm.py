@@ -5,7 +5,14 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
-from vercor.components import Component, LifecycleHooks, ComponentSpec
+import jax.numpy as jnp
+
+from vercor.components import (
+    CallableComponent,
+    Component,
+    LifecycleHooks,
+    ComponentSpec,
+)
 from vercor.output import OutputConfig
 from vercor.setups.config import JAXGCMConfig
 
@@ -50,10 +57,14 @@ def make_jax_gcm(
         do_spinup=config.spinup.enabled,
         jitted=config.jitted,
     )
-    component = Component.from_step(
-        name=config.name,
-        grid=state.grid,
-        step=partial(_jax_gcm_runtime.step_jax_gcm_component, state),
+    initial_fields: dict[str, object] = dict(_jax_gcm_runtime.jax_gcm_default_fields())
+    initial_fields["pressure"] = jnp.zeros(
+        (state.sigma_levels.shape[0], *state.grid.shape)
+    )
+    component = CallableComponent(
+        config.name,
+        state.grid,
+        partial(_jax_gcm_runtime.step_jax_gcm_component, state),
         spec=ComponentSpec(
             inputs=_jax_gcm_fields.JAXGCM_INPUT_GRID_FIELD_NAMES,
             outputs=(
@@ -63,13 +74,9 @@ def make_jax_gcm(
                 *_jax_gcm_fields.JAXGCM_OUTPUT_GRID_FIELD_NAMES,
                 "pressure",
             ),
-            defaults=_jax_gcm_runtime.jax_gcm_default_fields(),
+            initial_fields=initial_fields,
             lifecycle=LifecycleHooks(
-                initialize=state.initialize,
-                create_payload=partial(
-                    _jax_gcm_runtime.create_jax_gcm_runtime_payload,
-                    state,
-                ),
+                setup=state.setup,
                 prefill=partial(
                     _jax_gcm_runtime.prefill_jax_gcm_runtime_fields,
                     state,

@@ -14,13 +14,12 @@ import pytest
 from tests._coverage_support import make_test_grid
 from tests._runtime_helpers import runtime_state_from_coupler_components
 from tests.assertions import assert_allclose_compact
-from vercor.components import ComponentSpec, FieldImportPolicy
+from vercor.components import ComponentSpec, TransferPolicy
 from vercor.components.data import DataComponent
 from vercor.clock import Clock
 from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
-from vercor.components.contexts import SetupContext
 from vercor.runtime import RuntimeOptions
 from vercor.setups._external.jax_gcm_runtime import JAXGCMRuntimePayload
 from vercor._runtime.contracts import ExchangeContract
@@ -35,20 +34,16 @@ from vercor.types import RuntimeArray
 
 
 class _RuntimeSendComponent(DataComponent):
-    def __init__(self, import_policy: FieldImportPolicy) -> None:
+    def __init__(self, transfer: TransferPolicy) -> None:
         super().__init__(
             "DATA",
             make_test_grid(name="runtime-send"),
-            spec=ComponentSpec(),
+            spec=ComponentSpec(transfer=transfer),
         )
-        self._import_policy = import_policy
-
-    def initialize(self, context: SetupContext) -> None:
-        _ = context
 
 
 def test_runtime_contract_prefill_uses_runtime_float32_policy() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         name="DATA",
         grid=make_test_grid(name="runtime-prefill-policy"),
     )
@@ -58,9 +53,9 @@ def test_runtime_contract_prefill_uses_runtime_float32_policy() -> None:
         run_order=("DATA",),
         runtime=RuntimeOptions(dtype=DTypePolicy(enable_x64=False)),
     )
-    coupler._ensure_prepared()
+    prepared_component = coupler._ensure_prepared().components["DATA"]
     state = create_runtime_component_state(
-        component,
+        prepared_component,
         prefill_missing=True,
         contract=ExchangeContract(receives=("in_field",), sends=("out_field",)),
     )
@@ -235,9 +230,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         component_runtime_execution_source
     )
     assert "if TYPE_CHECKING:" in component_runtime_execution_source
-    assert "from vercor.components.base import Component" in (
+    assert "from vercor.components.contracts import Component" in (
         component_runtime_execution_source
     )
+    assert "_ComponentBinding" not in component_runtime_execution_source
     assert "from vercor.components.host import HostComponent" not in (
         component_runtime_execution_source
     )
@@ -407,12 +403,11 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def validate_component_runtime_contract_fields" in runtime_validation_source
     assert "def check_not_empty_import_export_lists" in runtime_validation_source
     assert "def validate_exchange_fields_declared" in runtime_validation_source
-    assert "def apply_run_precision_to_component(" in runtime_initialization_source
+    assert "prepare_component," in runtime_initialization_source
+    assert "name: prepare_component(" in runtime_initialization_source
     assert "def initialize_coupler_runtime(" in runtime_initialization_source
-    assert (
-        "from vercor.components._adapter import validate_component_contract"
-        in runtime_initialization_source
-    )
+    assert "from vercor.components._adapter import (" in runtime_initialization_source
+    assert "validate_component_contract" not in runtime_initialization_source
     assert "from vercor.components.setup_validation import" not in (
         runtime_initialization_source
     )
@@ -598,12 +593,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
 
 @pytest.mark.fast_always
 def test_runtime_contracts_refresh_after_exchange_changes() -> None:
-    atmosphere = DataComponent.from_fields(
+    atmosphere = DataComponent(
         name="ATM",
         grid=make_test_grid(name="contract-atm"),
         fields={"temperature": 280.0, "humidity": 0.5},
     )
-    ocean = DataComponent.from_fields(
+    ocean = DataComponent(
         name="OCN",
         grid=make_test_grid(name="contract-ocn"),
         fields={"sea_surface_temperature": 281.0},
@@ -657,7 +652,7 @@ def test_runtime_contracts_refresh_after_exchange_changes() -> None:
 def test_coupler_prepared_boundary_stores_runtime_state() -> None:
     from vercor._runtime.prepared import PreparedCoupling
 
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "MODEL",
         make_test_grid(name="prepared-runtime-state"),
         {"temperature": 280.0},
@@ -686,7 +681,7 @@ def test_coupler_does_not_expose_runtime_cache_facade() -> None:
 
 @pytest.mark.fast_always
 def test_prepared_runtime_fields_are_frozen_and_read_only() -> None:
-    component = DataComponent.from_fields(
+    component = DataComponent(
         "MODEL",
         make_test_grid(name="prepared-read-only"),
         {"temperature": 280.0},
@@ -1037,7 +1032,7 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
 
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(FieldImportPolicy(time_interpolation=True))
+    component = _RuntimeSendComponent(TransferPolicy("linear"))
     contract = ExchangeContract(sends=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],
@@ -1079,7 +1074,7 @@ def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None
 
 
 def test_runtime_send_applies_daily_time_slice_under_jit_and_grad() -> None:
-    component = _RuntimeSendComponent(FieldImportPolicy(daily_selection=True))
+    component = _RuntimeSendComponent(TransferPolicy("daily"))
     contract = ExchangeContract(sends=("temperature",))
     step_info = jax.tree_util.tree_map(
         lambda value: value[0],

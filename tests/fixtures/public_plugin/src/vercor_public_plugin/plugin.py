@@ -16,6 +16,7 @@ from vercor.components import (
     DataComponent,
     LifecycleHooks,
     SetupContext,
+    SetupResult,
     StepContext,
     StepResult,
 )
@@ -34,23 +35,17 @@ from vercor.topology import (
 from vercor.types import RuntimeArray
 
 
-def _record_original_component(owner: Any, context: SetupContext) -> None:
-    """Record that the lifecycle hook received the original plugin object."""
+def _setup_original_component(owner: Any, context: SetupContext) -> SetupResult:
+    """Set up payload state while retaining the original plugin owner."""
 
     if not isinstance(owner, StructuralJaxComponent):
         raise TypeError("lifecycle hook did not receive the original component")
-    owner.lifecycle_events.append("hook-initialize")
+    owner.record_setup(context)
+    owner.lifecycle_events.append("hook-setup")
     owner.lifecycle_owner_ids.append(id(owner))
     if context.run_order != ("FORCING", "JAX", "HOST"):
         raise ValueError("unexpected run order")
-
-
-def _create_payload(owner: Any) -> RuntimeArray:
-    """Create the payload replaced by every public ``StepResult``."""
-
-    if not isinstance(owner, StructuralJaxComponent):
-        raise TypeError("payload hook did not receive the original component")
-    return jnp.asarray(0, dtype=jnp.int32)
+    return SetupResult(payload=jnp.asarray(0, dtype=jnp.int32))
 
 
 def _write_snapshot(context: SnapshotContext) -> None:
@@ -85,29 +80,18 @@ class StructuralJaxComponent:
         self.spec = ComponentSpec(
             inputs=("forcing",),
             outputs=("temperature",),
-            defaults={"temperature": 0.0},
-            lifecycle=LifecycleHooks(
-                initialize=_record_original_component,
-                create_payload=_create_payload,
-            ),
+            initial_fields={"temperature": 0.0},
+            lifecycle=LifecycleHooks(setup=_setup_original_component),
             output=OutputConfig(snapshot_writer=_write_snapshot),
         )
         self.lifecycle_events: list[str] = []
         self.lifecycle_owner_ids: list[int] = []
-        self._initial_fields: Mapping[str, RuntimeArray] = {
-            "temperature": jnp.zeros(self.grid.shape)
-        }
 
-    def initial_fields(self) -> Mapping[str, RuntimeArray]:
-        """Return the initial grid-shaped temperature."""
-
-        return self._initial_fields
-
-    def initialize(self, context: SetupContext) -> None:
-        """Record structural user initialization."""
+    def record_setup(self, context: SetupContext) -> None:
+        """Record structural user setup invoked by the lifecycle hook."""
 
         _ = context
-        self.lifecycle_events.append("user-initialize")
+        self.lifecycle_events.append("user-setup")
 
     def step(
         self,
@@ -144,22 +128,9 @@ class StructuralHostComponent:
         )
         self.spec = ComponentSpec(
             outputs=("host_value",),
-            defaults={"host_value": 10.0},
+            initial_fields={"host_value": 10.0},
             execution="host",
         )
-        self._initial_fields: Mapping[str, RuntimeArray] = {
-            "host_value": jnp.full(self.grid.shape, 10.0)
-        }
-
-    def initial_fields(self) -> Mapping[str, RuntimeArray]:
-        """Return the initial host field."""
-
-        return self._initial_fields
-
-    def initialize(self, context: SetupContext) -> None:
-        """Accept the standard structural initialization context."""
-
-        _ = context
 
     def step(
         self,
@@ -227,7 +198,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
 
     jax_component = StructuralJaxComponent()
     host_component = StructuralHostComponent()
-    forcing_component = DataComponent.from_fields(
+    forcing_component = DataComponent(
         "FORCING",
         RectilinearGrid.uniform(
             "plugin-forcing-grid",
@@ -272,7 +243,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
     snapshot_path = output_dir / "jax.snapshot.nc"
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
 
-    if jax_component.lifecycle_events != ["user-initialize", "hook-initialize"]:
+    if jax_component.lifecycle_events != ["user-setup", "hook-setup"]:
         raise AssertionError("structural lifecycle order was not preserved")
     if jax_component.lifecycle_owner_ids != [id(jax_component)]:
         raise AssertionError("lifecycle hook did not receive the original object")

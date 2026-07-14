@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from vercor.components import LifecycleHooks, DataComponent
+from vercor.components import Component, LifecycleHooks, DataComponent, SetupResult
 from vercor.dtypes import DTypePolicy, as_jax_real_array
 from vercor.field_layout import (
     canonicalize_time_last_level_field,
@@ -168,24 +168,25 @@ def make_era5_atmosphere(
         "temperature": temperature_3d[:, 0, :, :],
     }
 
-    def initialize(component: DataComponent, context: SetupContext) -> None:
+    def setup(component: Component, context: SetupContext) -> SetupResult:
+        _ = component
         diagnostics = [
             _compute_monthly_diagnostics(
                 context.constants,
-                component._dtype_policy,
-                component._data["surface_pressure"][month_index],
+                context.dtype,
+                fields["surface_pressure"][month_index],
                 hyai,
                 hybi,
                 hyam,
                 hybm,
-                component._data["temperature_3d"][month_index],
-                component._data["specific_humidity_3d"][month_index],
-                component._data["temperature"][month_index],
+                fields["temperature_3d"][month_index],
+                fields["specific_humidity_3d"][month_index],
+                fields["temperature"][month_index],
             )
-            for month_index in range(int(component._data["surface_pressure"].shape[0]))
+            for month_index in range(int(fields["surface_pressure"].shape[0]))
         ]
-        component.seed_fields(
-            {
+        return SetupResult(
+            fields={
                 "model_level_height": jnp.stack(
                     [item[0] for item in diagnostics],
                     axis=0,
@@ -204,14 +205,14 @@ def make_era5_atmosphere(
         fields=fields,
         inputs=_ERA5_ATMOSPHERE_INPUT_NAMES,
         outputs=_ERA5_ATMOSPHERE_FIELD_NAMES,
-        defaults={
+        initial_fields={
             field_name: _REFERENCE_SURFACE_TEMPERATURE
             for field_name in _ERA5_ATMOSPHERE_INPUT_NAMES
         },
         data_files=data_files,
-        lifecycle=LifecycleHooks(initialize=initialize),
+        lifecycle=LifecycleHooks(setup=setup),
     )
-    component._setup_metadata["hybrid_coefficients"] = {
+    cast(Any, component)._hybrid_coefficients = {
         "hyai": hyai,
         "hybi": hybi,
         "hyam": hyam,

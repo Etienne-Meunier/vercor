@@ -195,7 +195,30 @@ immutable runtime containers used during traced integration.
   coordinate arrays. Direct `RectilinearGrid(...)` construction requires
   keyword-only coordinate arguments to avoid accidental longitude/latitude
   swaps.
-- Component-author API: `Component`, `DataComponent`, and `HostComponent` are
+- VerCOR 4 component-author API: `vercor.components.Component` is a
+  runtime-checkable structural protocol with `name`, `RectilinearGrid`, frozen
+  `ComponentSpec`, and `step(fields, context, payload=None)`. Authors implement
+  that protocol directly or compose `CallableComponent`; data-only adapters use
+  `DataComponent`. `ComponentSpec` exclusively owns declared `inputs`,
+  `outputs`, immutable `initial_fields`, the `execution` capability,
+  `LifecycleHooks`, `TransferPolicy`, and `OutputConfig`. Scalar author values
+  expand on the component grid and every prepared field is normalized once to
+  the runtime dtype. `LifecycleHooks.setup` runs once against the original
+  author object and may return `SetupResult(fields, payload)`; prefill and
+  validation use typed immutable contexts/results. Runtime payloads and NumPy
+  author arrays are defensively copy-owned at preparation. Standard payload
+  containers are rebuilt per runtime state, NumPy leaves are copied, and opaque
+  object leaves are deep-copied or rejected if they cannot be owned.
+  `StepResult()`
+  preserves payload, an explicit payload replaces it, and host execution may
+  clear or restructure it; compiled JAX execution requires replacements to
+  retain the setup payload's PyTree structure. One private
+  declaration-to-binding adapter owns setup, normalization, and runtime hook
+  dispatch. There is no primary-v4 `ComponentLike`, `HostComponent`, component
+  `initialize`/`initial_fields`, constructor payload, mutable authoring mixin,
+  separate payload-creation hook, or duplicate output/import-policy property.
+- Historical VerCOR 3.1 component-author API (superseded by the v4 contract
+  above): `Component`, `DataComponent`, and `HostComponent` are
   the stable extension points. Custom adapters should use the class-level
   authoring constructors where possible: `DataComponent.from_fields()` for
   data-only fields, `Component.from_step()` for pure callable JAX models, and
