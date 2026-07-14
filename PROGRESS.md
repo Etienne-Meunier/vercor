@@ -53,14 +53,27 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   acceptance 3/3; whitespace clean. Full and coverage runs emitted only the
   two known third-party `FutureWarning`s. Task 9, version `4.0.0a1`, and release
   publication state remain unchanged.
-- Fresh clean retained artifacts are under
-  `/private/tmp/vercor-task10-final-clean.MlF8ue/dist`. Direct `python -m build`
-  first reported that `build` is not installed in the scipy environment; the
-  documented offline cached Conda `build`/`flit_core`/`pyproject_hooks`
-  fallback then built the wheel, sdist, native v4 plugin wheel, and frozen
-  historical wheel successfully. JCM 1.1.1 and Veros 1.6.2 were installed for
-  the optional focused gates. `PROGRESS.md` is absent from the sdist, so these
-  recorded hashes do not change candidate contents:
+- The prior retained bundle at
+  `/private/tmp/vercor-task10-final-clean.MlF8ue/dist` is historical and stale:
+  it predates final-boundary fix commit `4d73efe` and must not be used as current
+  release evidence. Its previously recorded hashes remain historical only.
+- Fresh clean retained HEAD artifacts are under
+  `/private/tmp/vercor-task10-final-head.DIU1sP/dist`, built from clean commit
+  `4d73efeb6233d71d0e90ee62fc22c1f5c2d1788f` with the documented offline cached
+  Conda `build`/`flit_core`/`pyproject_hooks` fallback. Supplied-artifact
+  distribution gates passed 16/16, covering junk-free wheel/sdist archives,
+  exact installed signatures, wheel/sdist installs, native-plugin smoke and
+  strict mypy, slab, and supplied-artifact execution. Separate isolated wheel
+  and sdist probes each passed all 13 final-boundary rejection cases and valid
+  model-year float canonicalization. The frozen historical plugin wheel was
+  inspected as metadata/source evidence only and was not installed or executed
+  against v4. JCM 1.1.1 and Veros 1.6.2 remain the installed versions used for
+  the optional focused gates. Current SHA-256 hashes are:
+  - `vercor-4.0.0a1-py3-none-any.whl`: `e6b82225627b5e53461d8cfacda0e6b1ef198c4e0e3aa020dc952879bf88f113`
+  - `vercor-4.0.0a1.tar.gz`: `13a9d0e857f86cd9991897d173d77d986b777298dc95ee1cbe52450181117094`
+  - `vercor_public_plugin-0.1.0-py3-none-any.whl`: `ae511980e10fc535bc455b0d08a0fc8893a20f4f42fc25e107c237c050cf95ad`
+  - `vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl`: `917b94d57efa3f996ec62fbf3a9ffe564a016d09be1fd6f651106fdc00ffaad3`
+- Historical pre-fix retained hashes (do not use for current release evidence):
   - `vercor-4.0.0a1-py3-none-any.whl`: `53420d9ba38a45d262cadc04782cc3e4ed369f5421cd18653171b0359853dc38`
   - `vercor-4.0.0a1.tar.gz`: `0bac0d18f93152082efe81d758cfd67721c91548c1f90df2adbdeda693b0fbd6`
   - `vercor_public_plugin-0.1.0-py3-none-any.whl`: `ae511980e10fc535bc455b0d08a0fc8893a20f4f42fc25e107c237c050cf95ad`
