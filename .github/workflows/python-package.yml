@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build VerCOR and public-plugin artifacts once
+      - name: Build VerCOR and plugin evidence once
         run: |
           python -m pip install --upgrade pip build
           python -m build --outdir dist
@@ -33,6 +33,7 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
         environment: [base, jcm, veros]
+        artifact: [wheel]
         include:
           - environment: base
             extra: ""
@@ -44,7 +45,6 @@ jobs:
               tests/test_setup_boundaries.py::test_camulator_enabled_spinup_fails_before_runtime_configuration
               tests/test_setup_boundaries.py::test_setup_subprocess_helpers_honor_installed_package_root
               tests/test_distribution_boundaries.py
-              tests/test_plugin_architecture.py
           - environment: jcm
             extra: "[jcm]"
             pytest-target: >-
@@ -57,6 +57,18 @@ jobs:
               tests/test_setup_boundaries.py::test_veros_implementation_import_does_not_configure_runtime
               tests/test_setup_boundaries.py::test_veros_factory_configures_once_before_implementation_import
               tests/test_external_components_coverage.py::test_veros_initialize_spinup_follows_enabled_only
+          - python-version: "3.12"
+            environment: base
+            artifact: sdist
+            extra: ""
+            pytest-target: >-
+              tests/test_distribution_boundaries.py::test_built_sdist_installs_and_imports_outside_checkout
+          - python-version: "3.13"
+            environment: base
+            artifact: sdist
+            extra: ""
+            pytest-target: >-
+              tests/test_distribution_boundaries.py::test_built_sdist_installs_and_imports_outside_checkout
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -68,40 +80,77 @@ jobs:
           path: dist/
       - name: Install selected artifact environment
         run: |
-          python -m pip install --upgrade pip pytest mypy pyyaml
-          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-3.1.1-py3-none-any.whl"
-          PLUGIN_WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
-          COMPAT_PLUGIN_WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl"
-          python -m pip install "${WHEEL_PATH}${{ matrix.extra }}"
-          python -m pip install --no-deps "${PLUGIN_WHEEL_PATH}"
-          python -m pip install --no-deps "${COMPAT_PLUGIN_WHEEL_PATH}"
+          python -m pip install --upgrade pip pytest mypy pyyaml build "flit_core<4"
+          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-4.0.0a1-py3-none-any.whl"
+          SDIST_PATH="${GITHUB_WORKSPACE}/dist/vercor-4.0.0a1.tar.gz"
+          if [ "${{ matrix.artifact }}" = "sdist" ]; then
+            ARTIFACT_PATH="${SDIST_PATH}"
+          else
+            ARTIFACT_PATH="${WHEEL_PATH}"
+          fi
+          python -m pip install "${ARTIFACT_PATH}${{ matrix.extra }}"
           PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           echo "VERCOR_ARTIFACT_DIR=${GITHUB_WORKSPACE}/dist" >> "$GITHUB_ENV"
-          echo "VERCOR_PLUGIN_WHEEL_PATH=${PLUGIN_WHEEL_PATH}" >> "$GITHUB_ENV"
-          echo "VERCOR_COMPAT_PLUGIN_WHEEL_PATH=${COMPAT_PLUGIN_WHEEL_PATH}" >> "$GITHUB_ENV"
           echo "VERCOR_TEST_PACKAGE_ROOT=${PACKAGE_ROOT}" >> "$GITHUB_ENV"
-      - name: Verify imports resolve from the installed wheel
+      - name: Verify imports resolve from the installed artifact
         run: |
           cd "$RUNNER_TEMP"
           python -c "import pathlib, vercor; assert pathlib.Path(vercor.__file__).is_relative_to(pathlib.Path('${VERCOR_TEST_PACKAGE_ROOT}'))"
-      - name: Run external public-plugin fixture
-        run: |
-          cd "$RUNNER_TEMP"
-          python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
-          python -m vercor_compat_plugin_3_0.smoke
-      - name: Type-check external public-plugin fixture
-        run: |
-          cp tests/fixtures/public_plugin/use_site.py "$RUNNER_TEMP/public_plugin_use_site.py"
-          cp tests/fixtures/public_plugin_3_0/use_site.py "$RUNNER_TEMP/compat_plugin_3_0_use_site.py"
-          cd "$RUNNER_TEMP"
-          MYPYPATH="$VERCOR_TEST_PACKAGE_ROOT" mypy --strict \
-            "$VERCOR_TEST_PACKAGE_ROOT/vercor_public_plugin" \
-            "$VERCOR_TEST_PACKAGE_ROOT/vercor_compat_plugin_3_0" \
-            public_plugin_use_site.py compat_plugin_3_0_use_site.py
       - name: Run relevant installed-artifact suite
         env:
           PYTHONSAFEPATH: "1"
         run: python -P -m pytest --import-mode=importlib ${{ matrix.pytest-target }} -q --tb=short
+
+  plugin-contract-tests:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+        plugin-lane: [native-v4, historical-v3-artifact]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Run installed native v4 plugin
+        if: matrix.plugin-lane == 'native-v4'
+        run: |
+          python -m pip install --upgrade pip mypy
+          python -m pip install "${GITHUB_WORKSPACE}/dist/vercor-4.0.0a1-py3-none-any.whl"
+          python -m pip install --no-deps "${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+          PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          cd "$RUNNER_TEMP"
+          python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
+          cp "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/use_site.py" public_plugin_use_site.py
+          MYPYPATH="$PACKAGE_ROOT" mypy --strict "$PACKAGE_ROOT/vercor_public_plugin" public_plugin_use_site.py
+      - name: Inspect frozen v3 historical artifact
+        if: matrix.plugin-lane == 'historical-v3-artifact'
+        run: |
+          python -c "import zipfile; p='dist/vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl'; z=zipfile.ZipFile(p); m=z.read(next(n for n in z.namelist() if n.endswith('.dist-info/METADATA'))).decode(); assert 'Requires-Dist: vercor>=3.0,<4' in m"
+
+  macos-smoke:
+    needs: build-artifacts
+    runs-on: macos-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Run installed macOS public smoke
+        run: |
+          python -m pip install "dist/vercor-4.0.0a1-py3-none-any.whl"
+          python -m pip install --no-deps "dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+          cd "$RUNNER_TEMP"
+          python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
 
   quality:
     runs-on: ubuntu-latest

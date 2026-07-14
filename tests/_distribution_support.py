@@ -28,7 +28,7 @@ EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = (
 
 @dataclass(frozen=True)
 class BuiltDistributions:
-    """Paths to VerCOR and both installed compatibility plugin wheels."""
+    """Paths to VerCOR, the v4 plugin, and frozen historical evidence."""
 
     wheel: Path
     sdist: Path
@@ -255,14 +255,13 @@ def install_local_target(
     *,
     wheel: Path,
     plugin_wheel: Path,
-    frozen_plugin_wheel: Path,
     target: Path,
 ) -> None:
-    """Install prebuilt wheels into a target directory without dependencies."""
+    """Install VerCOR and the native v4 plugin without dependencies."""
 
     environment = os.environ.copy()
     target.mkdir(parents=True, exist_ok=True)
-    for source in (wheel, plugin_wheel, frozen_plugin_wheel):
+    for source in (wheel, plugin_wheel):
         subprocess.run(
             [
                 sys.executable,

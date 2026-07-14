@@ -6,6 +6,7 @@ import ast
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -25,7 +26,12 @@ from tests._distribution_support import (
     build_distributions,
     install_local_target,
 )
+from tests.test_api_architecture_review import (
+    REVIEW_PATH,
+    _documented_public_signatures,
+)
 from tests.test_setup_boundaries import _run_setup_probe
+from tests.test_v4_public_api import PUBLIC_MODULE_EXPORTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
@@ -40,38 +46,10 @@ EXPECTED_INSTALLED_ROOT = (
     "RunState",
     "RuntimeOptions",
 )
-EXPECTED_INSTALLED_OWNER_MANIFESTS = {
-    "vercor.components": (
-        "CallableComponent",
-        "Component",
-        "ComponentSpec",
-        "DataComponent",
-        "LifecycleHooks",
-        "PrefillContext",
-        "PrefillResult",
-        "SetupContext",
-        "SetupResult",
-        "StepContext",
-        "StepResult",
-        "TransferPolicy",
-        "ValidationContext",
-    ),
-    "vercor.coupler": ("Coupler",),
-    "vercor.runtime": (
-        "ExecutionBackend",
-        "ExecutionChunk",
-        "ExecutionContext",
-        "ExecutionPlan",
-        "RuntimeDriver",
-        "RuntimeOptions",
-        "SequentialWorkflow",
-        "StepPlan",
-        "Workflow",
-        "WorkflowContext",
-    ),
-    "vercor.physics": ("PhysicalConstants",),
-    "vercor.grid_geometry": ("centers_to_edges", "grids_identical"),
-}
+EXPECTED_INSTALLED_OWNER_MANIFESTS = PUBLIC_MODULE_EXPORTS
+EXPECTED_INSTALLED_SIGNATURES = _documented_public_signatures(
+    REVIEW_PATH.read_text(encoding="utf-8")
+)
 REMOVED_PRIMARY_MODULES = (
     "vercor.coupling",
     "vercor.settings",
@@ -80,6 +58,25 @@ REMOVED_PRIMARY_MODULES = (
     "vercor.pytree",
     "vercor.interpolators",
 )
+FORBIDDEN_ARCHIVE_PARTS = {
+    ".DS_Store",
+    ".pytest_cache",
+    "__MACOSX",
+    "__pycache__",
+}
+
+
+def _forbidden_archive_members(names: set[str]) -> tuple[str, ...]:
+    """Return generated platform/cache members that must never ship."""
+
+    return tuple(
+        sorted(
+            name
+            for name in names
+            if Path(name).suffix == ".pyc"
+            or FORBIDDEN_ARCHIVE_PARTS.intersection(Path(name).parts)
+        )
+    )
 
 
 @pytest.fixture(scope="module")
@@ -101,7 +98,7 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     runtime_dependencies = tuple(project["dependencies"])
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "3.1.1"
+    assert project["version"] == "4.0.0a1"
     assert not any(
         dependency.lower().startswith("pytest") for dependency in runtime_dependencies
     )
@@ -251,6 +248,8 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     jobs = workflow["jobs"]
     build_job = jobs["build-artifacts"]
     installed_job = jobs["installed-artifact-tests"]
+    plugin_job = jobs["plugin-contract-tests"]
+    macos_job = jobs["macos-smoke"]
 
     build_steps = build_job["steps"]
     build_commands = "\n".join(
@@ -273,9 +272,9 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     matrix = installed_job["strategy"]["matrix"]
     assert matrix["python-version"] == ["3.12", "3.13"]
     assert matrix["environment"] == ["base", "jcm", "veros"]
-    assert len(matrix["python-version"]) * len(matrix["environment"]) == 6
+    assert matrix["artifact"] == ["wheel"]
     included = {item["environment"]: item for item in matrix["include"]}
-    assert set(included) == {"base", "jcm", "veros"}
+    assert {"base", "jcm", "veros"}.issubset(included)
     assert (
         "test_make_jcm_land_atmosphere_replaces_only_missing_forcing"
         in included["jcm"]["pytest-target"]
@@ -301,21 +300,38 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert download_step["with"]["path"] == "dist/"
     assert "python -m build" not in installed_commands
     assert "VERCOR_ARTIFACT_DIR" in installed_commands
-    assert "VERCOR_PLUGIN_WHEEL_PATH" in installed_commands
-    assert "VERCOR_COMPAT_PLUGIN_WHEEL_PATH" in installed_commands
     assert "VERCOR_TEST_PACKAGE_ROOT" in installed_commands
     assert EXPECTED_WHEEL_NAME in installed_commands
+    assert EXPECTED_SDIST_NAME in installed_commands
     assert "vercor-3.0.0-py3-none-any.whl" not in installed_commands
-    assert "vercor_public_plugin.smoke" in installed_commands
-    assert "vercor_compat_plugin_3_0.smoke" in installed_commands
-    assert "MYPYPATH" in installed_commands
     assert "tests/fixtures/public_plugin/src" not in installed_commands
-    assert (
-        "pip install --no-deps tests/fixtures/public_plugin" not in installed_commands
-    )
-    assert 'pip install --no-deps "${PLUGIN_WHEEL_PATH}"' in installed_commands
-    assert 'pip install --no-deps "${COMPAT_PLUGIN_WHEEL_PATH}"' in installed_commands
     assert "pip install ." not in installed_commands
+    install_tools_line = next(
+        line.strip()
+        for line in installed_commands.splitlines()
+        if "pip install --upgrade pip" in line
+    )
+    installed_tools = set(shlex.split(install_tools_line))
+    assert {"build", "flit_core<4"}.issubset(installed_tools)
+
+    assert plugin_job["strategy"]["matrix"] == {
+        "python-version": ["3.12", "3.13"],
+        "plugin-lane": ["native-v4", "historical-v3-artifact"],
+    }
+    plugin_commands = "\n".join(
+        step.get("run", "") for step in plugin_job["steps"] if isinstance(step, dict)
+    )
+    assert "vercor_public_plugin.smoke" in plugin_commands
+    assert "vercor_compat_plugin_3_0.smoke" not in plugin_commands
+    assert "MYPYPATH" in plugin_commands
+    assert "Requires-Dist: vercor>=3.0,<4" in plugin_commands
+
+    assert macos_job["runs-on"] == "macos-latest"
+    macos_commands = "\n".join(
+        step.get("run", "") for step in macos_job["steps"] if isinstance(step, dict)
+    )
+    assert EXPECTED_WHEEL_NAME in macos_commands
+    assert "vercor_public_plugin.smoke" in macos_commands
 
 
 @pytest.mark.fast_always
@@ -390,26 +406,26 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     ("wheel_name", "sdist_name", "plugin_wheel_name", "frozen_plugin_wheel_name"),
     (
         (
-            "vercor-3.1.0-py3-none-any.whl",
-            "vercor-3.1.1.tar.gz",
+            "vercor-4.0.0a0-py3-none-any.whl",
+            "vercor-4.0.0a1.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
             EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-3.1.1-py3-none-any.whl",
-            "vercor-3.1.0.tar.gz",
+            "vercor-4.0.0a1-py3-none-any.whl",
+            "vercor-4.0.0a0.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
             EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-3.1.1-py3-none-any.whl",
-            "vercor-3.1.1.tar.gz",
+            "vercor-4.0.0a1-py3-none-any.whl",
+            "vercor-4.0.0a1.tar.gz",
             "vercor_public_plugin-0.2.0-py3-none-any.whl",
             EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-3.1.1-py3-none-any.whl",
-            "vercor-3.1.1.tar.gz",
+            "vercor-4.0.0a1-py3-none-any.whl",
+            "vercor-4.0.0a1.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
             "vercor_compat_plugin_3_0-0.2.0-py3-none-any.whl",
         ),
@@ -457,6 +473,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         )
         metadata = wheel.read(metadata_name).decode("utf-8")
     assert "vercor/py.typed" in wheel_names
+    assert _forbidden_archive_members(wheel_names) == ()
     assert f"Version: {EXPECTED_VERSION}" in metadata
     pytest_requirements = [
         line
@@ -485,12 +502,12 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     with tarfile.open(distributions.sdist, "r:gz") as sdist:
         sdist_names = set(sdist.getnames())
     assert f"vercor-{EXPECTED_VERSION}/vercor/py.typed" in sdist_names
+    assert _forbidden_archive_members(sdist_names) == ()
 
     target = tmp_path / "installed-target"
     install_local_target(
         wheel=distributions.wheel,
         plugin_wheel=distributions.plugin_wheel,
-        frozen_plugin_wheel=distributions.frozen_plugin_wheel,
         target=target,
     )
     environment = os.environ.copy()
@@ -498,8 +515,12 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     probe_source = f"""
 import importlib
 import importlib.metadata
+import importlib.util
+import inspect
 import json
 import pathlib
+import re
+import typing
 import vercor
 
 owners = {{}}
@@ -519,6 +540,48 @@ for module_name in {REMOVED_PRIMARY_MODULES!r}:
     else:
         removed[module_name] = None
 
+def resolve(qualified_name):
+    parts = qualified_name.split(".")
+    for stop in range(len(parts), 0, -1):
+        try:
+            value = importlib.import_module(".".join(parts[:stop]))
+        except ModuleNotFoundError:
+            continue
+        for attribute in parts[stop:]:
+            value = getattr(value, attribute)
+        return value
+    raise AssertionError(qualified_name)
+
+
+def normalized_signature(value):
+    hint_target = value.__init__ if inspect.isclass(value) else value
+    hints = typing.get_type_hints(hint_target)
+    signature = inspect.signature(value)
+    signature = signature.replace(
+        parameters=[
+            parameter.replace(
+                annotation=hints.get(parameter.name, parameter.annotation)
+            )
+            for parameter in signature.parameters.values()
+        ],
+        return_annotation=hints.get("return", signature.return_annotation),
+    )
+    rendered = re.sub(
+        r"<function ([^ >]+) at 0x[0-9a-fA-F]+>",
+        r"<function \\1>",
+        str(signature),
+    )
+    return (
+        rendered.replace("vercor.components.contracts.", "vercor.components.")
+        .replace("pathlib._local.Path", "pathlib.Path")
+        .replace(" -> NoneType", " -> None")
+    )
+
+
+signatures = {{}}
+for qualified_name in {tuple(EXPECTED_INSTALLED_SIGNATURES)!r}:
+    signatures[qualified_name] = normalized_signature(resolve(qualified_name))
+
 print(json.dumps({{
     "file": vercor.__file__,
     "version": importlib.metadata.version("vercor"),
@@ -526,6 +589,10 @@ print(json.dumps({{
     "root": list(vercor.__all__),
     "owners": owners,
     "removed": removed,
+    "signatures": signatures,
+    "historical_plugin_installed": importlib.util.find_spec(
+        "vercor_compat_plugin_3_0"
+    ) is not None,
 }}))
 """
     probe = subprocess.run(
@@ -552,6 +619,8 @@ print(json.dumps({{
     assert installed["removed"] == {
         module_name: module_name for module_name in REMOVED_PRIMARY_MODULES
     }
+    assert installed["signatures"] == EXPECTED_INSTALLED_SIGNATURES
+    assert installed["historical_plugin_installed"] is False
 
     monkeypatch.setenv("VERCOR_TEST_PACKAGE_ROOT", str(target))
     setup_probe = _run_setup_probe("import vercor")
@@ -597,19 +666,6 @@ print(json.dumps({{
     assert evidence["workflow"] == ["build"]
     assert evidence["snapshot"] == {"component": "JAX", "temperature": 13.0}
 
-    frozen_smoke = subprocess.run(
-        [sys.executable, "-m", "vercor_compat_plugin_3_0.smoke"],
-        cwd=tmp_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert frozen_smoke.returncode != 0
-    assert "ModuleNotFoundError: No module named 'vercor.coupling'" in (
-        frozen_smoke.stderr
-    )
-
     mypy_environment = environment.copy()
     mypy_environment["MYPYPATH"] = str(target)
     external_use_site = tmp_path / "public_plugin_use_site.py"
@@ -644,7 +700,6 @@ def test_installed_default_slab_factory_runs_v4_component(
     install_local_target(
         wheel=built_distributions.wheel,
         plugin_wheel=built_distributions.plugin_wheel,
-        frozen_plugin_wheel=built_distributions.frozen_plugin_wheel,
         target=target,
     )
     environment = os.environ.copy()
@@ -699,6 +754,106 @@ print(json.dumps({
     }
 
 
+def test_built_sdist_installs_and_imports_outside_checkout(
+    built_distributions: BuiltDistributions,
+    tmp_path: Path,
+) -> None:
+    """Install the sdist and compose the public plugin outside the checkout."""
+
+    target = tmp_path / "installed-sdist-target"
+    install_environment = os.environ.copy()
+    build_pythonpath = distribution_support._cached_build_pythonpath()
+    if build_pythonpath:
+        install_environment["PYTHONPATH"] = build_pythonpath
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-deps",
+            "--no-build-isolation",
+            "--target",
+            str(target),
+            str(built_distributions.sdist),
+        ],
+        cwd=tmp_path,
+        env=install_environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(target)
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-P",
+            "-c",
+            """
+import importlib.metadata
+import json
+from pathlib import Path
+import vercor
+
+print(json.dumps({
+    "file": vercor.__file__,
+    "root": list(vercor.__all__),
+    "version": importlib.metadata.version("vercor"),
+    "typed": Path(vercor.__file__).with_name("py.typed").is_file(),
+}))
+""",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    evidence = json.loads(probe.stdout)
+    assert Path(evidence["file"]).is_relative_to(target)
+    assert evidence["root"] == list(EXPECTED_INSTALLED_ROOT)
+    assert evidence["version"] == EXPECTED_VERSION
+    assert evidence["typed"] is True
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-deps",
+            "--only-binary=:all:",
+            "--target",
+            str(target),
+            str(built_distributions.plugin_wheel),
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    smoke = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "vercor_public_plugin.smoke",
+            "--output-dir",
+            str(tmp_path / "sdist-plugin-output"),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    plugin_evidence = json.loads(smoke.stdout.splitlines()[-1])
+    assert plugin_evidence["temperature"] == 13.0
+    assert plugin_evidence["host_value"] == 14.0
+
+
 def test_supplied_wheels_install_and_run_without_build_environment(
     built_distributions: BuiltDistributions,
     tmp_path: Path,
@@ -737,7 +892,6 @@ def test_supplied_wheels_install_and_run_without_build_environment(
     install_local_target(
         wheel=supplied.wheel,
         plugin_wheel=supplied.plugin_wheel,
-        frozen_plugin_wheel=supplied.frozen_plugin_wheel,
         target=target,
     )
 
@@ -761,16 +915,3 @@ def test_supplied_wheels_install_and_run_without_build_environment(
     evidence = json.loads(smoke.stdout.splitlines()[-1])
     assert evidence["temperature"] == 13.0
     assert evidence["host_value"] == 14.0
-
-    frozen_smoke = subprocess.run(
-        [sys.executable, "-m", "vercor_compat_plugin_3_0.smoke"],
-        cwd=tmp_path,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert frozen_smoke.returncode != 0
-    assert "ModuleNotFoundError: No module named 'vercor.coupling'" in (
-        frozen_smoke.stderr
-    )

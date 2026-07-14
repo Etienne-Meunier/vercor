@@ -1,4 +1,4 @@
-"""Freeze the public VerCOR 3.1.1 contract consumed by the v4 adapter."""
+"""Freeze the historical public VerCOR 3.1.1 contract used for migration."""
 
 from __future__ import annotations
 
@@ -262,7 +262,7 @@ def _inspect_reference_wheel(wheel: Path) -> dict[str, Any]:
 
 
 @pytest.mark.fast_always
-def test_manifest_declares_complete_vercor_3_1_1_adapter_contract() -> None:
+def test_manifest_declares_complete_historical_vercor_3_1_1_contract() -> None:
     manifest = _load_manifest()
 
     assert manifest["schema_version"] == 1
