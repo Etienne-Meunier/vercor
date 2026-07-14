@@ -1689,6 +1689,19 @@ def test_veros_output_variables_rejects_bare_string() -> None:
         )
 
 
+def test_veros_output_variables_rejects_setup_local_field() -> None:
+    import vercor.setups._external.veros_output as veros_output_module
+
+    with pytest.raises(
+        ValueError,
+        match="Unknown Veros output variable 'sss_clim'",
+    ):
+        veros_output_module.normalize_veros_output_variables(
+            ("sss_clim",),
+            settings=SimpleNamespace(),
+        )
+
+
 def test_veros_set_variable_updates_only_interior_cells(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

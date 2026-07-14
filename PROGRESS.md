@@ -12,10 +12,11 @@ historical commands, failure messages, or detailed validation notes.
 - Veros output-universe regression fixed locally on 2026-07-14. The bundled
   provider now excludes setup-local state metadata such as `sss_clim` before
   resolving dimensions, keeping enumeration aligned with Veros's global output
-  registry while preserving supported manifest order and explicit
-  unknown-variable validation. The focused provider regression, focused Veros
-  output coverage, fast suite, full suite, Black, flake8, mypy, and whitespace
-  checks pass.
+  registry while preserving supported manifest order. Direct characterization
+  coverage confirms explicit requests for excluded setup-local names remain
+  unknown-variable errors. The focused provider and explicit-rejection
+  regressions, focused Veros output coverage, fast suite, full suite, Black,
+  flake8, mypy, and whitespace checks pass.
 - VerCOR 4 milestone 1 Task 7 completed locally on 2026-07-14 from base commit
   `12478cd`. `vercor.output` now exposes exactly the immutable provider/frame,
   period, target, and snapshot contracts; `Coupler.run(..., output=None)` is an

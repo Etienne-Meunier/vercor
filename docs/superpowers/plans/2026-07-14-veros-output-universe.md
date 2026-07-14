@@ -93,6 +93,31 @@ Run:
 
 Expected: PASS. The existing ordered tuple remains unchanged, `sss_clim` is absent, and its dimension callable is never invoked.
 
+- [ ] **Step 4a: Characterize explicit setup-local request rejection**
+
+Add a direct assertion that the existing normalization boundary retains explicit
+unknown-variable validation for an excluded setup-local name:
+
+```python
+    with pytest.raises(
+        ValueError,
+        match="Unknown Veros output variable 'sss_clim'",
+    ):
+        veros_output_module.normalize_veros_output_variables(
+            ("sss_clim",),
+            settings=SimpleNamespace(),
+        )
+```
+
+Run:
+
+```bash
+/Users/romannuterman/miniforge3/envs/scipy/bin/pytest tests/test_external_components_coverage.py::test_veros_output_variables_rejects_setup_local_field -q
+```
+
+Expected: PASS without a production change. This is direct characterization
+coverage for the existing explicit-request contract.
+
 - [ ] **Step 5: Run focused Veros output coverage**
 
 Run:
