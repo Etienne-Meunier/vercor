@@ -23,6 +23,9 @@ MIGRATION_PATH = PROJECT_ROOT / "docs" / "migration-3-to-4.md"
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
 CHANGELOG_PATH = PROJECT_ROOT / "CHANGELOG.md"
 PROGRESS_PATH = PROJECT_ROOT / "PROGRESS.md"
+SIGNATURE_CONTRACT_PATH = (
+    PROJECT_ROOT / "tests" / "contracts" / "vercor-4.0.0a1-public-signatures.json"
+)
 DEPENDENCIES_PATH = PROJECT_ROOT / "DEPENDENCIES.md"
 PROGRESS_ARCHIVE_PATH = (
     PROJECT_ROOT / "docs" / "progress-archive-2026-05-16-to-2026-07-14.md"
@@ -82,21 +85,61 @@ def _documented_public_manifest(review: str) -> dict[str, tuple[str, ...]]:
     return {name: tuple(exports) for name, exports in manifest.items()}
 
 
-def _documented_public_signatures(review: str) -> dict[str, str]:
-    """Parse the JSON signature manifest embedded in the architecture review."""
+def _public_signature_contract() -> dict[str, dict[str, str]]:
+    """Load the static callable-export and behavioral-method signature contract."""
 
-    match = re.search(
-        r"<!-- public-api-signatures:start -->\n"
-        r"```json\n(.*?)\n```\n"
-        r"<!-- public-api-signatures:end -->",
-        review,
-        flags=re.DOTALL,
+    contract = json.loads(SIGNATURE_CONTRACT_PATH.read_text(encoding="utf-8"))
+    assert contract["schema_version"] == 1
+    sections = {
+        name: values for name, values in contract.items() if name != "schema_version"
+    }
+    assert set(sections) == {"exports", "methods"}
+    assert all(
+        isinstance(values, dict)
+        and all(isinstance(value, str) for value in values.values())
+        for values in sections.values()
     )
-    assert match is not None, "architecture review lacks its signature manifest"
-    signatures = json.loads(match.group(1))
-    assert isinstance(signatures, dict)
-    assert all(isinstance(value, str) for value in signatures.values())
-    return cast(dict[str, str], signatures)
+    return cast(dict[str, dict[str, str]], sections)
+
+
+def _canonical_public_callable_names(
+    manifest: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    """Return every concrete callable from canonical non-root owner manifests."""
+
+    qualified_names: list[str] = []
+    for module_name, exports in manifest.items():
+        if module_name == "vercor":
+            continue
+        module = importlib.import_module(module_name)
+        qualified_names.extend(
+            f"{module_name}.{name}"
+            for name in exports
+            if inspect.isclass(getattr(module, name))
+            or inspect.isroutine(getattr(module, name))
+        )
+    return tuple(qualified_names)
+
+
+def _canonical_public_method_names(
+    manifest: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    """Return public class/protocol behavior, excluding inherited exceptions."""
+
+    qualified_names: list[str] = []
+    for owner_name in _canonical_public_callable_names(manifest):
+        owner = _resolve_qualified_name(owner_name)
+        if not inspect.isclass(owner):
+            continue
+        if issubclass(owner, BaseException):
+            continue
+        qualified_names.extend(
+            f"{owner_name}.{method_name}"
+            for method_name, method in inspect.getmembers(owner)
+            if not method_name.startswith("_") and inspect.isroutine(method)
+        )
+    qualified_names.append("vercor.regridding.RegridderFactory.__call__")
+    return tuple(qualified_names)
 
 
 def _resolve_qualified_name(qualified_name: str) -> object:
@@ -120,7 +163,14 @@ def _normalized_signature(value: object) -> str:
     callable_value = cast(Callable[..., object], value)
     hint_target = value.__init__ if inspect.isclass(value) else callable_value
     hints = get_type_hints(hint_target)
-    signature = inspect.signature(callable_value)
+    try:
+        signature = inspect.signature(callable_value)
+    except ValueError:
+        assert inspect.isclass(value) and issubclass(value, BaseException)
+        init_signature = inspect.signature(value.__init__)
+        signature = init_signature.replace(
+            parameters=tuple(init_signature.parameters.values())[1:]
+        )
     signature = signature.replace(
         parameters=[
             parameter.replace(
@@ -136,8 +186,13 @@ def _normalized_signature(value: object) -> str:
         r"<function \1>",
         rendered,
     )
+    rendered = re.sub(r"<object object at 0x[0-9a-fA-F]+>", "<object>", rendered)
     return (
         rendered.replace("vercor.components.contracts.", "vercor.components.")
+        .replace("vercor.components.contexts.", "vercor.components.")
+        .replace("vercor.components.data.", "vercor.components.")
+        .replace("vercor.setups.config.", "vercor.setups.")
+        .replace("vercor.setups._jcm.", "vercor.setups.")
         .replace("pathlib._local.Path", "pathlib.Path")
         .replace(" -> NoneType", " -> None")
     )
@@ -167,11 +222,17 @@ def test_documented_public_manifest_matches_live_canonical_owners() -> None:
 
 
 @pytest.mark.fast_always
-def test_documented_public_signatures_match_live_canonical_objects() -> None:
-    """Execute central documented signatures instead of freezing prose."""
+def test_static_public_signature_contract_is_complete_and_matches_source() -> None:
+    """Freeze every canonical callable export and relevant behavioral method."""
 
-    signatures = _documented_public_signatures(REVIEW_PATH.read_text(encoding="utf-8"))
-    for qualified_name, documented_signature in signatures.items():
+    manifest = _documented_public_manifest(REVIEW_PATH.read_text(encoding="utf-8"))
+    contract = _public_signature_contract()
+    assert tuple(contract["exports"]) == _canonical_public_callable_names(manifest)
+    assert tuple(contract["methods"]) == _canonical_public_method_names(manifest)
+    for qualified_name, documented_signature in {
+        **contract["exports"],
+        **contract["methods"],
+    }.items():
         value = _resolve_qualified_name(qualified_name)
         assert _normalized_signature(value) == documented_signature
 

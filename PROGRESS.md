@@ -6,8 +6,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 4.0.0a1 Task 10 candidate preparation completed on 2026-07-14 from
-  base `fce4a6f`; the exact release commit remains the final local action.
+- VerCOR 4.0.0a1 Task 10 candidate preparation was completed and committed in
+  repository history on 2026-07-14. Tagging, pushing, and publication remain
+  intentionally unperformed pending separate authority.
   Task 9 was explicitly skipped: no legacy adapter namespace is implemented.
   The frozen 3.1.1 manifest and frozen 3.0 plugin remain historical artifact
   evidence only and are not installed or executed against v4.
@@ -31,6 +32,12 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   plugin, supplied-artifact, and slab probes 4/4; focused JCM/Veros lanes 9/9;
   output-free JVP/reverse acceptance 3/3. The full and coverage suites emitted
   only the two known third-party FutureWarnings.
+- Task 10 controller follow-up closed the incomplete signature sample. RED was
+  the absent complete static contract; GREEN freezes and checks all 147
+  concrete callable exports from canonical non-root owner manifests plus 55
+  public class/protocol methods against source and an isolated installed
+  wheel. The focused API/distribution files passed 18/18, fast passed 479/479,
+  and full passed 1066/1066 with only the two known third-party warnings.
 - Fresh clean retained artifacts are under
   `/private/tmp/vercor-task10-final-clean.MlF8ue/dist`. Direct `python -m build`
   first reported that `build` is not installed in the scipy environment; the
@@ -75,8 +82,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 - CI encodes Python 3.12/3.13 base/JCM/Veros artifact lanes, Python 3.12/3.13
   native-v4 plugin lanes, metadata-only frozen-v3 inspection, and a macOS
   installed-plugin smoke. GitHub-hosted jobs have not run locally.
-- Commit with subject `docs: prepare VerCOR 4.0.0a1`; do not tag, push, or
-  publish.
+- The Task 10 documentation/release commit is present in repository history.
+  Do not tag, push, or publish without separate authority.
 
 ## Durable Constraints
 

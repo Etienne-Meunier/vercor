@@ -27,8 +27,7 @@ from tests._distribution_support import (
     install_local_target,
 )
 from tests.test_api_architecture_review import (
-    REVIEW_PATH,
-    _documented_public_signatures,
+    _public_signature_contract,
 )
 from tests.test_setup_boundaries import _run_setup_probe
 from tests.test_v4_public_api import PUBLIC_MODULE_EXPORTS
@@ -47,9 +46,7 @@ EXPECTED_INSTALLED_ROOT = (
     "RuntimeOptions",
 )
 EXPECTED_INSTALLED_OWNER_MANIFESTS = PUBLIC_MODULE_EXPORTS
-EXPECTED_INSTALLED_SIGNATURES = _documented_public_signatures(
-    REVIEW_PATH.read_text(encoding="utf-8")
-)
+EXPECTED_INSTALLED_SIGNATURES = _public_signature_contract()
 REMOVED_PRIMARY_MODULES = (
     "vercor.coupling",
     "vercor.settings",
@@ -556,7 +553,14 @@ def resolve(qualified_name):
 def normalized_signature(value):
     hint_target = value.__init__ if inspect.isclass(value) else value
     hints = typing.get_type_hints(hint_target)
-    signature = inspect.signature(value)
+    try:
+        signature = inspect.signature(value)
+    except ValueError:
+        assert inspect.isclass(value) and issubclass(value, BaseException)
+        init_signature = inspect.signature(value.__init__)
+        signature = init_signature.replace(
+            parameters=tuple(init_signature.parameters.values())[1:]
+        )
     signature = signature.replace(
         parameters=[
             parameter.replace(
@@ -571,16 +575,45 @@ def normalized_signature(value):
         r"<function \\1>",
         str(signature),
     )
+    rendered = re.sub(r"<object object at 0x[0-9a-fA-F]+>", "<object>", rendered)
     return (
         rendered.replace("vercor.components.contracts.", "vercor.components.")
+        .replace("vercor.components.contexts.", "vercor.components.")
+        .replace("vercor.components.data.", "vercor.components.")
+        .replace("vercor.setups.config.", "vercor.setups.")
+        .replace("vercor.setups._jcm.", "vercor.setups.")
         .replace("pathlib._local.Path", "pathlib.Path")
         .replace(" -> NoneType", " -> None")
     )
 
 
-signatures = {{}}
-for qualified_name in {tuple(EXPECTED_INSTALLED_SIGNATURES)!r}:
-    signatures[qualified_name] = normalized_signature(resolve(qualified_name))
+callable_exports = []
+method_names = []
+for module_name, exports in {EXPECTED_INSTALLED_OWNER_MANIFESTS!r}.items():
+    if module_name == "vercor":
+        continue
+    module = importlib.import_module(module_name)
+    for name in exports:
+        value = getattr(module, name)
+        if not (inspect.isclass(value) or inspect.isroutine(value)):
+            continue
+        owner_name = f"{{module_name}}.{{name}}"
+        callable_exports.append(owner_name)
+        if inspect.isclass(value) and not issubclass(value, BaseException):
+            method_names.extend(
+                f"{{owner_name}}.{{method_name}}"
+                for method_name, method in inspect.getmembers(value)
+                if not method_name.startswith("_")
+                and inspect.isroutine(method)
+            )
+method_names.append("vercor.regridding.RegridderFactory.__call__")
+
+signatures = {{section: {{}} for section in ("exports", "methods")}}
+for section, expected in {EXPECTED_INSTALLED_SIGNATURES!r}.items():
+    for qualified_name in expected:
+        signatures[section][qualified_name] = normalized_signature(
+            resolve(qualified_name)
+        )
 
 print(json.dumps({{
     "file": vercor.__file__,
@@ -589,6 +622,8 @@ print(json.dumps({{
     "root": list(vercor.__all__),
     "owners": owners,
     "removed": removed,
+    "callable_exports": callable_exports,
+    "method_names": method_names,
     "signatures": signatures,
     "historical_plugin_installed": importlib.util.find_spec(
         "vercor_compat_plugin_3_0"
@@ -619,6 +654,12 @@ print(json.dumps({{
     assert installed["removed"] == {
         module_name: module_name for module_name in REMOVED_PRIMARY_MODULES
     }
+    assert set(installed["callable_exports"]) == set(
+        EXPECTED_INSTALLED_SIGNATURES["exports"]
+    )
+    assert set(installed["method_names"]) == set(
+        EXPECTED_INSTALLED_SIGNATURES["methods"]
+    )
     assert installed["signatures"] == EXPECTED_INSTALLED_SIGNATURES
     assert installed["historical_plugin_installed"] is False
 

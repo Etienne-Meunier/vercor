@@ -126,33 +126,14 @@ OutputTarget(directory, *, write_period=True, write_final_fields=True,
              write_snapshots=True)
 ```
 
-The executable signature inventory covers every root-owned constructor, both
-component convenience adapters, the component declaration, output activation,
-and the complete public state/coupler operation surface. Each normalized value
-includes parameter order and kind, defaults, resolved public annotations, and
-the return annotation. Source and installed-artifact tests execute the same
-contracts against their canonical owners.
-
-<!-- public-api-signatures:start -->
-```json
-{
-  "vercor.clock.Clock": "(start: datetime.datetime, dt_seconds: float, steps: int, calendar: Literal['gregorian', 'noleap', '360_day'] = 'gregorian') -> None",
-  "vercor.components.CallableComponent": "(name: str, grid: vercor.grids.RectilinearGrid, step: collections.abc.Callable[..., collections.abc.Mapping[str, numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array] | vercor.components.StepResult], *, spec: vercor.components.ComponentSpec | None = None) -> None",
-  "vercor.components.ComponentSpec": "(inputs: collections.abc.Iterable[str] = (), outputs: collections.abc.Iterable[str] = (), initial_fields: collections.abc.Mapping[str, object] | None = None, *, execution: Literal['jax', 'host'] = 'jax', lifecycle: vercor.components.LifecycleHooks | None = None, transfer: vercor.components.TransferPolicy | None = None, output: vercor.output.OutputSpec | None = None) -> None",
-  "vercor.components.DataComponent": "(name: str, grid: vercor.grids.RectilinearGrid, fields: collections.abc.Mapping[str, object] | None = None, *, spec: vercor.components.ComponentSpec | None = None) -> None",
-  "vercor.coupler.Coupler": "(clock: vercor.clock.Clock, *, components: collections.abc.Iterable[vercor.components.Component] = (), exchanges: collections.abc.Iterable[vercor.exchanges.Exchange] = (), run_order: collections.abc.Sequence[str] = (), runtime: vercor.runtime.RuntimeOptions | None = None, constants: vercor.physics.PhysicalConstants | None = None, logger: vercor.jax_logging.LoggerLike | None = None, log_level: int | str = 'INFO') -> None",
-  "vercor.coupler.Coupler.initial_state": "(self, *, prefill_missing: bool = True) -> vercor.state.RunState",
-  "vercor.coupler.Coupler.run": "(self, state: vercor.state.RunState | None = None, *, output: vercor.output.OutputTarget | None = None) -> vercor.state.RunState",
-  "vercor.exchanges.Exchange": "(source: str, target: str, fields: collections.abc.Sequence[str | vercor.fields.VectorField], *, route_id: str | None = None, regridder_factory: vercor.regridding.RegridderFactory = <function bilinear>) -> None",
-  "vercor.grids.RectilinearGrid": "(name: str, *, longitude: numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array, latitude: numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array, longitude_edges: numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array | None = None, latitude_edges: numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array | None = None, binary_mask: numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array | None = None, policy: vercor.dtypes.DTypePolicy | None = None) -> None",
-  "vercor.output.OutputTarget": "(directory: str | pathlib.Path, *, write_period: bool = True, write_final_fields: bool = True, write_snapshots: bool = True) -> None",
-  "vercor.runtime.RuntimeOptions": "(dtype: vercor.dtypes.DTypePolicy = <factory>, backend: Union[Literal['auto', 'jax', 'host'], vercor.runtime.ExecutionBackend] = 'auto', workflow: vercor.runtime.Workflow = <factory>, topology: vercor.topology.TopologyPolicy | None = None, model_year_seconds: float = 31536000.0) -> None",
-  "vercor.state.RunState.component": "(self, name: str) -> vercor.state.ComponentState",
-  "vercor.state.RunState.components": "(self, names: collections.abc.Sequence[str] | None = None) -> collections.abc.Mapping[str, vercor.state.ComponentState]",
-  "vercor.state.RunState.replace_fields": "(self, component: str, fields: collections.abc.Mapping[str, numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]] | jax.Array]) -> vercor.state.RunState"
-}
-```
-<!-- public-api-signatures:end -->
+The five signatures above are a readable representative sample. The complete,
+static executable inventory is
+[`tests/contracts/vercor-4.0.0a1-public-signatures.json`](../tests/contracts/vercor-4.0.0a1-public-signatures.json):
+it covers all 147 concrete callable exports in canonical non-root owner
+manifests and 55 public class/protocol-call methods. Every
+normalized value includes parameter order and kind, defaults, resolved public
+annotations, and the return annotation. Source and isolated installed-artifact
+tests require exact key-set equality and execute the same frozen contracts.
 
 `RunState` is opaque. Its public operations are `component`, `components`, and
 `replace_fields`; callers never receive runtime stores, topology maps, or a
