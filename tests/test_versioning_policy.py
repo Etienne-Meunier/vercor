@@ -30,18 +30,7 @@ _NUMERICAL_VECTOR_LINES = (
 )
 FORBIDDEN_VERCOR_MAJOR = re.compile(r"\bVerCOR [" + "1234" + r"](?:\b|\.)")
 _RELEASE_SHORTHAND = r"(?<![\d.])(?:[12]\.0|3\." + r"[01]|4\.0|[1234]\.x)(?![\d.])"
-_RELEASE_CONCEPT = (
-    r"(?:APIs?|compatibility|fixtures?|plugins?|manifests?|artifacts?|"
-    r"releases?|lines?|migrations?)"
-)
-_RELEASE_PREFIX = r"(?:current|frozen|later|native|historical)"
-FORBIDDEN_RELEASE_SHORTHAND = re.compile(
-    rf"(?:\bVerCOR[ \t]+{_RELEASE_SHORTHAND}"
-    rf"|{_RELEASE_SHORTHAND}[ \t-]+{_RELEASE_CONCEPT}\b"
-    rf"|\b{_RELEASE_PREFIX}[ \t-]+{_RELEASE_SHORTHAND}"
-    rf"|\bvercor-release-{_RELEASE_SHORTHAND}(?=[-./\s]|$))",
-    flags=re.IGNORECASE,
-)
+_RELEASE_SHORTHAND_TOKEN = re.compile(_RELEASE_SHORTHAND, flags=re.IGNORECASE)
 FORBIDDEN_PATH_FRAGMENTS = (
     "migration-" + "3-to-" + "4",
     "vercor-" + "4-api",
@@ -62,15 +51,30 @@ _VERCOR_VERSION_PREFIX = re.compile(
     r"\bvercor(?:['’]s)?"
     r"(?:[ \t_-]+(?:current|previous|historical|frozen|stable|first|major|"
     r"version|releases?|APIs?|history|migrations?|artifacts?|manifests?|"
-    r"plugins?|fixtures?|line|candidate))*[ \t:=[_-]*$",
+    r"plugins?|fixtures?|line|candidate))*[ \t:`\"'=[_-]*$",
+    flags=re.IGNORECASE,
+)
+_EXTERNAL_VERSION_PREFIX = re.compile(
+    r"\b(?:external|independent)"
+    r"(?:[ \t_-]+(?:artifacts?|releases?|schemas?|plugins?|APIs?|versions?|"
+    r"fixtures?|lines?|dependencies?))*[ \t:`\"'=[_-]*$",
     flags=re.IGNORECASE,
 )
 _REPOSITORY_VERSION_PREFIX = re.compile(
-    r"(?:(?:current|previous|historical|frozen|stable|first|major)[ \t-]+)*"
+    r"(?:"
+    r"(?:current|previous|historical|frozen|stable|first|major|later|native)"
+    r"[ \t_-]+"
+    r"|(?:(?:current|previous|historical|frozen|stable|first|major)[ \t-]+)*"
     r"(?:releases?|APIs?|history|migrations?|artifacts?|manifests?|"
     r"plugin[ \t-]+fixtures?)"
     r"(?:[ \t-]+(?:release|version|label|line|history|candidate))*"
-    r"[ \t:=[_-]*$",
+    r"[ \t:`\"'=[_-]*"
+    r")$",
+    flags=re.IGNORECASE,
+)
+_REPOSITORY_VERSION_SUFFIX = re.compile(
+    r"^[ \t`\"'\])}:_-]*(?:releases?|APIs?|history|migrations?|artifacts?|"
+    r"manifests?|plugins?|fixtures?|lines?)\b",
     flags=re.IGNORECASE,
 )
 _VERSION_ASSIGNMENT = re.compile(
@@ -120,15 +124,39 @@ def _forbidden_exact_release_labels(
     labels: list[str] = []
     for label, pattern in _EXACT_RELEASE_PATTERNS:
         for match in pattern.finditer(line):
-            prefix = line[: match.start()]
-            repository_context = bool(
-                _VERCOR_VERSION_PREFIX.search(prefix)
-                or _REPOSITORY_VERSION_PREFIX.search(prefix)
-            )
-            if repository_context or metadata_context or changelog_context:
+            owner = _version_context_owner(line, match.start(), match.end())
+            if owner == "external":
+                continue
+            if owner == "vercor" or metadata_context or changelog_context:
                 labels.append(label)
                 break
     return tuple(labels)
+
+
+def _version_context_owner(line: str, start: int, end: int) -> str | None:
+    """Classify only the narrow ownership syntax adjacent to a version span."""
+
+    prefix = line[:start]
+    suffix = line[end:]
+    if _EXTERNAL_VERSION_PREFIX.search(prefix):
+        return "external"
+    if (
+        _VERCOR_VERSION_PREFIX.search(prefix)
+        or _REPOSITORY_VERSION_PREFIX.search(prefix)
+        or _REPOSITORY_VERSION_SUFFIX.search(suffix)
+    ):
+        return "vercor"
+    return None
+
+
+def _forbidden_release_shorthand_labels(line: str) -> tuple[str, ...]:
+    """Return shorthand spans whose adjacent context belongs to VerCOR."""
+
+    return tuple(
+        match.group()
+        for match in _RELEASE_SHORTHAND_TOKEN.finditer(line)
+        if _version_context_owner(line, match.start(), match.end()) == "vercor"
+    )
 
 
 def _forbidden_api_tokens(relative_path: Path, line: str) -> tuple[str, ...]:
@@ -156,7 +184,7 @@ def _forbidden_api_tokens(relative_path: Path, line: str) -> tuple[str, ...]:
     ),
 )
 def test_release_shorthand_matcher_rejects_repository_labels(line: str) -> None:
-    assert FORBIDDEN_RELEASE_SHORTHAND.search(line) is not None
+    assert _forbidden_release_shorthand_labels(line)
 
 
 @pytest.mark.fast_always
@@ -178,7 +206,7 @@ def test_release_shorthand_matcher_rejects_repository_labels(line: str) -> None:
 def test_release_shorthand_matcher_allows_external_and_numeric_labels(
     line: str,
 ) -> None:
-    assert FORBIDDEN_RELEASE_SHORTHAND.search(line) is None
+    assert not _forbidden_release_shorthand_labels(line)
 
 
 @pytest.mark.fast_always
@@ -232,6 +260,56 @@ def test_integrated_scanner_allows_external_exact_version_collisions(
         relative_path=Path("external-metadata.md"),
         line=line,
     )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "line",
+    (
+        "external artifact version " + "3" + ".0.0",
+        "external release " + "3" + ".1.1",
+        'independent release: "' + "3" + '.1.1"',
+        "independent artifact version " + "2" + ".0.0",
+        "external " + "3" + ".0 artifact",
+        "external " + "2" + ".0 API",
+        "independent " + "3" + ".1 plugin fixture",
+    ),
+)
+def test_integrated_scanner_allows_explicit_external_version_contexts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    line: str,
+) -> None:
+    _run_integrated_scanner_for_line(
+        monkeypatch,
+        tmp_path,
+        relative_path=Path("external-release-metadata.yml"),
+        line=line,
+    )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "line",
+    (
+        "VerCOR version `" + "4" + ".0.0a1`",
+        'VERCOR_VERSION: "' + "4" + '.0.0a1"',
+        "export VERCOR_VERSION='" + "3" + ".1.1'",
+        "VerCOR version " + "4" + ".0",
+    ),
+)
+def test_integrated_scanner_rejects_quoted_and_env_vercor_versions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    line: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        _run_integrated_scanner_for_line(
+            monkeypatch,
+            tmp_path,
+            relative_path=Path("release-config.yml"),
+            line=line,
+        )
 
 
 @pytest.mark.fast_always
@@ -323,7 +401,7 @@ def test_tracked_repository_has_no_forbidden_vercor_release_labels() -> None:
             labels = _forbidden_exact_release_labels(relative_path, line)
             api_tokens = _forbidden_api_tokens(relative_path, line)
             major_names = tuple(FORBIDDEN_VERCOR_MAJOR.findall(line))
-            shorthand_labels = tuple(FORBIDDEN_RELEASE_SHORTHAND.findall(line))
+            shorthand_labels = _forbidden_release_shorthand_labels(line)
             if labels or api_tokens or major_names or shorthand_labels:
                 violations.append(
                     f"{rendered_path}:{line_number}: "
