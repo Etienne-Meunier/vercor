@@ -8,20 +8,25 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 - Calendar-owned runtime year metadata completed locally (2026-07-15):
   implementation commit `9ade80c` (`refactor: derive model-year duration from
-  calendar`).
+  calendar`) and review-fix commit `a9b079c` (`test: guard per-timestamp
+  calendar year metadata`).
   `RuntimeOptions` now owns only dtype, backend, workflow, and topology;
   runtime forcing metadata derives canonical year type and duration from each
   timestamp's calendar and year, and the private clock mapper is deleted. RED
   was 6 failures: four rejected the new `calendar` argument and two exposed
   the duplicate runtime owner. A first GREEN attempt exposed and fixed the
-  common-year stdlib `datetime`/no-leap forcing-index boundary. Final focused
-  GREEN is 136/136; fast is 659/659 with 596 deselected; full and coverage are
-  1255/1255; branch coverage is 90.52% across 7,355 statements and 1,534
-  branches. Black reformatted 3 files with 239 unchanged and emitted the known
-  Python 3.13/target-3.15 safety warning while exiting 0; strict flake8 is 0;
-  mypy passes 238 source files; compileall and whitespace checks are clean.
-  Full and coverage runs emitted only the five known third-party warning
-  instances. Historical 0.3 evidence and archived progress remain unchanged.
+  common-year stdlib `datetime`/no-leap forcing-index boundary. Implementation
+  focused GREEN was 136/136. The review regression's first-timestamp-hoisting
+  mutation failed 1/1 as expected, and the restored focused test passed 1/1.
+  Final post-fix fast is 660/660 with 596 deselected, and full is 1256/1256.
+  The implementation coverage run, before the test-only review fix, passed
+  1255/1255 and measured 90.52% branch coverage across 7,355 statements and
+  1,534 branches; coverage was not rerun for the review fix. Black reformatted
+  3 files with 239 unchanged and emitted the known Python 3.13/target-3.15
+  safety warning while exiting 0; strict flake8 is 0; mypy passes 238 source
+  files; compileall and whitespace checks are clean. Full and implementation
+  coverage runs emitted only the five known third-party warning instances.
+  Historical 0.3 evidence and archived progress remain unchanged.
 - Matcher-level versioning review completed locally (2026-07-15): ordered,
   explicit repository-release contexts replace the broad proximity heuristic.
   RED isolated 4 incorrect cases among 17 parameters; matcher GREEN is 17/17
