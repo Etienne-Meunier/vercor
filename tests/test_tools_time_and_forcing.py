@@ -10,6 +10,7 @@ from typing import Any, cast
 import numpy as np
 import jax.numpy as jnp
 import pytest
+import vercor._runtime.time as runtime_time_module
 import vercor.assets as assets_module
 import vercor.setups._data.assets as setup_assets_module
 
@@ -282,6 +283,72 @@ def test_runtime_monthly_metadata_uses_timestamp_calendar_duration(
     assert int(info.monthly_index_right[0]) == expected_right[0]
     assert jnp.isclose(info.monthly_weight_left[0], expected_left[1])
     assert jnp.isclose(info.monthly_weight_right[0], expected_right[1])
+
+
+@pytest.mark.fast_always
+def test_runtime_metadata_resolves_gregorian_year_duration_per_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolve_year_type = runtime_time_module.year_type_for_calendar
+    resolve_year_seconds = runtime_time_module.model_year_seconds
+    resolved_years: list[int] = []
+    resolved_year_types: list[YearType] = []
+
+    def traced_year_type_for_calendar(calendar: str, year: int) -> YearType:
+        resolved_years.append(year)
+        return resolve_year_type(calendar, year)
+
+    def traced_model_year_seconds(year_type: YearType) -> float:
+        resolved_year_types.append(year_type)
+        return resolve_year_seconds(year_type)
+
+    monkeypatch.setattr(
+        runtime_time_module,
+        "year_type_for_calendar",
+        traced_year_type_for_calendar,
+    )
+    monkeypatch.setattr(
+        runtime_time_module,
+        "model_year_seconds",
+        traced_model_year_seconds,
+    )
+    times = [datetime(2000, 12, 31), datetime(2001, 1, 1)]
+
+    info = runtime_step_info_from_times(times, calendar="gregorian")
+
+    expected_intervals = [
+        get_periodic_interval(
+            current_time=datetime_to_seconds_in_year(time),
+            cycle_length=cycle_length,
+            rec_spacing=cycle_length / 12.0,
+            n_rec=12,
+        )
+        for time, cycle_length in zip(
+            times,
+            (366 * 86_400.0, 365 * 86_400.0),
+            strict=True,
+        )
+    ]
+    assert resolved_years == [2000, 2001]
+    assert resolved_year_types == [
+        YearType.GREGORIAN_LEAP,
+        YearType.GREGORIAN_NO_LEAP,
+    ]
+    assert info.monthly_index_left.tolist() == [
+        interval[0][0] for interval in expected_intervals
+    ]
+    assert info.monthly_index_right.tolist() == [
+        interval[1][0] for interval in expected_intervals
+    ]
+    assert np.allclose(
+        info.monthly_weight_left,
+        [interval[0][1] for interval in expected_intervals],
+    )
+    assert np.allclose(
+        info.monthly_weight_right,
+        [interval[1][1] for interval in expected_intervals],
+    )
+    assert info.daily_index.tolist() == [364, 0]
 
 
 def test_get_forcing_data_valid_and_invalid_file_type(

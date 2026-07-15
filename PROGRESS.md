@@ -7,6 +7,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 ## Current Status
 
 - Calendar-owned runtime year metadata completed locally (2026-07-15):
+  implementation commit `9ade80c` (`refactor: derive model-year duration from
+  calendar`).
   `RuntimeOptions` now owns only dtype, backend, workflow, and topology;
   runtime forcing metadata derives canonical year type and duration from each
   timestamp's calendar and year, and the private clock mapper is deleted. RED
