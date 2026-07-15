@@ -72,9 +72,10 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   two known third-party `FutureWarning`s. Task 9, version `0.4.0a1`, and release
   publication state remain unchanged.
 - VerCOR 0.4.0a1 release verification completed locally (2026-07-15) from
-  build HEAD `31e803c06a4e65e8e72ee77937b056eac540eb44`. Black left 242 files
-  unchanged (with its Python target-version advisory); strict flake8 reported
-  0; mypy passed 238 source files; compileall and whitespace checks were clean.
+  build HEAD `31e803c06a4e65e8e72ee77937b056eac540eb44`. Black warned Python 3.13
+  cannot perform its safety parse for configured Python 3.15, while exit
+  remained 0 and 242 files were unchanged; strict flake8 reported 0; mypy
+  passed 238 source files; compileall and whitespace checks were clean.
   The fast suite passed 543/543; the full and branch-coverage suites passed
   1139/1139; coverage was 90.51% (7,352 statements and 1,532 branches). The
   full and coverage runs emitted five third-party warning instances: one Flax
