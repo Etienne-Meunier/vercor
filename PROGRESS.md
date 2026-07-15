@@ -71,10 +71,29 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   acceptance 3/3; whitespace clean. Full and coverage runs emitted only the
   two known third-party `FutureWarning`s. Task 9, version `0.4.0a1`, and release
   publication state remain unchanged.
-- Prior retained candidate bundles and their hashes are stale because their
-  metadata predates the pre-1.0 version correction. Fresh artifact evidence is
-  intentionally deferred to the next release-verification task. JCM 1.1.1 and
-  Veros 1.6.2 remain the installed versions used for optional focused gates.
+- VerCOR 0.4.0a1 release verification completed locally (2026-07-15) from
+  build HEAD `31e803c06a4e65e8e72ee77937b056eac540eb44`. Black left 242 files
+  unchanged (with its Python target-version advisory); strict flake8 reported
+  0; mypy passed 238 source files; compileall and whitespace checks were clean.
+  The fast suite passed 543/543; the full and branch-coverage suites passed
+  1139/1139; coverage was 90.51% (7,352 statements and 1,532 branches). The
+  full and coverage runs emitted five third-party warning instances: one Flax
+  JAX-effect deprecation, one JAX scatter-cast future warning, one JCM/xarray
+  merge-default future warning, and two xarray NumPy-shape deprecations. The
+  optional JCM/Veros focus passed 9/9 with only the Flax warning; output-free
+  JVP/reverse differentiation passed 3/3; supplied-artifact boundaries passed
+  16/16. Fresh offline no-isolation builds are in
+  `/private/tmp/vercor-0.4.0a1-dist/` with SHA-256 values:
+  `vercor-0.4.0a1-py3-none-any.whl`
+  `a713f10c3722145d1dd0e0886c266e264d098dc7f30276b99bb027fdc246bff7`;
+  `vercor-0.4.0a1.tar.gz`
+  `119717648950a04d89fe28a2522a2c6ae5fc699d8725ae0cdc788691c6c529a2`;
+  `vercor_public_plugin-0.1.0-py3-none-any.whl`
+  `198a7e2d7d4873d3550ff3ffe41aa8b6c41ab38e80347b501e6f04e43766db74`;
+  and `vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl`
+  `740a3fa64f0af5ae18ec497469d53159b52834faf092f8148239bc73c18a2ad4`.
+  JCM 1.1.1 and Veros 1.6.2 remain the installed optional-model versions.
+  Tag, push, publication, and upload remain unperformed.
 
 ## Implemented 0.4 Architecture
 
