@@ -15,6 +15,8 @@ from typing import Any, cast, get_type_hints
 
 import pytest
 
+from tests._signature_support import canonicalize_external_typing_aliases
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_PATH = PROJECT_ROOT / "docs" / "api-architecture-review.md"
 README_PATH = PROJECT_ROOT / "README.md"
@@ -187,7 +189,7 @@ def _normalized_signature(value: object) -> str:
         rendered,
     )
     rendered = re.sub(r"<object object at 0x[0-9a-fA-F]+>", "<object>", rendered)
-    return (
+    normalized = (
         rendered.replace("vercor.components.contracts.", "vercor.components.")
         .replace("vercor.components.contexts.", "vercor.components.")
         .replace("vercor.components.data.", "vercor.components.")
@@ -196,6 +198,59 @@ def _normalized_signature(value: object) -> str:
         .replace("pathlib._local.Path", "pathlib.Path")
         .replace(" -> NoneType", " -> None")
     )
+    return canonicalize_external_typing_aliases(normalized)
+
+
+@pytest.mark.parametrize(
+    "rendered",
+    (
+        "numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]]",
+        "NDArray[typing.Any]",
+        "numpy.typing.NDArray[typing.Any]",
+    ),
+)
+def test_external_numpy_ndarray_renderings_have_one_public_token(
+    rendered: str,
+) -> None:
+    """Keep equivalent NumPy aliases stable across dependency renderings."""
+
+    assert (
+        canonicalize_external_typing_aliases(rendered)
+        == "numpy.typing.NDArray[typing.Any]"
+    )
+
+
+@pytest.mark.parametrize(
+    "rendered",
+    (
+        "Union[jax.Array, numpy.ndarray, numpy.bool, numpy.number, bool, int, "
+        "float, complex, jax._src.literals.TypedNdArray]",
+        "Union[jax.Array, numpy.ndarray, numpy.bool, numpy.number, bool, int, "
+        "float, complex]",
+    ),
+)
+def test_external_jax_arraylike_renderings_have_one_public_token(
+    rendered: str,
+) -> None:
+    """Keep equivalent JAX aliases stable without freezing private names."""
+
+    assert canonicalize_external_typing_aliases(rendered) == "jax.typing.ArrayLike"
+
+
+@pytest.mark.parametrize(
+    "rendered",
+    (
+        "numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[numpy.float64]]",
+        "NDArray[numpy.float64]",
+        "SomeNDArray[typing.Any]",
+        "Union[jax.Array, numpy.ndarray, numpy.bool, numpy.number, bool, int, float]",
+        "collections.abc.Sequence[NDArray[numpy.float64]]",
+    ),
+)
+def test_external_typing_near_misses_remain_unchanged(rendered: str) -> None:
+    """Avoid canonicalizing strings that are not the evidenced aliases."""
+
+    assert canonicalize_external_typing_aliases(rendered) == rendered
 
 
 @pytest.mark.fast_always
@@ -227,6 +282,14 @@ def test_static_public_signature_contract_is_complete_and_matches_source() -> No
 
     manifest = _documented_public_manifest(REVIEW_PATH.read_text(encoding="utf-8"))
     contract = _public_signature_contract()
+    serialized_contract = json.dumps(contract)
+    assert "numpy.typing.NDArray[typing.Any]" in serialized_contract
+    assert "jax.typing.ArrayLike" in serialized_contract
+    assert (
+        "numpy.ndarray[tuple[typing.Any, ...], numpy.dtype[typing.Any]]"
+        not in serialized_contract
+    )
+    assert "jax._src.literals.TypedNdArray" not in serialized_contract
     assert tuple(contract["exports"]) == _canonical_public_callable_names(manifest)
     assert tuple(contract["methods"]) == _canonical_public_method_names(manifest)
     for qualified_name, documented_signature in {

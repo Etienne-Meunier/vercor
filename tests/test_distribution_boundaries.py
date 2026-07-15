@@ -26,6 +26,7 @@ from tests._distribution_support import (
     build_distributions,
     install_local_target,
 )
+from tests._signature_support import EXTERNAL_TYPING_ALIAS_REPLACEMENTS
 from tests.test_api_architecture_review import (
     _public_signature_contract,
 )
@@ -520,6 +521,16 @@ import re
 import typing
 import vercor
 
+external_typing_alias_replacements = {EXTERNAL_TYPING_ALIAS_REPLACEMENTS!r}
+external_typing_alias_pattern = re.compile(
+    r"(?<![\\w.])(?:"
+    + "|".join(
+        re.escape(dependency_rendering)
+        for dependency_rendering, _ in external_typing_alias_replacements
+    )
+    + r")(?![\\w.])"
+)
+
 owners = {{}}
 for module_name in {tuple(EXPECTED_INSTALLED_OWNER_MANIFESTS)!r}:
     module = importlib.import_module(module_name)
@@ -576,7 +587,7 @@ def normalized_signature(value):
         str(signature),
     )
     rendered = re.sub(r"<object object at 0x[0-9a-fA-F]+>", "<object>", rendered)
-    return (
+    normalized = (
         rendered.replace("vercor.components.contracts.", "vercor.components.")
         .replace("vercor.components.contexts.", "vercor.components.")
         .replace("vercor.components.data.", "vercor.components.")
@@ -584,6 +595,11 @@ def normalized_signature(value):
         .replace("vercor.setups._jcm.", "vercor.setups.")
         .replace("pathlib._local.Path", "pathlib.Path")
         .replace(" -> NoneType", " -> None")
+    )
+    replacements = dict(external_typing_alias_replacements)
+    return external_typing_alias_pattern.sub(
+        lambda match: replacements[match.group(0)],
+        normalized,
     )
 
 
