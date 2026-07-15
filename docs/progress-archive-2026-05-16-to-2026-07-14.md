@@ -192,7 +192,7 @@ historical commands, failure messages, or detailed validation notes.
   NumPy ownership, nested payload ownership, immutable mappings, payload
   preserve/clear/replace PyTrees, and setup-payload JVP/reverse gradients. The
   current installed plugin is migrated to strict-mypy v0.4 authoring; the frozen
-  3.0 plugin and 0.3.2 compatibility baseline remain unchanged and demonstrate
+  0.3 plugin and 0.3.2 compatibility baseline remain unchanged and demonstrate
   the intentional break. Final verification passes the exact 202-test
   component/API/plugin/gradient focus, all 416 fast-selected tests, and all 872
   full-suite tests with only the two known third-party `FutureWarning`s. Black
@@ -247,7 +247,7 @@ historical commands, failure messages, or detailed validation notes.
   `git archive` of the pinned commit, builds its wheel offline through the
   established distribution cache fallback, and inspects it in an isolated
   bounded subprocess; the evolving live checkout is not compared with the v0.3
-  manifest, and the later 3.0 fixture is rejected as baseline evidence. A
+  manifest, and the later 0.3 fixture is rejected as baseline evidence. A
   follow-up CI audit reproduced `fatal: not a tree object` for the reference
   SHA in a real depth-1 clone and recorded the intended workflow-boundary RED
   (`fetch-depth` absent). The quality job is the only current job that collects
@@ -265,8 +265,8 @@ historical commands, failure messages, or detailed validation notes.
   default mutable state is outside the supported configuration contract. Task 2
   added deterministic exchange fan-in rejection, legal feedback
   overlap, shape-stable state/backend schemas, strict topology masks, and
-  settings/payload gradient regressions (focused 93/93). Task 3 proved current-3.1
-  and frozen-3.0 installed plugins and added strict CI quality/coverage
+  settings/payload gradient regressions (focused 93/93). Task 3 proved current-0.3.1
+  and frozen-0.3 installed plugins and added strict CI quality/coverage
   enforcement (focused 50/50; historical branch coverage 90.53%). Task 4's
   strengthened documentation contracts pass 10/10, including exact
   heading/export inventories, line-break-independent stale-API guards, bounded
@@ -318,14 +318,14 @@ historical commands, failure messages, or detailed validation notes.
   passes 386/386, the full suite passes 782/782, and coverage is 90.52% (91%
   reported) against the 90% gate. Distribution checks pass 10/10. Retained
   artifacts at
-  `/private/tmp/vercor-release-3.1-final.VBJ8SP/distribution-build0/dist` are
+  `/private/tmp/vercor-release-0.3.1-final.VBJ8SP/distribution-build0/dist` are
   `vercor-0.3.1-py3-none-any.whl`, `vercor-0.3.1.tar.gz`, and the 0.1.0 public
   plugin wheel; wheel/sdist `py.typed`, installed origin/version 0.3.1, plugin
   smoke, and strict external mypy (4 files) pass. JCM 1.1.1 and Veros 1.6.2 are
   available; CREDIT is absent and remains uninstalled/unpinned. The final
   read-only review approved with no remaining Critical, Important, or Minor
   findings after correcting the CI wheel filename, exact 48-symbol root
-  inventory, verified 2.x migration history, runtime-resolvable public step
+  inventory, verified 0.2.1 migration history, runtime-resolvable public step
   annotations, and CAMulator period-output path wording.
 - Native bundled period-output compatibility fixed locally on 2026-07-10.
   Period-enabled Veros and CAMulator factory components now mark their host

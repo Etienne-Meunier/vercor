@@ -6,6 +6,11 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Versioning-review follow-up completed locally (2026-07-15): the repository
+  policy now rejects contextual major-series shorthand without matching
+  numerical values or external versions. RED reported exactly 10 remaining
+  repository-owned labels; the corrected policy/documentation focus passes
+  11/11 and the progress-archive checksum is refreshed.
 - Completed locally (2026-07-15): corrected the unsupervised historical
   release labels to the approved pre-1.0 sequence, ending at `0.4.0a1`. The
   policy and architecture focus passes 30/30 and the fast suite passes 524/524.

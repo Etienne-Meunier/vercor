@@ -27,6 +27,19 @@ FORBIDDEN_API_TOKEN = re.compile(
     r"(?<![@A-Za-z0-9])[vV][" + "1234" + r"](?![A-Za-z0-9])"
 )
 FORBIDDEN_VERCOR_MAJOR = re.compile(r"\bVerCOR [" + "1234" + r"](?:\b|\.)")
+_RELEASE_SHORTHAND = r"(?<![\d.])(?:3\." + r"[01]|4\.0|[1234]\.x)(?![\d.])"
+_RELEASE_PREFIX_CONTEXT = (
+    r"(?:VerCOR|version|release|API|compatibility|fixture|plugin|manifest|"
+    r"artifact|current|frozen|later)"
+)
+_RELEASE_SUFFIX_CONTEXT = (
+    r"(?:API|compatibility|fixture|plugin|manifest|artifact|line|release|migration)"
+)
+FORBIDDEN_RELEASE_SHORTHAND = re.compile(
+    rf"(?:\b{_RELEASE_PREFIX_CONTEXT}\b[^\n]{{0,50}}{_RELEASE_SHORTHAND}|"
+    rf"{_RELEASE_SHORTHAND}[^\n]{{0,50}}\b{_RELEASE_SUFFIX_CONTEXT}\b)",
+    flags=re.IGNORECASE,
+)
 FORBIDDEN_PATH_FRAGMENTS = (
     "migration-" + "3-to-" + "4",
     "vercor-" + "4-api",
@@ -84,11 +97,12 @@ def test_tracked_repository_has_no_forbidden_vercor_release_labels() -> None:
                 else tuple(FORBIDDEN_API_TOKEN.findall(line))
             )
             major_names = tuple(FORBIDDEN_VERCOR_MAJOR.findall(line))
-            if labels or api_tokens or major_names:
+            shorthand_labels = tuple(FORBIDDEN_RELEASE_SHORTHAND.findall(line))
+            if labels or api_tokens or major_names or shorthand_labels:
                 violations.append(
                     f"{rendered_path}:{line_number}: "
                     f"labels={labels}, api_tokens={api_tokens}, "
-                    f"major_names={major_names}"
+                    f"major_names={major_names}, shorthand={shorthand_labels}"
                 )
 
     assert not violations, "ERROR forbidden VerCOR release labels:\n" + "\n".join(
