@@ -1,7 +1,8 @@
 # VerCOR Pre-1.0 Versioning Correction Design
 
 **Date:** 2026-07-15
-**Status:** Implemented locally; fresh release artifacts remain deferred.
+**Status:** Implemented locally; fresh release-artifact verification completed
+locally as a separate follow-up. Nothing was published.
 
 ## Purpose
 
@@ -47,8 +48,10 @@ release.
 ## Artifact evidence
 
 Candidate hashes produced before the metadata correction are obsolete and are
-not relabeled. Fresh `0.4.0a1` hashes may be recorded only after corrected wheel
-and source-distribution artifacts pass the installed-artifact gates.
+not relabeled. The separate release-verification follow-up built fresh corrected
+wheel and source-distribution artifacts, passed the installed-artifact gates,
+and recorded the exact local commands and SHA-256 evidence in `PROGRESS.md`.
+No artifact was uploaded or published, and no tag or hosted release was created.
 
 The historical compatibility fixture is labeled for the 0.3 line, depends on
 `vercor>=0.3,<0.4`, and uses a frozen public API baseline labeled `0.3.2`. The
@@ -64,4 +67,5 @@ the current metadata, architecture documentation, frozen baseline, plugin
 fixture, and distribution workflow. The full fast suite guards imports and
 runtime behavior.
 
-Fresh artifact and release verification remains a separate task.
+Fresh artifact and release verification was completed locally as the separate
+follow-up recorded in `PROGRESS.md`; publication remains outside this task.

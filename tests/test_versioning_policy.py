@@ -12,9 +12,6 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CURRENT_VERSION = "0.4.0a1"
 TEXT_SUFFIXES = {".json", ".md", ".py", ".toml", ".yaml", ".yml"}
-API_TOKEN_EXEMPT_PATHS = {
-    Path("vercor/_interpolators/bilinear_rectilinear.py"),
-}
 FORBIDDEN_RELEASE_LABELS = (
     ".".join(("1", "0", "0")),
     ".".join(("2", "0", "0")),
@@ -25,6 +22,11 @@ FORBIDDEN_RELEASE_LABELS = (
 )
 FORBIDDEN_API_TOKEN = re.compile(
     r"(?<![@A-Za-z0-9])[vV][" + "1234" + r"](?![A-Za-z0-9])"
+)
+_NUMERICAL_VECTOR_PATH = Path("vercor/_interpolators/bilinear_rectilinear.py")
+_NUMERICAL_VECTOR_LINES = (
+    re.compile(r"^\s*" + "v" + r"3\s*="),
+    re.compile(r"^\s*v(?:00|10|01|11)\s*=\s*" + "v" + r"3\["),
 )
 FORBIDDEN_VERCOR_MAJOR = re.compile(r"\bVerCOR [" + "1234" + r"](?:\b|\.)")
 _RELEASE_SHORTHAND = r"(?<![\d.])(?:[12]\.0|3\." + r"[01]|4\.0|[1234]\.x)(?![\d.])"
@@ -49,6 +51,32 @@ FORBIDDEN_PATH_FRAGMENTS = (
     "vercor-3." + "1.1",
     "vercor-4." + "0.0a1",
 )
+_EXACT_RELEASE_PATTERNS = tuple(
+    (
+        label,
+        re.compile(rf"(?<![\d.]){re.escape(label)}(?![\dA-Za-z.])"),
+    )
+    for label in FORBIDDEN_RELEASE_LABELS
+)
+_VERCOR_VERSION_PREFIX = re.compile(
+    r"\bvercor(?:['’]s)?"
+    r"(?:[ \t_-]+(?:current|previous|historical|frozen|stable|first|major|"
+    r"version|releases?|APIs?|history|migrations?|artifacts?|manifests?|"
+    r"plugins?|fixtures?|line|candidate))*[ \t:=[_-]*$",
+    flags=re.IGNORECASE,
+)
+_REPOSITORY_VERSION_PREFIX = re.compile(
+    r"(?:(?:current|previous|historical|frozen|stable|first|major)[ \t-]+)*"
+    r"(?:releases?|APIs?|history|migrations?|artifacts?|manifests?|"
+    r"plugin[ \t-]+fixtures?)"
+    r"(?:[ \t-]+(?:release|version|label|line|history|candidate))*"
+    r"[ \t:=[_-]*$",
+    flags=re.IGNORECASE,
+)
+_VERSION_ASSIGNMENT = re.compile(
+    r"(?:^|[\"'])\s*(?:__version__|version)[\"']?\s*[:=]",
+    flags=re.IGNORECASE,
+)
 
 
 def _tracked_text_paths() -> tuple[Path, ...]:
@@ -67,6 +95,51 @@ def _tracked_text_paths() -> tuple[Path, ...]:
         if name and Path(name).suffix in TEXT_SUFFIXES
     )
     return tuple(path for path in paths if (PROJECT_ROOT / path).is_file())
+
+
+def _forbidden_exact_release_labels(
+    relative_path: Path,
+    line: str,
+) -> tuple[str, ...]:
+    """Return exact old labels only when the line establishes VerCOR ownership."""
+
+    metadata_context = bool(
+        _VERSION_ASSIGNMENT.search(line)
+        and (
+            relative_path == Path("pyproject.toml")
+            or relative_path.parts[:1] == ("vercor",)
+            or (
+                relative_path.parts[:2] == ("tests", "contracts")
+                and relative_path.name.startswith("vercor-")
+            )
+        )
+    )
+    changelog_context = bool(
+        relative_path == Path("CHANGELOG.md") and re.match(r"^\s*(?:##\s+)?\[", line)
+    )
+    labels: list[str] = []
+    for label, pattern in _EXACT_RELEASE_PATTERNS:
+        for match in pattern.finditer(line):
+            prefix = line[: match.start()]
+            repository_context = bool(
+                _VERCOR_VERSION_PREFIX.search(prefix)
+                or _REPOSITORY_VERSION_PREFIX.search(prefix)
+            )
+            if repository_context or metadata_context or changelog_context:
+                labels.append(label)
+                break
+    return tuple(labels)
+
+
+def _forbidden_api_tokens(relative_path: Path, line: str) -> tuple[str, ...]:
+    """Return stale API tokens while preserving the interpolator's numeric vector."""
+
+    tokens = tuple(FORBIDDEN_API_TOKEN.findall(line))
+    if relative_path != _NUMERICAL_VECTOR_PATH:
+        return tokens
+    if not any(pattern.search(line) for pattern in _NUMERICAL_VECTOR_LINES):
+        return tokens
+    return tuple(token for token in tokens if token.lower() != "v" + "3")
 
 
 @pytest.mark.fast_always
@@ -116,6 +189,124 @@ def test_current_vercor_release_is_the_approved_alpha() -> None:
     assert project["version"] == CURRENT_VERSION
 
 
+def _run_integrated_scanner_for_line(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    relative_path: Path,
+    line: str,
+) -> None:
+    """Run the repository scanner against one isolated candidate line."""
+
+    candidate = tmp_path / relative_path
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(line + "\n", encoding="utf-8")
+    monkeypatch.setattr("tests.test_versioning_policy.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "tests.test_versioning_policy._tracked_text_paths",
+        lambda: (relative_path,),
+    )
+    test_tracked_repository_has_no_forbidden_vercor_release_labels()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "line",
+    (
+        "numpy==" + "2" + ".0.0",
+        "independent plugin version " + "3" + ".1.1",
+        "external schema " + "3" + ".0.0",
+        "VerCOR depends on numpy==" + "2" + ".0.0",
+        "VerCOR supports independent plugin version " + "3" + ".1.1",
+        "VerCOR documents external schema " + "3" + ".0.0",
+    ),
+)
+def test_integrated_scanner_allows_external_exact_version_collisions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    line: str,
+) -> None:
+    _run_integrated_scanner_for_line(
+        monkeypatch,
+        tmp_path,
+        relative_path=Path("external-metadata.md"),
+        line=line,
+    )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("relative_path", "line"),
+    (
+        (Path("pyproject.toml"), 'version = "' + "4" + '.0.0a1"'),
+        (
+            Path("docs/releasing.md"),
+            "VerCOR release " + "3" + ".1.1",
+        ),
+        (
+            Path("docs/api-history.md"),
+            "frozen API history " + "3" + ".0.0",
+        ),
+        (
+            Path("tests/fixture-notes.md"),
+            "historical plugin fixture " + "2" + ".0.0",
+        ),
+        (
+            Path(".github/workflows/python-package.yml"),
+            "artifact: vercor-" + "1" + ".0.0-py3-none-any.whl",
+        ),
+    ),
+)
+def test_integrated_scanner_rejects_vercor_owned_exact_versions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    relative_path: Path,
+    line: str,
+) -> None:
+    with pytest.raises(AssertionError, match="labels="):
+        _run_integrated_scanner_for_line(
+            monkeypatch,
+            tmp_path,
+            relative_path=relative_path,
+            line=line,
+        )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "line",
+    (
+        "        " + "v" + "3 = (u_src_array[..., None] * basis)",
+        "        v00 = " + "v" + "3[self.j0, self.i0, :]",
+    ),
+)
+def test_integrated_scanner_allows_numerical_vector_interpolator_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    line: str,
+) -> None:
+    _run_integrated_scanner_for_line(
+        monkeypatch,
+        tmp_path,
+        relative_path=Path("vercor/_interpolators/bilinear_rectilinear.py"),
+        line=line,
+    )
+
+
+@pytest.mark.fast_always
+def test_integrated_scanner_still_rejects_stale_api_in_interpolator(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(AssertionError, match="api_tokens=.*" + "v" + "4"):
+        _run_integrated_scanner_for_line(
+            monkeypatch,
+            tmp_path,
+            relative_path=Path("vercor/_interpolators/bilinear_rectilinear.py"),
+            line="# stale " + "v" + "4 API",
+        )
+
+
 @pytest.mark.fast_always
 def test_tracked_repository_has_no_forbidden_vercor_release_labels() -> None:
     violations: list[str] = []
@@ -129,12 +320,8 @@ def test_tracked_repository_has_no_forbidden_vercor_release_labels() -> None:
 
         text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), start=1):
-            labels = tuple(label for label in FORBIDDEN_RELEASE_LABELS if label in line)
-            api_tokens = (
-                ()
-                if relative_path in API_TOKEN_EXEMPT_PATHS
-                else tuple(FORBIDDEN_API_TOKEN.findall(line))
-            )
+            labels = _forbidden_exact_release_labels(relative_path, line)
+            api_tokens = _forbidden_api_tokens(relative_path, line)
             major_names = tuple(FORBIDDEN_VERCOR_MAJOR.findall(line))
             shorthand_labels = tuple(FORBIDDEN_RELEASE_SHORTHAND.findall(line))
             if labels or api_tokens or major_names or shorthand_labels:
