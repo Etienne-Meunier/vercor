@@ -6,6 +6,11 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- IN PROGRESS (2026-07-15): correct the unsupervised VerCOR 1.x-4.x release
+  labels to the approved pre-1.0 sequence, ending at `0.4.0a1`. The approved
+  mapping and repository-wide scope are recorded in
+  `docs/superpowers/specs/2026-07-15-vercor-versioning-design.md`. No tag, push,
+  publication, or Git-history rewrite is authorized.
 - VerCOR 4.0.0a1 Task 10 candidate preparation was completed and committed in
   repository history on 2026-07-14. Tagging, pushing, and publication remain
   intentionally unperformed pending separate authority.
