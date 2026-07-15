@@ -121,7 +121,7 @@ Exchange(source, target, fields, *, route_id=None, regridder_factory=bilinear)
 ComponentSpec(inputs=(), outputs=(), initial_fields=None, *, execution="jax",
               lifecycle=None, transfer=None, output=None)
 RuntimeOptions(dtype=DTypePolicy(), backend="auto", workflow=SequentialWorkflow(),
-               topology=None, model_year_seconds=31536000.0)
+               topology=None)
 OutputTarget(directory, *, write_period=True, write_final_fields=True,
              write_snapshots=True)
 ```
@@ -134,6 +134,10 @@ manifests and 55 public class/protocol-call methods. Every
 normalized value includes parameter order and kind, defaults, resolved public
 annotations, and the return annotation. Source and isolated installed-artifact
 tests require exact key-set equality and execute the same frozen contracts.
+
+Model-year policy is calendar-owned rather than runtime-owned:
+`Clock.calendar` selects the calendar, and `vercor.calendar` resolves each
+timestamp's canonical year type and duration for runtime forcing metadata.
 
 `RunState` is opaque. Its public operations are `component`, `components`, and
 `replace_fields`; callers never receive runtime stores, topology maps, or a

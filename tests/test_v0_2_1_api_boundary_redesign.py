@@ -68,7 +68,8 @@ def test_runtime_module_owns_public_runtime_contracts() -> None:
     assert not hasattr(vercor, "ExecutionContext")
     assert not hasattr(vercor, "RuntimeDriver")
     assert options.topology is None
-    assert options.model_year_seconds == 365 * 86400.0
+    assert not hasattr(options, "model_year_seconds")
+    assert "model_year_seconds" not in signature(RuntimeOptions).parameters
     assert "year_in_seconds" not in signature(runtime.RuntimeOptions).parameters
     assert "surface_masks" not in signature(runtime.RuntimeOptions).parameters
     assert not hasattr(runtime, "SurfaceMaskPolicy")

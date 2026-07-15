@@ -65,7 +65,6 @@ def build_runtime_execution_data(
         step_indices=as_jax_index_array(tuple(step for step, _, _ in clock_steps)),
         step_infos=build_runtime_step_info(
             context.clock,
-            model_year_seconds=context.options.model_year_seconds,
             clock_steps=clock_steps,
         ),
         progress_messages=runtime_step_progress_messages(

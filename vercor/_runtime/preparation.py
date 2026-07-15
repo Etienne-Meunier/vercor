@@ -66,10 +66,7 @@ def create_runtime_state(
             runtime_state,
             component_names,
             dispatch_context=prepared.dispatch_context,
-            step_info=initial_runtime_step_info(
-                prepared.clock,
-                model_year_seconds=prepared.runtime.model_year_seconds,
-            ),
+            step_info=initial_runtime_step_info(prepared.clock),
         )
     validate_runtime_state(
         runtime_state,

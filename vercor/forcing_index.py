@@ -76,7 +76,9 @@ def daily_forcing_day_of_year(
     if validated_year_type is _YearType.DAY_360:
         return day_of_year_360_to_gregorian(cast(_CalendarDate, time), no_leap=no_leap)
 
-    if validated_year_type is _YearType.GREGORIAN_NO_LEAP:
+    if validated_year_type is _YearType.GREGORIAN_NO_LEAP and not isinstance(
+        time, datetime
+    ):
         return noleap_day_of_year(cast(_CalendarDate, time))
 
     day_of_year = time.timetuple().tm_yday

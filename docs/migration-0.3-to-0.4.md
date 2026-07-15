@@ -22,6 +22,10 @@ from their canonical modules:
 | backend- or component-owned output | `OutputSpec` providers plus a run-level `OutputTarget` |
 | direct runtime-store access | `RunState.component(s)` and immutable `replace_fields` |
 
+Delete `RuntimeOptions(model_year_seconds=...)` overrides. Select only
+`Clock.calendar`; VerCOR derives the canonical model-year duration separately
+from every runtime timestamp's calendar and year.
+
 ## Component and assembly migration
 
 A 0.3 class typically mixed declaration, initialization, mutable payload, and

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+import jax.numpy as jnp
 import pytest
 import vercor.assets as assets_module
 import vercor.setups._data.assets as setup_assets_module
@@ -17,11 +18,12 @@ from vercor.calendar import (
     DateTime360,
     DateTime365,
     YearType,
+    is_leap_year,
     model_year_seconds,
     year_type_for_calendar,
 )
+from vercor._runtime.time import runtime_step_info_from_times
 from vercor.exceptions import AssetError
-from vercor.calendar import is_leap_year
 from vercor.setups._data.assets import get_forcing_data
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
@@ -240,6 +242,46 @@ def test_calendar_year_helpers_reject_foreign_policy_values() -> None:
         model_year_seconds(cast(Any, "leap"))
     with pytest.raises(ValueError, match="calendar must be one of"):
         year_type_for_calendar("julian", 2000)
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("time", "calendar", "year_type"),
+    (
+        (datetime(2000, 7, 2, 12), "gregorian", YearType.GREGORIAN_LEAP),
+        (datetime(2001, 7, 2, 12), "gregorian", YearType.GREGORIAN_NO_LEAP),
+        (
+            DateTime365(2000, 7, 2, 12, 0, 0, 0, 183),
+            "noleap",
+            YearType.GREGORIAN_NO_LEAP,
+        ),
+        (
+            DateTime360(2000, 7, 2, 12, 0, 0, 0, 182),
+            "360_day",
+            YearType.DAY_360,
+        ),
+    ),
+)
+def test_runtime_monthly_metadata_uses_timestamp_calendar_duration(
+    time: datetime | DateTime360 | DateTime365,
+    calendar: str,
+    year_type: YearType,
+) -> None:
+    info = runtime_step_info_from_times(
+        [time],
+        calendar=calendar,
+    )
+    expected_left, expected_right = get_periodic_interval(
+        current_time=datetime_to_seconds_in_year(time),
+        cycle_length=model_year_seconds(year_type),
+        rec_spacing=model_year_seconds(year_type) / 12.0,
+        n_rec=12,
+    )
+
+    assert int(info.monthly_index_left[0]) == expected_left[0]
+    assert int(info.monthly_index_right[0]) == expected_right[0]
+    assert jnp.isclose(info.monthly_weight_left[0], expected_left[1])
+    assert jnp.isclose(info.monthly_weight_right[0], expected_right[1])
 
 
 def test_get_forcing_data_valid_and_invalid_file_type(

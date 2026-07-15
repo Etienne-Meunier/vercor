@@ -10,7 +10,8 @@ import pytest
 
 from tests._coverage_support import DummyComponent, make_test_grid
 from tests.assertions import assert_allclose_compact
-from vercor.clock import Clock, _forcing_year_type_for_calendar
+from vercor.calendar import model_year_seconds, year_type_for_calendar
+from vercor.clock import Clock
 from vercor.components import (
     CallableComponent,
     Component,
@@ -1049,7 +1050,6 @@ def test_data_forcing_components_run_inside_runtime() -> None:
             "LND",
             "ATM",
         ),
-        runtime=RuntimeOptions(model_year_seconds=12.0),
     )
     regridders = cast(
         Any,
@@ -1135,7 +1135,6 @@ def test_public_data_component_monthly_output_validates_and_sends_runtime_slice(
             "OCN",
             "ATM",
         ),
-        runtime=RuntimeOptions(model_year_seconds=12.0),
     )
     key = "OCN->ATM"
     replace_runtime_topology_maps(
@@ -1260,7 +1259,6 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
             "OCN",
             "ATM",
         ),
-        runtime=RuntimeOptions(model_year_seconds=12.0),
     )
     key = "OCN->ATM"
     regridder = bilinear(ocean_grid, atmosphere_grid)
@@ -1522,7 +1520,10 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
     _, runtime_time, _ = next(coupler.clock.iter())
     expected_index = daily_forcing_index(
         runtime_time,
-        year_type=_forcing_year_type_for_calendar(coupler.clock.calendar),
+        year_type=year_type_for_calendar(
+            coupler.clock.calendar,
+            runtime_time.year,
+        ),
         no_leap=True,
     )
     expected_slice = forcing[expected_index]
@@ -1605,10 +1606,15 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         regridders=cast(Any, {key: _IdentityRegridder()}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
+    year_type = year_type_for_calendar(
+        coupler.clock.calendar,
+        coupler.clock.start.year,
+    )
+    year_seconds = model_year_seconds(year_type)
     (left_index, left_weight), (right_index, right_weight) = get_periodic_interval(
         current_time=datetime_to_seconds_in_year(coupler.clock.start),
-        cycle_length=coupler.runtime.model_year_seconds,
-        rec_spacing=coupler.runtime.model_year_seconds / 12.0,
+        cycle_length=year_seconds,
+        rec_spacing=year_seconds / 12.0,
         n_rec=12,
     )
 

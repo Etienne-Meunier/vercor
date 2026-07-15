@@ -7,8 +7,12 @@ from typing import cast
 
 import jax
 
-from vercor.calendar import ModelDateTime
-from vercor.clock import Clock, _forcing_year_type_for_calendar
+from vercor.calendar import (
+    ModelDateTime,
+    model_year_seconds,
+    year_type_for_calendar,
+)
+from vercor.clock import Clock
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor.forcing_index import daily_forcing_index
 from vercor._pytree import PyTreeNodeMixin
@@ -61,10 +65,9 @@ class RuntimeStepInfo(PyTreeNodeMixin):
 def runtime_step_info_from_times(
     times: Sequence[datetime | ModelDateTime],
     *,
-    forcing_year_type: str,
-    year_in_seconds: float,
+    calendar: str,
 ) -> RuntimeStepInfo:
-    """Build runtime time-selection metadata for one or more timestamps."""
+    """Build calendar-derived time-selection metadata for timestamps."""
 
     monthly_index_left: list[int] = []
     monthly_index_right: list[int] = []
@@ -73,6 +76,8 @@ def runtime_step_info_from_times(
     daily_index: list[int] = []
 
     for time in times:
+        year_type = year_type_for_calendar(calendar, time.year)
+        year_in_seconds = model_year_seconds(year_type)
         total_seconds = datetime_to_seconds_in_year(time)
         (n1, f1), (n2, f2) = get_periodic_interval(
             current_time=total_seconds,
@@ -84,9 +89,7 @@ def runtime_step_info_from_times(
         monthly_index_right.append(n2)
         monthly_weight_left.append(f1)
         monthly_weight_right.append(f2)
-        daily_index.append(
-            daily_forcing_index(time, year_type=forcing_year_type, no_leap=True)
-        )
+        daily_index.append(daily_forcing_index(time, year_type=year_type, no_leap=True))
 
     return RuntimeStepInfo.from_sequences(
         monthly_index_left,
@@ -100,7 +103,6 @@ def runtime_step_info_from_times(
 def build_runtime_step_info(
     clock: Clock,
     *,
-    model_year_seconds: float,
     clock_steps: (
         Sequence[tuple[int, datetime | ModelDateTime, timedelta]] | None
     ) = None,
@@ -111,16 +113,11 @@ def build_runtime_step_info(
     times = [time for _, time, _ in steps]
     return runtime_step_info_from_times(
         times,
-        forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),
-        year_in_seconds=model_year_seconds,
+        calendar=clock.calendar,
     )
 
 
-def initial_runtime_step_info(
-    clock: Clock,
-    *,
-    model_year_seconds: float,
-) -> RuntimeStepInfo:
+def initial_runtime_step_info(clock: Clock) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for the first clock step."""
 
     clock_iter = clock.iter()
@@ -128,25 +125,18 @@ def initial_runtime_step_info(
         _, first_time, _ = next(clock_iter)
     except StopIteration:
         first_time = clock.start
-    return scalar_runtime_step_info(
-        first_time,
-        clock,
-        model_year_seconds=model_year_seconds,
-    )
+    return scalar_runtime_step_info(first_time, clock)
 
 
 def scalar_runtime_step_info(
     time: datetime | ModelDateTime,
     clock: Clock,
-    *,
-    model_year_seconds: float,
 ) -> RuntimeStepInfo:
     """Return scalar runtime time metadata for one clock timestamp."""
 
     batched_step_info = runtime_step_info_from_times(
         [time],
-        forcing_year_type=_forcing_year_type_for_calendar(clock.calendar),
-        year_in_seconds=model_year_seconds,
+        calendar=clock.calendar,
     )
     return cast(
         RuntimeStepInfo,

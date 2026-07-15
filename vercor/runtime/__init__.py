@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import isfinite
-from numbers import Real
 from typing import Literal, Protocol, runtime_checkable
 
 import vercor.clock as _clock
@@ -162,15 +160,12 @@ class RuntimeOptions:
             chunks through the public driver.
         workflow: Static plan builder. Defaults to :class:`SequentialWorkflow`.
         topology: Optional topology policy, or ``None`` for no topology patch.
-        model_year_seconds: Model-year duration in seconds used for periodic
-            monthly forcing indices and interpolation weights.
     """
 
     dtype: _dtypes.DTypePolicy = field(default_factory=_dtypes.DTypePolicy)
     backend: Literal["auto", "jax", "host"] | "ExecutionBackend" = "auto"
     workflow: Workflow = field(default_factory=SequentialWorkflow)
     topology: _TopologyPolicy | None = None
-    model_year_seconds: float = 365 * 86400.0
 
     def __post_init__(self) -> None:
         """Validate static extension contracts before runtime preparation."""
@@ -193,25 +188,6 @@ class RuntimeOptions:
             getattr(self.topology, "build", None)
         ):
             raise TypeError("topology policy must expose build(context)")
-        if isinstance(self.model_year_seconds, bool) or not isinstance(
-            self.model_year_seconds, Real
-        ):
-            raise TypeError("model_year_seconds must be a finite positive real number")
-        try:
-            normalized_model_year_seconds = float(self.model_year_seconds)
-        except OverflowError as exc:
-            raise ValueError(
-                "model_year_seconds must be a finite positive real number"
-            ) from exc
-        if not isfinite(normalized_model_year_seconds) or (
-            normalized_model_year_seconds <= 0.0
-        ):
-            raise ValueError("model_year_seconds must be a finite positive real number")
-        object.__setattr__(
-            self,
-            "model_year_seconds",
-            normalized_model_year_seconds,
-        )
 
 
 @dataclass(frozen=True)

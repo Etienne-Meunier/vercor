@@ -116,7 +116,7 @@
     "vercor.runtime.ExecutionContext": "(clock: vercor.clock.Clock, component_names: tuple[str, ...], options: vercor.runtime.RuntimeOptions, logger: vercor.jax_logging.LoggerLike | None = None) -> None",
     "vercor.runtime.ExecutionPlan": "(steps: tuple[vercor.runtime.StepPlan, ...] = ()) -> None",
     "vercor.runtime.RuntimeDriver": "(*args, **kwargs)",
-    "vercor.runtime.RuntimeOptions": "(dtype: vercor.dtypes.DTypePolicy = <factory>, backend: Union[Literal['auto', 'jax', 'host'], vercor.runtime.ExecutionBackend] = 'auto', workflow: vercor.runtime.Workflow = <factory>, topology: vercor.topology.TopologyPolicy | None = None, model_year_seconds: float = 31536000.0) -> None",
+    "vercor.runtime.RuntimeOptions": "(dtype: vercor.dtypes.DTypePolicy = <factory>, backend: Union[Literal['auto', 'jax', 'host'], vercor.runtime.ExecutionBackend] = 'auto', workflow: vercor.runtime.Workflow = <factory>, topology: vercor.topology.TopologyPolicy | None = None) -> None",
     "vercor.runtime.SequentialWorkflow": "() -> None",
     "vercor.runtime.StepPlan": "(step: int, components: tuple[str, ...]) -> None",
     "vercor.runtime.Workflow": "(*args, **kwargs)",

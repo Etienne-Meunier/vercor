@@ -9,7 +9,6 @@ __all__ = ["Clock"]
 
 
 CalendarType = Literal["gregorian", "noleap", "360_day"]
-_YearType = Literal["leap", "noleap", "360"]
 
 
 @dataclass(frozen=True, init=False)
@@ -147,13 +146,3 @@ class Clock:
             yield from self._iter_gregorian()
             return
         yield from self._iter_model_calendar()
-
-
-def _forcing_year_type_for_calendar(calendar: CalendarType) -> _YearType:
-    """Return the forcing-index year policy for a public clock calendar."""
-
-    if calendar == "gregorian":
-        return "leap"
-    if calendar == "360_day":
-        return "360"
-    return calendar

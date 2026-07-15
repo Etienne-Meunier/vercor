@@ -42,13 +42,12 @@ from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyCo
 def test_runtime_options_own_core_runtime_configuration() -> None:
     runtime = RuntimeOptions(
         topology=SurfaceMaskPolicy(mode="disabled"),
-        model_year_seconds=360.0,
     )
 
     assert runtime.topology == SurfaceMaskPolicy(mode="disabled")
     assert runtime.dtype.enable_x64 is False
     assert runtime.backend == "auto"
-    assert runtime.model_year_seconds == 360.0
+    assert not hasattr(runtime, "model_year_seconds")
     assert vercor.RuntimeOptions is RuntimeOptions
     assert "RuntimeOptions" in vercor.__all__
     assert "SurfaceMaskPolicy" not in vercor.__all__

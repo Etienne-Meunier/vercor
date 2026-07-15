@@ -752,7 +752,7 @@ def test_public_configuration_views_are_stable_immutable_snapshots() -> None:
     ("attribute", "replacement"),
     [
         ("clock", _clock(steps=2)),
-        ("runtime", RuntimeOptions(model_year_seconds=360 * 86400.0)),
+        ("runtime", RuntimeOptions(backend="host")),
         ("constants", PhysicalConstants(gravity=9.7)),
         ("logger", object()),
         ("log_level", "DEBUG"),

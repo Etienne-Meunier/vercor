@@ -45,11 +45,14 @@ prepared bindings remain private.
 Configuration has four non-overlapping owners:
 
 1. `PhysicalConstants` is a frozen registered PyTree of traced physics values.
-2. `RuntimeOptions` owns static dtype, backend, workflow, topology, and
-   model-year policy.
+2. `RuntimeOptions` owns static dtype, backend, workflow, and topology policy.
 3. `ComponentSpec` owns one component's inputs, outputs, initial fields,
    execution capability, lifecycle, transfer, and output declaration.
 4. Frozen setup or plugin dataclasses own model-specific construction policy.
+
+`Clock.calendar` selects the model calendar. `vercor.calendar` owns canonical
+year types and durations, and runtime time metadata derives the applicable
+duration independently from every timestamp's calendar and year.
 
 `RuntimeOptions.dtype` is the sole precision owner. Preparation normalizes
 VerCOR-owned fields, grids, constants, and numeric payload leaves to that

@@ -61,7 +61,10 @@ def test_runtime_options_uses_backend_and_workflow_defaults() -> None:
     assert options.backend == "auto"
     assert isinstance(options.workflow, runtime.SequentialWorkflow)
     assert options.topology is None
-    assert options.model_year_seconds == 365 * 86400.0
+    assert not hasattr(options, "model_year_seconds")
+    assert (
+        "model_year_seconds" not in inspect.signature(runtime.RuntimeOptions).parameters
+    )
     assert "execution" not in inspect.signature(runtime.RuntimeOptions).parameters
     with pytest.raises(FrozenInstanceError):
         options.backend = "host"  # type: ignore[misc]

@@ -8,7 +8,6 @@ import logging
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
 import pytest
 
 from tests._coverage_support import make_test_grid
@@ -168,53 +167,12 @@ def test_public_name_sequence_boundaries_reject_text_scalars(
         boundary(text)
 
 
-@pytest.mark.parametrize(
-    ("value", "error"),
-    (
-        (True, TypeError),
-        (False, TypeError),
-        (np.bool_(True), TypeError),
-        (0, ValueError),
-        (0.0, ValueError),
-        (-1, ValueError),
-        (-1.5, ValueError),
-        (float("nan"), ValueError),
-        (float("inf"), ValueError),
-        (float("-inf"), ValueError),
-        (10**1000, ValueError),
-        (1 + 2j, TypeError),
-        ("31536000", TypeError),
-    ),
-)
-def test_runtime_options_rejects_invalid_model_year_seconds(
-    value: object,
-    error: type[Exception],
-) -> None:
-    with pytest.raises(
-        error,
-        match="model_year_seconds must be a finite positive real number",
-    ):
-        RuntimeOptions(model_year_seconds=cast(Any, value))
+@pytest.mark.fast_always
+def test_runtime_options_rejects_removed_model_year_owner() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        RuntimeOptions(model_year_seconds=365 * 86_400.0)  # type: ignore[call-arg]
 
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    (
-        (1, 1.0),
-        (1.5, 1.5),
-        (np.int64(2), 2.0),
-        (np.float32(2.5), 2.5),
-        (np.float64(3.5), 3.5),
-    ),
-)
-def test_runtime_options_canonicalizes_valid_model_year_seconds(
-    value: object,
-    expected: float,
-) -> None:
-    options = RuntimeOptions(model_year_seconds=cast(Any, value))
-
-    assert options.model_year_seconds == expected
-    assert type(options.model_year_seconds) is float
+    assert not hasattr(RuntimeOptions(), "model_year_seconds")
 
 
 def test_prepared_binding_does_not_delegate_private_markers_and_uses_spec_output(
