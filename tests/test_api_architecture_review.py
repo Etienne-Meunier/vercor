@@ -227,6 +227,7 @@ def test_external_numpy_ndarray_renderings_have_one_public_token(
         "float, complex, jax._src.literals.TypedNdArray]",
         "Union[jax.Array, numpy.ndarray, numpy.bool, numpy.number, bool, int, "
         "float, complex]",
+        "jax.typing.ArrayLike",
     ),
 )
 def test_external_jax_arraylike_renderings_have_one_public_token(
