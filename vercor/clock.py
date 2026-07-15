@@ -9,7 +9,7 @@ __all__ = ["Clock"]
 
 
 CalendarType = Literal["gregorian", "noleap", "360_day"]
-YearType = Literal["leap", "noleap", "360"]
+_YearType = Literal["leap", "noleap", "360"]
 
 
 @dataclass(frozen=True, init=False)
@@ -43,10 +43,7 @@ class Clock:
     ) -> None:
         """Create a calendar-aware model clock."""
 
-        if calendar not in ("gregorian", "noleap", "360_day"):
-            raise ValueError(
-                "calendar must be one of: 'gregorian', 'noleap', '360_day'"
-            )
+        _calendar.year_type_for_calendar(calendar, start.year)
 
         object.__setattr__(self, "start", start)
         object.__setattr__(self, "dt_seconds", dt_seconds)
@@ -61,10 +58,9 @@ class Clock:
         if self.dt_seconds <= 0:
             raise ValueError("dt_seconds must be positive")
 
-        forcing_year_type = _forcing_year_type_for_calendar(self.calendar)
-        if forcing_year_type in ("noleap", "360"):
+        if self.calendar != "gregorian":
             datetime_class: type[_calendar.DateTime365] | type[_calendar.DateTime360]
-            if forcing_year_type == "noleap":
+            if self.calendar == "noleap":
                 datetime_class = _calendar.DateTime365
             else:
                 datetime_class = _calendar.DateTime360
@@ -83,8 +79,7 @@ class Clock:
             )
 
     def _day_of_year_for_start(self, start: datetime) -> int:
-        forcing_year_type = _forcing_year_type_for_calendar(self.calendar)
-        if forcing_year_type == "360":
+        if self.calendar == "360_day":
             if start.day > 30:
                 raise ValueError(
                     "for calendar='360_day', start day must be between 1 and 30"
@@ -154,7 +149,7 @@ class Clock:
         yield from self._iter_model_calendar()
 
 
-def _forcing_year_type_for_calendar(calendar: CalendarType) -> YearType:
+def _forcing_year_type_for_calendar(calendar: CalendarType) -> _YearType:
     """Return the forcing-index year policy for a public clock calendar."""
 
     if calendar == "gregorian":

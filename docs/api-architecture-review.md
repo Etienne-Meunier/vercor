@@ -80,7 +80,7 @@ signatures from installed artifacts.
 {
   "vercor": ["Clock", "Coupler", "Exchange", "RectilinearGrid", "RunState", "RuntimeOptions"],
   "vercor.assets": ["VERCOR_ASSETS_BASE_URL", "ensure_registered_asset"],
-  "vercor.calendar": ["CalendarDate", "DAYS_PER_MONTH_360", "DAYS_PER_MONTH_GREGORIAN_LEAP", "DAYS_PER_MONTH_GREGORIAN_NO_LEAP", "DateTime360", "DateTime365", "ModelDateTime", "day_of_year_from_month_day", "is_leap_year", "month_day_from_day_of_year"],
+  "vercor.calendar": ["CalendarDate", "DAYS_PER_MONTH_360", "DAYS_PER_MONTH_GREGORIAN_LEAP", "DAYS_PER_MONTH_GREGORIAN_NO_LEAP", "DateTime360", "DateTime365", "ModelDateTime", "YearType", "day_of_year_from_month_day", "is_leap_year", "model_year_seconds", "month_day_from_day_of_year", "year_type_for_calendar"],
   "vercor.clock": ["Clock"],
   "vercor.components": ["CallableComponent", "Component", "ComponentSpec", "DataComponent", "LifecycleHooks", "PrefillContext", "PrefillResult", "SetupContext", "SetupResult", "StepContext", "StepResult", "TransferPolicy", "ValidationContext"],
   "vercor.coupler": ["Coupler"],
@@ -129,7 +129,7 @@ OutputTarget(directory, *, write_period=True, write_final_fields=True,
 The five signatures above are a readable representative sample. The complete,
 static executable inventory is
 [`tests/contracts/vercor-0.4.0a1-public-signatures.json`](../tests/contracts/vercor-0.4.0a1-public-signatures.json):
-it covers all 147 concrete callable exports in canonical non-root owner
+it covers all 150 concrete callable exports in canonical non-root owner
 manifests and 55 public class/protocol-call methods. Every
 normalized value includes parameter order and kind, defaults, resolved public
 annotations, and the return annotation. Source and isolated installed-artifact

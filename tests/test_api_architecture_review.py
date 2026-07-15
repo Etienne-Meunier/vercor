@@ -138,7 +138,9 @@ def _canonical_public_method_names(
         qualified_names.extend(
             f"{owner_name}.{method_name}"
             for method_name, method in inspect.getmembers(owner)
-            if not method_name.startswith("_") and inspect.isroutine(method)
+            if not method_name.startswith("_")
+            and inspect.isroutine(method)
+            and getattr(method, "__module__", None) is not None
         )
     qualified_names.append("vercor.regridding.RegridderFactory.__call__")
     return tuple(qualified_names)

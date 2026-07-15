@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import hashlib
 import importlib
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -12,7 +13,13 @@ import vercor.assets as assets_module
 import vercor.setups._data.assets as setup_assets_module
 
 from tests.conftest import SelectFastCases
-from vercor.calendar import DateTime360, DateTime365
+from vercor.calendar import (
+    DateTime360,
+    DateTime365,
+    YearType,
+    model_year_seconds,
+    year_type_for_calendar,
+)
 from vercor.exceptions import AssetError
 from vercor.calendar import is_leap_year
 from vercor.setups._data.assets import get_forcing_data
@@ -96,6 +103,14 @@ def test_forcing_index_resolves_daily_forcing_calendar_cases(
 
         assert owner_day == case.expected_day_of_year
         assert owner_index == case.expected_index
+
+    assert (
+        forcing_index_module.daily_forcing_index(
+            datetime(2001, 1, 1),
+            year_type=YearType.GREGORIAN_LEAP,
+        )
+        == 0
+    )
 
 
 @pytest.mark.fast_always
@@ -183,6 +198,48 @@ def test_is_leap_year_cases(select_fast_cases: SelectFastCases) -> None:
         cases, case_id=lambda case: case[0], min_cases=2
     ):
         assert is_leap_year(year) is expected
+
+
+@pytest.mark.fast_always
+def test_calendar_owns_canonical_year_types_and_durations() -> None:
+    assert tuple(YearType) == (
+        YearType.GREGORIAN_LEAP,
+        YearType.GREGORIAN_NO_LEAP,
+        YearType.DAY_360,
+    )
+    assert YearType.GREGORIAN_LEAP == "leap"
+    assert YearType.GREGORIAN_NO_LEAP == "noleap"
+    assert YearType.DAY_360 == "360"
+    assert model_year_seconds(YearType.GREGORIAN_LEAP) == 366 * 86_400.0
+    assert model_year_seconds(YearType.GREGORIAN_NO_LEAP) == 365 * 86_400.0
+    assert model_year_seconds(YearType.DAY_360) == 360 * 86_400.0
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("calendar", "year", "expected"),
+    (
+        ("gregorian", 2000, YearType.GREGORIAN_LEAP),
+        ("gregorian", 1900, YearType.GREGORIAN_NO_LEAP),
+        ("gregorian", 2001, YearType.GREGORIAN_NO_LEAP),
+        ("noleap", 2000, YearType.GREGORIAN_NO_LEAP),
+        ("360_day", 2000, YearType.DAY_360),
+    ),
+)
+def test_calendar_resolves_year_type_from_existing_clock_policy(
+    calendar: str,
+    year: int,
+    expected: YearType,
+) -> None:
+    assert year_type_for_calendar(calendar, year) is expected
+
+
+@pytest.mark.fast_always
+def test_calendar_year_helpers_reject_foreign_policy_values() -> None:
+    with pytest.raises(TypeError, match="year_type must be a YearType"):
+        model_year_seconds(cast(Any, "leap"))
+    with pytest.raises(ValueError, match="calendar must be one of"):
+        year_type_for_calendar("julian", 2000)
 
 
 def test_get_forcing_data_valid_and_invalid_file_type(

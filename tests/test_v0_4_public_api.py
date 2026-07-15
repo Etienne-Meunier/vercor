@@ -81,9 +81,12 @@ PUBLIC_MODULE_EXPORTS = {
         "DateTime360",
         "DateTime365",
         "ModelDateTime",
+        "YearType",
         "day_of_year_from_month_day",
         "is_leap_year",
+        "model_year_seconds",
         "month_day_from_day_of_year",
+        "year_type_for_calendar",
     ),
     "vercor.clock": ("Clock",),
     "vercor.components": (

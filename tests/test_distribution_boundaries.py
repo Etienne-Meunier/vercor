@@ -621,6 +621,7 @@ for module_name, exports in {EXPECTED_INSTALLED_OWNER_MANIFESTS!r}.items():
                 for method_name, method in inspect.getmembers(value)
                 if not method_name.startswith("_")
                 and inspect.isroutine(method)
+                and getattr(method, "__module__", None) is not None
             )
 method_names.append("vercor.regridding.RegridderFactory.__call__")
 
