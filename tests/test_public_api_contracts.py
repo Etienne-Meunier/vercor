@@ -73,7 +73,7 @@ def test_grid_constructors_live_on_rectilinear_grid_class() -> None:
 def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
     component = DataComponent(
         "ATM",
-        make_test_grid(name="v1-state"),
+        make_test_grid(name="public-api-state"),
         fields={"temperature": 280.0},
     )
     coupler = Coupler(
@@ -101,7 +101,7 @@ def test_run_state_exposes_component_state_view_not_runtime_state() -> None:
 def test_coupler_uses_initial_state_name() -> None:
     component = DataComponent(
         "ATM",
-        make_test_grid(name="v1-coupler"),
+        make_test_grid(name="public-api-coupler"),
         fields={"temperature": 280.0},
     )
     coupler = Coupler(
@@ -122,7 +122,7 @@ def test_coupler_uses_initial_state_name() -> None:
 def test_component_setup_storage_is_not_publicly_mutable() -> None:
     component = DataComponent(
         "ATM",
-        make_test_grid(name="v1-component"),
+        make_test_grid(name="public-api-component"),
         fields={"temperature": 280.0},
     )
 
@@ -136,7 +136,7 @@ def test_component_setup_storage_is_not_publicly_mutable() -> None:
 
 @pytest.mark.fast_always
 def test_regridder_public_grid_name_is_target_only() -> None:
-    grid = make_test_grid(name="v1-regridder")
+    grid = make_test_grid(name="public-api-regridder")
     regridder = bilinear(grid, grid)
     scalar = jnp.ones(grid.shape)
 
@@ -189,7 +189,7 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
 
 @pytest.mark.fast_always
 def test_component_constructors_accept_component_spec_only() -> None:
-    grid = make_test_grid(name="v1-spec-only")
+    grid = make_test_grid(name="public-api-spec-only")
 
     component = CallableComponent(
         "OCN",
@@ -448,7 +448,7 @@ def test_output_and_setup_configs_use_final_names() -> None:
 
 @pytest.mark.fast_always
 def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
-    grid = make_test_grid(name="v1-snapshot-context")
+    grid = make_test_grid(name="public-api-snapshot-context")
     contexts: list[SnapshotContext] = []
 
     def writer(context: SnapshotContext) -> None:
@@ -493,7 +493,7 @@ def test_snapshot_writer_receives_public_context(tmp_path: Path) -> None:
 
 @pytest.mark.fast_always
 def test_lifecycle_hooks_use_typed_contexts_and_results() -> None:
-    grid = make_test_grid(name="v1-hook-context")
+    grid = make_test_grid(name="public-api-hook-context")
     events: list[str] = []
 
     def prefill(
@@ -585,7 +585,7 @@ def test_active_docs_do_not_advertise_removed_transition_apis() -> None:
 def test_run_state_remains_a_jax_pytree() -> None:
     component = DataComponent(
         "ATM",
-        make_test_grid(name="v1-pytree"),
+        make_test_grid(name="public-api-pytree"),
         fields={"temperature": 280.0},
     )
     coupler = Coupler(

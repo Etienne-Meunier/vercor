@@ -1,4 +1,4 @@
-"""Exercise only public component contracts available in VerCOR 3.0."""
+"""Exercise only public component contracts available in VerCOR 0.3."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ def _step(fields: Mapping[str, RuntimeArray]) -> Mapping[str, RuntimeArray]:
 
 
 def run_smoke() -> dict[str, object]:
-    """Run the frozen 3.0 workflow and return compact evidence."""
+    """Run the frozen 0.3 workflow and return compact evidence."""
 
     grid = RectilinearGrid.uniform(
-        "compat-3-0-grid",
+        "compat-0-3-grid",
         nlon=2,
         nlat=2,
         longitude=(0.0, 360.0),
@@ -48,7 +48,7 @@ def run_smoke() -> dict[str, object]:
         jnp.asarray(coupler.run().component("MODEL").field("temperature"))[0, 0]
     )
     if temperature != 282.0:
-        raise AssertionError("frozen VerCOR 3.0 workflow produced an invalid field")
+        raise AssertionError("frozen VerCOR 0.3 workflow produced an invalid field")
     return {"temperature": temperature}
 
 

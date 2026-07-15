@@ -15,7 +15,7 @@ from vercor.grids import RectilinearGrid
 
 
 class LegacyTestComponent:
-    """Mutable fixture builder normalized to the v4 structural protocol."""
+    """Mutable fixture builder normalized to the 0.4 structural protocol."""
 
     _author_step: Any
 

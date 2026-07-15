@@ -1,6 +1,6 @@
-# Migrating from VerCOR 3 to VerCOR 4
+# Migrating from VerCOR 0.3 to VerCOR 0.4
 
-VerCOR 4.0.0a1 is intentionally source-breaking. This release does not include
+VerCOR 0.4.0a1 is intentionally source-breaking. This release does not include
 a legacy adapter namespace: migrate imports, component declarations, assembly,
 execution, state access, and output explicitly.
 
@@ -10,7 +10,7 @@ The package root now contains only `Clock`, `Coupler`, `Exchange`,
 `RectilinearGrid`, `RunState`, and `RuntimeOptions`. Import advanced contracts
 from their canonical modules:
 
-| VerCOR 3 concept | VerCOR 4 replacement |
+| VerCOR 0.3 concept | VerCOR 0.4 replacement |
 | --- | --- |
 | `Settings` and a physical-constants facade | `vercor.physics.PhysicalConstants` for traced SI values; `RuntimeOptions.dtype` for precision |
 | `Component`/`HostComponent` inheritance and `ComponentLike` | structural `vercor.components.Component`, `CallableComponent`, or `DataComponent` |
@@ -24,8 +24,8 @@ from their canonical modules:
 
 ## Component and assembly migration
 
-A v3 class typically mixed declaration, initialization, mutable payload, and
-step behavior. In v4, declare fields and lifecycle once and supply the whole
+A 0.3 class typically mixed declaration, initialization, mutable payload, and
+step behavior. In 0.4, declare fields and lifecycle once and supply the whole
 graph to the constructor. This complete replacement is executable:
 
 ```python
@@ -40,7 +40,7 @@ from vercor.types import RuntimeArray
 
 
 class MigratedAtmosphere:
-    """Minimal structural v4 component with no VerCOR base class."""
+    """Minimal structural 0.4 component with no VerCOR base class."""
 
     name = "ATM"
 
@@ -106,7 +106,7 @@ writers receive a public `SnapshotContext` and a collision-safe output path.
 
 ## Historical evidence
 
-`tests/contracts/vercor-3.1.1-public-api.json` records the 3.1.1 surface used to
-define this migration. `tests/fixtures/public_plugin_3_0` is retained only as a
-historical artifact and is expected not to run against v4. It is not a supported
+`tests/contracts/vercor-0.3.2-public-api.json` records the 0.3.2 surface used to
+define this migration. `tests/fixtures/public_plugin_0_3` is retained only as a
+historical artifact and is expected not to run against 0.4. It is not a supported
 plugin lane or an adapter implementation.

@@ -97,7 +97,7 @@ def test_topology_module_owns_public_topology_contracts() -> None:
 
 @pytest.mark.fast_always
 def test_custom_execution_backend_receives_public_context_and_driver() -> None:
-    grid = make_test_grid(name="v2-custom-backend")
+    grid = make_test_grid(name="custom-backend")
 
     class StepOnceBackend:
         def __init__(self) -> None:
@@ -145,7 +145,7 @@ def test_custom_execution_backend_receives_public_context_and_driver() -> None:
 
 @pytest.mark.fast_always
 def test_custom_backend_runs_complete_host_exchange_order_from_supplied_state() -> None:
-    grid = make_test_grid(name="v2-custom-host-backend")
+    grid = make_test_grid(name="custom-host-backend")
     observed_steps: list[tuple[str, int, object]] = []
 
     def step_source(
@@ -265,7 +265,7 @@ def test_custom_backend_rejects_non_run_state_return(
             _ = state, context, chunk, driver
             return returned
 
-    grid = make_test_grid(name=f"v2-invalid-backend-{actual_type}")
+    grid = make_test_grid(name=f"invalid-backend-{actual_type}")
     coupler = Coupler(
         _clock(),
         components=(DataComponent("MODEL", grid, {"value": 1.0}),),
@@ -410,7 +410,7 @@ def test_runtime_driver_rejects_invalid_dispatch_before_component_step() -> None
             _ = context
             return driver.run_step(object(), chunk.steps[0])  # type: ignore[arg-type]
 
-    grid = make_test_grid(name="v2-driver-invalid-state")
+    grid = make_test_grid(name="driver-invalid-state")
     coupler = Coupler(
         _clock(steps=2),
         components=(DataComponent("MODEL", grid, {"value": 1.0}),),
@@ -424,7 +424,7 @@ def test_runtime_driver_rejects_invalid_dispatch_before_component_step() -> None
 
 @pytest.mark.fast_always
 def test_runtime_driver_uses_each_plan_absolute_step_and_time() -> None:
-    grid = make_test_grid(name="v2-driver-jax-step")
+    grid = make_test_grid(name="driver-jax-step")
     observed_contexts: list[StepContext] = []
 
     def step_model(
@@ -507,7 +507,7 @@ def test_structural_component_can_request_host_runtime_through_spec() -> None:
         name = "MODEL"
 
         def __init__(self) -> None:
-            self.grid = make_test_grid(name="v2-plain-host")
+            self.grid = make_test_grid(name="plain-host")
             self.spec = ComponentSpec(
                 inputs=("temperature",),
                 outputs=("temperature",),
@@ -549,7 +549,7 @@ def test_structural_component_can_request_host_runtime_through_spec() -> None:
 @pytest.mark.fast_always
 def test_transfer_policy_belongs_to_component_spec() -> None:
     policy = TransferPolicy(time_selection="linear")
-    grid = make_test_grid(name="v2-import-policy")
+    grid = make_test_grid(name="import-policy")
     spec = ComponentSpec(outputs=("temperature",), transfer=policy)
 
     component = DataComponent(
@@ -571,7 +571,7 @@ def test_coupler_components_exposes_read_only_private_metadata() -> None:
         name = "MODEL"
 
         def __init__(self) -> None:
-            self.grid = make_test_grid(name="v2-component-info")
+            self.grid = make_test_grid(name="component-info")
             self.spec = ComponentSpec(
                 outputs=("temperature",),
                 initial_fields={"temperature": 280.0},
@@ -598,7 +598,7 @@ def test_coupler_components_exposes_read_only_private_metadata() -> None:
     assert not hasattr(vercor, "ComponentInfo")
     assert info is component
     assert info.name == "MODEL"
-    assert info.grid.name == "v2-component-info"
+    assert info.grid.name == "component-info"
     assert info.spec.outputs == ("temperature",)
     assert isinstance(info, Component)
     with pytest.raises(TypeError):
@@ -607,7 +607,7 @@ def test_coupler_components_exposes_read_only_private_metadata() -> None:
 
 @pytest.mark.fast_always
 def test_snapshot_writer_receives_original_component(tmp_path: Path) -> None:
-    grid = make_test_grid(name="v2-snapshot-component-info")
+    grid = make_test_grid(name="snapshot-component-info")
     seen: list[Any] = []
 
     def writer(context: SnapshotContext) -> None:

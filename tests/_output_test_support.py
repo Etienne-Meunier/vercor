@@ -1,4 +1,4 @@
-"""Test harness adapting legacy extraction tests to the v4 accumulator."""
+"""Test harness adapting legacy extraction tests to the 0.4 accumulator."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from vercor.output._session import _OutputAccumulator
 
 
 class ComponentOutputAdapter:
-    """Exercise native extraction helpers through the v4 immutable accumulator."""
+    """Exercise native extraction helpers through the 0.4 immutable accumulator."""
 
     def __init__(
         self,

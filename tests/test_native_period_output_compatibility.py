@@ -45,7 +45,7 @@ def test_native_output_modules_return_output_frames() -> None:
         assert "return OutputFrame(" in source
 
 
-def test_camulator_v4_adapter_does_not_own_output_paths_or_increment_writes() -> None:
+def test_camulator_v0_4_adapter_does_not_own_output_paths_or_increment_writes() -> None:
     output_source = _source("vercor/setups/_external/camulator_output.py")
     state_source = _source("vercor/setups/_external/camulator_gcm_state.py")
     config_source = _source("vercor/setups/config.py")

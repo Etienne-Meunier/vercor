@@ -246,7 +246,7 @@ def test_coupler_wires_constants_while_runtime_options_own_dtype() -> None:
 
     component = CallableComponent(
         "MODEL",
-        make_test_grid(name="v4-physics"),
+        make_test_grid(name="physics-contract"),
         lambda fields, context: {"value": fields["value"] * context.constants.gravity},
         spec=ComponentSpec(
             outputs=("value",),
@@ -279,7 +279,7 @@ def test_runtime_dtype_cast_preserves_constant_gradient() -> None:
     def loss(gravity: Any) -> Any:
         component = CallableComponent(
             "MODEL",
-            make_test_grid(name="v4-physics-gradient"),
+            make_test_grid(name="physics-gradient"),
             lambda fields, context: {
                 "value": fields["value"] * context.constants.gravity
             },
@@ -313,7 +313,7 @@ def test_numpy_source_mutation_cannot_stale_prepared_constants() -> None:
     constants = physical_constants_type(gravity=source)
     component = CallableComponent(
         "MODEL",
-        make_test_grid(name="v4-numpy-constant"),
+        make_test_grid(name="numpy-constant"),
         lambda fields, context: {"value": fields["value"]},
         spec=ComponentSpec(
             outputs=("value",),
@@ -340,7 +340,7 @@ def test_coupler_constants_are_read_only_after_construction() -> None:
     physical_constants_type = _physical_constants_type()
     component = CallableComponent(
         "MODEL",
-        make_test_grid(name="v4-replaced-constants"),
+        make_test_grid(name="replaced-constants"),
         lambda fields, context: {"value": fields["value"]},
         spec=ComponentSpec(
             outputs=("value",),

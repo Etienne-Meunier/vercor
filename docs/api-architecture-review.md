@@ -1,4 +1,4 @@
-# VerCOR 4.0.0a1 API architecture review
+# VerCOR 0.4.0a1 API architecture review
 
 This review records the shipped alpha architecture. Public compatibility is
 defined by canonical owner modules, their `__all__` manifests, live signatures,
@@ -6,7 +6,7 @@ and behavior tests—not by the layout of private implementation modules.
 
 ## 1. Executive summary
 
-VerCOR 4 is a deliberate protocol-first break from 3.1. A configured
+VerCOR 0.4 is a deliberate protocol-first break from 0.3. A configured
 `Coupler` normalizes structural components once, validates stable exchange
 routes and topology, asks a workflow for an exact clock-step plan, executes
 core-defined chunks through a backend and validated driver, and coordinates all
@@ -27,7 +27,7 @@ installed or pinned for this alpha.
 
 ## 2. Duplication map
 
-| Earlier overlap | VerCOR 4 owner | Resolution |
+| Earlier overlap | VerCOR 0.4 owner | Resolution |
 | --- | --- | --- |
 | Inherited, callable, host, and data authoring hierarchies | `vercor.components` | One structural `Component` protocol plus `CallableComponent` and `DataComponent`. |
 | Defaults, initialization, payload creation, transfer, and output properties | `ComponentSpec` | One immutable declaration and one `LifecycleHooks.setup` result. |
@@ -63,7 +63,7 @@ The review identified and removed the following failure-prone designs:
 - Eager optional-model imports made core import depend on unused frameworks and
   their process configuration.
 
-The corresponding v4 rules are constructor-only assembly, explicit route IDs,
+The corresponding 0.4 rules are constructor-only assembly, explicit route IDs,
 exact workflow plans, validated driver calls, strict state schemas, one output
 coordinator, and lazy setup factories. Ambiguous fan-in remains an error. A
 fan-in reducer, public prepared graph, registry, entry-point discovery,
@@ -128,7 +128,7 @@ OutputTarget(directory, *, write_period=True, write_final_fields=True,
 
 The five signatures above are a readable representative sample. The complete,
 static executable inventory is
-[`tests/contracts/vercor-4.0.0a1-public-signatures.json`](../tests/contracts/vercor-4.0.0a1-public-signatures.json):
+[`tests/contracts/vercor-0.4.0a1-public-signatures.json`](../tests/contracts/vercor-0.4.0a1-public-signatures.json):
 it covers all 147 concrete callable exports in canonical non-root owner
 manifests and 55 public class/protocol-call methods. Every
 normalized value includes parameter order and kind, defaults, resolved public
@@ -142,7 +142,7 @@ prepared graph. Public annotations resolve without importing private symbols.
 ## 5. Private API redesign
 
 Private layout is free to change and is not a compatibility contract. The
-following inventory is complete for `4.0.0a1` and documents responsibility,
+following inventory is complete for `0.4.0a1` and documents responsibility,
 not import permission.
 
 ```text
@@ -362,9 +362,9 @@ imports:
 
 The plugin wheel is installed next to built VerCOR artifacts in a clean target,
 its smoke runs outside the checkout, and its package plus external use site pass
-strict mypy. CI repeats native v4 plugin lanes on Python 3.12 and 3.13. The
+strict mypy. CI repeats native 0.4 plugin lanes on Python 3.12 and 3.13. The
 frozen 3.0 plugin is retained only as a historical artifact: its metadata and
-source boundary are inspected, but it is not executed against v4.
+source boundary are inspected, but it is not executed against 0.4.
 
 Bundled slab, JCM, and Veros factories return ordinary structural components
 and use the same constructor and output contracts. CI has installed base, JCM,
@@ -373,15 +373,15 @@ external release is not yet pinned.
 
 ## 7. Compatibility plan
 
-VerCOR 4 is intentionally source-breaking and this alpha does not ship a v3
+VerCOR 0.4 is intentionally source-breaking and this alpha does not ship a 0.3
 adapter namespace. Task 9 was explicitly skipped. Applications migrate imports
-and construction directly using `docs/migration-3-to-4.md`; primary v4 modules
+and construction directly using `docs/migration-0.3-to-0.4.md`; primary 0.4 modules
 remain alias-free.
 
-The frozen `tests/contracts/vercor-3.1.1-public-api.json` and frozen 3.0 plugin
+The frozen `tests/contracts/vercor-0.3.2-public-api.json` and frozen 0.3 plugin
 wheel remain historical evidence only. They define what changed and guard
 against rewriting history, but they do not promise that a legacy application
-runs on v4. No 2.x API is restored.
+runs on 0.4. No earlier API is restored.
 
 Compatibility within the 4.x line is defined by canonical public owner
 manifests, signatures, public-only plugin behavior, output-free gradients, and
@@ -413,7 +413,7 @@ components + exchanges + clock + RuntimeOptions
       no host I/O      one output coordinator
 ```
 
-The release contract is `4.0.0a1`, Python 3.12+, a six-symbol root, one owner
+The release contract is `0.4.0a1`, Python 3.12+, a six-symbol root, one owner
 per advanced public symbol, constructor-only coupling, protocol-first
 components, stable route IDs, exact workflow plans, chunk backends, strict
 state validation, opaque immutable public state, and one opt-in output

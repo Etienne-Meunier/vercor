@@ -1,4 +1,4 @@
-"""Shared construction helpers for the VerCOR 4 workflow tests."""
+"""Shared construction helpers for the VerCOR 0.4 workflow tests."""
 
 from __future__ import annotations
 

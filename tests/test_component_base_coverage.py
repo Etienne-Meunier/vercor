@@ -1,4 +1,4 @@
-"""Focused coverage for the v4 component adapters and private runtime bridge."""
+"""Focused coverage for the 0.4 component adapters and private runtime bridge."""
 
 from __future__ import annotations
 

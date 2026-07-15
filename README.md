@@ -2,7 +2,7 @@
 
 Versatile Earth system COupleR (VerCOR) is a JAX-first coupler for composing
 Earth-system model components, forcing data, exchanges, regridding, diagnostics,
-and output. VerCOR 4.0.0a1 uses a protocol-first
+and output. VerCOR 0.4.0a1 uses a protocol-first
 component contract with one immutable declaration for fields, lifecycle hooks,
 and runtime capabilities. Assembly is constructor-only, static workflows feed
 chunk-oriented execution backends, and explicit `OutputProvider`/
@@ -341,9 +341,9 @@ use the default `output=None` for differentiated or outer-jitted runs.
 
 ## Further reading
 
-The [VerCOR 4.0.0a1 API architecture review](docs/api-architecture-review.md)
+The [VerCOR 0.4.0a1 API architecture review](docs/api-architecture-review.md)
 contains the complete public/private inventory and release decisions. Existing
-applications should follow the runnable [3-to-4 migration guide](docs/migration-3-to-4.md);
+applications should follow the runnable [0.3-to-0.4 migration guide](docs/migration-0.3-to-0.4.md);
 maintainers use the [release checklist](docs/releasing.md) and
 [changelog](CHANGELOG.md). The independently packaged
 [`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
@@ -351,9 +351,9 @@ plugin-owned frozen configuration and dependency-injected assembly together
 with a structural component and regridder, a stable route ID, a non-empty
 topology patch, a custom workflow/backend, immutable state replacement, and
 period/snapshot output. It uses only canonical public VerCOR modules, while
-[`tests/fixtures/public_plugin_3_0`](tests/fixtures/public_plugin_3_0) freezes a
-valid 3.0-only workflow that is intentionally rejected by the removed authoring
+[`tests/fixtures/public_plugin_0_3`](tests/fixtures/public_plugin_0_3) freezes a
+valid 0.3-only workflow that is intentionally rejected by the removed authoring
 surface. The current fixture proves installed-wheel isolation and strict mypy
 using public imports only; the frozen fixture remains historical artifact
-evidence and is not executed against v4. This alpha intentionally ships no v3
+evidence and is not executed against 0.4. This alpha intentionally ships no 0.3
 adapter namespace.

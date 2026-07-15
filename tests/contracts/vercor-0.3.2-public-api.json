@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "reference_sha": "9f0b9131c889bed5c1c2d8ded260add3cfef9524",
-  "version": "3.1.1",
+  "version": "0.3.2",
   "exports": {
     "vercor": [
       "AssetError",

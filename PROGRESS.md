@@ -6,30 +6,32 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- IN PROGRESS (2026-07-15): correct the unsupervised VerCOR 1.x-4.x release
-  labels to the approved pre-1.0 sequence, ending at `0.4.0a1`. The approved
-  mapping and repository-wide scope are recorded in
+- Completed locally (2026-07-15): corrected the unsupervised historical
+  release labels to the approved pre-1.0 sequence, ending at `0.4.0a1`. The
+  policy and architecture focus passes 30/30 and the fast suite passes 524/524.
+  The Conda launcher panic occurred before pytest, so actual checks used the
+  direct `scipy` environment interpreter. The approved repository-wide scope is recorded in
   `docs/superpowers/specs/2026-07-15-vercor-versioning-design.md`; the execution
   sequence is in `docs/superpowers/plans/2026-07-15-vercor-versioning.md`. No
   tag, push, publication, or Git-history rewrite is authorized.
-- VerCOR 4.0.0a1 Task 10 candidate preparation was completed and committed in
+- VerCOR 0.4.0a1 Task 10 candidate preparation was completed and committed in
   repository history on 2026-07-14. Tagging, pushing, and publication remain
   intentionally unperformed pending separate authority.
   Task 9 was explicitly skipped: no legacy adapter namespace is implemented.
-  The frozen 3.1.1 manifest and frozen 3.0 plugin remain historical artifact
-  evidence only and are not installed or executed against v4.
+  The frozen 0.3.2 manifest and frozen 0.3 plugin remain historical artifact
+  evidence only and are not installed or executed against 0.4.
 - Tasks 1-8 plus Task 10 form the complete alpha series. The current API has a six-symbol root,
   protocol-first components, constructor-only coupling, traced physical
   constants, stable route IDs, strict state validation, workflow-planned chunk
   execution, unified output providers, migrated bundled setups/examples, and a
-  public-only installed v4 plugin.
+  public-only installed 0.4 plugin.
 - Task 8 baseline: focused setup/example/plugin and JAXGCM/Veros selection
   114/114; fast suite 481/481; full suite 1067/1067. Black, strict flake8,
   mypy, compileall, installed plugin/default-slab artifacts, and whitespace
   checks passed. Two third-party `FutureWarning`s were known in the full suite.
-- Task 10 documentation contract RED: 6 failed and 1 passed before the v4
+- Task 10 documentation contract RED: 6 failed and 1 passed before the 0.4
   review, migration/release documents, version metadata, and archive rewrite.
-  Metadata/CI contract RED: 2 failed for version 3.1.1 and the absent plugin
+  Metadata/CI contract RED: 2 failed for version 0.3.2 and the absent plugin
   lane. No production behavior changed.
 - Final Task 10 gates: documentation/release contracts 9/9; distribution
   boundaries 16/16; Black 239 files; strict flake8 0; mypy 235 files;
@@ -57,35 +59,14 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   1109/1109; branch coverage 90.49%; distribution boundaries 16/16 from fresh
   source-built artifacts; focused JCM/Veros lanes 9/9; output-free JVP/reverse
   acceptance 3/3; whitespace clean. Full and coverage runs emitted only the
-  two known third-party `FutureWarning`s. Task 9, version `4.0.0a1`, and release
+  two known third-party `FutureWarning`s. Task 9, version `0.4.0a1`, and release
   publication state remain unchanged.
-- The prior retained bundle at
-  `/private/tmp/vercor-task10-final-clean.MlF8ue/dist` is historical and stale:
-  it predates final-boundary fix commit `4d73efe` and must not be used as current
-  release evidence. Its previously recorded hashes remain historical only.
-- Fresh clean retained HEAD artifacts are under
-  `/private/tmp/vercor-task10-final-head.DIU1sP/dist`, built from clean commit
-  `4d73efeb6233d71d0e90ee62fc22c1f5c2d1788f` with the documented offline cached
-  Conda `build`/`flit_core`/`pyproject_hooks` fallback. Supplied-artifact
-  distribution gates passed 16/16, covering junk-free wheel/sdist archives,
-  exact installed signatures, wheel/sdist installs, native-plugin smoke and
-  strict mypy, slab, and supplied-artifact execution. Separate isolated wheel
-  and sdist probes each passed all 13 final-boundary rejection cases and valid
-  model-year float canonicalization. The frozen historical plugin wheel was
-  inspected as metadata/source evidence only and was not installed or executed
-  against v4. JCM 1.1.1 and Veros 1.6.2 remain the installed versions used for
-  the optional focused gates. Current SHA-256 hashes are:
-  - `vercor-4.0.0a1-py3-none-any.whl`: `e6b82225627b5e53461d8cfacda0e6b1ef198c4e0e3aa020dc952879bf88f113`
-  - `vercor-4.0.0a1.tar.gz`: `13a9d0e857f86cd9991897d173d77d986b777298dc95ee1cbe52450181117094`
-  - `vercor_public_plugin-0.1.0-py3-none-any.whl`: `ae511980e10fc535bc455b0d08a0fc8893a20f4f42fc25e107c237c050cf95ad`
-  - `vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl`: `917b94d57efa3f996ec62fbf3a9ffe564a016d09be1fd6f651106fdc00ffaad3`
-- Historical pre-fix retained hashes (do not use for current release evidence):
-  - `vercor-4.0.0a1-py3-none-any.whl`: `53420d9ba38a45d262cadc04782cc3e4ed369f5421cd18653171b0359853dc38`
-  - `vercor-4.0.0a1.tar.gz`: `0bac0d18f93152082efe81d758cfd67721c91548c1f90df2adbdeda693b0fbd6`
-  - `vercor_public_plugin-0.1.0-py3-none-any.whl`: `ae511980e10fc535bc455b0d08a0fc8893a20f4f42fc25e107c237c050cf95ad`
-  - `vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl`: `917b94d57efa3f996ec62fbf3a9ffe564a016d09be1fd6f651106fdc00ffaad3`
+- Prior retained candidate bundles and their hashes are stale because their
+  metadata predates the pre-1.0 version correction. Fresh artifact evidence is
+  intentionally deferred to the next release-verification task. JCM 1.1.1 and
+  Veros 1.6.2 remain the installed versions used for optional focused gates.
 
-## Implemented v4 Architecture
+## Implemented 0.4 Architecture
 
 - `vercor.__all__` is exactly `Clock`, `Coupler`, `Exchange`,
   `RectilinearGrid`, `RunState`, and `RuntimeOptions`.
@@ -114,7 +95,7 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   runnable README/migration snippets, archive SHA-256, Task 9 absence, and
   release metadata.
 - CI encodes Python 3.12/3.13 base/JCM/Veros artifact lanes, Python 3.12/3.13
-  native-v4 plugin lanes, metadata-only frozen-v3 inspection, and a macOS
+  native-v0.4 plugin lanes, metadata-only frozen-0.3 inspection, and a macOS
   installed-plugin smoke. GitHub-hosted jobs have not run locally.
 - The Task 10 documentation/release commit is present in repository history.
   Do not tag, push, or publish without separate authority.
@@ -123,7 +104,7 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 - Never add numerical fudge factors; trace discrepancies to their first source.
 - Write behavior/contract tests before implementation changes.
-- Preserve exact public owner manifests and keep primary v4 modules alias-free.
+- Preserve exact public owner manifests and keep primary 0.4 modules alias-free.
 - Keep output opt-in and optional-model imports lazy.
 - No registry, entry-point discovery, Pydantic, fan-in reducer, public prepared
   graph, fractional subcycling, or CAMulator dependency pin.

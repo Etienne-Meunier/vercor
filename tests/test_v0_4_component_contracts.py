@@ -76,7 +76,7 @@ def test_component_is_the_structural_protocol_and_old_authoring_names_are_absent
         assert not hasattr(component_api, removed_name)
 
 
-def test_public_constructor_signatures_match_the_v4_contract() -> None:
+def test_public_constructor_signatures_match_the_v0_4_contract() -> None:
     component_spec = signature(_api("ComponentSpec"))
     callable_component = signature(_api("CallableComponent"))
     data_component = signature(_api("DataComponent"))

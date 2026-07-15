@@ -406,7 +406,7 @@ def test_coupler_public_methods_return_stable_state_and_views(
 ) -> None:
     component = DataComponent(
         name="ATM",
-        grid=make_test_grid(name="coupler-v3"),
+        grid=make_test_grid(name="coupler-validated"),
         fields={"temperature": 280.0},
     )
     coupler = Coupler(
@@ -471,7 +471,7 @@ def test_vercor_warning_wrappers_are_absent_from_source() -> None:
 @pytest.mark.fast_always
 def test_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
     grid = vercor.RectilinearGrid.uniform(
-        "v3-grid",
+        "custom-grid",
         nlon=2,
         nlat=2,
         longitude=(0.0, 90.0),
@@ -748,7 +748,7 @@ def test_exchange_accepts_supported_names_only() -> None:
 def test_coupler_facade_wraps_runtime_state_and_views() -> None:
     component = DataComponent(
         name="ATM",
-        grid=make_test_grid(name="coupler-v2"),
+        grid=make_test_grid(name="coupler-reconfigured"),
         fields={"temperature": 280.0},
     )
     coupler = Coupler(

@@ -1,4 +1,4 @@
-"""Regression tests for final VerCOR 4 public-boundary review findings."""
+"""Regression tests for final VerCOR 0.4 public-boundary review findings."""
 
 from __future__ import annotations
 

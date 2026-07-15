@@ -22,13 +22,13 @@ EXPECTED_PLUGIN_WHEEL_NAME = (
 )
 EXPECTED_FROZEN_PLUGIN_VERSION = "0.1.0"
 EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = (
-    f"vercor_compat_plugin_3_0-{EXPECTED_FROZEN_PLUGIN_VERSION}-py3-none-any.whl"
+    f"vercor_compat_plugin_0_3-{EXPECTED_FROZEN_PLUGIN_VERSION}-py3-none-any.whl"
 )
 
 
 @dataclass(frozen=True)
 class BuiltDistributions:
-    """Paths to VerCOR, the v4 plugin, and frozen historical evidence."""
+    """Paths to VerCOR, the 0.4 plugin, and frozen historical evidence."""
 
     wheel: Path
     sdist: Path
@@ -217,7 +217,7 @@ def build_distributions(
     )
     for plugin_root in (
         project_root / "tests" / "fixtures" / "public_plugin",
-        project_root / "tests" / "fixtures" / "public_plugin_3_0",
+        project_root / "tests" / "fixtures" / "public_plugin_0_3",
     ):
         subprocess.run(
             [
@@ -257,7 +257,7 @@ def install_local_target(
     plugin_wheel: Path,
     target: Path,
 ) -> None:
-    """Install VerCOR and the native v4 plugin without dependencies."""
+    """Install VerCOR and the native 0.4 plugin without dependencies."""
 
     environment = os.environ.copy()
     target.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,6 @@
-"""Mypy use site for the frozen VerCOR 3.0 compatibility plugin."""
+"""Mypy use site for the frozen VerCOR 0.3 compatibility plugin."""
 
-from vercor_compat_plugin_3_0 import run_smoke
+from vercor_compat_plugin_0_3 import run_smoke
 
 
 def exercise_plugin() -> dict[str, object]:

@@ -860,7 +860,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert callable(component.spec.output.snapshot_writer)
 
 
-def test_camulator_v4_configuration_does_not_expose_obsolete_output_workers() -> None:
+def test_camulator_v0_4_configuration_does_not_expose_obsolete_output_workers() -> None:
     assert "output_cpus_number" not in CAMulatorConfig.__dataclass_fields__
     assert (
         "output_cpus_number"

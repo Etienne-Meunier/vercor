@@ -1,10 +1,10 @@
-"""Command-line smoke runner for the frozen VerCOR 3.0 plugin."""
+"""Command-line smoke runner for the frozen VerCOR 0.3 plugin."""
 
 from __future__ import annotations
 
 import json
 
-from vercor_compat_plugin_3_0.plugin import run_smoke
+from vercor_compat_plugin_0_3.plugin import run_smoke
 
 
 def main() -> None:

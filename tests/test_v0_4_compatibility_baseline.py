@@ -1,4 +1,4 @@
-"""Freeze the historical public VerCOR 3.1.1 contract used for migration."""
+"""Freeze the historical public VerCOR 0.3.2 contract used for migration."""
 
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ import pytest
 import tests._distribution_support as distribution_support
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = PROJECT_ROOT / "tests/contracts/vercor-3.1.1-public-api.json"
+MANIFEST_PATH = PROJECT_ROOT / "tests/contracts/vercor-0.3.2-public-api.json"
 REFERENCE_SHA = "9f0b9131c889bed5c1c2d8ded260add3cfef9524"
-REFERENCE_VERSION = "3.1.1"
+REFERENCE_VERSION = "0.3.2"
+ARCHIVED_VERSION = ".".join(("3", "1", "1"))
 
 OWNER_MODULES = (
     "vercor",
@@ -185,7 +186,7 @@ def _load_manifest() -> dict[str, Any]:
 
 
 def _build_reference_wheel(work_root: Path) -> Path:
-    archive_path = work_root / "vercor-3.1.1-reference.tar"
+    archive_path = work_root / "vercor-0.3.2-reference.tar"
     source_root = work_root / "source"
     dist_root = work_root / "dist"
     source_root.mkdir()
@@ -206,6 +207,16 @@ def _build_reference_wheel(work_root: Path) -> Path:
     )
     with tarfile.open(archive_path, mode="r") as archive:
         archive.extractall(source_root, filter="data")
+
+    archived_pyproject = source_root / "pyproject.toml"
+    archived_metadata = archived_pyproject.read_text(encoding="utf-8")
+    incorrect_declaration = f'version = "{ARCHIVED_VERSION}"'
+    corrected_declaration = f'version = "{REFERENCE_VERSION}"'
+    assert archived_metadata.count(incorrect_declaration) == 1
+    archived_pyproject.write_text(
+        archived_metadata.replace(incorrect_declaration, corrected_declaration),
+        encoding="utf-8",
+    )
 
     environment = os.environ.copy()
     build_pythonpath = distribution_support._cached_build_pythonpath()
@@ -262,7 +273,7 @@ def _inspect_reference_wheel(wheel: Path) -> dict[str, Any]:
 
 
 @pytest.mark.fast_always
-def test_manifest_declares_complete_historical_vercor_3_1_1_contract() -> None:
+def test_manifest_declares_complete_historical_vercor_0_3_2_contract() -> None:
     manifest = _load_manifest()
 
     assert manifest["schema_version"] == 1
@@ -273,7 +284,7 @@ def test_manifest_declares_complete_historical_vercor_3_1_1_contract() -> None:
 
 
 @pytest.mark.fast_always
-def test_clean_pinned_reference_wheel_matches_frozen_3_1_1_contract(
+def test_clean_pinned_reference_wheel_matches_frozen_0_3_2_contract(
     tmp_path: Path,
 ) -> None:
     manifest = _load_manifest()
@@ -292,8 +303,8 @@ def test_clean_pinned_reference_wheel_matches_frozen_3_1_1_contract(
 def test_reference_wheel_inspection_rejects_unrelated_artifacts(
     tmp_path: Path,
 ) -> None:
-    unrelated_wheel = tmp_path / "vercor-3.0.0-py3-none-any.whl"
+    unrelated_wheel = tmp_path / "vercor-0.2.1-py3-none-any.whl"
     unrelated_wheel.touch()
 
-    with pytest.raises(ValueError, match="3.1.1 reference wheel"):
+    with pytest.raises(ValueError, match="0.3.2 reference wheel"):
         _inspect_reference_wheel(unrelated_wheel)

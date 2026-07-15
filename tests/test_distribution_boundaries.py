@@ -30,13 +30,13 @@ from tests.test_api_architecture_review import (
     _public_signature_contract,
 )
 from tests.test_setup_boundaries import _run_setup_probe
-from tests.test_v4_public_api import PUBLIC_MODULE_EXPORTS
+from tests.test_v0_4_public_api import PUBLIC_MODULE_EXPORTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
-FROZEN_PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin_3_0"
+FROZEN_PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin_0_3"
 EXPECTED_PLUGIN_WHEEL_NAME = "vercor_public_plugin-0.1.0-py3-none-any.whl"
-EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = "vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl"
+EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = "vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl"
 EXPECTED_INSTALLED_ROOT = (
     "Clock",
     "Coupler",
@@ -95,7 +95,7 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     runtime_dependencies = tuple(project["dependencies"])
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "4.0.0a1"
+    assert project["version"] == "0.4.0a1"
     assert not any(
         dependency.lower().startswith("pytest") for dependency in runtime_dependencies
     )
@@ -131,10 +131,10 @@ def test_pep561_markers_and_both_public_plugin_fixtures_are_present() -> None:
 
     required_frozen_plugin_files = (
         "pyproject.toml",
-        "src/vercor_compat_plugin_3_0/__init__.py",
-        "src/vercor_compat_plugin_3_0/plugin.py",
-        "src/vercor_compat_plugin_3_0/smoke.py",
-        "src/vercor_compat_plugin_3_0/py.typed",
+        "src/vercor_compat_plugin_0_3/__init__.py",
+        "src/vercor_compat_plugin_0_3/plugin.py",
+        "src/vercor_compat_plugin_0_3/smoke.py",
+        "src/vercor_compat_plugin_0_3/py.typed",
         "use_site.py",
     )
     for relative_path in required_frozen_plugin_files:
@@ -162,13 +162,13 @@ def test_public_plugin_fixtures_are_isolated_and_never_import_private_modules() 
                             part.startswith("_") for part in module.split(".")[1:]
                         ), f"{path} imports private VerCOR module {module}"
             if fixture_root == PLUGIN_ROOT:
-                assert "vercor_compat_plugin_3_0" not in source
+                assert "vercor_compat_plugin_0_3" not in source
             else:
                 assert "vercor_public_plugin" not in source
 
 
 @pytest.mark.fast_always
-def test_current_public_plugin_uses_canonical_owners_and_v4_workflows() -> None:
+def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> None:
     project = tomllib.loads(
         (PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
@@ -177,7 +177,7 @@ def test_current_public_plugin_uses_canonical_owners_and_v4_workflows() -> None:
     )
 
     assert project["version"] == "0.1.0"
-    assert project["dependencies"] == ["vercor>=4,<5"]
+    assert project["dependencies"] == ["vercor>=0.4,<0.5"]
     for owner in (
         "vercor.clock",
         "vercor.components",
@@ -217,17 +217,17 @@ def test_current_public_plugin_uses_canonical_owners_and_v4_workflows() -> None:
 
 
 @pytest.mark.fast_always
-def test_frozen_plugin_uses_only_3_0_contracts_and_its_own_distribution() -> None:
+def test_frozen_plugin_uses_only_0_3_contracts_and_its_own_distribution() -> None:
     project = tomllib.loads(
         (FROZEN_PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
-    source = (FROZEN_PLUGIN_ROOT / "src/vercor_compat_plugin_3_0/plugin.py").read_text(
+    source = (FROZEN_PLUGIN_ROOT / "src/vercor_compat_plugin_0_3/plugin.py").read_text(
         encoding="utf-8"
     )
 
-    assert project["name"] == "vercor-compat-plugin-3-0"
+    assert project["name"] == "vercor-compat-plugin-0-3"
     assert project["version"] == "0.1.0"
-    assert project["dependencies"] == ["vercor>=3.0,<4"]
+    assert project["dependencies"] == ["vercor>=0.3,<0.4"]
     assert "vercor_public_plugin" not in source
     for newer_contract in (
         "DataComponent",
@@ -258,7 +258,7 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         in build_commands
     )
     assert (
-        "python -m build --wheel --outdir dist tests/fixtures/public_plugin_3_0"
+        "python -m build --wheel --outdir dist tests/fixtures/public_plugin_0_3"
         in build_commands
     )
     upload_step = next(
@@ -300,7 +300,7 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "VERCOR_TEST_PACKAGE_ROOT" in installed_commands
     assert EXPECTED_WHEEL_NAME in installed_commands
     assert EXPECTED_SDIST_NAME in installed_commands
-    assert "vercor-3.0.0-py3-none-any.whl" not in installed_commands
+    assert "vercor-0.3.0-py3-none-any.whl" not in installed_commands
     assert "tests/fixtures/public_plugin/src" not in installed_commands
     assert "pip install ." not in installed_commands
     install_tools_line = next(
@@ -313,15 +313,15 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
 
     assert plugin_job["strategy"]["matrix"] == {
         "python-version": ["3.12", "3.13"],
-        "plugin-lane": ["native-v4", "historical-v3-artifact"],
+        "plugin-lane": ["native-v0.4", "historical-v0.3-artifact"],
     }
     plugin_commands = "\n".join(
         step.get("run", "") for step in plugin_job["steps"] if isinstance(step, dict)
     )
     assert "vercor_public_plugin.smoke" in plugin_commands
-    assert "vercor_compat_plugin_3_0.smoke" not in plugin_commands
+    assert "vercor_compat_plugin_0_3.smoke" not in plugin_commands
     assert "MYPYPATH" in plugin_commands
-    assert "Requires-Dist: vercor>=3.0,<4" in plugin_commands
+    assert "Requires-Dist: vercor>=0.3,<0.4" in plugin_commands
 
     assert macos_job["runs-on"] == "macos-latest"
     macos_commands = "\n".join(
@@ -403,28 +403,28 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     ("wheel_name", "sdist_name", "plugin_wheel_name", "frozen_plugin_wheel_name"),
     (
         (
-            "vercor-4.0.0a0-py3-none-any.whl",
-            "vercor-4.0.0a1.tar.gz",
+            "vercor-0.4.0a0-py3-none-any.whl",
+            "vercor-0.4.0a1.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
             EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-4.0.0a1-py3-none-any.whl",
-            "vercor-4.0.0a0.tar.gz",
+            "vercor-0.4.0a1-py3-none-any.whl",
+            "vercor-0.4.0a0.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
             EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-4.0.0a1-py3-none-any.whl",
-            "vercor-4.0.0a1.tar.gz",
+            "vercor-0.4.0a1-py3-none-any.whl",
+            "vercor-0.4.0a1.tar.gz",
             "vercor_public_plugin-0.2.0-py3-none-any.whl",
             EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-4.0.0a1-py3-none-any.whl",
-            "vercor-4.0.0a1.tar.gz",
+            "vercor-0.4.0a1-py3-none-any.whl",
+            "vercor-0.4.0a1.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
-            "vercor_compat_plugin_3_0-0.2.0-py3-none-any.whl",
+            "vercor_compat_plugin_0_3-0.2.0-py3-none-any.whl",
         ),
     ),
 )
@@ -483,8 +483,8 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert "Provides-Extra: dev" in metadata
 
     for plugin_wheel, requirement in (
-        (distributions.plugin_wheel, "Requires-Dist: vercor>=4,<5"),
-        (distributions.frozen_plugin_wheel, "Requires-Dist: vercor>=3.0,<4"),
+        (distributions.plugin_wheel, "Requires-Dist: vercor>=0.4,<0.5"),
+        (distributions.frozen_plugin_wheel, "Requires-Dist: vercor>=0.3,<0.4"),
     ):
         with zipfile.ZipFile(plugin_wheel) as plugin_archive:
             plugin_metadata_name = next(
@@ -626,7 +626,7 @@ print(json.dumps({{
     "method_names": method_names,
     "signatures": signatures,
     "historical_plugin_installed": importlib.util.find_spec(
-        "vercor_compat_plugin_3_0"
+        "vercor_compat_plugin_0_3"
     ) is not None,
 }}))
 """
@@ -731,7 +731,7 @@ print(json.dumps({{
 
 
 @pytest.mark.fast_always
-def test_installed_default_slab_factory_runs_v4_component(
+def test_installed_default_slab_factory_runs_v0_4_component(
     built_distributions: BuiltDistributions,
     tmp_path: Path,
 ) -> None:

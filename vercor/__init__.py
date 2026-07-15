@@ -1,4 +1,4 @@
-"""Primary VerCOR 4 assembly conveniences."""
+"""Primary VerCOR 0.4 assembly conveniences."""
 
 import sys as _sys
 

@@ -1,4 +1,4 @@
-"""VerCOR 4 route identity, topology, regridding, and state contracts."""
+"""VerCOR 0.4 route identity, topology, regridding, and state contracts."""
 
 from __future__ import annotations
 

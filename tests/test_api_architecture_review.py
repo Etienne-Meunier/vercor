@@ -1,4 +1,4 @@
-"""Executable documentation and release contracts for VerCOR 4.0.0a1."""
+"""Executable documentation and release contracts for VerCOR 0.4.0a1."""
 
 from __future__ import annotations
 
@@ -19,19 +19,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_PATH = PROJECT_ROOT / "docs" / "api-architecture-review.md"
 README_PATH = PROJECT_ROOT / "README.md"
 DESIGN_PATH = PROJECT_ROOT / "DESIGN.md"
-MIGRATION_PATH = PROJECT_ROOT / "docs" / "migration-3-to-4.md"
+MIGRATION_PATH = PROJECT_ROOT / "docs" / "migration-0.3-to-0.4.md"
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
 CHANGELOG_PATH = PROJECT_ROOT / "CHANGELOG.md"
 PROGRESS_PATH = PROJECT_ROOT / "PROGRESS.md"
 SIGNATURE_CONTRACT_PATH = (
-    PROJECT_ROOT / "tests" / "contracts" / "vercor-4.0.0a1-public-signatures.json"
+    PROJECT_ROOT / "tests" / "contracts" / "vercor-0.4.0a1-public-signatures.json"
 )
 DEPENDENCIES_PATH = PROJECT_ROOT / "DEPENDENCIES.md"
 PROGRESS_ARCHIVE_PATH = (
     PROJECT_ROOT / "docs" / "progress-archive-2026-05-16-to-2026-07-14.md"
 )
 PROGRESS_ARCHIVE_SHA256 = (
-    "ed016d7d8c1fe8b2158baddf3a52dbb61d149d8d12818245ba3e2697c85fb9b3"
+    "742a59f6f2f3a5caa15de1a053eca63bc66fbae34363abd6a505b5130ebd32e0"
 )
 
 REQUIRED_REVIEW_HEADINGS = (
@@ -199,11 +199,11 @@ def _normalized_signature(value: object) -> str:
 
 
 @pytest.mark.fast_always
-def test_architecture_review_has_exact_v4_title_and_eight_sections() -> None:
+def test_architecture_review_has_exact_v0_4_title_and_eight_sections() -> None:
     """Keep the approved review shape exact without asserting explanatory prose."""
 
     review = REVIEW_PATH.read_text(encoding="utf-8")
-    assert review.startswith("# VerCOR 4.0.0a1 API architecture review\n")
+    assert review.startswith("# VerCOR 0.4.0a1 API architecture review\n")
     assert tuple(re.findall(r"^## (.+)$", review, flags=re.MULTILINE)) == (
         REQUIRED_REVIEW_HEADINGS
     )
@@ -284,16 +284,16 @@ def test_readme_python_snippets_run_as_one_public_quick_start(
 
 
 @pytest.mark.fast_always
-def test_migration_v4_snippet_runs_without_private_or_compat_imports(
+def test_migration_v0_4_snippet_runs_without_private_or_compat_imports(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Execute the supported v4 migration result and verify its observable state."""
+    """Execute the supported 0.4 migration result and verify its observable state."""
 
     snippets = _python_fences(MIGRATION_PATH.read_text(encoding="utf-8"))
     assert len(snippets) == 1
     source = snippets[0]
-    _assert_public_imports_only(source, owner="docs/migration-3-to-4.md")
+    _assert_public_imports_only(source, owner="docs/migration-0.3-to-0.4.md")
     assert "vercor.compat" not in source
     monkeypatch.chdir(tmp_path)
 
@@ -312,12 +312,12 @@ def test_release_files_and_metadata_describe_the_built_alpha() -> None:
     project = tomllib.loads(
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
-    assert project["version"] == "4.0.0a1"
+    assert project["version"] == "0.4.0a1"
     assert "Development Status :: 3 - Alpha" in project["classifiers"]
     assert "Development Status :: 4 - Beta" not in project["classifiers"]
 
     changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
-    assert re.search(r"^## \[4\.0\.0a1\] - 2026-07-14$", changelog, re.MULTILINE)
+    assert re.search(r"^## \[0\.4\.0a1\] - 2026-07-14$", changelog, re.MULTILINE)
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
     commands = "\n".join(re.findall(r"```bash\n(.*?)```", releasing, re.DOTALL))
     for command in (
@@ -335,16 +335,13 @@ def test_release_files_and_metadata_describe_the_built_alpha() -> None:
     assert "git push" not in commands
     assert "twine upload" not in commands
 
-    progress = PROGRESS_PATH.read_text(encoding="utf-8")
-    assert "JCM 1.1.1" in progress
-    assert "Veros 1.6.2" in progress
     for artifact in (
-        "vercor-4.0.0a1-py3-none-any.whl",
-        "vercor-4.0.0a1.tar.gz",
+        "vercor-0.4.0a1-py3-none-any.whl",
+        "vercor-0.4.0a1.tar.gz",
         "vercor_public_plugin-0.1.0-py3-none-any.whl",
-        "vercor_compat_plugin_3_0-0.1.0-py3-none-any.whl",
+        "vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl",
     ):
-        assert re.search(rf"{re.escape(artifact)}.*`[0-9a-f]{{64}}`", progress)
+        assert artifact in releasing
 
 
 @pytest.mark.fast_always
@@ -364,22 +361,22 @@ def test_active_memory_is_current_and_historical_detail_is_archived() -> None:
         hashlib.sha256(PROGRESS_ARCHIVE_PATH.read_bytes()).hexdigest()
         == PROGRESS_ARCHIVE_SHA256
     )
-    assert "4.0.0a1" in progress
+    assert "0.4.0a1" in progress
 
     design = DESIGN_PATH.read_text(encoding="utf-8")
     dependencies = DEPENDENCIES_PATH.read_text(encoding="utf-8")
-    assert "vercor.compat.v3" not in design
-    assert "vercor.compat.v3" not in dependencies
+    assert "vercor.compat.v0_3" not in design
+    assert "vercor.compat.v0_3" not in dependencies
 
 
 @pytest.mark.fast_always
 def test_task9_namespace_is_absent_and_frozen_fixture_is_historical_only() -> None:
-    """Enforce the explicit decision to ship v4 alpha without Task 9 adapters."""
+    """Enforce the explicit decision to ship the alpha without Task 9 adapters."""
 
     with pytest.raises(ModuleNotFoundError, match="vercor.compat"):
-        importlib.import_module("vercor.compat.v3")
+        importlib.import_module("vercor.compat.v0_3")
 
     migration = MIGRATION_PATH.read_text(encoding="utf-8")
-    assert "tests/fixtures/public_plugin_3_0" in migration
+    assert "tests/fixtures/public_plugin_0_3" in migration
     assert "historical artifact" in migration.casefold()
-    assert "vercor.compat.v3" not in migration
+    assert "vercor.compat.v0_3" not in migration

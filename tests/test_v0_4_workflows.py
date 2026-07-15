@@ -1,4 +1,4 @@
-"""Public planning, validation, and scheduling contracts for v4 workflows."""
+"""Public planning, validation, and scheduling contracts for 0.4 workflows."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from vercor.exceptions import CouplerError
 pytestmark = pytest.mark.fast_always
 
 
-def test_runtime_module_owns_only_the_v4_workflow_contracts() -> None:
+def test_runtime_module_owns_only_the_v0_4_workflow_contracts() -> None:
     assert runtime.__all__ == [
         "ExecutionBackend",
         "ExecutionChunk",
@@ -75,7 +75,7 @@ def test_runtime_options_uses_backend_and_workflow_defaults() -> None:
         ({"workflow": object()}, TypeError, "workflow.*build"),
     ),
 )
-def test_runtime_options_validates_v4_extension_contracts(
+def test_runtime_options_validates_v0_4_extension_contracts(
     kwargs: dict[str, object],
     error: type[Exception],
     message: str,

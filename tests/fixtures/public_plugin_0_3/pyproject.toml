@@ -1,0 +1,16 @@
+[build-system]
+requires = ["flit_core<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "vercor-compat-plugin-0-3"
+version = "0.1.0"
+description = "Frozen installed-artifact fixture for VerCOR 0.3 public contracts"
+requires-python = ">=3.12"
+dependencies = ["vercor>=0.3,<0.4"]
+
+[tool.flit.module]
+name = "vercor_compat_plugin_0_3"
+
+[tool.mypy]
+strict = true

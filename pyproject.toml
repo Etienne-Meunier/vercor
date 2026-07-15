@@ -1,6 +1,6 @@
 [project]
 name = "vercor"
-version = "4.0.0a1"
+version = "0.4.0a1"
 authors = [
   { name = "Roman Nuterman" }
 ]
@@ -83,4 +83,4 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 disallow_untyped_defs = true
-exclude = ["^tests/fixtures/public_plugin_3_0/"]
+exclude = ["^tests/fixtures/public_plugin_0_3/"]

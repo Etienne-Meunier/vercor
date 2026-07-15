@@ -1,4 +1,4 @@
-"""VerCOR 4 unified output-provider and run-level coordinator contracts."""
+"""VerCOR 0.4 unified output-provider and run-level coordinator contracts."""
 
 from __future__ import annotations
 
@@ -35,9 +35,9 @@ from vercor.state import RunState
 
 
 def _api(name: str) -> Any:
-    """Return a required v4 output symbol with a focused RED failure."""
+    """Return a required 0.4 output symbol with a focused RED failure."""
 
-    assert hasattr(output_api, name), f"vercor.output is missing v4 symbol {name}"
+    assert hasattr(output_api, name), f"vercor.output is missing 0.4 symbol {name}"
     return getattr(output_api, name)
 
 
@@ -114,7 +114,7 @@ def _read(path: Path, name: str) -> np.ndarray:
         return np.asarray(dataset.variables[name])
 
 
-def test_output_module_exports_exact_v4_contract() -> None:
+def test_output_module_exports_exact_v0_4_contract() -> None:
     assert output_api.__all__ == [
         "OutputContext",
         "OutputFrame",

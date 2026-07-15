@@ -250,7 +250,7 @@ def test_prepared_binding_is_stable_after_original_component_mutation(
         lambda fields, context, payload=None: {},
     ),
 )
-def test_v4_callable_component_prepared_binding_is_stable(
+def test_v0_4_callable_component_prepared_binding_is_stable(
     replacement: Any,
 ) -> None:
     component = CallableComponent(

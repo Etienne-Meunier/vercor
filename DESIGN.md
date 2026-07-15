@@ -1,9 +1,9 @@
-# VerCOR 4 Design Specification
+# VerCOR 0.4 Design Specification
 
 VerCOR is a JAX-first, fully differentiable coupler for composing Earth-system
-components. This document describes the implemented `4.0.0a1` architecture.
+components. This document describes the implemented `0.4.0a1` architecture.
 The exact API inventory and migration decisions are in
-`docs/api-architecture-review.md` and `docs/migration-3-to-4.md`.
+`docs/api-architecture-review.md` and `docs/migration-0.3-to-0.4.md`.
 
 ## 1. Goals and constraints
 
@@ -196,7 +196,7 @@ an injected regridder, explicit route, non-empty topology patch, custom
 workflow/backend, immutable state replacement, period output, and snapshot
 output. It imports no private VerCOR module.
 
-The frozen v3 fixture is historical distribution evidence only. This alpha
+The frozen 0.3 fixture is historical distribution evidence only. This alpha
 does not execute it or expose a legacy adapter namespace.
 
 ## 10. Testing and release evidence
