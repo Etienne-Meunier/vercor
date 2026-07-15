@@ -47,23 +47,26 @@ _EXACT_RELEASE_PATTERNS = tuple(
     )
     for label in FORBIDDEN_RELEASE_LABELS
 )
+_VERSION_QUALIFIER = (
+    r"(?:current|previous|historical|frozen|stable|first|major|later|native)"
+)
 _VERCOR_VERSION_PREFIX = re.compile(
     r"\bvercor(?:['’]s)?"
-    r"(?:[ \t_-]+(?:current|previous|historical|frozen|stable|first|major|"
-    r"version|releases?|APIs?|history|migrations?|artifacts?|manifests?|"
+    rf"(?:[ \t_-]+(?:{_VERSION_QUALIFIER}|version|releases?|APIs?|history|"
+    r"migrations?|artifacts?|manifests?|"
     r"plugins?|fixtures?|line|candidate))*[ \t:`\"'=[_-]*$",
     flags=re.IGNORECASE,
 )
 _EXTERNAL_VERSION_PREFIX = re.compile(
     r"\b(?:external|independent)"
+    rf"(?:[ \t_-]+{_VERSION_QUALIFIER})*"
     r"(?:[ \t_-]+(?:artifacts?|releases?|schemas?|plugins?|APIs?|versions?|"
     r"fixtures?|lines?|dependencies?))*[ \t:`\"'=[_-]*$",
     flags=re.IGNORECASE,
 )
 _REPOSITORY_VERSION_PREFIX = re.compile(
     r"(?:"
-    r"(?:current|previous|historical|frozen|stable|first|major|later|native)"
-    r"[ \t_-]+"
+    rf"{_VERSION_QUALIFIER}[ \t_-]+"
     r"|(?:(?:current|previous|historical|frozen|stable|first|major)[ \t-]+)*"
     r"(?:releases?|APIs?|history|migrations?|artifacts?|manifests?|"
     r"plugin[ \t-]+fixtures?)"
@@ -309,6 +312,87 @@ def test_integrated_scanner_rejects_quoted_and_env_vercor_versions(
             tmp_path,
             relative_path=Path("release-config.yml"),
             line=line,
+        )
+
+
+def _ownership_matrix_line(
+    owner: str,
+    qualifier: str,
+    concept: str,
+    *,
+    shorthand: bool,
+) -> str:
+    """Render one exact or shorthand line for the ownership grammar matrix."""
+
+    fields: tuple[str, ...]
+    if shorthand:
+        label = "3" + (".0" if concept == "plugin fixture" else ".1")
+        fields = (owner, qualifier, label, concept)
+    else:
+        label = {
+            "release": "3" + ".1.1",
+            "API": "3" + ".0.0",
+            "artifact": "3" + ".0.0",
+            "plugin fixture": "2" + ".0.0",
+        }[concept]
+        version_word = "version" if concept == "artifact" else ""
+        fields = (owner, qualifier, concept, version_word, label)
+    return " ".join(field for field in fields if field)
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("owner", "qualifier", "concept", "shorthand"),
+    tuple(
+        (owner, qualifier, concept, shorthand)
+        for owner in ("external", "independent", "VerCOR")
+        for qualifier in ("", "current", "historical", "frozen")
+        for concept in ("release", "API", "artifact", "plugin fixture")
+        for shorthand in (False, True)
+    ),
+)
+def test_integrated_scanner_version_ownership_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    owner: str,
+    qualifier: str,
+    concept: str,
+    shorthand: bool,
+) -> None:
+    line = _ownership_matrix_line(
+        owner,
+        qualifier,
+        concept,
+        shorthand=shorthand,
+    )
+    if owner == "VerCOR":
+        with pytest.raises(AssertionError):
+            _run_integrated_scanner_for_line(
+                monkeypatch,
+                tmp_path,
+                relative_path=Path("ownership-matrix.md"),
+                line=line,
+            )
+    else:
+        _run_integrated_scanner_for_line(
+            monkeypatch,
+            tmp_path,
+            relative_path=Path("ownership-matrix.md"),
+            line=line,
+        )
+
+
+@pytest.mark.fast_always
+def test_integrated_scanner_later_vercor_owner_overrides_external_qualifier(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(AssertionError):
+        _run_integrated_scanner_for_line(
+            monkeypatch,
+            tmp_path,
+            relative_path=Path("ownership-matrix.md"),
+            line="external current VerCOR release " + "3" + ".1.1",
         )
 
 
