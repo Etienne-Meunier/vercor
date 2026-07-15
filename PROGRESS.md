@@ -95,6 +95,13 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   `740a3fa64f0af5ae18ec497469d53159b52834faf092f8148239bc73c18a2ad4`.
   JCM 1.1.1 and Veros 1.6.2 remain the installed optional-model versions.
   Tag, push, publication, and upload remain unperformed.
+- Post-review version-policy hardening completed locally (2026-07-15): the
+  ownership matrix preserves qualified external/independent identifiers while
+  rejecting exact and shorthand VerCOR labels. Policy passed 141/141,
+  policy/architecture passed 161/161, and the full suite passed 1261/1261 with
+  the same five third-party warning instances. Independent final review found
+  no Critical, Important, or Minor issues. Release artifacts and hashes above
+  remain unchanged; no tag, push, publication, or upload was performed.
 
 ## Implemented 0.4 Architecture
 
