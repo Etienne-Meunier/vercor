@@ -27,17 +27,17 @@ FORBIDDEN_API_TOKEN = re.compile(
     r"(?<![@A-Za-z0-9])[vV][" + "1234" + r"](?![A-Za-z0-9])"
 )
 FORBIDDEN_VERCOR_MAJOR = re.compile(r"\bVerCOR [" + "1234" + r"](?:\b|\.)")
-_RELEASE_SHORTHAND = r"(?<![\d.])(?:3\." + r"[01]|4\.0|[1234]\.x)(?![\d.])"
-_RELEASE_PREFIX_CONTEXT = (
-    r"(?:VerCOR|version|release|API|compatibility|fixture|plugin|manifest|"
-    r"artifact|current|frozen|later)"
+_RELEASE_SHORTHAND = r"(?<![\d.])(?:[12]\.0|3\." + r"[01]|4\.0|[1234]\.x)(?![\d.])"
+_RELEASE_CONCEPT = (
+    r"(?:APIs?|compatibility|fixtures?|plugins?|manifests?|artifacts?|"
+    r"releases?|lines?|migrations?)"
 )
-_RELEASE_SUFFIX_CONTEXT = (
-    r"(?:API|compatibility|fixture|plugin|manifest|artifact|line|release|migration)"
-)
+_RELEASE_PREFIX = r"(?:current|frozen|later|native|historical)"
 FORBIDDEN_RELEASE_SHORTHAND = re.compile(
-    rf"(?:\b{_RELEASE_PREFIX_CONTEXT}\b[^\n]{{0,50}}{_RELEASE_SHORTHAND}|"
-    rf"{_RELEASE_SHORTHAND}[^\n]{{0,50}}\b{_RELEASE_SUFFIX_CONTEXT}\b)",
+    rf"(?:\bVerCOR[ \t]+{_RELEASE_SHORTHAND}"
+    rf"|{_RELEASE_SHORTHAND}[ \t-]+{_RELEASE_CONCEPT}\b"
+    rf"|\b{_RELEASE_PREFIX}[ \t-]+{_RELEASE_SHORTHAND}"
+    rf"|\bvercor-release-{_RELEASE_SHORTHAND}(?=[-./\s]|$))",
     flags=re.IGNORECASE,
 )
 FORBIDDEN_PATH_FRAGMENTS = (
@@ -67,6 +67,45 @@ def _tracked_text_paths() -> tuple[Path, ...]:
         if name and Path(name).suffix in TEXT_SUFFIXES
     )
     return tuple(path for path in paths if (PROJECT_ROOT / path).is_file())
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "line",
+    (
+        "VerCOR " + ".".join(("1", "0")) + " release",
+        "VerCOR " + ".".join(("2", "0")) + " API",
+        "frozen " + ".".join(("3", "0")) + " plugin",
+        "current-" + ".".join(("3", "1")),
+        "Compatibility within the " + "4" + ".x line",
+        "2" + ".x migration",
+        "vercor-release-" + ".".join(("3", "1")) + "-final",
+    ),
+)
+def test_release_shorthand_matcher_rejects_repository_labels(line: str) -> None:
+    assert FORBIDDEN_RELEASE_SHORTHAND.search(line) is not None
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "line",
+    (
+        "pre-1.0",
+        "plugin timeout is 3.0 seconds",
+        "external plugin version 3.0",
+        "Python 3.12 and Python 3.13",
+        "actions/checkout@v4",
+        "schema version 1",
+        "JCM 1.1.1 and Veros 1.6.2",
+        "vercor_public_plugin-0.1.0-py3-none-any.whl",
+        "dependency release 0.2.1",
+        "v" + "3 = eastward_vector_component",
+    ),
+)
+def test_release_shorthand_matcher_allows_external_and_numeric_labels(
+    line: str,
+) -> None:
+    assert FORBIDDEN_RELEASE_SHORTHAND.search(line) is None
 
 
 @pytest.mark.fast_always

@@ -6,6 +6,11 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Matcher-level versioning review completed locally (2026-07-15): ordered,
+  explicit repository-release contexts replace the broad proximity heuristic.
+  RED isolated 4 incorrect cases among 17 parameters; matcher GREEN is 17/17
+  and the complete policy/architecture focus is 28/28. External dependency,
+  plugin, action, schema, and numerical labels remain accepted.
 - Versioning-review follow-up completed locally (2026-07-15): the repository
   policy now rejects contextual major-series shorthand without matching
   numerical values or external versions. RED reported exactly 10 remaining
