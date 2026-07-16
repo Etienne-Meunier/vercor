@@ -119,6 +119,20 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
 
 
 @pytest.mark.fast_always
+def test_pytest_defaults_use_measured_parallel_policy() -> None:
+    metadata = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert shlex.split(metadata["tool"]["pytest"]["ini_options"]["addopts"]) == [
+        "-q",
+        "-n4",
+        "--dist=loadscope",
+        "--max-worker-restart=0",
+    ]
+
+
+@pytest.mark.fast_always
 def test_pep561_markers_and_both_public_plugin_fixtures_are_present() -> None:
     assert (PROJECT_ROOT / "vercor" / "py.typed").is_file()
     required_plugin_files = (
@@ -313,6 +327,7 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     )
     installed_tools = set(shlex.split(install_tools_line))
     assert {"build", "flit_core<4"}.issubset(installed_tools)
+    assert "pytest-xdist>=3.7" in installed_tools
 
     assert plugin_job["strategy"]["matrix"] == {
         "python-version": ["3.12", "3.13"],
