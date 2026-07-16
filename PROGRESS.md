@@ -17,7 +17,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   dominated wall time. Forward revert `242bbe7` restored all three test files
   exactly to base `0d86341`; the narrower post-revert artifact/public check
   passed 103/103. The final policy/architecture/artifact/public focused gate
-  passed 264/264, with no production changes and no test optimization retained.
+  passed 264/264 and its policy/architecture follow-up passed 161/161, with no
+  production changes and no test optimization retained.
 - Calendar-owned runtime year metadata completed locally (2026-07-15):
   commits `9ade80c` and `a9b079c`. Runtime forcing metadata now derives year
   type and duration per timestamp; the duplicate runtime owner and private

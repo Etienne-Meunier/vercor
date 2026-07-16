@@ -1,14 +1,36 @@
 # Test-suite Artifact Reuse Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution record:** All steps now have a checked disposition. A checked
+> "NOT RUN" item records that the failure path made the command inapplicable;
+> it does not claim that command ran.
 
-**Goal:** Remove the duplicate VerCOR wheel build from the complete pytest gate while preserving every build, installation, public-boundary, isolation, and coverage guarantee.
+**Status:** Closed after the planned failure path; experiment forward-reverted.
 
-**Architecture:** A session-scoped root fixture builds or resolves one frozen `BuiltDistributions` bundle. Distribution tests and the installed public-API boundary share only those immutable artifact paths; every installation directory and interpreter probe remains test-local.
+**Historical goal:** Remove the duplicate VerCOR wheel build from the complete pytest gate while preserving every build, installation, public-boundary, isolation, and coverage guarantee.
+
+**Rejected experimental architecture:** A session-scoped root fixture built or resolved one frozen `BuiltDistributions` bundle. Distribution tests and the installed public-API boundary shared only those immutable artifact paths; every installation directory and interpreter probe remained test-local. Commit `242bbe7` restored independent builds.
 
 **Tech Stack:** Python 3.13, pytest 9.1, subprocess-based offline builds and installs, pytest-cov/coverage.py, Black, flake8, and mypy.
 
-## Global Constraints
+## Execution outcome
+
+Task 1 was performed in full and committed as `20ac416`. Its RED contract
+failed 1/1 and then passed 1/1; both module orders passed 104/104. The original
+focused pair passed 103/103 at a 29.215s wall-time mean, while the attempted
+pair passed 104/104 at 29.975s. The required aggregate timing result therefore
+failed even though the targeted installed-boundary call decreased.
+
+Task 2 followed Step 9 rather than the success path. Commit `242bbe7`
+forward-reverted the three test files to the exact `0d86341` state; the
+post-revert artifact/public gate passed 103/103. The full-suite timing,
+coverage, function-entry coverage, randomized/parallel applicability, and
+repository-wide quality steps were not run for a retained optimization.
+Failure evidence and policy verification were recorded in `30086f4` and
+`16fd230`: the four-file focused gate passed 264/264, and the follow-up
+policy/architecture gate passed 161/161. No speedup, production change, or test
+optimization is retained.
+
+## Original constraints
 
 - Optimize the complete `pytest tests/` gate, including artifact, optional-dependency, JAX transformation, and numerical contracts.
 - Do not delete, skip, disable, quarantine, xfail, merge, or weaken tests or assertions.
@@ -21,12 +43,16 @@
 
 ---
 
-## File structure
+## Historical file scope and restored structure
 
-- `tests/conftest.py`: owns the session-scoped immutable distribution fixture available to every test module.
-- `tests/test_distribution_boundaries.py`: retains artifact behavior tests and adds the static contract preventing a second build path in the installed public-boundary test.
-- `tests/test_v0_4_public_api.py`: installs and inspects the shared VerCOR wheel in a unique temporary target; it no longer builds a duplicate wheel.
-- `PROGRESS.md`: records durable timing, coverage, quality-gate, and remaining-bottleneck evidence.
+- `tests/conftest.py`: temporarily owned the session-scoped fixture; the revert
+  removed it.
+- `tests/test_distribution_boundaries.py`: temporarily consumed the root
+  fixture and held the static reuse contract; the module-scoped fixture was
+  restored and that experimental contract was removed.
+- `tests/test_v0_4_public_api.py`: temporarily consumed the shared wheel; its
+  independent inline wheel build was restored.
+- `PROGRESS.md`: records the failed approach and focused rejection evidence.
 
 ### Task 1: Share one immutable artifact bundle across serial test modules
 
@@ -37,12 +63,12 @@
 - Test: `tests/test_distribution_boundaries.py`
 - Test: `tests/test_v0_4_public_api.py`
 
-**Interfaces:**
+**Historical experimental interfaces:**
 - Consumes: `tests._distribution_support.build_distributions(project_root: Path, output_dir: Path) -> BuiltDistributions` using the helper's default optional artifact arguments.
 - Produces: pytest fixture `built_distributions(tmp_path_factory: pytest.TempPathFactory) -> BuiltDistributions`, scoped to one test session.
 - Preserves: `test_installed_wheel_preserves_the_complete_public_boundary(tmp_path: Path, built_distributions: BuiltDistributions) -> None` with the existing installation and probe assertions.
 
-- [ ] **Step 1: Measure the focused baseline twice before editing tests**
+- [x] **Step 1: Measured the focused baseline twice before editing tests**
 
 Run each command separately:
 
@@ -58,9 +84,10 @@ Run each command separately:
   --durations=15
 ```
 
-Expected: both runs pass 103 tests. Record both wall times and the duration of `test_installed_wheel_preserves_the_complete_public_boundary`.
+Result: both runs passed 103/103. Wall times were 29.83s and 28.60s
+(29.215s mean); the installed-boundary call was 1.28s in both samples.
 
-- [ ] **Step 2: Write the failing static performance contract**
+- [x] **Step 2: Wrote the failing static performance contract**
 
 Add `inspect` to the standard-library imports in `tests/test_distribution_boundaries.py`. Extend the existing public-API import without exposing a second collectable test name:
 
@@ -85,7 +112,7 @@ def test_installed_public_boundary_reuses_session_artifacts() -> None:
     assert "_cached_build_pythonpath" not in source
 ```
 
-- [ ] **Step 3: Run the new contract and verify RED**
+- [x] **Step 3: Ran the new contract and verified RED**
 
 Run:
 
@@ -95,9 +122,10 @@ Run:
   -v
 ```
 
-Expected: one failure because the baseline signature contains only `tmp_path` and the source still calls `_cached_build_pythonpath`.
+Result: 1/1 failed at the intended signature assertion because the baseline
+contained only `tmp_path`.
 
-- [ ] **Step 4: Move the artifact fixture to root test configuration**
+- [x] **Step 4: Moved the artifact fixture to root test configuration**
 
 Add this import in `tests/conftest.py` after the pytest import:
 
@@ -128,7 +156,7 @@ def built_distributions(
 
 Delete the module-scoped `built_distributions` fixture from `tests/test_distribution_boundaries.py`. Keep its `BuiltDistributions` and `build_distributions` imports because test annotations and direct helper tests still consume them.
 
-- [ ] **Step 5: Make the installed public-boundary test consume the shared wheel**
+- [x] **Step 5: Made the installed public-boundary test consume the shared wheel**
 
 Replace the private helper import in `tests/test_v0_4_public_api.py`:
 
@@ -150,7 +178,7 @@ def test_installed_wheel_preserves_the_complete_public_boundary(
 
 Delete only the local `distribution_dir`, build-environment, `python -m build`, and `next(distribution_dir.glob("vercor-*.whl"))` block. Keep the existing pip installation subprocess and every probe assertion unchanged.
 
-- [ ] **Step 6: Run the new contract and verify GREEN**
+- [x] **Step 6: Ran the new contract and verified GREEN**
 
 Run:
 
@@ -160,9 +188,9 @@ Run:
   -v
 ```
 
-Expected: `1 passed`.
+Result: 1/1 passed.
 
-- [ ] **Step 7: Run both affected modules in both orders**
+- [x] **Step 7: Ran both affected modules in both orders**
 
 Run each command separately:
 
@@ -174,15 +202,17 @@ Run each command separately:
   tests/test_v0_4_public_api.py tests/test_distribution_boundaries.py
 ```
 
-Expected: both runs pass 104 tests. The reverse-order run demonstrates that the session fixture can be initialized by either consumer without order dependence.
+Result: both orders passed 104/104 (31.39s and 29.65s).
 
-- [ ] **Step 8: Measure the focused result twice**
+- [x] **Step 8: Measured the focused result twice — acceptance failed**
 
 Run the Step 1 commands with output files renamed to `vercor-artifact-focused-after-1.time` and `vercor-artifact-focused-after-2.time`.
 
-Expected: both runs pass 104 tests; the installed public-boundary test no longer contains a wheel-build duration, and the two-run mean is lower despite the new static contract.
+Result: both runs passed 104/104, but wall times were 29.73s and 30.22s
+(29.975s mean), 0.760s above the 29.215s baseline mean. The target-call mean
+fell from 1.28s to 1.04s, which did not satisfy the aggregate timing gate.
 
-- [ ] **Step 9: Format and run focused static checks**
+- [x] **Step 9: Formatted and ran focused static checks**
 
 Run each command separately:
 
@@ -199,9 +229,10 @@ Run each command separately:
   tests/test_v0_4_public_api.py
 ```
 
-Expected: Black exits 0, strict flake8 reports 0, and mypy reports success.
+Result: Black exited 0, the final flake8 pass reported 0, mypy found no issues
+in 3 source files, and `git diff --check` was clean.
 
-- [ ] **Step 10: Commit the green optimization batch**
+- [x] **Step 10: Committed the experimental optimization batch**
 
 ```bash
 git add tests/conftest.py tests/test_distribution_boundaries.py \
@@ -209,7 +240,8 @@ git add tests/conftest.py tests/test_distribution_boundaries.py \
 git commit -m "test: reuse built distributions across modules"
 ```
 
-Expected: one commit contains the RED contract and GREEN fixture reuse, with no production-code change.
+Result: `20ac416` contained the RED contract and experimental fixture reuse,
+with no production-code change. It was later forward-reverted by `242bbe7`.
 
 ### Task 2: Verify the complete gate and record measured evidence
 
@@ -217,20 +249,21 @@ Expected: one commit contains the RED contract and GREEN fixture reuse, with no 
 - Modify: `PROGRESS.md:5-125`
 - Verify: `tests/`, `vercor/`, and `examples/`
 
-**Interfaces:**
-- Consumes: the session-scoped `built_distributions` fixture from Task 1.
-- Produces: exact final timing and coverage evidence in `PROGRESS.md` and the user handoff.
-- Preserves: 1,257 collected tests after the new static performance contract and every baseline coverage floor.
+**Execution-path interfaces:**
+- The attempted success path would have consumed Task 1's session-scoped
+  fixture and produced full timing and coverage evidence.
+- The actual failure path restored independent builds, removed the additional
+  static contract, and produced only focused rejection and policy evidence.
 
-- [ ] **Step 1: Run the deterministic fast gate**
+- [x] **Step 1 disposition: NOT RUN because Step 9's forward-revert path triggered**
 
 ```bash
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -m pytest tests/ --fast
 ```
 
-Expected: all selected tests pass with no failure, skip, xfail, or error. Record the selected and deselected counts.
+Result: not run for a retained optimization; no fast-gate count is claimed.
 
-- [ ] **Step 2: Run complete serial timing twice**
+- [x] **Step 2 disposition: NOT RUN because Step 9's forward-revert path triggered**
 
 Run each command separately:
 
@@ -244,9 +277,9 @@ Run each command separately:
   --durations=25
 ```
 
-Expected: both runs pass 1,257 tests. Compute the final mean, absolute saving, and `((125.91 - final_mean) / 125.91) * 100`. Compare the new slowest files and tests with the baseline.
+Result: not run; no full-suite timing or percentage improvement is claimed.
 
-- [ ] **Step 3: Run complete branch coverage**
+- [x] **Step 3 disposition: NOT RUN because Step 9's forward-revert path triggered**
 
 ```bash
 /usr/bin/time -p -o /private/tmp/vercor-final-coverage.time \
@@ -255,9 +288,9 @@ Expected: both runs pass 1,257 tests. Compute the final mean, absolute saving, a
   --cov-report=json:/private/tmp/vercor-final-coverage.json
 ```
 
-Expected: 1,257 tests pass, the configured 90% floor passes, and statement/line, branch, and combined coverage are no lower than 93.05%, 78.36%, and 90.52%.
+Result: not run; no post-experiment coverage result is claimed.
 
-- [ ] **Step 4: Recompute named-function entry coverage**
+- [x] **Step 4 disposition: NOT RUN because Step 9's forward-revert path triggered**
 
 Run the exact baseline method:
 
@@ -265,18 +298,19 @@ Run the exact baseline method:
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -c "import ast,json; from pathlib import Path; from coverage import CoverageData; report=json.load(open('/private/tmp/vercor-final-coverage.json')); data=CoverageData(); data.read(); total=covered=0; files=report['files']; exec('for path in Path(\"vercor\").rglob(\"*.py\"):\n tree=ast.parse(path.read_text())\n arcs=data.arcs(str(path.resolve())) or []\n entries={-start for start,end in arcs if start < 0}\n item=files.get(str(path))\n executable=set(item[\"executed_lines\"]+item[\"missing_lines\"]) if item else set()\n for node in ast.walk(tree):\n  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and any(node.lineno <= line <= (node.end_lineno or node.lineno) for line in executable):\n   total+=1\n   first=min([node.lineno]+[decorator.lineno for decorator in node.decorator_list])\n   covered+=first in entries'); print({'covered':covered,'total':total,'percent':100*covered/total})"
 ```
 
-Expected: at least 671 of 729 named functions/methods entered and at least 92.04%.
+Result: not run; no post-experiment function-entry result is claimed.
 
-- [ ] **Step 5: Verify randomized and parallel execution applicability**
+- [x] **Step 5 disposition: NOT RUN because Step 9's forward-revert path triggered**
 
 ```bash
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -c \
   "import importlib.util; print('pytest_randomly', bool(importlib.util.find_spec('pytest_randomly'))); print('xdist', bool(importlib.util.find_spec('xdist')))"
 ```
 
-Expected: both are `False`. Record randomized-order and parallel comparison as not applicable for this batch; do not install dependencies or claim results that were not run. Order independence is covered by Task 1 Step 7.
+Result: not run. No randomized-order or parallel-applicability result is
+claimed; Task 1 Step 7 only established the two explicit module orders.
 
-- [ ] **Step 6: Run repository-wide formatting, lint, typing, bytecode, and whitespace gates**
+- [x] **Step 6 disposition: NOT RUN because Step 9's forward-revert path triggered**
 
 Run each command separately:
 
@@ -290,13 +324,16 @@ Run each command separately:
 git diff --check
 ```
 
-Expected: Black exits 0, strict flake8 reports 0, mypy succeeds, compileall exits 0, and the whitespace check is clean.
+Result: the repository-wide success-path gates were not run. Task 1's focused
+three-file Black, flake8, mypy, and whitespace checks are recorded separately.
 
-- [ ] **Step 7: Update the bounded progress log with exact results**
+- [x] **Step 7: Updated the bounded progress log with failure evidence**
 
-Add one concise dated bullet at the top of `## Current Status` recording the baseline and final means, absolute and percentage savings, focused means, fast/full/coverage counts, all four coverage metrics, quality gates, unchanged isolation, lack of production changes, and the remaining bottleneck ranking. Condense existing wrapped prose so `wc -l PROGRESS.md` remains at or below 180. Do not edit either frozen progress archive.
+Result: `PROGRESS.md` records the focused and alternating rejection evidence,
+the absence of retained changes, and the forward revert without claiming
+unrun success-path gates. Commits: `30086f4` and clarification `16fd230`.
 
-- [ ] **Step 8: Run progress-policy and final focused regressions**
+- [x] **Step 8: Ran progress-policy and final focused regressions**
 
 ```bash
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -m pytest \
@@ -308,17 +345,23 @@ wc -l PROGRESS.md
 git diff --check
 ```
 
-Expected: all focused tests pass, `PROGRESS.md` has at most 180 lines, and the whitespace check is clean.
+Result: the four-file gate passed 264/264. The follow-up policy/architecture
+gate passed 161/161. `PROGRESS.md` remained within 180 lines, and the then-current
+working diff passed `git diff --check`.
 
-- [ ] **Step 9: Revert instead of claiming success if the gates fail**
+- [x] **Step 9: Forward-reverted after the aggregate timing gate failed**
 
-If complete behavior or coverage regresses, restore Task 1's three test files with a new forward patch and rerun Steps 1-8. If focused timing does not remove the duplicate-build cost or the final mean is not lower than 125.91 seconds, restore the original module fixture and inline public-API wheel build with a forward patch, document the failed approach in `PROGRESS.md`, and do not claim an improvement.
+Result: commit `242bbe7` restored the three test files exactly to `0d86341`.
+The post-revert distribution/public gate passed 103/103. No improvement is
+claimed.
 
-- [ ] **Step 10: Commit measured evidence**
+- [x] **Step 10: Committed failure evidence and policy clarification**
 
 ```bash
 git add PROGRESS.md
 git commit -m "docs: record test-suite performance results"
 ```
 
-Expected: implementation and evidence commits are present, the worktree is clean, and no required validation remains.
+Result: evidence commits `30086f4` and `16fd230` are present. The experimental
+commit `20ac416` and forward-revert commit `242bbe7` preserve the complete
+historical execution record.
