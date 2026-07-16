@@ -43,6 +43,7 @@ test = [
   "PyYAML",
   "pytest>=7.4.0",
   "pytest-cov",
+  "pytest-xdist>=3.7",
 ]
 dev = [
   "black",
@@ -52,6 +53,7 @@ dev = [
   "PyYAML",
   "pytest>=7.4.0",
   "pytest-cov",
+  "pytest-xdist>=3.7",
   "types-PyYAML",
 ]
 

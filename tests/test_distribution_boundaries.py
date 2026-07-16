@@ -108,6 +108,8 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     assert any(
         dependency.lower().startswith("pytest-cov") for dependency in extras["dev"]
     )
+    assert "pytest-xdist>=3.7" in extras["test"]
+    assert "pytest-xdist>=3.7" in extras["dev"]
     for tool in ("black", "build", "flake8", "mypy"):
         assert any(dependency.lower().startswith(tool) for dependency in extras["dev"])
 

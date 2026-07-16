@@ -12,22 +12,15 @@ from typing import Protocol, TypeVar
 import jax
 import pytest
 
+from tests._parallel_support import configure_test_cache_environment
+
 jax.config.update("jax_enable_x64", True)
 
 _TEST_CACHE_ROOT = Path(tempfile.gettempdir())
-_PLOTTING_CACHE_ENV_DEFAULTED = {
-    "MPLBACKEND": "MPLBACKEND" not in os.environ,
-    "MPLCONFIGDIR": "MPLCONFIGDIR" not in os.environ,
-    "XDG_CACHE_HOME": "XDG_CACHE_HOME" not in os.environ,
-}
-os.environ.setdefault("MPLBACKEND", "Agg")
-os.environ.setdefault(
-    "MPLCONFIGDIR",
-    str(_TEST_CACHE_ROOT / "vercor-matplotlib-cache"),
-)
-os.environ.setdefault(
-    "XDG_CACHE_HOME",
-    str(_TEST_CACHE_ROOT / "vercor-xdg-cache"),
+_PLOTTING_CACHE_ENV_DEFAULTED = configure_test_cache_environment(
+    os.environ,
+    cache_root=_TEST_CACHE_ROOT,
+    worker_id=os.environ.get("PYTEST_XDIST_WORKER"),
 )
 
 CaseT = TypeVar("CaseT")

@@ -41,6 +41,8 @@ matplotlib.use("Agg")
 @pytest.mark.fast_always
 def test_test_environment_uses_writable_plotting_cache_defaults() -> None:
     temp_root = Path(tempfile.gettempdir())
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    worker_suffix = f"-{worker_id}" if worker_id is not None else ""
 
     assert "MPLBACKEND" in os.environ
     assert "MPLCONFIGDIR" in os.environ
@@ -48,9 +50,13 @@ def test_test_environment_uses_writable_plotting_cache_defaults() -> None:
     if conftest_module._PLOTTING_CACHE_ENV_DEFAULTED["MPLBACKEND"]:
         assert os.environ["MPLBACKEND"] == "Agg"
     if conftest_module._PLOTTING_CACHE_ENV_DEFAULTED["MPLCONFIGDIR"]:
-        assert Path(os.environ["MPLCONFIGDIR"]).parent == temp_root
+        assert Path(os.environ["MPLCONFIGDIR"]) == (
+            temp_root / f"vercor-matplotlib-cache{worker_suffix}"
+        )
     if conftest_module._PLOTTING_CACHE_ENV_DEFAULTED["XDG_CACHE_HOME"]:
-        assert Path(os.environ["XDG_CACHE_HOME"]).parent == temp_root
+        assert Path(os.environ["XDG_CACHE_HOME"]) == (
+            temp_root / f"vercor-xdg-cache{worker_suffix}"
+        )
 
 
 def test_flatten_fields_and_append_unique() -> None:
