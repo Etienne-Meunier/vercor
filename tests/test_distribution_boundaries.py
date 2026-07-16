@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import os
 from pathlib import Path
@@ -31,7 +32,10 @@ from tests.test_api_architecture_review import (
     _public_signature_contract,
 )
 from tests.test_setup_boundaries import _run_setup_probe
-from tests.test_v0_4_public_api import PUBLIC_MODULE_EXPORTS
+from tests.test_v0_4_public_api import (
+    PUBLIC_MODULE_EXPORTS,
+    test_installed_wheel_preserves_the_complete_public_boundary as _installed_public_boundary_test,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
@@ -77,14 +81,14 @@ def _forbidden_archive_members(names: set[str]) -> tuple[str, ...]:
     )
 
 
-@pytest.fixture(scope="module")
-def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> BuiltDistributions:
-    """Build once locally or reuse the explicitly supplied CI artifact bundle."""
+@pytest.mark.fast_always
+def test_installed_public_boundary_reuses_session_artifacts() -> None:
+    signature = inspect.signature(_installed_public_boundary_test)
+    assert tuple(signature.parameters) == ("tmp_path", "built_distributions")
 
-    return build_distributions(
-        PROJECT_ROOT,
-        tmp_path_factory.mktemp("distribution-build") / "dist",
-    )
+    source = inspect.getsource(_installed_public_boundary_test)
+    assert "built_distributions.wheel" in source
+    assert "_cached_build_pythonpath" not in source
 
 
 @pytest.mark.fast_always

@@ -5,7 +5,6 @@ from datetime import datetime
 import importlib
 import inspect
 import logging
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -34,7 +33,7 @@ from vercor.physics import PhysicalConstants
 from vercor.runtime import RuntimeOptions
 from vercor.topology import TopologyContext
 
-from tests._distribution_support import _cached_build_pythonpath
+from tests._distribution_support import BuiltDistributions
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ROOT_EXPORTS = (
@@ -978,35 +977,11 @@ assert loaded == [], loaded
 
 def test_installed_wheel_preserves_the_complete_public_boundary(
     tmp_path: Path,
+    built_distributions: BuiltDistributions,
 ) -> None:
-    distribution_dir = tmp_path / "dist"
     installed_root = tmp_path / "site-packages"
-    distribution_dir.mkdir()
     installed_root.mkdir()
-    environment = os.environ.copy()
-    build_pythonpath = _cached_build_pythonpath()
-    if build_pythonpath:
-        environment["PYTHONPATH"] = build_pythonpath
-
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--no-isolation",
-            "--wheel",
-            "--outdir",
-            str(distribution_dir),
-            str(PROJECT_ROOT),
-        ],
-        cwd=tmp_path,
-        env=environment,
-        text=True,
-        capture_output=True,
-        timeout=120,
-        check=True,
-    )
-    wheel = next(distribution_dir.glob("vercor-*.whl"))
+    wheel = built_distributions.wheel
     subprocess.run(
         [
             sys.executable,
