@@ -124,3 +124,6 @@ ENV/
 
 # linting cache
 .ruff_cache/
+
+# graphifyy output
+graphify-out
