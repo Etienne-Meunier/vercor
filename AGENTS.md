@@ -32,12 +32,12 @@ black vercor examples tests
 mypy vercor examples tests
 
 # Run Python tests
-pytest tests/ -v
-pytest tests/ -v -m "not slow"     # skip integration tests
+pytest tests/ -v -n4 --dist=loadscope --max-worker-restart=0 --durations=25 --tb=short
+pytest tests/ -v -m "not slow" -v -n4 --dist=loadscope --max-worker-restart=0 --durations=25  # skip integration tests
 pytest tests/test_gradients.py -v  # gradient checks only
 
 # Do test coverage analysis
-pytest --cov=vercor tests/ -v
+pytest --cov=vercor tests/ -v -n4 --dist=loadscope --max-worker-restart=0 --durations=25 --tb=short
 
 # Commit changes to git only after full suite unit tests pass
 git add .
