@@ -6,27 +6,25 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Rejected test-artifact optimization (2026-07-16): sharing one distribution
+  build across modules failed the required focused aggregate timing gate and
+  was forward-reverted; no improvement is claimed. The original two-run mean
+  was 29.215s versus 29.975s attempted. An alternating comparison measured
+  archived base at 29.49s versus attempted current at 31.045s. The targeted
+  installed-boundary call fell from 1.28s to 1.04s initially and from 1.27s to
+  1.06s in the paired comparison, but user CPU was essentially unchanged
+  (24.825s base versus 24.795s attempted) and unrelated plugin-probe variance
+  dominated wall time. Forward revert `242bbe7` restored all three test files
+  exactly to base `0d86341`; the focused regression passed 103/103, with no
+  production changes and no test optimization retained.
 - Calendar-owned runtime year metadata completed locally (2026-07-15):
-  implementation commit `9ade80c` (`refactor: derive model-year duration from
-  calendar`) and review-fix commit `a9b079c` (`test: guard per-timestamp
-  calendar year metadata`).
-  `RuntimeOptions` now owns only dtype, backend, workflow, and topology;
-  runtime forcing metadata derives canonical year type and duration from each
-  timestamp's calendar and year, and the private clock mapper is deleted. RED
-  was 6 failures: four rejected the new `calendar` argument and two exposed
-  the duplicate runtime owner. A first GREEN attempt exposed and fixed the
-  common-year stdlib `datetime`/no-leap forcing-index boundary. Implementation
-  focused GREEN was 136/136. The review regression's first-timestamp-hoisting
-  mutation failed 1/1 as expected, and the restored focused test passed 1/1.
-  Final post-fix fast is 660/660 with 596 deselected, and full is 1256/1256.
-  The implementation coverage run, before the test-only review fix, passed
-  1255/1255 and measured 90.52% branch coverage across 7,355 statements and
-  1,534 branches; coverage was not rerun for the review fix. Black reformatted
-  3 files with 239 unchanged and emitted the known Python 3.13/target-3.15
-  safety warning while exiting 0; strict flake8 is 0; mypy passes 238 source
-  files; compileall and whitespace checks are clean. Full and implementation
-  coverage runs emitted only the five known third-party warning instances.
-  Historical 0.3 evidence and archived progress remain unchanged.
+  commits `9ade80c` and `a9b079c`. Runtime forcing metadata now derives year
+  type and duration per timestamp; the duplicate runtime owner and private
+  mapper are gone, and the common-year stdlib `datetime` boundary is fixed.
+  Focused GREEN was 136/136; mutation/restoration was 1 failure then 1 pass;
+  final fast was 660/660 with 596 deselected and full was 1256/1256. Earlier
+  implementation coverage was 90.52% across 7,355 statements and 1,534
+  branches; Black, flake8, mypy, compileall, and whitespace gates passed.
 - Matcher-level versioning review completed locally (2026-07-15): ordered,
   explicit repository-release contexts replace the broad proximity heuristic.
   RED isolated 4 incorrect cases among 17 parameters; matcher GREEN is 17/17
