@@ -12,11 +12,8 @@ from typing import Protocol, TypeVar
 import jax
 import pytest
 
-from tests._distribution_support import BuiltDistributions, build_distributions
-
 jax.config.update("jax_enable_x64", True)
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _TEST_CACHE_ROOT = Path(tempfile.gettempdir())
 _PLOTTING_CACHE_ENV_DEFAULTED = {
     "MPLBACKEND": "MPLBACKEND" not in os.environ,
@@ -133,18 +130,6 @@ def pytest_collection_modifyitems(
     if deselected:
         config.hook.pytest_deselected(items=deselected)
         items[:] = selected
-
-
-@pytest.fixture(scope="session")
-def built_distributions(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> BuiltDistributions:
-    """Build once or reuse the explicitly supplied immutable artifact bundle."""
-
-    return build_distributions(
-        _PROJECT_ROOT,
-        tmp_path_factory.mktemp("distribution-build") / "dist",
-    )
 
 
 @pytest.fixture
