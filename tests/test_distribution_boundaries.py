@@ -35,9 +35,7 @@ from tests.test_v0_4_public_api import PUBLIC_MODULE_EXPORTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
-FROZEN_PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin_0_3"
 EXPECTED_PLUGIN_WHEEL_NAME = "vercor_public_plugin-0.1.0-py3-none-any.whl"
-EXPECTED_FROZEN_PLUGIN_WHEEL_NAME = "vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl"
 EXPECTED_INSTALLED_ROOT = (
     "Clock",
     "Coupler",
@@ -133,7 +131,7 @@ def test_pytest_defaults_use_measured_parallel_policy() -> None:
 
 
 @pytest.mark.fast_always
-def test_pep561_markers_and_both_public_plugin_fixtures_are_present() -> None:
+def test_pep561_markers_and_public_plugin_fixture_are_present() -> None:
     assert (PROJECT_ROOT / "vercor" / "py.typed").is_file()
     required_plugin_files = (
         "pyproject.toml",
@@ -146,42 +144,26 @@ def test_pep561_markers_and_both_public_plugin_fixtures_are_present() -> None:
     for relative_path in required_plugin_files:
         assert (PLUGIN_ROOT / relative_path).is_file(), relative_path
 
-    required_frozen_plugin_files = (
-        "pyproject.toml",
-        "src/vercor_compat_plugin_0_3/__init__.py",
-        "src/vercor_compat_plugin_0_3/plugin.py",
-        "src/vercor_compat_plugin_0_3/smoke.py",
-        "src/vercor_compat_plugin_0_3/py.typed",
-        "use_site.py",
-    )
-    for relative_path in required_frozen_plugin_files:
-        assert (FROZEN_PLUGIN_ROOT / relative_path).is_file(), relative_path
-
 
 @pytest.mark.fast_always
-def test_public_plugin_fixtures_are_isolated_and_never_import_private_modules() -> None:
-    for fixture_root in (PLUGIN_ROOT, FROZEN_PLUGIN_ROOT):
-        python_paths = sorted(fixture_root.rglob("*.py"))
-        assert python_paths
+def test_public_plugin_fixture_is_isolated_and_never_imports_private_modules() -> None:
+    python_paths = sorted(PLUGIN_ROOT.rglob("*.py"))
+    assert python_paths
 
-        for path in python_paths:
-            source = path.read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=str(path))
-            for node in ast.walk(tree):
-                modules: list[str] = []
-                if isinstance(node, ast.Import):
-                    modules.extend(alias.name for alias in node.names)
-                elif isinstance(node, ast.ImportFrom) and node.module is not None:
-                    modules.append(node.module)
-                for module in modules:
-                    if module == "vercor" or module.startswith("vercor."):
-                        assert not any(
-                            part.startswith("_") for part in module.split(".")[1:]
-                        ), f"{path} imports private VerCOR module {module}"
-            if fixture_root == PLUGIN_ROOT:
-                assert "vercor_compat_plugin_0_3" not in source
-            else:
-                assert "vercor_public_plugin" not in source
+    for path in python_paths:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                modules.append(node.module)
+            for module in modules:
+                if module == "vercor" or module.startswith("vercor."):
+                    assert not any(
+                        part.startswith("_") for part in module.split(".")[1:]
+                    ), f"{path} imports private VerCOR module {module}"
 
 
 @pytest.mark.fast_always
@@ -223,36 +205,6 @@ def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> Non
         ".replace_fields(",
     ):
         assert contract in source, contract
-    for removed_contract in (
-        "defaults=",
-        "DataComponent.from_fields",
-        "create_payload=",
-        "initialize=",
-        "def initial_fields(",
-    ):
-        assert removed_contract not in source, removed_contract
-
-
-@pytest.mark.fast_always
-def test_frozen_plugin_uses_only_0_3_contracts_and_its_own_distribution() -> None:
-    project = tomllib.loads(
-        (FROZEN_PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]
-    source = (FROZEN_PLUGIN_ROOT / "src/vercor_compat_plugin_0_3/plugin.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert project["name"] == "vercor-compat-plugin-0-3"
-    assert project["version"] == "0.1.0"
-    assert project["dependencies"] == ["vercor>=0.3,<0.4"]
-    assert "vercor_public_plugin" not in source
-    for newer_contract in (
-        "DataComponent",
-        "StepResult",
-        "replace_fields",
-        "TopologyPolicy",
-    ):
-        assert newer_contract not in source
 
 
 @pytest.mark.fast_always
@@ -272,10 +224,6 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "python -m build --outdir dist" in build_commands
     assert (
         "python -m build --wheel --outdir dist tests/fixtures/public_plugin"
-        in build_commands
-    )
-    assert (
-        "python -m build --wheel --outdir dist tests/fixtures/public_plugin_0_3"
         in build_commands
     )
     upload_step = next(
@@ -331,15 +279,12 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
 
     assert plugin_job["strategy"]["matrix"] == {
         "python-version": ["3.12", "3.13"],
-        "plugin-lane": ["native-v0.4", "historical-v0.3-artifact"],
     }
     plugin_commands = "\n".join(
         step.get("run", "") for step in plugin_job["steps"] if isinstance(step, dict)
     )
     assert "vercor_public_plugin.smoke" in plugin_commands
-    assert "vercor_compat_plugin_0_3.smoke" not in plugin_commands
     assert "MYPYPATH" in plugin_commands
-    assert "Requires-Dist: vercor>=0.3,<0.4" in plugin_commands
 
     assert macos_job["runs-on"] == "macos-latest"
     macos_commands = "\n".join(
@@ -392,11 +337,9 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     wheel = artifact_dir / EXPECTED_WHEEL_NAME
     sdist = artifact_dir / EXPECTED_SDIST_NAME
     plugin_wheel = artifact_dir / EXPECTED_PLUGIN_WHEEL_NAME
-    frozen_plugin_wheel = artifact_dir / EXPECTED_FROZEN_PLUGIN_WHEEL_NAME
     wheel.touch()
     sdist.touch()
     plugin_wheel.touch()
-    frozen_plugin_wheel.touch()
 
     def unexpected_build(*args: object, **kwargs: object) -> object:
         _ = args, kwargs
@@ -413,36 +356,26 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     assert distributions.wheel == wheel
     assert distributions.sdist == sdist
     assert distributions.plugin_wheel == plugin_wheel
-    assert distributions.frozen_plugin_wheel == frozen_plugin_wheel
     assert distributions.build_pythonpath == ""
 
 
 @pytest.mark.parametrize(
-    ("wheel_name", "sdist_name", "plugin_wheel_name", "frozen_plugin_wheel_name"),
+    ("wheel_name", "sdist_name", "plugin_wheel_name"),
     (
         (
             "vercor-0.4.0a0-py3-none-any.whl",
-            "vercor-0.4.0a1.tar.gz",
+            EXPECTED_SDIST_NAME,
             EXPECTED_PLUGIN_WHEEL_NAME,
-            EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-0.4.0a1-py3-none-any.whl",
+            EXPECTED_WHEEL_NAME,
             "vercor-0.4.0a0.tar.gz",
             EXPECTED_PLUGIN_WHEEL_NAME,
-            EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
         ),
         (
-            "vercor-0.4.0a1-py3-none-any.whl",
-            "vercor-0.4.0a1.tar.gz",
+            EXPECTED_WHEEL_NAME,
+            EXPECTED_SDIST_NAME,
             "vercor_public_plugin-0.2.0-py3-none-any.whl",
-            EXPECTED_FROZEN_PLUGIN_WHEEL_NAME,
-        ),
-        (
-            "vercor-0.4.0a1-py3-none-any.whl",
-            "vercor-0.4.0a1.tar.gz",
-            EXPECTED_PLUGIN_WHEEL_NAME,
-            "vercor_compat_plugin_0_3-0.2.0-py3-none-any.whl",
         ),
     ),
 )
@@ -451,14 +384,12 @@ def test_distribution_helper_rejects_wrong_artifact_version(
     wheel_name: str,
     sdist_name: str,
     plugin_wheel_name: str,
-    frozen_plugin_wheel_name: str,
 ) -> None:
     artifact_dir = tmp_path / "wrong-dist"
     artifact_dir.mkdir()
     (artifact_dir / wheel_name).touch()
     (artifact_dir / sdist_name).touch()
     (artifact_dir / plugin_wheel_name).touch()
-    (artifact_dir / frozen_plugin_wheel_name).touch()
 
     with pytest.raises(ValueError, match=f"VerCOR {EXPECTED_VERSION}"):
         build_distributions(
@@ -466,7 +397,6 @@ def test_distribution_helper_rejects_wrong_artifact_version(
             tmp_path / "unused-build-output",
             artifact_dir=artifact_dir,
             plugin_wheel_path=artifact_dir / plugin_wheel_name,
-            frozen_plugin_wheel_path=artifact_dir / frozen_plugin_wheel_name,
         )
 
 
@@ -480,7 +410,6 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert distributions.wheel.name == EXPECTED_WHEEL_NAME
     assert distributions.sdist.name == EXPECTED_SDIST_NAME
     assert distributions.plugin_wheel.name == EXPECTED_PLUGIN_WHEEL_NAME
-    assert distributions.frozen_plugin_wheel.name == EXPECTED_FROZEN_PLUGIN_WHEEL_NAME
     with zipfile.ZipFile(distributions.wheel) as wheel:
         wheel_names = set(wheel.namelist())
         metadata_name = next(
@@ -500,19 +429,15 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert "Provides-Extra: test" in metadata
     assert "Provides-Extra: dev" in metadata
 
-    for plugin_wheel, requirement in (
-        (distributions.plugin_wheel, "Requires-Dist: vercor>=0.4,<0.5"),
-        (distributions.frozen_plugin_wheel, "Requires-Dist: vercor>=0.3,<0.4"),
-    ):
-        with zipfile.ZipFile(plugin_wheel) as plugin_archive:
-            plugin_metadata_name = next(
-                name
-                for name in plugin_archive.namelist()
-                if name.endswith(".dist-info/METADATA")
-            )
-            plugin_metadata = plugin_archive.read(plugin_metadata_name).decode("utf-8")
-        assert "Version: 0.1.0" in plugin_metadata
-        assert requirement in plugin_metadata
+    with zipfile.ZipFile(distributions.plugin_wheel) as plugin_archive:
+        plugin_metadata_name = next(
+            name
+            for name in plugin_archive.namelist()
+            if name.endswith(".dist-info/METADATA")
+        )
+        plugin_metadata = plugin_archive.read(plugin_metadata_name).decode("utf-8")
+    assert "Version: 0.1.0" in plugin_metadata
+    assert "Requires-Dist: vercor>=0.4,<0.5" in plugin_metadata
 
     with tarfile.open(distributions.sdist, "r:gz") as sdist:
         sdist_names = set(sdist.getnames())
@@ -530,7 +455,6 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     probe_source = f"""
 import importlib
 import importlib.metadata
-import importlib.util
 import inspect
 import json
 import pathlib
@@ -659,9 +583,6 @@ print(json.dumps({{
     "callable_exports": callable_exports,
     "method_names": method_names,
     "signatures": signatures,
-    "historical_plugin_installed": importlib.util.find_spec(
-        "vercor_compat_plugin_0_3"
-    ) is not None,
 }}))
 """
     probe = subprocess.run(
@@ -695,7 +616,6 @@ print(json.dumps({{
         EXPECTED_INSTALLED_SIGNATURES["methods"]
     )
     assert installed["signatures"] == EXPECTED_INSTALLED_SIGNATURES
-    assert installed["historical_plugin_installed"] is False
 
     monkeypatch.setenv("VERCOR_TEST_PACKAGE_ROOT", str(target))
     setup_probe = _run_setup_probe("import vercor")
@@ -940,7 +860,6 @@ def test_supplied_wheels_install_and_run_without_build_environment(
         built_distributions.wheel,
         built_distributions.sdist,
         built_distributions.plugin_wheel,
-        built_distributions.frozen_plugin_wheel,
     ):
         shutil.copyfile(artifact, artifact_dir / artifact.name)
 
@@ -956,10 +875,6 @@ def test_supplied_wheels_install_and_run_without_build_environment(
     monkeypatch.setenv(
         "VERCOR_PLUGIN_WHEEL_PATH",
         str(artifact_dir / built_distributions.plugin_wheel.name),
-    )
-    monkeypatch.setenv(
-        "VERCOR_COMPAT_PLUGIN_WHEEL_PATH",
-        str(artifact_dir / built_distributions.frozen_plugin_wheel.name),
     )
 
     supplied = build_distributions(PROJECT_ROOT, tmp_path / "must-not-build")

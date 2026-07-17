@@ -405,7 +405,6 @@ def test_release_files_and_metadata_describe_the_built_alpha() -> None:
         "vercor-0.4.0a1-py3-none-any.whl",
         "vercor-0.4.0a1.tar.gz",
         "vercor_public_plugin-0.1.0-py3-none-any.whl",
-        "vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl",
     ):
         assert artifact in releasing
 
@@ -433,16 +432,3 @@ def test_active_memory_is_current_and_historical_detail_is_archived() -> None:
     dependencies = DEPENDENCIES_PATH.read_text(encoding="utf-8")
     assert "vercor.compat.v0_3" not in design
     assert "vercor.compat.v0_3" not in dependencies
-
-
-@pytest.mark.fast_always
-def test_task9_namespace_is_absent_and_frozen_fixture_is_historical_only() -> None:
-    """Enforce the explicit decision to ship the alpha without Task 9 adapters."""
-
-    with pytest.raises(ModuleNotFoundError, match="vercor.compat"):
-        importlib.import_module("vercor.compat.v0_3")
-
-    migration = MIGRATION_PATH.read_text(encoding="utf-8")
-    assert "tests/fixtures/public_plugin_0_3" in migration
-    assert "historical artifact" in migration.casefold()
-    assert "vercor.compat.v0_3" not in migration

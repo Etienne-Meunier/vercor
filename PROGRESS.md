@@ -6,6 +6,7 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Historical VerCOR 0.3 distribution evidence removed locally (2026-07-17): focused RED was 3 failed/4 errors/30 passed after deletion; focused GREEN passed 34/34, fast passed 657/657, and full passed 1256/1256 with only known third-party warnings; no production behavior changed.
 - Controlled pytest parallelization completed locally (2026-07-16) on Python 3.13.13,
   pytest 9.1.1, pytest-xdist 3.8.0, pytest-cov 7.1.0, coverage.py 7.15.0, JAX 0.10.2,
   macOS-26.5.2-arm64-arm-64bit-Mach-O/arm64. The 1,256-test serial baseline mean was 125.91s; artifact reuse was forward-reverted because 29.975s regressed from 29.215s.

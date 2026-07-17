@@ -85,4 +85,3 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 disallow_untyped_defs = true
-exclude = ["^tests/fixtures/public_plugin_0_3/"]
