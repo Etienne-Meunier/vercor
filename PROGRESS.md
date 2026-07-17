@@ -6,19 +6,19 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits
-  `f82588f`, `977298d`, `4733f26`, `201126f`, and `16728b1`: historical
-  distribution fixtures and their baseline, mutable component/output test
-  helpers, absence-only guards, and obsolete output-adapter tests are gone.
-  Runtime-boundary and native-period tests now use current names. Exact public
-  manifests, signatures, canonical owners, structural component/lifecycle
-  behavior, immutable state, native-plugin artifacts, output behavior,
-  numerical behavior, JIT, and gradients remain covered. The audit found no
-  uncertain VerCOR-owned candidate requiring preservation; supported structural flexibility remains.
-  Focused cleanup gates passed 34/34, 94/94, 136/136,
-  and 301/301; active docs passed 175/175. Black checked 236 files, strict
-  flake8 was 0, mypy passed 236 files, and compileall/whitespace were clean.
-  Fast/full passed 632/632 and 1220/1220 with known third-party warnings; coverage was 90.49% across 7,355 statements and 1,534 branches. Production code and its dependency order are unchanged.
+- VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits `f82588f`, `977298d`, `4733f26`, `201126f`, `16728b1`, and `04e6f45`.
+  Historical distribution evidence, mutable component/output test helpers, absence-only guards, and obsolete output-adapter tests are gone.
+  Renamed tests and direct positive contracts cover exact public manifests/signatures/owners, structural lifecycle behavior, immutable state,
+  native artifacts, output, numerics, JIT, and gradients. No uncertain VerCOR-owned
+  cleanup candidate was found; schema-compatible foreign states, `datetime.timetuple()`
+  interoperability, JAX transform safety, lazy optional dependencies, payload copying,
+  and offline artifact reuse remain supported. Focused gates passed 34/34, 94/94,
+  136/136, and 301/301; active docs passed 175/175. Black left 236 files unchanged with
+  its Python 3.13/target-3.15 safety-parse advisory; strict flake8 was 0, mypy passed 236
+  files, and compileall/whitespace were clean. Fast passed 632/632 with six third-party
+  warnings; full and coverage passed 1220/1220 with eight: four Flax/JAX-effect, one JAX
+  scatter-cast, one JCM/xarray merge-default, and two xarray/NumPy-shape instances.
+  Coverage was 90.49% across 7,355 statements and 1,534 branches. Production code and its dependency order are unchanged.
 - Controlled pytest parallelization completed locally (2026-07-16): fixed n4
   loadscope reduced the measured 124.38s serial mean to 61.66s (50.43%) while
   preserving selection, warnings, and 90.52% combined coverage. Fast/full,
