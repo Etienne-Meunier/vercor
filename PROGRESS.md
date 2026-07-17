@@ -6,7 +6,15 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 0.4 cleanup completed locally (2026-07-17): historical 0.3 distribution evidence and the mutable component test helper are removed; their required REDs, 34/34 and 94/94 focused GREENs, targeted mypy, 657/657 fast, and 1256/1256 full gates passed with only known third-party warnings, no remaining compatibility-helper matches, and no production behavior change.
+- VerCOR 0.4 cleanup completed locally (2026-07-17): historical 0.3
+  distribution evidence, the mutable component test helper, and the mutable
+  output test adapter are removed. The output adapter deletion produced the
+  required two-module collection RED; CAMulator, JAXGCM, and Veros tests now
+  exercise immutable `OutputFrame`/`_OutputAccumulator` accumulation and direct
+  NetCDF writes. Cleanup gates include the earlier 34/34 and 94/94 focused
+  GREENs, the output 136/136 focus, targeted mypy, 657/657 fast, and 1256/1256
+  full suites with only known third-party warnings and no production behavior
+  change.
 - Controlled pytest parallelization completed locally (2026-07-16) on Python 3.13.13,
   pytest 9.1.1, pytest-xdist 3.8.0, pytest-cov 7.1.0, coverage.py 7.15.0, JAX 0.10.2,
   macOS-26.5.2-arm64-arm-64bit-Mach-O/arm64. The 1,256-test serial baseline mean was 125.91s; artifact reuse was forward-reverted because 29.975s regressed from 29.215s.

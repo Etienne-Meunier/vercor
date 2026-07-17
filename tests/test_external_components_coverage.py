@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -37,14 +37,17 @@ from vercor.calendar import DateTime360, DateTime365
 from vercor.components.contracts import PrefillContext
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
-from tests._output_test_support import ComponentOutputAdapter
 from vercor.output import (
     OutputContext,
+    OutputFrame,
     OutputSpec,
     OutputVariable,
     PeriodOutput,
     SnapshotContext,
 )
+from vercor.output._netcdf import write_netcdf_dataset
+from vercor.output._period import period_mean_sample_to_output_variable
+from vercor.output._session import _OutputAccumulator
 from vercor.dtypes import DTypePolicy
 from vercor.physics import PhysicalConstants
 from vercor.setups import VerosConfig
@@ -203,56 +206,29 @@ class _ConstructedVerosState:
         self.profile_timers: dict[str, Any] = {}
 
 
-def _make_jax_gcm_output_adapter() -> ComponentOutputAdapter:
-    return ComponentOutputAdapter(
-        empty_error_message="JAXGCM average output requires at least one prediction.",
-        time_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
-        dimension_order=jax_gcm_output_module.JAX_GCM_OUTPUT_DIMENSION_ORDER,
-    )
+def _accumulate_frames(frames: Sequence[OutputFrame]) -> _OutputAccumulator:
+    first, *remaining = frames
+    accumulator = _OutputAccumulator.zeros_from_frame(first).add_frame(first)
+    for frame in remaining:
+        accumulator = accumulator.add_frame(frame)
+    return accumulator
 
 
-def _write_jax_gcm_average_output(
-    adapter: ComponentOutputAdapter,
-    output: str,
+def _period_variables(
+    accumulator: _OutputAccumulator,
     *,
-    coords: Any,
-    output_time: Any,
-    physics_module: Any,
-    logger: Any | None = None,
-) -> None:
-    unit_metadata = jax_gcm_output_module.jax_gcm_unit_metadata(physics_module)
-
-    def build_coordinate_variables(
-        variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        _ = variables
-        return jax_gcm_output_module.jax_gcm_coordinate_variables(
-            coords=coords,
-            output_time=output_time,
+    time_dim: str,
+    reverse_value_dims: bool = False,
+) -> dict[str, OutputVariable]:
+    return {
+        name: period_mean_sample_to_output_variable(
+            sample,
+            time_dim=time_dim,
+            value_dims=tuple(reversed(sample.dims)) if reverse_value_dims else None,
+            dimension_order=accumulator.dimension_order,
         )
-
-    def build_data_variables(
-        variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return jax_gcm_output_module.jax_gcm_data_variables_with_unit_metadata(
-            variables,
-            unit_metadata,
-        )
-
-    adapter.write_period_average(
-        output,
-        build_coordinate_variables=build_coordinate_variables,
-        build_data_variables=build_data_variables,
-        logger=logger,
-    )
-
-
-def _make_veros_output_adapter() -> ComponentOutputAdapter:
-    return ComponentOutputAdapter(
-        empty_error_message="Veros average output requires at least one prediction.",
-        time_dim=veros_output_module.VEROS_TIME_DIM,
-        value_dims_for_sample=lambda sample: tuple(reversed(sample.dims)),
-    )
+        for name, sample in accumulator.mean_frame().variables.items()
+    }
 
 
 def _make_coupler(
@@ -1002,31 +978,44 @@ def test_jax_gcm_write_output_persists_mean_dataset(tmp_path: Path) -> None:
             times=np.asarray([1.0]),
         ),
     ]
-    adapter = _make_jax_gcm_output_adapter()
-    for prediction in predictions:
-        adapter.accumulate(
+    frames = tuple(
+        OutputFrame(
             jax_gcm_output_module.jax_gcm_prediction_output_variables(
                 prediction,
                 coords=coords,
                 physics_module=physics_module,
             ),
-            summation_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+            sample_dimension=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+            time_dimension=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+            dimension_order=jax_gcm_output_module.JAX_GCM_OUTPUT_DIMENSION_ORDER,
         )
-    accumulated_temperature = adapter.variables["temperature"]
-    assert isinstance(accumulated_temperature.sum_values, jax.Array)
-    assert isinstance(accumulated_temperature.counts, jax.Array)
+        for prediction in predictions
+    )
+    accumulator = _accumulate_frames(frames)
+    temperature_index = accumulator.names.index("temperature")
+    assert isinstance(accumulator.sum_values[temperature_index], jax.Array)
+    assert isinstance(accumulator.counts[temperature_index], jax.Array)
 
     output = tmp_path / "jcm_output.nc"
     logger_name = "VerCOR.test.jax-gcm-output"
     logger = logging.getLogger(logger_name)
+    variables = _period_variables(
+        accumulator,
+        time_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+    )
+    data_variables = jax_gcm_output_module.jax_gcm_data_variables_with_unit_metadata(
+        variables,
+        jax_gcm_output_module.jax_gcm_unit_metadata(physics_module),
+    )
 
     with capture_logger_output(logger_name) as stream:
-        _write_jax_gcm_average_output(
-            adapter,
-            str(output),
-            coords=coords,
-            output_time=datetime(2000, 1, 2),
-            physics_module=physics_module,
+        write_netcdf_dataset(
+            output=str(output),
+            coordinate_variables=jax_gcm_output_module.jax_gcm_coordinate_variables(
+                coords=coords,
+                output_time=datetime(2000, 1, 2),
+            ),
+            data_variables=data_variables,
             logger=logger,
         )
 
@@ -1051,7 +1040,10 @@ def test_jax_gcm_write_output_persists_mean_dataset(tmp_path: Path) -> None:
         )
         assert actual.variables["time"].shape == (1,)
         assert actual.variables["time"].attrs["calendar"] == "proleptic_gregorian"
-    assert adapter.empty
+    assert_allclose_compact(
+        accumulator.counts[temperature_index],
+        np.full((3, 2, 3), 2),
+    )
     assert physics_module.cached_coords is coords
     assert f"Writing output file:  {output}" in stream.getvalue()
 
@@ -1081,23 +1073,36 @@ def test_jax_gcm_write_output_preserves_model_calendar_attrs(
             times=np.asarray([0.0]),
         )
     ]
-    adapter = _make_jax_gcm_output_adapter()
-    adapter.accumulate(
-        jax_gcm_output_module.jax_gcm_prediction_output_variables(
-            predictions[0],
-            coords=coords,
-            physics_module=physics_module,
-        ),
-        summation_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+    frames = tuple(
+        OutputFrame(
+            jax_gcm_output_module.jax_gcm_prediction_output_variables(
+                prediction,
+                coords=coords,
+                physics_module=physics_module,
+            ),
+            sample_dimension=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+            time_dimension=jax_gcm_output_module.JAX_GCM_TIME_DIM,
+            dimension_order=jax_gcm_output_module.JAX_GCM_OUTPUT_DIMENSION_ORDER,
+        )
+        for prediction in predictions
+    )
+    accumulator = _accumulate_frames(frames)
+    variables = _period_variables(
+        accumulator,
+        time_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
     )
     output = tmp_path / "jcm_model_calendar_output.nc"
 
-    _write_jax_gcm_average_output(
-        adapter,
-        str(output),
-        coords=coords,
-        output_time=output_time,
-        physics_module=physics_module,
+    write_netcdf_dataset(
+        output=str(output),
+        coordinate_variables=jax_gcm_output_module.jax_gcm_coordinate_variables(
+            coords=coords,
+            output_time=output_time,
+        ),
+        data_variables=jax_gcm_output_module.jax_gcm_data_variables_with_unit_metadata(
+            variables,
+            jax_gcm_output_module.jax_gcm_unit_metadata(physics_module),
+        ),
     )
 
     with h5netcdf.File(output, "r") as actual:
@@ -1106,6 +1111,11 @@ def test_jax_gcm_write_output_preserves_model_calendar_attrs(
         assert time.attrs["day_of_year"] == expected_day_of_year
         assert time.attrs["days_per_year"] == days_per_year
         assert time.attrs["fixed_30_day_months"] == int(expected_calendar == "360_day")
+    temperature_index = accumulator.names.index("temperature")
+    assert_allclose_compact(
+        accumulator.counts[temperature_index],
+        np.ones((3, 2, 3)),
+    )
 
 
 def test_jax_gcm_snapshot_output_uses_final_runtime_payload_not_runtime_data(
@@ -1114,8 +1124,7 @@ def test_jax_gcm_snapshot_output_uses_final_runtime_payload_not_runtime_data(
     coords = _make_jax_gcm_output_coords()
     physics_module = _FakePhysicsModule()
     setup_state = SimpleNamespace(
-        output_adapter=_make_jax_gcm_output_adapter(),
-        model=SimpleNamespace(coords=coords, physics=physics_module),
+        model=SimpleNamespace(coords=coords, physics=physics_module)
     )
     jcm_state = SimpleNamespace(
         prog={
@@ -1589,23 +1598,32 @@ def test_veros_write_output_persists_period_mean_and_coordinates(
             ("temp", "salt", "u", "surface_taux", "psi"),
         ),
     ]
-    adapter = _make_veros_output_adapter()
-    for snapshot in snapshots:
-        adapter.accumulate(snapshot)
-    accumulated_temperature = adapter.variables["temp"]
-    assert isinstance(accumulated_temperature.sum_values, jax.Array)
-    assert isinstance(accumulated_temperature.counts, jax.Array)
+    frames = tuple(
+        OutputFrame(
+            snapshot,
+            time_dimension=veros_output_module.VEROS_TIME_DIM,
+        )
+        for snapshot in snapshots
+    )
+    accumulator = _accumulate_frames(frames)
+    temperature_index = accumulator.names.index("temp")
+    assert isinstance(accumulator.sum_values[temperature_index], jax.Array)
+    assert isinstance(accumulator.counts[temperature_index], jax.Array)
     output = tmp_path / "veros_output.nc"
+    variables = _period_variables(
+        accumulator,
+        time_dim=veros_output_module.VEROS_TIME_DIM,
+        reverse_value_dims=True,
+    )
 
-    adapter.write_period_average(
-        str(output),
-        build_coordinate_variables=lambda variables: (
-            veros_output_module.veros_average_coordinate_variables(
-                veros_state=state,
-                output_time=datetime(2000, 1, 2),
-                variables=variables,
-            )
+    write_netcdf_dataset(
+        output=str(output),
+        coordinate_variables=veros_output_module.veros_average_coordinate_variables(
+            veros_state=state,
+            output_time=datetime(2000, 1, 2),
+            variables=variables,
         ),
+        data_variables=variables,
     )
 
     with h5netcdf.File(output, "r") as actual:
@@ -1655,7 +1673,10 @@ def test_veros_write_output_persists_period_mean_and_coordinates(
             np.transpose(expected_psi),
         )
         assert actual.variables["psi"].attrs["units"] == "m^3/s"
-    assert adapter.empty
+    assert_allclose_compact(
+        accumulator.counts[temperature_index],
+        np.full((2, 3, 2), 2),
+    )
 
 
 def test_veros_snapshot_output_uses_native_state_variables(tmp_path: Path) -> None:
@@ -1663,7 +1684,6 @@ def test_veros_snapshot_output_uses_native_state_variables(tmp_path: Path) -> No
     setup_state = SimpleNamespace(
         _veros_state=state,
         output_variables=("temp", "surface_taux"),
-        output_adapter=_make_veros_output_adapter(),
     )
     component_state = _runtime_component_state(
         "OCN",

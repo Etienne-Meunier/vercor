@@ -35,7 +35,6 @@ from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.dtypes import DTypePolicy
 from vercor.exchanges import Exchange
 from vercor.fields import _flatten_field_items
-from tests._output_test_support import ComponentOutputAdapter
 from vercor.output import (
     OutputContext,
     OutputFrame,
@@ -44,6 +43,7 @@ from vercor.output import (
     PeriodOutput,
     SnapshotContext,
 )
+from vercor.output._session import _OutputAccumulator
 from vercor.setups import CAMulatorConfig
 from vercor.setups._external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
@@ -95,13 +95,6 @@ def _runtime_component_state(
         fields=FieldStore.from_mapping(data or {}),
         received=FieldStore.empty(),
         sent=FieldStore.empty(),
-    )
-
-
-def _make_camulator_output_adapter() -> ComponentOutputAdapter:
-    return ComponentOutputAdapter(
-        empty_error_message="CAMulator average output requires at least one prediction.",
-        time_dim=camulator_output_module.CAMULATOR_TIME_DIM,
     )
 
 
@@ -380,33 +373,35 @@ def test_camulator_native_variables_support_upper_air_only() -> None:
     assert tuple(data_vars) == ("U", "T")
 
 
-def test_camulator_period_output_variables_reduce_time_axis_with_adapter() -> None:
+def test_camulator_period_output_variables_reduce_time_axis() -> None:
     prediction = torch.arange(2 * 8 * 2 * 2, dtype=torch.float32).reshape(2, 8, 1, 2, 2)
-    adapter = _make_camulator_output_adapter()
-
-    adapter.accumulate(
-        camulator_output_module.camulator_period_output_variables(
-            prediction,
-            metadata={
-                "T": {"units": "K"},
-                "FSNS": {"long_name": "surface net shortwave flux"},
-            },
-            conf=_camulator_output_conf(save_vars=["T", "FSNS"]),
-            state_transformer=None,
-        ),
-        summation_dim=camulator_output_module.CAMULATOR_TIME_DIM,
+    variables = camulator_output_module.camulator_period_output_variables(
+        prediction,
+        metadata={
+            "T": {"units": "K"},
+            "FSNS": {"long_name": "surface net shortwave flux"},
+        },
+        conf=_camulator_output_conf(save_vars=["T", "FSNS"]),
+        state_transformer=None,
     )
+    frame = OutputFrame(
+        variables,
+        sample_dimension=camulator_output_module.CAMULATOR_TIME_DIM,
+    )
+    accumulator = _OutputAccumulator.zeros_from_frame(frame).add_frame(frame)
+    means = accumulator.mean_frame().variables
+    temperature_index = accumulator.names.index("T")
 
-    assert tuple(adapter.variables) == ("U", "T", "PS", "FSNS")
-    assert adapter.variables["T"].dims == ("level", "latitude", "longitude")
-    assert adapter.variables["T"].attrs["units"] == "K"
-    assert adapter.variables["FSNS"].attrs["long_name"] == "surface net shortwave flux"
+    assert tuple(accumulator.names) == ("U", "T", "PS", "FSNS")
+    assert means["T"].dims == ("level", "latitude", "longitude")
+    assert means["T"].attrs["units"] == "K"
+    assert means["FSNS"].attrs["long_name"] == "surface net shortwave flux"
     assert_allclose_compact(
-        adapter.variables["T"].counts,
+        accumulator.counts[temperature_index],
         np.full((3, 2, 2), 2),
     )
     assert_allclose_compact(
-        adapter.accumulator.mean_samples()["T"].values,
+        means["T"].values,
         np.mean(prediction[:, 3:6, 0].numpy(), axis=0),
     )
 
@@ -1366,7 +1361,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     )
     component.lead_time_periods = 6
     component.output_frequency = None
-    component.output_adapter = _make_camulator_output_adapter()
     component.forecast_hour = 1
     component.metadata = {}
     component.state_transformer = SimpleNamespace(
