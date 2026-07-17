@@ -199,8 +199,8 @@ an injected regridder, explicit route, non-empty topology patch, custom
 workflow/backend, immutable state replacement, period output, and snapshot
 output. It imports no private VerCOR module.
 
-The frozen 0.3 fixture is historical distribution evidence only. This alpha
-does not execute it or expose a legacy adapter namespace.
+No legacy adapter namespace or executable VerCOR 0.3 evidence ships with this
+alpha. VerCOR 0.3-only workflows must migrate directly to the current contracts.
 
 ## 10. Testing and release evidence
 

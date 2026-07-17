@@ -366,9 +366,7 @@ imports:
 
 The plugin wheel is installed next to built VerCOR artifacts in a clean target,
 its smoke runs outside the checkout, and its package plus external use site pass
-strict mypy. CI repeats native 0.4 plugin lanes on Python 3.12 and 3.13. The
-frozen 0.3 plugin is retained only as a historical artifact: its metadata and
-source boundary are inspected, but it is not executed against 0.4.
+strict mypy. CI repeats native 0.4 plugin lanes on Python 3.12 and 3.13.
 
 Bundled slab, JCM, and Veros factories return ordinary structural components
 and use the same constructor and output contracts. CI has installed base, JCM,
@@ -382,10 +380,8 @@ adapter namespace. Task 9 was explicitly skipped. Applications migrate imports
 and construction directly using `docs/migration-0.3-to-0.4.md`; primary 0.4 modules
 remain alias-free.
 
-The frozen `tests/contracts/vercor-0.3.2-public-api.json` and frozen 0.3 plugin
-wheel remain historical evidence only. They define what changed and guard
-against rewriting history, but they do not promise that a legacy application
-runs on 0.4. No earlier API is restored.
+No legacy adapter namespace or executable VerCOR 0.3 evidence ships. No earlier
+API is restored.
 
 Compatibility within the 0.4.x line is defined by canonical public owner
 manifests, signatures, public-only plugin behavior, output-free gradients, and

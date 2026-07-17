@@ -6,13 +6,19 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 0.4 test cleanup is in progress locally (2026-07-17): historical
-  distribution evidence and mutable component/output test adapters are gone;
-  obsolete absence-only guards are removed, mixed boundaries assert positive
-  current contracts, and legacy-looking test files now use current names. The
-  obsolete-guard audit is empty; focused boundaries pass 301/301, targeted
-  mypy and flake8 are clean, fast passes 632/632, and full passes 1220/1220
-  with only known third-party warnings. Production code is unchanged.
+- VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits
+  `f82588f`, `977298d`, `4733f26`, `201126f`, and `16728b1`: historical
+  distribution fixtures and their baseline, mutable component/output test
+  helpers, absence-only guards, and obsolete output-adapter tests are gone.
+  Runtime-boundary and native-period tests now use current names. Exact public
+  manifests, signatures, canonical owners, structural component/lifecycle
+  behavior, immutable state, native-plugin artifacts, output behavior,
+  numerical behavior, JIT, and gradients remain covered. The audit found no
+  uncertain VerCOR-owned candidate requiring preservation; supported structural flexibility remains.
+  Focused cleanup gates passed 34/34, 94/94, 136/136,
+  and 301/301; active docs passed 175/175. Black checked 236 files, strict
+  flake8 was 0, mypy passed 236 files, and compileall/whitespace were clean.
+  Fast/full passed 632/632 and 1220/1220 with known third-party warnings; coverage was 90.49% across 7,355 statements and 1,534 branches. Production code and its dependency order are unchanged.
 - Controlled pytest parallelization completed locally (2026-07-16): fixed n4
   loadscope reduced the measured 124.38s serial mean to 61.66s (50.43%) while
   preserving selection, warnings, and 90.52% combined coverage. Fast/full,
@@ -48,8 +54,6 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   repository history on 2026-07-14. Tagging, pushing, and publication remain
   intentionally unperformed pending separate authority.
   Task 9 was explicitly skipped: no legacy adapter namespace is implemented.
-  The frozen 0.3.2 manifest and frozen 0.3 plugin remain historical artifact
-  evidence only and are not installed or executed against 0.4.
 - Tasks 1-8 plus Task 10 form the complete alpha series. The current API has a six-symbol root,
   protocol-first components, constructor-only coupling, traced physical
   constants, stable route IDs, strict state validation, workflow-planned chunk
@@ -110,9 +114,7 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   `vercor-0.4.0a1.tar.gz`
   `119717648950a04d89fe28a2522a2c6ae5fc699d8725ae0cdc788691c6c529a2`;
   `vercor_public_plugin-0.1.0-py3-none-any.whl`
-  `198a7e2d7d4873d3550ff3ffe41aa8b6c41ab38e80347b501e6f04e43766db74`;
-  and `vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl`
-  `740a3fa64f0af5ae18ec497469d53159b52834faf092f8148239bc73c18a2ad4`.
+  `198a7e2d7d4873d3550ff3ffe41aa8b6c41ab38e80347b501e6f04e43766db74`.
   JCM 1.1.1 and Veros 1.6.2 remain the installed optional-model versions.
   Tag, push, publication, and upload remain unperformed.
 - Post-review version-policy hardening completed locally (2026-07-15): the
@@ -152,8 +154,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   runnable README/migration snippets, archive SHA-256, Task 9 absence, and
   release metadata.
 - CI encodes Python 3.12/3.13 base/JCM/Veros artifact lanes, Python 3.12/3.13
-  native-v0.4 plugin lanes, metadata-only frozen-0.3 inspection, and a macOS
-  installed-plugin smoke. GitHub-hosted jobs have not run locally.
+  native-v0.4 plugin lanes, and a macOS installed-plugin smoke. GitHub-hosted
+  jobs have not run locally.
 - The Task 10 documentation/release commit is present in repository history.
   Do not tag, push, or publish without separate authority.
 

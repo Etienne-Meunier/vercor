@@ -107,10 +107,3 @@ runtime, JAXGCM, Veros, CAMulator, and third-party providers.
 
 Remove post-run `write_outputs` and component-native period-file calls. Snapshot
 writers receive a public `SnapshotContext` and a collision-safe output path.
-
-## Historical evidence
-
-`tests/contracts/vercor-0.3.2-public-api.json` records the 0.3.2 surface used to
-define this migration. `tests/fixtures/public_plugin_0_3` is retained only as a
-historical artifact and is expected not to run against 0.4. It is not a supported
-plugin lane or an adapter implementation.

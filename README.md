@@ -351,9 +351,6 @@ plugin-owned frozen configuration and dependency-injected assembly together
 with a structural component and regridder, a stable route ID, a non-empty
 topology patch, a custom workflow/backend, immutable state replacement, and
 period/snapshot output. It uses only canonical public VerCOR modules, while
-[`tests/fixtures/public_plugin_0_3`](tests/fixtures/public_plugin_0_3) freezes a
-valid 0.3-only workflow that is intentionally rejected by the removed authoring
-surface. The current fixture proves installed-wheel isolation and strict mypy
-using public imports only; the frozen fixture remains historical artifact
-evidence and is not executed against 0.4. This alpha intentionally ships no 0.3
-adapter namespace.
+the current fixture proves installed-wheel isolation and strict mypy using
+public imports only. This alpha intentionally ships no legacy adapter namespace;
+0.3-only workflows must follow the migration guide above.

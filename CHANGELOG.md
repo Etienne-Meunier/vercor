@@ -36,7 +36,6 @@ versioning; alpha releases may still refine the new 0.4 contracts.
 ### Compatibility
 
 This alpha does not ship legacy adapters. Follow
-`docs/migration-0.3-to-0.4.md`. The frozen 0.3 manifest and plugin fixture are
-historical evidence only.
+`docs/migration-0.3-to-0.4.md` to migrate 0.3-only workflows directly.
 
 [0.4.0a1]: https://github.com/Roman-N/VerCOR/compare/v0.3.2...v0.4.0a1

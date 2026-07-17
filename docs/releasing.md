@@ -30,12 +30,11 @@ git diff --check
 
 ## 3. Build once
 
-Build VerCOR plus both plugin evidence artifacts from the verified source:
+Build VerCOR and the native 0.4 plugin from the verified source:
 
 ```bash
 python -m build --outdir dist
 python -m build --wheel --outdir dist tests/fixtures/public_plugin
-python -m build --wheel --outdir dist tests/fixtures/public_plugin_0_3
 ```
 
 Inspect wheel and source-distribution metadata, filenames, `vercor/py.typed`,
@@ -46,7 +45,7 @@ Run the executable artifact boundary against exactly that bundle. It inspects
 both archives for metadata, manifests, signatures, PEP 561 markers, and
 forbidden cache/platform files; installs the wheel and sdist in separate clean
 targets; runs the slab and native plugin; and runs strict installed-plugin
-mypy. The frozen 0.3 wheel is inspected as historical metadata only.
+mypy.
 
 ```bash
 VERCOR_ARTIFACT_DIR="$(pwd)/dist" python -m pytest tests/test_distribution_boundaries.py -q --tb=short
@@ -55,7 +54,7 @@ VERCOR_ARTIFACT_DIR="$(pwd)/dist" python -m pytest tests/test_distribution_bound
 Record candidate hashes and the locally tested optional-model versions:
 
 ```bash
-shasum -a 256 dist/vercor-0.4.0a1-py3-none-any.whl dist/vercor-0.4.0a1.tar.gz dist/vercor_public_plugin-0.1.0-py3-none-any.whl dist/vercor_compat_plugin_0_3-0.1.0-py3-none-any.whl
+shasum -a 256 dist/vercor-0.4.0a1-py3-none-any.whl dist/vercor-0.4.0a1.tar.gz dist/vercor_public_plugin-0.1.0-py3-none-any.whl
 python -c 'import importlib.metadata as m; print("JCM", m.version("jcm")); print("Veros", m.version("veros"))'
 ```
 
@@ -64,8 +63,6 @@ python -c 'import importlib.metadata as m; print("JCM", m.version("jcm")); print
 - Run base, JCM, and Veros lanes on Python 3.12 and 3.13.
 - Run the installed 0.4 public plugin and strict mypy use site on both Python
   versions.
-- Inspect the frozen 0.3 plugin wheel as historical metadata/source evidence;
-  do not execute it against 0.4.
 - Run the dependency-free slab and public-plugin smoke on macOS.
 - Confirm JVP and reverse gradients with `output=None` and confirm that it
   creates no files.
