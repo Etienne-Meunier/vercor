@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tests._coverage_support import DummyComponent, make_test_grid
+from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.calendar import model_year_seconds, year_type_for_calendar
 from vercor.clock import Clock
@@ -1902,7 +1902,16 @@ def test_run_accepts_default_runtime_component() -> None:
     grid = make_test_grid(name="dummy")
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
-        components=(cast(Any, DummyComponent("ATM", grid)),),
+        components=(
+            cast(
+                Any,
+                DataComponent(
+                    name="ATM",
+                    grid=grid,
+                    fields={"temperature": 0.0},
+                ),
+            ),
+        ),
         run_order=("ATM",),
     )
 

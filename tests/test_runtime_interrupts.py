@@ -14,10 +14,7 @@ import pytest
 import vercor
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
-from tests._component_test_support import (
-    LegacyTestComponent,
-    LegacyTestHostComponent,
-)
+from vercor.components import ComponentSpec
 from vercor.coupler import Coupler
 from vercor.components.contexts import StepContext
 from vercor.runtime import ExecutionContext, RuntimeDriver
@@ -28,10 +25,14 @@ from vercor._runtime.interrupts import (
 )
 
 
-class _NoopRuntimeComponent(LegacyTestComponent):
+class _NoopRuntimeComponent:
     def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self._data["temperature"] = np.ones((2, 2), dtype=float)
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+        )
 
     def step(
         self,
@@ -43,10 +44,15 @@ class _NoopRuntimeComponent(LegacyTestComponent):
         return {}
 
 
-class _InterruptingHostComponent(LegacyTestHostComponent):
+class _InterruptingHostComponent:
     def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self._data["temperature"] = np.ones((2, 2), dtype=float)
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+            execution="host",
+        )
 
     def step(
         self,

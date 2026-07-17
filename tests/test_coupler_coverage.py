@@ -16,7 +16,6 @@ import vercor._runtime.surface_masks as surface_masks_module
 import vercor.coupler as coupler_module
 import vercor.output._runtime as output_runtime_module
 from tests._coverage_support import (
-    DummyComponent,
     RecordingRegridder,
     capture_logger_output,
     make_test_grid,
@@ -28,11 +27,7 @@ from tests._runtime_helpers import (
 )
 from tests.assertions import assert_allclose_compact
 from vercor.clock import Clock
-from vercor.components import ComponentSpec
-from tests._component_test_support import (
-    LegacyTestComponent,
-    LegacyTestHostComponent,
-)
+from vercor.components import ComponentSpec, DataComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
 from vercor.dtypes import DTypePolicy
@@ -92,12 +87,16 @@ class _RecordingLogger:
         return True
 
 
-class _RunComponent(LegacyTestComponent):
+class _RunComponent:
     def __init__(self, name: str, events: list[str], timestamp: datetime) -> None:
         _ = timestamp
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+        )
         self.events = events
-        self._data["temperature"] = np.ones((2, 2))
 
     def step(
         self,
@@ -112,10 +111,14 @@ class _RunComponent(LegacyTestComponent):
         return {}
 
 
-class _LoggingRunComponent(LegacyTestComponent):
+class _LoggingRunComponent:
     def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self._data["temperature"] = np.ones((2, 2), dtype=float)
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+        )
 
     def step(
         self,
@@ -133,12 +136,19 @@ class _LoggingRunComponent(LegacyTestComponent):
         return {}
 
 
-class _HostRunComponent(LegacyTestHostComponent):
+class _HostRunComponent:
     def __init__(self, name: str, events: list[str] | None = None) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature", "host_time_seen"),
+            initial_fields={
+                "temperature": np.ones((2, 2), dtype=float),
+                "host_time_seen": np.zeros((2, 2), dtype=float),
+            },
+            execution="host",
+        )
         self.events = events
-        self._data["temperature"] = np.ones((2, 2))
-        self._data["host_time_seen"] = np.zeros((2, 2))
 
     def step(
         self,
@@ -153,7 +163,6 @@ class _HostRunComponent(LegacyTestHostComponent):
             self.events.append(
                 f"step_host:{self.name}:{time_label}:{context.dt_seconds}"
             )
-        self._data["host_event"] = np.asarray(context.dt_seconds)
         return {
             "temperature": fields["temperature"] + context.dt_seconds,
             "host_time_seen": np.ones((2, 2)),
@@ -185,7 +194,14 @@ def _snapshot_output_time_for_run_output(
     coupler = Coupler(
         clock=coupler.clock,
         components=(
-            cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm"))),
+            cast(
+                Any,
+                DataComponent(
+                    name="ATM",
+                    grid=make_test_grid(name="atm"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
         ),
         run_order=("ATM",),
         runtime=coupler.runtime,
@@ -220,20 +236,26 @@ def _snapshot_output_time_for_run_output(
     return captured_snapshots["output_time"]
 
 
-def _topology_components() -> dict[str, DummyComponent]:
+def _topology_components() -> dict[str, DataComponent]:
     lnd_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]])
     return {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        "OCN": DataComponent(
             name="OCN",
             grid=make_test_grid(
                 name="ocn",
                 binary_mask=np.asarray([[0.0, 1.0], [1.0, 0.0]]),
             ),
+            fields={"temperature": 0.0},
         ),
-        "LND": DummyComponent(
+        "LND": DataComponent(
             name="LND",
             grid=make_test_grid(name="lnd", binary_mask=lnd_mask),
+            fields={"temperature": 0.0},
         ),
     }
 
@@ -336,9 +358,10 @@ def test_setup_logger_routes_child_loggers_through_parent_canonical_handler() ->
 def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
     coupler = make_coupler(
         components=tuple(
-            DummyComponent(
+            DataComponent(
                 name=component_name,
                 grid=make_test_grid(name=component_name.lower()),
+                fields={"temperature": 0.0},
             )
             for component_name in ("ATM", "OCN", "LND")
         ),
@@ -518,7 +541,11 @@ def test_scanned_runtime_suppresses_info_below_log_level() -> None:
 
 @pytest.mark.fast_always
 def test_coupler_constructor_validates_duplicate_components_and_run_order() -> None:
-    atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
+    atmosphere = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="atm"),
+        fields={"temperature": 0.0},
+    )
 
     with pytest.raises(CouplerError, match="Duplicate component name.*ATM"):
         make_coupler(components=(cast(Any, atmosphere), cast(Any, atmosphere)))
@@ -543,8 +570,16 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
     destination: str,
 ) -> None:
     components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        "OCN": DataComponent(
+            name="OCN",
+            grid=make_test_grid(name="ocn"),
+            fields={"temperature": 0.0},
+        ),
     }
     with pytest.raises(CouplerError, match="unknown .* component"):
         make_coupler(
@@ -566,54 +601,68 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
     logger = _RecordingLogger()
     lnd_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]])
     components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={
+                "temperature": 0.0,
+                "downward_longwave_radiation_flux": np.full((2, 2), 1.0),
+                "temperature_2m": np.full((2, 2), 2.0),
+                "sensible_heat_flux": np.full((2, 2), 3.0),
+            },
+            spec=ComponentSpec(
+                inputs=(
+                    "temperature",
+                    "specific_humidity",
+                    "soil_moisture",
+                    "ice_fraction",
+                ),
+                outputs=(
+                    "downward_longwave_radiation_flux",
+                    "temperature_2m",
+                    "sensible_heat_flux",
+                ),
+            ),
+        ),
+        "OCN": DataComponent(
             name="OCN",
             grid=make_test_grid(
                 name="ocn", binary_mask=np.asarray([[0.0, 1.0], [1.0, 0.0]])
             ),
+            fields={
+                "temperature": np.full((2, 2), 4.0),
+                "specific_humidity": np.full((2, 2), 5.0),
+            },
+            spec=ComponentSpec(
+                inputs=("downward_longwave_radiation_flux",),
+                outputs=("temperature", "specific_humidity"),
+            ),
         ),
-        "LND": DummyComponent(
+        "LND": DataComponent(
             name="LND",
             grid=make_test_grid(name="lnd", binary_mask=lnd_mask),
+            fields={
+                "temperature": 0.0,
+                "soil_moisture": np.full((2, 2), 6.0),
+            },
+            spec=ComponentSpec(
+                inputs=("temperature_2m",),
+                outputs=("soil_moisture",),
+            ),
         ),
-        "ICE": DummyComponent(name="ICE", grid=make_test_grid(name="ice")),
+        "ICE": DataComponent(
+            name="ICE",
+            grid=make_test_grid(name="ice"),
+            fields={
+                "temperature": 0.0,
+                "ice_fraction": np.full((2, 2), 7.0),
+            },
+            spec=ComponentSpec(
+                inputs=("sensible_heat_flux",),
+                outputs=("ice_fraction",),
+            ),
+        ),
     }
-    components["ATM"]._data.update(
-        {
-            "downward_longwave_radiation_flux": np.full((2, 2), 1.0),
-            "temperature_2m": np.full((2, 2), 2.0),
-            "sensible_heat_flux": np.full((2, 2), 3.0),
-        }
-    )
-    components["ATM"].declare_fields(
-        inputs=("temperature", "specific_humidity", "soil_moisture", "ice_fraction"),
-        outputs=(
-            "downward_longwave_radiation_flux",
-            "temperature_2m",
-            "sensible_heat_flux",
-        ),
-    )
-    components["OCN"]._data.update(
-        {
-            "temperature": np.full((2, 2), 4.0),
-            "specific_humidity": np.full((2, 2), 5.0),
-        }
-    )
-    components["OCN"].declare_fields(
-        inputs=("downward_longwave_radiation_flux",),
-        outputs=("temperature", "specific_humidity"),
-    )
-    components["LND"]._data["soil_moisture"] = np.full((2, 2), 6.0)
-    components["LND"].declare_fields(
-        inputs=("temperature_2m",),
-        outputs=("soil_moisture",),
-    )
-    components["ICE"]._data["ice_fraction"] = np.full((2, 2), 7.0)
-    components["ICE"].declare_fields(
-        inputs=("sensible_heat_flux",),
-        outputs=("ice_fraction",),
-    )
 
     created_keys: list[tuple[str, str]] = []
 
@@ -899,9 +948,10 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
         components=(
             cast(
                 Any,
-                DummyComponent(
+                DataComponent(
                     name="LND",
                     grid=make_test_grid(name="lnd", binary_mask=np.ones((3, 2))),
+                    fields={"temperature": 0.0},
                 ),
             ),
         )
@@ -919,12 +969,13 @@ def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> 
         components=(
             cast(
                 Any,
-                DummyComponent(
+                DataComponent(
                     name="LND",
                     grid=make_test_grid(
                         name="lnd",
                         binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
                     ),
+                    fields={"temperature": 0.0},
                 ),
             ),
         )
@@ -946,20 +997,23 @@ def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere
         components=cast(
             Any,
             (
-                DummyComponent(
+                DataComponent(
                     name="ATM",
                     grid=make_test_grid(name="atm", latitude=np.asarray([0.0, 1.0])),
+                    fields={"temperature": 0.0},
                 ),
-                DummyComponent(
+                DataComponent(
                     name="LND",
                     grid=make_test_grid(name="lnd", latitude=np.asarray([0.0, 2.0])),
+                    fields={"temperature": 0.0},
                 ),
-                DummyComponent(
+                DataComponent(
                     name="OCN",
                     grid=make_test_grid(
                         name="ocn",
                         binary_mask=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
                     ),
+                    fields={"temperature": 0.0},
                 ),
             ),
         )
@@ -976,9 +1030,30 @@ def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere
 def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> None:
     coupler = make_coupler(
         components=(
-            cast(Any, DummyComponent(name="ATM", grid=make_test_grid(name="atm"))),
-            cast(Any, DummyComponent(name="LND", grid=make_test_grid(name="lnd"))),
-            cast(Any, DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))),
+            cast(
+                Any,
+                DataComponent(
+                    name="ATM",
+                    grid=make_test_grid(name="atm"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+            cast(
+                Any,
+                DataComponent(
+                    name="LND",
+                    grid=make_test_grid(name="lnd"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+            cast(
+                Any,
+                DataComponent(
+                    name="OCN",
+                    grid=make_test_grid(name="ocn"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
         )
     )
 
@@ -1061,16 +1136,20 @@ def test_output_mask_names_remain_unique_after_route_token_sanitizing() -> None:
 
 
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
-    source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source.seed_fields(
-        {
+    source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        fields={
             "temperature": jnp.full((2, 2), 5.0),
-            "u_velocity": np.full((2, 2), 1.0),
-            "v_velocity": np.full((2, 2), -1.0),
-        }
+            "u_velocity": np.ones((2, 2)),
+            "v_velocity": np.ones((2, 2)),
+        },
     )
-    destination.declare_fields(inputs=("temperature", "u_velocity", "v_velocity"))
+    destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("temperature", "u_velocity", "v_velocity")),
+    )
 
     scalar_exchange = Exchange(
         source="OCN",
@@ -1136,10 +1215,16 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
 
 
 def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
-    source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source.seed_field("temperature", np.full((2, 2), 5.0))
-    destination.declare_fields(inputs=("temperature",))
+    source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        fields={"temperature": np.full((2, 2), 5.0)},
+    )
+    destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("temperature",)),
+    )
 
     exchange = Exchange(
         source="OCN",
@@ -1182,10 +1267,16 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
 
 
 def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> None:
-    scalar_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    scalar_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    scalar_source.declare_fields(outputs=("temperature",))
-    scalar_destination.declare_fields(inputs=("temperature",))
+    scalar_source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        spec=ComponentSpec(outputs=("temperature",)),
+    )
+    scalar_destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("temperature",)),
+    )
     scalar_exchange = Exchange(
         source="OCN",
         target="ATM",
@@ -1213,11 +1304,17 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
             scalar_destination.name,
         )
 
-    vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    vector_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    vector_source.declare_fields(outputs=("u_velocity", "v_velocity"))
-    vector_source.seed_field("u_velocity", np.ones((2, 2)))
-    vector_destination.declare_fields(inputs=("u_velocity", "v_velocity"))
+    vector_source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        fields={"u_velocity": np.ones((2, 2))},
+        spec=ComponentSpec(outputs=("u_velocity", "v_velocity")),
+    )
+    vector_destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("u_velocity", "v_velocity")),
+    )
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
@@ -1254,8 +1351,16 @@ def test_coupler_run_writes_enabled_outputs_for_all_components(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     components = (
-        DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
+        DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        DataComponent(
+            name="OCN",
+            grid=make_test_grid(name="ocn"),
+            fields={"temperature": 0.0},
+        ),
     )
     coupler = make_coupler(
         components=cast(Any, components),
@@ -1338,8 +1443,16 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        "OCN": DataComponent(
+            name="OCN",
+            grid=make_test_grid(name="ocn"),
+            fields={"temperature": 0.0},
+        ),
     }
     coupler = make_coupler(components=cast(Any, tuple(components.values())))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
@@ -1378,21 +1491,21 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    component = DummyComponent(name="ATM", grid=make_test_grid(name="snapshot-atm"))
-    skipped = DummyComponent(name="OCN", grid=make_test_grid(name="snapshot-ocn"))
     calls: list[SnapshotContext] = []
 
     def write_snapshot(context: SnapshotContext) -> None:
         calls.append(context)
 
-    component.configure(
-        ComponentSpec(
-            inputs=component.spec.inputs,
-            outputs=component.spec.outputs,
-            initial_fields=component.spec.initial_fields,
-            lifecycle=component.spec.lifecycle,
-            output=OutputSpec(snapshot_writer=write_snapshot),
-        )
+    component = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="snapshot-atm"),
+        fields={"temperature": 0.0},
+        spec=ComponentSpec(output=OutputSpec(snapshot_writer=write_snapshot)),
+    )
+    skipped = DataComponent(
+        name="OCN",
+        grid=make_test_grid(name="snapshot-ocn"),
+        fields={"temperature": 0.0},
     )
     coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
@@ -1417,8 +1530,16 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
 
 
 def test_coupler_string_representations_include_registered_state() -> None:
-    atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    ocean = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
+    atmosphere = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="atm"),
+        fields={"temperature": 0.0},
+    )
+    ocean = DataComponent(
+        name="OCN",
+        grid=make_test_grid(name="ocn"),
+        fields={"temperature": 0.0},
+    )
     coupler = make_coupler(
         components=(cast(Any, atmosphere), cast(Any, ocean)),
         exchanges=(
@@ -1436,7 +1557,7 @@ def test_coupler_string_representations_include_registered_state() -> None:
     representation = repr(coupler)
 
     assert "Coupler:" in rendered
-    assert "<DummyComponent>(ATM)" in rendered
+    assert "<DataComponent>(ATM)" in rendered
     assert "ATM->OCN" in rendered
     assert "ATM, OCN" in rendered
     assert "run_order=ATM -> OCN" in representation
@@ -1499,7 +1620,7 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     ]
 
 
-def test_host_runtime_components_use_explicit_host_contract() -> None:
+def test_host_components_use_explicit_host_contract() -> None:
     host_component = _HostRunComponent("ATM")
     coupler = make_coupler(
         components=(cast(Any, host_component),),
@@ -1509,7 +1630,6 @@ def test_host_runtime_components_use_explicit_host_contract() -> None:
     final_state = coupler.run()
     final_component = final_state._component_state("ATM")
 
-    assert isinstance(host_component, LegacyTestHostComponent)
     assert host_component.spec.execution == "host"
     assert "host_time_seen" in final_component.fields.field_names
     assert_allclose_compact(

@@ -11,8 +11,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from vercor.clock import Clock
-from tests._component_test_support import LegacyTestComponent
-from vercor.components import ComponentSpec
 from vercor.components.contexts import SetupContext, StepContext
 from vercor.grids import RectilinearGrid
 from vercor.types import RuntimeArray
@@ -94,22 +92,6 @@ class CoverageCouplerStub:
             time=time,
             logger=self.logger if with_logger else None,
         )
-
-
-class DummyComponent(LegacyTestComponent):
-    def __init__(self, name: str, grid: RectilinearGrid) -> None:
-        super().__init__(
-            name,
-            grid,
-            spec=ComponentSpec(
-                outputs=("temperature",),
-                initial_fields={"temperature": 0.0},
-            ),
-        )
-
-    def initialize(self, context: SetupContext) -> None:
-        _ = context
-        self._data.setdefault("temperature", np.zeros(self.grid.shape, dtype=float))
 
 
 class RecordingRegridder:
