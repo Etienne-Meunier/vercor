@@ -652,8 +652,8 @@ print(json.dumps({{
     assert evidence["factory"] == ["FORCING", "JAX", "HOST"]
     assert evidence["lifecycle"] == ["user-setup", "hook-setup"]
     assert evidence["period_files"] == [
-        "jax.averages.2000-01-01T000100.000000.step00000000.schema0000.nc",
-        "jax.averages.2000-01-01T000200.000000.step00000001.schema0000.nc",
+        "jax.averages.2000-01-01T000000.000000.step00000000.schema0000.nc",
+        "jax.averages.2000-01-01T000100.000000.step00000001.schema0000.nc",
     ]
     assert evidence["regridder_calls"] == ["plugin-forcing"]
     assert evidence["topology"] == ["build:plugin-forcing"]

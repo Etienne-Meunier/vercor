@@ -166,7 +166,7 @@ One private session owns:
 - provider schema validation and selection;
 - immutable JAX sum/count accumulation;
 - precomputed cadence boundaries;
-- collision-safe filenames and represented-state timestamps;
+- collision-safe filenames and per-schema averaging-window-start timestamps;
 - final runtime fields and snapshot contexts;
 - host transfer; and
 - NetCDF writes.

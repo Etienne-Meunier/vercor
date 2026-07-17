@@ -306,6 +306,7 @@ def _make_period_output_coupler(
     steps: int = 2,
     dt_seconds: float = 86_400.0,
     start: datetime = datetime(2000, 1, 1),
+    calendar: Any = "gregorian",
     component: Component | None = None,
 ) -> Coupler:
     selected_component = component or _make_output_component(frequency=frequency)
@@ -314,6 +315,7 @@ def _make_period_output_coupler(
             start=start,
             dt_seconds=dt_seconds,
             steps=steps,
+            calendar=calendar,
         ),
         components=(selected_component,),
         run_order=(selected_component.name,),
@@ -393,6 +395,65 @@ def test_period_output_precomputes_all_frequency_boundaries_and_resets(
         assert_allclose_compact(values, np.full((1, 2, 2), mean))
 
 
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("start", "calendar", "steps", "expected_starts", "expected_isoformats"),
+    [
+        (
+            datetime(2000, 1, 1),
+            "gregorian",
+            31,
+            ("2000-01-01",),
+            ("2000-01-01T00:00:00",),
+        ),
+        (
+            datetime(2001, 1, 3),
+            "noleap",
+            57,
+            ("2001-01-03", "2001-02-01"),
+            ("2001-01-03T00:00:00.000000", "2001-02-01T00:00:00.000000"),
+        ),
+        (
+            datetime(2001, 2, 5),
+            "noleap",
+            24,
+            ("2001-02-05",),
+            ("2001-02-05T00:00:00.000000",),
+        ),
+        (
+            datetime(2001, 2, 5),
+            "360_day",
+            26,
+            ("2001-02-05",),
+            ("2001-02-05T00:00:00.000000",),
+        ),
+    ],
+)
+def test_monthly_period_identity_uses_actual_window_start(
+    start: datetime,
+    calendar: Any,
+    steps: int,
+    expected_starts: tuple[str, ...],
+    expected_isoformats: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    _make_period_output_coupler(
+        execution="jax",
+        frequency="month",
+        start=start,
+        calendar=calendar,
+        steps=steps,
+    ).run(output=_period_target(tmp_path))
+
+    paths = sorted(tmp_path.glob("model.averages.*.nc"))
+    assert [path.name for path in paths] == [
+        f"model.averages.{window_start}.nc" for window_start in expected_starts
+    ]
+    for path, isoformat in zip(paths, expected_isoformats, strict=True):
+        with h5netcdf.File(path, "r") as dataset:
+            assert dataset.variables["time"].attrs["isoformat"] == isoformat
+
+
 def test_subdaily_step_output_keeps_one_file_per_step(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -408,9 +469,9 @@ def test_subdaily_step_output_keeps_one_file_per_step(
 
     paths = sorted(tmp_path.glob("model.averages.*.nc"))
     assert [path.name for path in paths] == [
-        "model.averages.2000-01-01T010000.000000.step00000000.schema0000.nc",
-        "model.averages.2000-01-01T020000.000000.step00000001.schema0000.nc",
-        "model.averages.2000-01-01T030000.000000.step00000002.schema0000.nc",
+        "model.averages.2000-01-01T000000.000000.step00000000.schema0000.nc",
+        "model.averages.2000-01-01T010000.000000.step00000001.schema0000.nc",
+        "model.averages.2000-01-01T020000.000000.step00000002.schema0000.nc",
     ]
     for index, path in enumerate(paths, start=1):
         with h5netcdf.File(path, "r") as dataset:
@@ -459,8 +520,8 @@ def test_period_output_paths_are_unique_across_schemas(
     ).run(output=_period_target(tmp_path))
 
     expected = {
-        "shared-model.averages.2000-01-02T000000.000000.step00000000.schema0000.nc": 11.0,
-        "shared-model.averages.2000-01-02T000000.000000.step00000000.schema0001.nc": 21.0,
+        "shared-model.averages.2000-01-01T000000.000000.step00000000.schema0000.nc": 11.0,
+        "shared-model.averages.2000-01-01T000000.000000.step00000000.schema0001.nc": 21.0,
     }
     paths = sorted(tmp_path.glob("shared-model.averages.*.nc"))
     assert [path.name for path in paths] == sorted(expected)
@@ -489,9 +550,13 @@ def test_mixed_component_period_frequencies_coexist(
 
     coupler.run(output=_period_target(tmp_path))
 
-    assert len(tuple(tmp_path.glob("daily.averages.*.nc"))) == 3
+    assert sorted(path.name for path in tmp_path.glob("daily.averages.*.nc")) == [
+        "daily.averages.2000-01-30.nc",
+        "daily.averages.2000-01-31.nc",
+        "daily.averages.2000-02-01.nc",
+    ]
     monthly_paths = tuple(tmp_path.glob("monthly.averages.*.nc"))
-    assert len(monthly_paths) == 1
+    assert [path.name for path in monthly_paths] == ["monthly.averages.2000-01-30.nc"]
     with h5netcdf.File(monthly_paths[0], "r") as dataset:
         assert_allclose_compact(
             np.asarray(dataset.variables["temperature"]),
@@ -536,7 +601,7 @@ def test_generic_period_output_qualifies_heterogeneous_leading_dimensions(
 
     coupler.run(output=_period_target(tmp_path))
 
-    with h5netcdf.File(tmp_path / "model.averages.2000-01-02.nc", "r") as dataset:
+    with h5netcdf.File(tmp_path / "model.averages.2000-01-01.nc", "r") as dataset:
         short_variable = dataset.variables["short_profile"]
         long_variable = dataset.variables["long_profile"]
         assert short_variable.dimensions == (
@@ -598,7 +663,7 @@ def test_period_output_empty_variable_selection_defaults_to_declared_outputs(
         output=_period_target(tmp_path)
     )
 
-    with h5netcdf.File(tmp_path / "model.averages.2000-01-02.nc", "r") as dataset:
+    with h5netcdf.File(tmp_path / "model.averages.2000-01-01.nc", "r") as dataset:
         assert "temperature" in dataset.variables
 
 
@@ -661,7 +726,7 @@ def test_period_output_supports_custom_backend_at_core_boundary(
     coupler.run(output=_period_target(tmp_path))
 
     assert backend.called
-    assert (tmp_path / "model.averages.2000-01-02.nc").is_file()
+    assert (tmp_path / "model.averages.2000-01-01.nc").is_file()
 
 
 def test_snapshot_output_still_runs_with_period_output_configured(

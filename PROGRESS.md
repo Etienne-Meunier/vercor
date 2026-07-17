@@ -6,19 +6,17 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits `f82588f`, `977298d`, `4733f26`, `201126f`, `16728b1`, and `04e6f45`.
-  Historical distribution evidence, mutable component/output test helpers, absence-only guards, and obsolete output-adapter tests are gone.
-  Renamed tests and direct positive contracts cover exact public manifests/signatures/owners, structural lifecycle behavior, immutable state,
-  native artifacts, output, numerics, JIT, and gradients. No uncertain VerCOR-owned
-  cleanup candidate was found; schema-compatible foreign states, `datetime.timetuple()`
-  interoperability, JAX transform safety, lazy optional dependencies, payload copying,
-  and offline artifact reuse remain supported. Focused gates passed 34/34, 94/94,
-  136/136, and 301/301; active docs passed 175/175. Black left 236 files unchanged with
-  its Python 3.13/target-3.15 safety-parse advisory; strict flake8 was 0, mypy passed 236
-  files, and compileall/whitespace were clean. Fast passed 632/632 with six third-party
-  warnings; full and coverage passed 1220/1220 with eight: four Flax/JAX-effect, one JAX
-  scatter-cast, one JCM/xarray merge-default, and two xarray/NumPy-shape instances.
-  Coverage was 90.49% across 7,355 statements and 1,534 branches. Production code and its dependency order are unchanged.
+- Period-average window-start identity completed locally (2026-07-17): filenames and NetCDF times now use each schema's actual start.
+  Tests cover partial/subsequent periods, mixed cadences, and Gregorian/no-leap/360-day clocks while preserving calendar ISO formats,
+  post-step provider times, means, and incomplete-period behavior. TDD RED was 4/4; clarified GREEN was 4/4; output focus was 25/25.
+  Black reformatted 2 files and left 234 unchanged with its Python 3.13/target-3.15 advisory; flake8 was 0, mypy passed 236 files,
+  and compileall was clean. Fast passed 636/636 with six third-party warnings; full and coverage passed 1224/1224 with eight.
+  Coverage was 90.50% across 7,361 statements and 1,538 branches.
+- VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits `f82588f` through `04e6f45`. Obsolete evidence,
+  mutable helpers, absence-only guards, and old adapter tests are gone; positive contracts cover public ownership, lifecycle,
+  immutable state, artifacts, output, numerics, JIT, and gradients. Supported foreign-state, calendar, transform, lazy-import,
+  payload-copy, and offline-artifact behavior remains. Focused gates passed 34/34, 94/94, 136/136, and 301/301; docs 175/175;
+  fast 632/632; full/coverage 1220/1220 at 90.49%. Black, flake8, mypy, compileall, and whitespace passed.
 - Controlled pytest parallelization completed locally (2026-07-16): fixed n4
   loadscope reduced the measured 124.38s serial mean to 61.66s (50.43%) while
   preserving selection, warnings, and 90.52% combined coverage. Fast/full,

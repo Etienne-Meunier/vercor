@@ -295,7 +295,7 @@ def test_custom_provider_receives_public_context_and_uses_same_filtering(
     assert context.payload is None
     assert context.step == 0
     assert context.time == datetime(2000, 1, 2)
-    path = tmp_path / "model.averages.2000-01-02.nc"
+    path = tmp_path / "model.averages.2000-01-01.nc"
     with h5netcdf.File(path, "r") as dataset:
         assert tuple(dataset.variables["native_temperature"].dimensions) == (
             "time",
@@ -630,7 +630,7 @@ def test_variable_filtering_is_identical_for_runtime_and_native_providers(
         )
     )
 
-    with h5netcdf.File(case_dir / "model.averages.2000-01-02.nc", "r") as dataset:
+    with h5netcdf.File(case_dir / "model.averages.2000-01-01.nc", "r") as dataset:
         actual = tuple(
             sorted(
                 name
@@ -881,7 +881,7 @@ def test_period_writer_errors_include_component_and_filename(
 
     with pytest.raises(
         ComponentError,
-        match=r"component 'model'.*model\.averages\.2000-01-02\.nc.*bad dataset",
+        match=r"component 'model'.*model\.averages\.2000-01-01\.nc.*bad dataset",
     ):
         _coupler(component, steps=1).run(
             output=_target(
@@ -899,7 +899,7 @@ def test_period_directory_errors_include_component_and_filename(tmp_path: Path) 
 
     with pytest.raises(
         ComponentError,
-        match=r"component 'model'.*model\.averages\.2000-01-02\.nc",
+        match=r"component 'model'.*model\.averages\.2000-01-01\.nc",
     ):
         _coupler(component, steps=1).run(
             output=_target(
@@ -1018,8 +1018,8 @@ def test_provider_samples_post_step_payload_and_end_time(tmp_path: Path) -> None
     ]
     paths = sorted(tmp_path.glob("payload-model.averages.*.nc"))
     assert [path.name for path in paths] == [
+        "payload-model.averages.2000-01-01.nc",
         "payload-model.averages.2000-01-02.nc",
-        "payload-model.averages.2000-01-03.nc",
     ]
     np.testing.assert_allclose(_read(paths[0], "payload_value"), [1.0])
     np.testing.assert_allclose(_read(paths[1], "payload_value"), [2.0])
@@ -1056,7 +1056,7 @@ def test_sample_dimension_reduces_every_native_sample_in_period_window(
         )
     )
 
-    path = tmp_path / "model.averages.2000-01-02.nc"
+    path = tmp_path / "model.averages.2000-01-01.nc"
     with h5netcdf.File(path, "r") as dataset:
         assert dataset.variables["temperature"].dimensions == (
             "time",

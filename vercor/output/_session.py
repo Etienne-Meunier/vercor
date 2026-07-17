@@ -355,8 +355,8 @@ class _OutputSchema:
 @dataclass(frozen=True)
 class _OutputBoundary:
     stop_step: int
-    time: _Time
     due_schema_indices: tuple[int, ...]
+    period_starts: tuple[_Time, ...]
     output_filenames: tuple[str, ...]
 
 
@@ -487,8 +487,9 @@ def write_output_boundary(
     """Write due means and reset only the completed accumulator windows."""
 
     accumulators = list(session.accumulators)
-    for index, filename in zip(
+    for index, period_start, filename in zip(
         boundary.due_schema_indices,
+        boundary.period_starts,
         boundary.output_filenames,
         strict=True,
     ):
@@ -510,7 +511,7 @@ def write_output_boundary(
             }
             coordinates = dict(frame.coordinates)
             coordinates[frame.time_dimension] = time_coordinate_variable(
-                boundary.time,
+                period_start,
                 time_dim=frame.time_dimension,
             )
             write_netcdf_dataset(
@@ -547,7 +548,11 @@ def _output_boundaries(
     clock_steps: Sequence[_ClockStep] | None,
 ) -> tuple[_OutputBoundary, ...]:
     steps = tuple(clock.iter()) if clock_steps is None else tuple(clock_steps)
-    raw: list[tuple[int, _Time, tuple[int, ...], tuple[str, ...]]] = []
+    if not steps:
+        return ()
+
+    window_starts = [steps[0][1] for _ in schemas]
+    raw: list[tuple[int, tuple[int, ...], tuple[_Time, ...], tuple[str, ...]]] = []
     for step, time, dt in steps:
         due = tuple(
             index
@@ -555,26 +560,35 @@ def _output_boundaries(
             if should_write_period_output(schema.period, time=time, dt=dt)
         )
         if due:
-            output_time = time + dt
+            period_starts = tuple(window_starts[index] for index in due)
             bases = tuple(
                 f"{_safe_token(schemas[index].component.name)}.averages."
-                f"{output_time.strftime('%Y-%m-%d')}.nc"
-                for index in due
+                f"{period_start.strftime('%Y-%m-%d')}.nc"
+                for index, period_start in zip(due, period_starts, strict=True)
             )
-            raw.append((step + 1, output_time, due, bases))
+            raw.append((step + 1, due, period_starts, bases))
+            next_window_start = time + dt
+            for index in due:
+                window_starts[index] = next_window_start
     counts = Counter(filename for *_, filenames in raw for filename in filenames)
     used: set[str] = set()
     result: list[_OutputBoundary] = []
     request = 0
-    for stop, time, due, filenames in raw:
+    for stop, due, period_starts, filenames in raw:
         allocated: list[str] = []
-        for schema_index, filename in zip(due, filenames, strict=True):
+        for schema_index, period_start, filename in zip(
+            due,
+            period_starts,
+            filenames,
+            strict=True,
+        ):
             candidate = filename
             if counts[filename] > 1:
                 stem = filename[:-3]
                 candidate = (
-                    f"{stem}T{time.hour:02d}{time.minute:02d}{time.second:02d}."
-                    f"{time.microsecond:06d}.step{stop - 1:08d}."
+                    f"{stem}T{period_start.hour:02d}{period_start.minute:02d}"
+                    f"{period_start.second:02d}.{period_start.microsecond:06d}."
+                    f"step{stop - 1:08d}."
                     f"schema{schema_index:04d}.nc"
                 )
             collision = 0
@@ -585,7 +599,7 @@ def _output_boundaries(
             used.add(candidate)
             allocated.append(candidate)
             request += 1
-        result.append(_OutputBoundary(stop, time, due, tuple(allocated)))
+        result.append(_OutputBoundary(stop, due, period_starts, tuple(allocated)))
     return tuple(result)
 
 
