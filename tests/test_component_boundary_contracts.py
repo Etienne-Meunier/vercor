@@ -8,7 +8,7 @@ from tests._architecture_support import (
     package_import_cycles,
     source_for,
 )
-from vercor.components import Component
+from vercor.components.contracts import LifecycleHooks
 
 
 def test_component_runtime_helpers_do_not_keep_annotation_only_protocol_layer() -> None:
@@ -49,7 +49,7 @@ def test_public_lifecycle_hook_types_are_owned_by_component_contracts() -> None:
     contracts_source = source_for("vercor/components/contracts.py")
 
     assert "class LifecycleHooks" in contracts_source
-    assert Component.__module__ == "vercor.components.contracts"
+    assert LifecycleHooks.__module__ == "vercor.components.contracts"
 
 
 @pytest.mark.fast_always

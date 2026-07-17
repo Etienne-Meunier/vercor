@@ -83,14 +83,11 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert (
         diagnostics_module.ComponentMetric is diagnostic_fields_module.ComponentMetric
     )
-    for factory in (
-        make_camulator_gcm,
-        make_camulator_land,
-        make_jax_gcm,
-        make_jcm_land_atmosphere,
-        make_veros_gcm,
-    ):
-        assert callable(factory)
+    assert make_camulator_gcm.__module__ == "vercor.setups._external.camulator"
+    assert make_camulator_land.__module__ == ("vercor.setups._external.camulator_land")
+    assert make_jax_gcm.__module__ == "vercor.setups._external.jax_gcm"
+    assert make_jcm_land_atmosphere.__module__ == "vercor.setups._jcm"
+    assert make_veros_gcm.__module__ == "vercor.setups._external.veros_gcm"
     assert compute_ocean_surface_fluxes.__module__ == (
         "vercor.fluxes.bulk_formula_cesm"
     )

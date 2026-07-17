@@ -774,11 +774,26 @@ def test_top_level_exports_public_orchestration_and_component_author_api() -> No
 
 
 @pytest.mark.fast_always
-def test_jcm_setup_factories_use_the_public_lazy_owner() -> None:
-    assert "make_jcm_land" in vercor.setups.__all__
-    assert "make_jax_gcm" in vercor.setups.__all__
-    assert callable(vercor.setups.make_jcm_land)
-    assert callable(vercor.setups.make_jax_gcm)
+def test_model_setup_factories_use_the_public_setup_owner() -> None:
+    from vercor.setups._data.jcm_land import make_jcm_land
+    from vercor.setups._external.camulator import make_camulator_gcm
+    from vercor.setups._external.camulator_land import make_camulator_land
+    from vercor.setups._external.jax_gcm import make_jax_gcm
+    from vercor.setups._external.veros_gcm import make_veros_gcm
+    from vercor.setups._jcm import make_jcm_land_atmosphere
+
+    expected_factories = {
+        "make_camulator_gcm": make_camulator_gcm,
+        "make_camulator_land": make_camulator_land,
+        "make_jax_gcm": make_jax_gcm,
+        "make_jcm_land": make_jcm_land,
+        "make_jcm_land_atmosphere": make_jcm_land_atmosphere,
+        "make_veros_gcm": make_veros_gcm,
+    }
+
+    for name, factory in expected_factories.items():
+        assert name in vercor.setups.__all__
+        assert getattr(vercor.setups, name) is factory
 
 
 @pytest.mark.fast_always
