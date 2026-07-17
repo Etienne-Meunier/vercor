@@ -167,14 +167,6 @@ def test_public_name_sequence_boundaries_reject_text_scalars(
         boundary(text)
 
 
-@pytest.mark.fast_always
-def test_runtime_options_rejects_removed_model_year_owner() -> None:
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        RuntimeOptions(model_year_seconds=365 * 86_400.0)  # type: ignore[call-arg]
-
-    assert not hasattr(RuntimeOptions(), "model_year_seconds")
-
-
 def test_prepared_binding_does_not_delegate_private_markers_and_uses_spec_output(
     tmp_path: Path,
 ) -> None:

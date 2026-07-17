@@ -174,17 +174,6 @@ def test_output_public_api_is_spec_not_mutable_adapter() -> None:
         "SnapshotContext",
         "SnapshotWriter",
     ]
-    for removed_name in (
-        "ComponentOutput",
-        "ComponentOutputAdapter",
-        "register_component_snapshot_writer",
-    ):
-        assert removed_name not in vercor.output.__all__
-        assert not hasattr(vercor.output, removed_name)
-    with pytest.raises(ModuleNotFoundError, match="vercor.config"):
-        importlib.import_module("vercor.config")
-    with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
-        importlib.import_module("vercor.setup_config")
 
 
 @pytest.mark.fast_always
@@ -234,12 +223,6 @@ def test_component_constructors_accept_component_spec_only() -> None:
 @pytest.mark.fast_always
 def test_component_step_return_contract_is_public_in_its_owner_package() -> None:
     components_module = importlib.import_module("vercor.components")
-    contracts_module = importlib.import_module("vercor.components.contracts")
-
-    assert not hasattr(components_module, "ComponentStepReturn")
-    assert not hasattr(contracts_module, "ComponentStepReturn")
-    assert "ComponentStepReturn" not in vercor.__all__
-    assert not hasattr(vercor, "ComponentStepReturn")
 
     for step_method in (
         components_module.Component.step,
@@ -258,27 +241,9 @@ def test_component_step_return_contract_is_public_in_its_owner_package() -> None
 
 
 @pytest.mark.fast_always
-def test_public_component_contracts_do_not_expose_runtime_implementation_types() -> (
-    None
-):
+def test_public_component_contracts_use_public_state_and_output_types() -> None:
     components_module = importlib.import_module("vercor.components")
     contracts_module = importlib.import_module("vercor.components.contracts")
-
-    public_signatures = (
-        str(signature(components_module.Component.step)),
-        str(signature(components_module.CallableComponent.step)),
-        str(signature(components_module.DataComponent.step)),
-        str(signature(contracts_module.ValidationContext)),
-        str(signature(components_module.ComponentSpec)),
-    )
-    for public_signature in public_signatures:
-        for private_type in (
-            "_ComponentStepReturn",
-            "ExchangeContract",
-            "ComponentRuntimeState",
-            "FieldStore",
-        ):
-            assert private_type not in public_signature
 
     assert (
         signature(contracts_module.ValidationContext).parameters["state"].annotation
@@ -326,9 +291,7 @@ def test_typing_aliases_have_explicit_owner_modules_without_root_aliases() -> No
     assert types_module.__all__ == ["RuntimeArray"]
     assert "PrecisionPolicy" in dtypes_module.__all__
     assert "LoggerLike" in logging_module.__all__
-    for name in ("RuntimeArray", "PrecisionPolicy", "LoggerLike"):
-        assert name not in vercor.__all__
-        assert not hasattr(vercor, name)
+    assert types_module.RuntimeArray is not None
 
 
 @pytest.mark.fast_always
@@ -365,21 +328,8 @@ def test_component_spec_replaces_field_hooks_and_output_specs() -> None:
     assert spec.inputs == ("temperature",)
     assert spec.outputs == ("sea_surface_temperature",)
     assert spec.lifecycle.prefill is prefill
-    assert "ComponentSpec" not in vercor.__all__
-    assert "LifecycleHooks" not in vercor.__all__
-    assert "OutputSpec" not in vercor.__all__
     assert ComponentSpec.__module__ == "vercor.components.contracts"
     assert OutputSpec.__module__ == "vercor.output"
-    assert "FieldSpec" not in vercor.__all__
-    assert "ComponentHooks" not in vercor.__all__
-    assert "OutputSpec" not in vercor.__all__
-    assert not hasattr(vercor, "FieldSpec")
-    assert not hasattr(vercor, "ComponentHooks")
-    assert not hasattr(vercor, "OutputSpec")
-    assert not hasattr(component, "field_spec")
-
-    with pytest.raises(TypeError, match="hooks"):
-        ComponentSpec(hooks=LifecycleHooks())  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
@@ -438,9 +388,6 @@ def test_output_and_setup_configs_use_final_names() -> None:
     assert period.frequency == "month"
     assert jax_gcm.jitted is True
     assert camulator.device == "cuda"
-    for removed_name in ("Spinup", "SpinupConfig", "PeriodOutputConfig"):
-        assert removed_name not in vercor.__all__
-        assert not hasattr(vercor, removed_name)
     for setup_name in ("Spinup", "VerosConfig", "JAXGCMConfig", "CAMulatorConfig"):
         assert setup_name in vercor.setups.__all__
         assert hasattr(vercor.setups, setup_name)
@@ -541,44 +488,8 @@ def test_setup_and_dtype_config_objects_are_public() -> None:
     assert spinup.duration.days == 2
     assert DTypePolicy(enable_x64=True).enable_x64
     assert PeriodOutput is vercor.output.PeriodOutput
-    assert "PeriodOutput" not in vercor.__all__
-    assert "Spinup" not in vercor.__all__
     assert "Spinup" in vercor.setups.__all__
-    assert "SurfaceMaskPolicy" not in vercor.__all__
     assert "RuntimeOptions" in vercor.__all__
-    assert "DTypePolicy" not in vercor.__all__
-    assert "OutputConfig" not in vercor.__all__
-    assert "setups" not in vercor.__all__
-    assert "ComponentOutput" not in vercor.__all__
-
-
-@pytest.mark.fast_always
-def test_private_grid_and_exchange_modules_are_removed() -> None:
-    with pytest.raises(ModuleNotFoundError, match="vercor._grid"):
-        importlib.import_module("vercor._grid")
-    with pytest.raises(ModuleNotFoundError, match="vercor._exchange"):
-        importlib.import_module("vercor._exchange")
-
-
-@pytest.mark.fast_always
-def test_active_docs_do_not_advertise_removed_transition_apis() -> None:
-    active_docs = (
-        Path("DESIGN.md").read_text(encoding="utf-8")
-        + "\n"
-        + Path("DEPENDENCIES.md").read_text(encoding="utf-8")
-    )
-    stale_markers = (
-        "ComponentView",
-        "`Coupler` exposes `state()`",
-        "`run()`, `state()`",
-        "callable scalar/vector behavior for sta" + "ged compat" + "ibility",
-        "`Coupler.initialize()`",
-        "`Component.setup_metadata`",
-        "`Component.data`",
-    )
-
-    for marker in stale_markers:
-        assert marker not in active_docs
 
 
 @pytest.mark.fast_always

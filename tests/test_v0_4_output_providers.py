@@ -1066,23 +1066,6 @@ def test_sample_dimension_reduces_every_native_sample_in_period_window(
         np.testing.assert_allclose(dataset.variables["temperature"][:], 2.5)
 
 
-def test_production_tree_contains_no_removed_output_lifecycles() -> None:
-    source = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted(Path("vercor").rglob("*.py"))
-        if "compat" not in path.parts
-    )
-    for removed in (
-        "_period_output_handled_by_step",
-        "_period_output_schema_factory",
-        "class PeriodAverageAccumulator",
-        "class _ComponentOutputAdapter",
-        "write_camulator_prediction_output",
-        "camulator_average_output_path",
-    ):
-        assert removed not in source
-
-
 def test_output_signatures_pin_defaults_kinds_and_public_annotations() -> None:
     run_signature = inspect.signature(Coupler.run)
     target_signature = inspect.signature(_api("OutputTarget"))

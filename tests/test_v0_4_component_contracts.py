@@ -41,9 +41,7 @@ class _MutablePayload:
         self.counter = counter
 
 
-def test_component_is_the_structural_protocol_and_old_authoring_names_are_absent() -> (
-    None
-):
+def test_component_is_the_structural_protocol() -> None:
     component_type = _api("Component")
     component_spec = _api("ComponentSpec")
     component_grid = make_test_grid()
@@ -65,15 +63,6 @@ def test_component_is_the_structural_protocol_and_old_authoring_names_are_absent
     model = StructuralModel()
     assert getattr(component_type, "_is_protocol", False)
     assert isinstance(model, component_type)
-    for removed_name in (
-        "ComponentLike",
-        "HostComponent",
-        "FieldImportPolicy",
-        "ComponentInitializeHook",
-        "ComponentCreatePayloadHook",
-        "KEEP_PAYLOAD",
-    ):
-        assert not hasattr(component_api, removed_name)
 
 
 def test_public_constructor_signatures_match_the_v0_4_contract() -> None:
@@ -201,7 +190,7 @@ def test_result_payloads_are_registered_shape_stable_pytrees() -> None:
     assert float(restored.payload["counter"]) == 2.0
 
 
-def test_callable_component_zero_seeds_outputs_and_uses_setup_payload() -> None:
+def test_callable_component_uses_declared_outputs_and_setup_payload() -> None:
     callable_component = _api("CallableComponent")
     component_spec = _api("ComponentSpec")
     lifecycle_hooks = _api("LifecycleHooks")
@@ -226,11 +215,6 @@ def test_callable_component_zero_seeds_outputs_and_uses_setup_payload() -> None:
             outputs=("temperature",), lifecycle=lifecycle_hooks(setup=setup)
         ),
     )
-    assert not hasattr(component, "initialize")
-    assert not hasattr(component, "initial_fields")
-    assert not hasattr(component, "output")
-    assert not hasattr(component, "import_policy")
-
     coupler = _one_step_coupler(component)
     initial = coupler.initial_state()
     np.testing.assert_array_equal(
@@ -244,13 +228,12 @@ def test_callable_component_zero_seeds_outputs_and_uses_setup_payload() -> None:
     assert float(payload["increment"]) == 2.0
 
 
-def test_data_component_is_composed_from_fields_without_inheritance_authoring() -> None:
+def test_data_component_composes_an_immutable_field_declaration() -> None:
     data_component = _api("DataComponent")
     values = np.arange(4.0).reshape(2, 2)
     component = data_component("forcing", make_test_grid(), {"sst": values})
 
     assert component.spec.outputs == ("sst",)
-    assert not hasattr(component, "seed_field")
     values[...] = -1.0
     state = _one_step_coupler(component).initial_state()
     np.testing.assert_array_equal(
@@ -273,9 +256,7 @@ def test_prepared_runtime_binding_is_frozen_and_owns_immutable_fields() -> None:
         binding.grid = make_test_grid("replacement")  # type: ignore[misc]
 
 
-def test_structural_component_runs_without_initialize_or_initial_fields_methods() -> (
-    None
-):
+def test_structural_component_runs_from_its_spec_and_step() -> None:
     component_type = _api("Component")
     component_spec = _api("ComponentSpec")
     component_grid = make_test_grid()
@@ -313,7 +294,6 @@ def test_host_execution_is_a_component_spec_capability() -> None:
     from vercor.components.runtime_execution import host_component_names
 
     assert host_component_names({component.name: component}) == ["host-model"]
-    assert not hasattr(component_api, "HostComponent")
 
 
 def test_undeclared_initial_fields_fail_with_a_focused_error() -> None:

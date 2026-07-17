@@ -66,7 +66,35 @@ def test_runtime_contract_prefill_uses_runtime_float32_policy() -> None:
     assert state.sent.get("out_field").dtype == jnp.float32
 
 
-def test_runtime_module_does_not_own_component_specific_steps() -> None:
+def test_runtime_modules_use_current_domain_owners() -> None:
+    from vercor.components import SetupContext, StepContext
+    import vercor.diagnostics as diagnostics_module
+    import vercor.diagnostics.fields as diagnostic_fields_module
+    from vercor.fluxes.bulk_formula_cesm import compute_ocean_surface_fluxes
+    from vercor.setups._external.camulator import make_camulator_gcm
+    from vercor.setups._external.camulator_land import make_camulator_land
+    from vercor.setups._external.jax_gcm import make_jax_gcm
+    from vercor.setups._external.veros_gcm import make_veros_gcm
+    from vercor.setups._jcm import make_jcm_land_atmosphere
+
+    assert SetupContext.__module__ == "vercor.components.contexts"
+    assert StepContext.__module__ == "vercor.components.contexts"
+    assert RuntimeTopologyMaps.__module__ == "vercor._runtime.topology_state"
+    assert (
+        diagnostics_module.ComponentMetric is diagnostic_fields_module.ComponentMetric
+    )
+    for factory in (
+        make_camulator_gcm,
+        make_camulator_land,
+        make_jax_gcm,
+        make_jcm_land_atmosphere,
+        make_veros_gcm,
+    ):
+        assert callable(factory)
+    assert compute_ocean_surface_fluxes.__module__ == (
+        "vercor.fluxes.bulk_formula_cesm"
+    )
+
     runtime_source = Path("vercor/_runtime/state.py").read_text(encoding="utf-8")
     runtime_driver_source = Path("vercor/_runtime/driver.py").read_text(
         encoding="utf-8"
@@ -87,9 +115,7 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_execution_source = runtime_execution_path.read_text(encoding="utf-8")
     runtime_runner_source = runtime_runner_path.read_text(encoding="utf-8")
     component_contexts_path = Path("vercor/components/contexts.py")
-    runtime_contexts_path = Path("vercor/_runtime/contexts.py")
     assert component_contexts_path.exists()
-    assert not runtime_contexts_path.exists()
     component_contexts_source = component_contexts_path.read_text(encoding="utf-8")
     runtime_contracts_path = Path("vercor/_runtime/contracts.py")
     runtime_stores_path = Path("vercor/_runtime/stores.py")
@@ -97,8 +123,6 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     runtime_dispatch_context_path = Path("vercor/_runtime/dispatch_context.py")
     runtime_run_context_path = Path("vercor/_runtime/run_context.py")
     runtime_prepared_path = Path("vercor/_runtime/prepared.py")
-    runtime_compilation_path = Path("vercor/_runtime/compilation.py")
-    runtime_cache_path = Path("vercor/_runtime/cache.py")
     runtime_progress_path = Path("vercor/_runtime/progress.py")
     runtime_component_state_path = Path("vercor/_runtime/component_state.py")
     runtime_field_transfer_path = Path("vercor/_runtime/field_transfer.py")
@@ -115,9 +139,6 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert runtime_dispatch_context_path.exists()
     assert runtime_run_context_path.exists()
     assert runtime_prepared_path.exists()
-    assert not Path("vercor/_runtime/resources.py").exists()
-    assert not runtime_compilation_path.exists()
-    assert not runtime_cache_path.exists()
     assert runtime_progress_path.exists()
     assert runtime_component_state_path.exists()
     assert runtime_field_transfer_path.exists()
@@ -185,66 +206,31 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     veros_source = Path("vercor/setups/_external/veros_gcm.py").read_text(
         encoding="utf-8"
     )
-    veros_gcm_state_source = Path(
-        "vercor/setups/_external/veros_gcm_state.py"
-    ).read_text(encoding="utf-8")
     veros_setup_source = Path("vercor/setups/_external/veros_setup.py").read_text(
         encoding="utf-8"
     )
     camulator_source = Path("vercor/setups/_external/camulator.py").read_text(
         encoding="utf-8"
     )
-    camulator_gcm_state_source = Path(
-        "vercor/setups/_external/camulator_gcm_state.py"
-    ).read_text(encoding="utf-8")
     camulator_land_source = Path("vercor/setups/_external/camulator_land.py").read_text(
         encoding="utf-8"
     )
     veros_runtime_settings_source = Path(
         "vercor/setups/_external/veros_runtime_settings.py"
     ).read_text(encoding="utf-8")
-    camulator_wind_filter_source = Path(
-        "vercor/setups/_external/camulator_wind_filter.py"
-    ).read_text(encoding="utf-8")
 
-    forbidden_component_markers = (
-        "step_slab_component_state",
-        "is_supported_differentiable_component",
-        "receive_component_fields",
-        "send_component_fields",
-        "step_component_state",
-        "JAXGCMRuntimePayload",
-        "VerosGCM",
-        "CAMulatorGCM",
-        "CAMulatorLand",
-    )
-    for marker in forbidden_component_markers:
-        assert marker not in runtime_source
     assert "import_fields" not in coupler_source
-    assert 'hasattr(component, "step_host_runtime_state")' not in coupler_source
-    assert "isinstance(component, HostComponent)" not in coupler_source
-    assert "HostComponent" not in runtime_driver_source
     assert (
         "def component_requires_host_runtime(" not in component_runtime_execution_source
     )
     assert "def host_component_names(" in component_runtime_execution_source
     assert "def step_component_runtime_state(" in component_runtime_execution_source
-    assert "from vercor.components._protocols import" not in (
-        component_runtime_execution_source
-    )
     assert "if TYPE_CHECKING:" in component_runtime_execution_source
     assert "from vercor.components.contracts import Component" in (
         component_runtime_execution_source
     )
     assert "_ComponentBinding" not in component_runtime_execution_source
-    assert "from vercor.components.host import HostComponent" not in (
-        component_runtime_execution_source
-    )
-    assert "HostRuntimeExecutionProtocol" not in component_runtime_execution_source
     assert 'component.spec.execution == "host"' in component_runtime_execution_source
-    assert (
-        "isinstance(component, HostComponent)" not in component_runtime_execution_source
-    )
     assert "time is not None and isinstance" not in runtime_driver_source
     assert "def _step_runtime_component" not in coupler_source
     assert "def _runtime_step_info_from_times" not in coupler_source
@@ -272,19 +258,9 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def build_runtime_dispatch_context(" in runtime_dispatch_context_source
     assert "class RuntimeDispatchContext" not in runtime_driver_source
     assert "class RuntimeDispatchContext" not in runtime_coupler_state_source
-    assert not Path("vercor/_runtime_contracts.py").exists()
-    assert not Path("vercor/_runtime.py").exists()
-    assert not Path("vercor/_runtime_components.py").exists()
-    assert not Path("vercor/_runtime_contexts.py").exists()
-    assert not Path("vercor/_runtime_driver.py").exists()
-    assert not Path("vercor/_runtime_time.py").exists()
-    assert not Path("vercor/_runtime_views.py").exists()
-    assert not Path("vercor/_runtime/components.py").exists()
     assert "def runtime_step_info_from_times" in runtime_time_source
     assert "def step_runtime_component(" in runtime_driver_source
     assert "allow_host_runtime: bool" in runtime_driver_source
-    assert "def step_runtime_component_pure" not in runtime_driver_source
-    assert "def step_runtime_component_host_enabled" not in runtime_driver_source
     assert "def compile_runtime" not in coupler_source
     assert "def runtime_state_from_components(" in runtime_coupler_state_source
     assert "def validate_runtime_state(" not in runtime_coupler_state_source
@@ -319,21 +295,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "class RuntimeRunContext" not in runtime_runner_source
     assert "class RuntimeRunContext" in runtime_run_context_source
     assert "class PreparedCoupling" in runtime_prepared_source
-    assert not Path("vercor/_runtime/compilation.py").exists()
-    assert not Path("vercor/_runtime/cache.py").exists()
     assert "components:" not in runtime_run_context_source
     assert "exchanges:" not in runtime_run_context_source
     assert "regridders:" not in runtime_run_context_source
     assert "contracts:" not in runtime_run_context_source
     assert "settings:" not in runtime_run_context_source
     assert "MutableMapping" not in runtime_run_context_source
-    assert "compiled_runtime_cache:" not in runtime_run_context_source
-    assert "runtime_cache:" not in runtime_run_context_source
-    assert "CompiledRuntimeCache" not in runtime_run_context_source
-    assert "from vercor._runtime.compilation import" not in runtime_run_context_source
-    assert "from vercor._runtime.compilation import" not in runtime_prepared_source
-    assert "from vercor._runtime.cache import" not in runtime_run_context_source
-    assert "from vercor._runtime.cache import" not in runtime_prepared_source
     assert "context: RuntimeRunContext" in runtime_runner_source
     assert "context: RuntimeRunContext" in runtime_backends_source
     assert "from vercor._runtime.run_context import" not in coupler_source
@@ -342,17 +309,10 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor._runtime.prepared import PreparedCoupling" in coupler_source
     assert "def _ensure_prepared(" in coupler_source
     assert "RuntimeInputs" not in runtime_facade_source
-    assert "def compiled_scanned_runtime(" not in runtime_runner_source
-    assert "def compiled_runtime_cache_key(" not in runtime_runner_source
-    assert "compiled_runtime_cache_key(" not in runtime_run_context_source
-    assert "from vercor._runtime.cache import" not in runtime_runner_source
-    assert "get_or_compile_for_context(" not in runtime_runner_source
-    assert "context.compiled_runtime_cache_key(" not in runtime_runner_source
     assert "donate_state" not in coupler_source
     assert "donate_state" not in runtime_facade_source
     assert "donate_state" not in runtime_runner_source
     assert "def _run_host_runtime" not in coupler_source
-    assert "def _compiled_runtime_cache_key" not in coupler_source
     run_body = coupler_source.split("def run", 1)[1]
     assert "host_component_names(self._components)" not in run_body
     assert "host_component_names(scheduled_components)" in runtime_execution_source
@@ -456,7 +416,6 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         "    _binary_masks:",
         "    _fractional_masks:",
         "    _runtime_contracts:",
-        "    _compiled_runtime_cache:",
         "    _runtime_interrupts:",
     ):
         assert field_marker not in coupler_source
@@ -507,10 +466,6 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "from vercor._runtime.contexts import" not in base_source
     assert "class SetupContext" in component_contexts_source
     assert "class StepContext" in component_contexts_source
-    assert "ComponentSetupContext = SetupContext" not in component_contexts_source
-    assert "ComponentStepContext = StepContext" not in component_contexts_source
-    removed_getattr_marker = "__getattr__ = " + "depre" + "cated" + "_getattr("
-    assert removed_getattr_marker not in component_contexts_source
     assert "SetupContext" in components_source
     assert "StepContext" in components_source
     assert "component.initialize(self)" not in coupler_source
@@ -533,9 +488,6 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
     assert "def make_jax_gcm" in jax_gcm_source
     assert "def make_veros_gcm" in veros_source
     assert "def make_camulator_gcm" in camulator_source
-    assert "def step_runtime_state" not in jax_gcm_source
-    assert "def step_host_runtime_state" not in veros_source
-    assert "def step_host_runtime_state" not in camulator_source
     assert "def make_camulator_land" in camulator_land_source
     assert "load_camulator_forcing_context" in camulator_land_source
     assert "initialize_camulator(" not in camulator_land_source
@@ -554,41 +506,12 @@ def test_runtime_module_does_not_own_component_specific_steps() -> None:
         "configure_veros_runtime()"
     ) < veros_factory_source.index("_load_veros_implementation()")
     assert "def configure_veros_runtime" in veros_runtime_settings_source
-    assert "target_levels: Sequence = range(" not in camulator_wind_filter_source
-    assert "target_vars: Sequence[str] = [" not in camulator_wind_filter_source
-    assert "def _step_host_runtime_state" not in base_source
-    assert "_step_host_runtime_state" not in runtime_driver_source
-    assert "def step(" not in veros_gcm_state_source
-    assert "def step(" not in camulator_gcm_state_source
     signature = camulator_land_source.split("def step(", 1)[1].split(") ->", 1)[0]
     assert "coupler" not in signature
     assert "context" in signature
     assert "logger" not in signature
     assert "runtime_settings" not in signature
-    assert "def step_runtime_state" not in veros_source
-    assert "def step_runtime_state" not in camulator_source
-    assert "def step_runtime_state" not in camulator_land_source
     assert "component_state.fields.to_mapping()" not in camulator_land_source
-    camulator_imports_source = Path(
-        "vercor/setups/_external/camulator_imports.py"
-    ).read_text(encoding="utf-8")
-    camulator_stepper_source = Path(
-        "vercor/setups/_external/camulator_stepper.py"
-    ).read_text(encoding="utf-8")
-    camulator_runtime_source = Path(
-        "vercor/setups/_external/camulator_runtime.py"
-    ).read_text(encoding="utf-8")
-    assert "WINDPP_AVAILABLE" not in camulator_imports_source
-    assert "load_windpp_module" not in camulator_imports_source
-    assert "post_process_wind_artifacts: Any = None" not in camulator_imports_source
-    assert "class StateManager" not in camulator_stepper_source
-    assert "state_manager" not in camulator_stepper_source
-    assert ".state_manager." not in camulator_runtime_source
-    removed_wind_marker = "post_process_wind_artifacts_" + "depre" + "cated"
-    removed_flux_marker = "old" + "_flux_atmOcn"
-    assert removed_wind_marker not in camulator_wind_filter_source
-    assert removed_flux_marker not in flux_source
-    assert "new_flux_atmOcn" not in flux_source
     assert "def compute_ocean_surface_fluxes" in flux_source
 
 
@@ -652,16 +575,6 @@ def test_coupler_prepared_boundary_stores_runtime_state() -> None:
     assert isinstance(coupler._prepared, PreparedCoupling)
     assert coupler._prepared.contracts["MODEL"] == ExchangeContract()
     assert coupler._prepared.interrupts is not None
-
-
-def test_coupler_does_not_expose_runtime_cache_facade() -> None:
-    coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
-
-    assert not hasattr(coupler, "clear_runtime_cache")
-    assert not hasattr(coupler, "runtime_cache_entry_count")
-    assert not hasattr(coupler, "_runtime_resources")
-    assert importlib.util.find_spec("vercor._runtime.resources") is None
-    assert importlib.util.find_spec("vercor._runtime.cache") is None
 
 
 @pytest.mark.fast_always

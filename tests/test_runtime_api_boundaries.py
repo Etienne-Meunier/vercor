@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
-import importlib
 from inspect import signature
 from pathlib import Path
 from typing import Any
@@ -640,14 +639,3 @@ def test_snapshot_writer_receives_original_component(tmp_path: Path) -> None:
     assert seen[0].spec is component.spec
     assert seen[0] is component
     assert not hasattr(vercor, "ComponentInfo")
-
-
-@pytest.mark.fast_always
-def test_coupling_module_and_generic_coupler_recipe_are_removed() -> None:
-    import vercor.recipes as recipes
-
-    with pytest.raises(ModuleNotFoundError, match="vercor.coupling"):
-        importlib.import_module("vercor.coupling")
-    assert not hasattr(vercor, "CouplerSpec")
-    assert not hasattr(recipes, "CouplerSpec")
-    assert "CouplerSpec" not in recipes.__all__

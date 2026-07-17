@@ -6,28 +6,18 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 0.4 cleanup completed locally (2026-07-17): historical 0.3
-  distribution evidence, the mutable component test helper, and the mutable
-  output test adapter are removed. The output adapter deletion produced the
-  required two-module collection RED; CAMulator, JAXGCM, and Veros tests now
-  exercise immutable `OutputFrame`/`_OutputAccumulator` accumulation and direct
-  NetCDF writes. Cleanup gates include the earlier 34/34 and 94/94 focused
-  GREENs, the output 136/136 focus, targeted mypy, 657/657 fast, and 1256/1256
-  full suites with only known third-party warnings and no production behavior
-  change.
-- Controlled pytest parallelization completed locally (2026-07-16) on Python 3.13.13,
-  pytest 9.1.1, pytest-xdist 3.8.0, pytest-cov 7.1.0, coverage.py 7.15.0, JAX 0.10.2,
-  macOS-26.5.2-arm64-arm-64bit-Mach-O/arm64. The 1,256-test serial baseline mean was 125.91s; artifact reuse was forward-reverted because 29.975s regressed from 29.215s.
-  After Task 1's five helper tests, serial wall times were 122.23/128.87/122.05s (mean 124.3833s).
-  Initial n2 walls were 86.83/77.58s (mean 82.205s); n4 walls were 62.82/61.68s,
-  with 60.47s validation (three-run mean 61.6567s); auto was 62.59/66.48s (mean 64.535s).
-  Fixed n4 with `--dist=loadscope --max-worker-restart=0` was selected; no-reorder passed at 55.66s. Saving was 124.3833-61.6567=62.7267s, and `(124.3833-61.6567)/124.3833*100=50.43%`.
-  Final collection was 1,262/1,262 passed with zero failed, skipped, xfailed, retried, restarted, crashed, or flaky tests; serial/parallel warnings had identical sources/messages, with only the known Flax collection warning duplicated per worker.
-  Serial and parallel coverage were exactly equal: statements 6,844/7,355 (93.05%), branches 1,202/1,534 (78.36%), combined 90.52%, and named-function entries 671/729 (92.04%).
-  Fast default/serial passed the same 662 selected tests (600 deselected); complete default/serial and coverage passed 1,262/1,262.
-  Black left 244 files unchanged; strict flake8 reported 0; mypy passed 240 files; compileall and `git diff --check` were clean.
-  Remaining bottlenecks are distribution builds, JAX/coupler runtime, setup subprocesses, flux tests, and public-API subprocess probes.
-  Production behavior, assertions, test selection, coverage thresholds, releases, pushes, and publications did not change.
+- VerCOR 0.4 test cleanup is in progress locally (2026-07-17): historical
+  distribution evidence and mutable component/output test adapters are gone;
+  obsolete absence-only guards are removed, mixed boundaries assert positive
+  current contracts, and legacy-looking test files now use current names. The
+  obsolete-guard audit is empty; focused boundaries pass 301/301, targeted
+  mypy and flake8 are clean, fast passes 632/632, and full passes 1220/1220
+  with only known third-party warnings. Production code is unchanged.
+- Controlled pytest parallelization completed locally (2026-07-16): fixed n4
+  loadscope reduced the measured 124.38s serial mean to 61.66s (50.43%) while
+  preserving selection, warnings, and 90.52% combined coverage. Fast/full,
+  Black, flake8, mypy, compileall, and whitespace gates passed; production and
+  release behavior did not change.
 - Calendar-owned runtime year metadata completed locally (2026-07-15):
   commits `9ade80c` and `a9b079c`. Runtime forcing metadata now derives year
   type and duration per timestamp; the duplicate runtime owner and private

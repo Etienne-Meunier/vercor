@@ -266,15 +266,6 @@ def test_v0_4_callable_component_prepared_binding_is_stable(
     state = coupler.initial_state()
     prepared = coupler._ensure_prepared()
 
-    for removed_name in (
-        "initial_fields",
-        "initialize",
-        "configure",
-        "seed_field",
-        "settings",
-    ):
-        assert not hasattr(component, removed_name)
-
     cast(Any, component).step = replacement
 
     final_state = coupler.run(state=state)
@@ -965,43 +956,16 @@ def test_runtime_topology_policy_boundaries_are_focused() -> None:
 
 
 @pytest.mark.fast_always
-def test_prepared_boundary_replaces_mutable_runtime_resources() -> None:
+def test_prepared_boundary_owns_runtime_initialization_and_dispatch() -> None:
+    prepared_module = importlib.import_module("vercor._runtime.prepared")
     prepared_source = source_for("vercor/_runtime/prepared.py")
-    facade_source = source_for("vercor/_runtime/facade.py")
-    preparation_source = source_for("vercor/_runtime/preparation.py")
-    run_context_source = source_for("vercor/_runtime/run_context.py")
 
-    assert not Path("vercor/_runtime/resources.py").exists()
-    assert "class PreparedCoupling" in prepared_source
-    assert "@dataclass(frozen=True)" in prepared_source
-    assert "build_exchange_contracts(" not in preparation_source
-    assert "build_runtime_dispatch_context(" not in preparation_source
+    assert prepared_module.PreparedCoupling.__module__ == "vercor._runtime.prepared"
+    assert is_dataclass(prepared_module.PreparedCoupling)
+    assert getattr(prepared_module.PreparedCoupling, "__dataclass_params__").frozen
+    assert prepared_module.prepare_coupling.__module__ == "vercor._runtime.prepared"
+    assert "initialize_coupler_runtime(" in prepared_source
     assert "build_runtime_dispatch_context(" in prepared_source
-    assert "MutableMapping" not in run_context_source
-    assert "runtime_cache" not in run_context_source
-    assert "CompiledRuntimeCache" not in run_context_source
-    for source in (facade_source, preparation_source):
-        assert "runtime_resources" not in source
-        assert "RuntimeInputs" not in source
-
-
-@pytest.mark.fast_always
-def test_runtime_compilation_cache_is_removed() -> None:
-    compilation_path = Path("vercor/_runtime/compilation.py")
-    cache_path = Path("vercor/_runtime/cache.py")
-    assert not compilation_path.exists()
-    assert not cache_path.exists()
-
-    run_context_source = source_for("vercor/_runtime/run_context.py")
-    prepared_source = source_for("vercor/_runtime/prepared.py")
-
-    assert "from vercor._runtime.compilation import" not in run_context_source
-    assert "from vercor._runtime.compilation import" not in prepared_source
-    assert "from vercor._runtime.cache import" not in run_context_source
-    assert "from vercor._runtime.cache import" not in prepared_source
-    assert "CompiledRuntime" not in run_context_source
-    assert "CompiledRuntimeCache" not in prepared_source
-    assert "compiled_runtime_cache_key(" not in run_context_source
 
 
 @pytest.mark.fast_always

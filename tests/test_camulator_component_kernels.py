@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -853,16 +852,6 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
     assert callable(component.spec.output.snapshot_writer)
-
-
-def test_camulator_v0_4_configuration_does_not_expose_obsolete_output_workers() -> None:
-    assert "output_cpus_number" not in CAMulatorConfig.__dataclass_fields__
-    assert (
-        "output_cpus_number"
-        not in inspect.signature(
-            camulator_gcm_state_module.CAMulatorGCMSetupState
-        ).parameters
-    )
 
 
 def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is_custom(

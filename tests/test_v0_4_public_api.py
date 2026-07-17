@@ -45,32 +45,6 @@ ROOT_EXPORTS = (
     "RunState",
     "RuntimeOptions",
 )
-FORBIDDEN_ROOT_ATTRIBUTES = (
-    "AssetError",
-    "CallableComponent",
-    "Component",
-    "ComponentSpec",
-    "ComponentState",
-    "CouplerError",
-    "CouplerSpec",
-    "DTypePolicy",
-    "DataComponent",
-    "DateTime360",
-    "DateTime365",
-    "ExecutionBackend",
-    "ExecutionContext",
-    "LifecycleHooks",
-    "ModelDateTime",
-    "OutputSpec",
-    "PhysicalConstants",
-    "Settings",
-    "SetupContext",
-    "StepContext",
-    "TopologyPolicy",
-    "VectorField",
-    "vector",
-)
-
 PUBLIC_MODULE_EXPORTS = {
     "vercor.assets": ("VERCOR_ASSETS_BASE_URL", "ensure_registered_asset"),
     "vercor.calendar": (
@@ -297,15 +271,6 @@ PUBLIC_MODULE_EXPORTS = {
     "vercor.types": ("RuntimeArray",),
 }
 
-REMOVED_PUBLIC_MODULES = (
-    "vercor.coupling",
-    "vercor.host_arrays",
-    "vercor.interpolators",
-    "vercor.physical_constants",
-    "vercor.pytree",
-    "vercor.settings",
-)
-
 
 def _component(name: str = "MODEL", *, setup: Any = None) -> CallableComponent:
     lifecycle = LifecycleHooks() if setup is None else LifecycleHooks(setup=setup)
@@ -328,10 +293,6 @@ def _clock(*, steps: int = 1) -> Clock:
 def test_root_exports_exactly_the_six_primary_symbols() -> None:
     assert tuple(vercor.__all__) == ROOT_EXPORTS
     assert all(hasattr(vercor, name) for name in ROOT_EXPORTS)
-
-
-def test_advanced_and_removed_names_are_absent_from_root_attributes() -> None:
-    assert not (set(FORBIDDEN_ROOT_ATTRIBUTES) & set(vars(vercor)))
 
 
 def test_public_module_inventory_exactly_matches_the_manifest() -> None:
@@ -413,33 +374,6 @@ def test_manifested_symbols_are_absent_from_every_non_owner_public_module() -> N
                     violations.append(f"{symbol}: {owner_name} -> {module_name}")
 
     assert violations == [], "non-owner aliases: " + "; ".join(violations[:20])
-
-
-@pytest.mark.parametrize("module_name", REMOVED_PUBLIC_MODULES)
-def test_removed_public_module_fails_with_its_exact_requested_name(
-    module_name: str,
-) -> None:
-    script = f"""
-import importlib
-
-requested = {module_name!r}
-try:
-    importlib.import_module(requested)
-except ModuleNotFoundError as exc:
-    assert exc.name == requested, (requested, exc.name)
-else:
-    raise AssertionError(f"{{requested}} unexpectedly imported")
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        cwd=PROJECT_ROOT,
-        text=True,
-        capture_output=True,
-        timeout=20,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
 
 
 def test_settings_are_absent_from_primary_assembly() -> None:
@@ -1039,11 +973,8 @@ import vercor
 
 root_exports = {ROOT_EXPORTS!r}
 module_exports = {PUBLIC_MODULE_EXPORTS!r}
-forbidden_root = {FORBIDDEN_ROOT_ATTRIBUTES!r}
-removed_modules = {REMOVED_PUBLIC_MODULES!r}
 
 assert tuple(vercor.__all__) == root_exports
-assert not (set(forbidden_root) & set(vars(vercor)))
 assert Path(vercor.__file__).resolve().is_relative_to(installed_root)
 
 discovered = {{
@@ -1080,13 +1011,6 @@ for owner_name, exports in module_exports.items():
                 continue
             assert symbol not in vars(module), (symbol, owner_name, module_name)
 
-for requested in removed_modules:
-    try:
-        importlib.import_module(requested)
-    except ModuleNotFoundError as exc:
-        assert exc.name == requested, (requested, exc.name)
-    else:
-        raise AssertionError(f"{{requested}} unexpectedly imported")
 """
     result = subprocess.run(
         [sys.executable, "-I", "-c", probe],

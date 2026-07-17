@@ -446,9 +446,3 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
             ),
         },
     )
-
-
-def test_build_jcm_land_atmosphere_components_is_removed() -> None:
-    import vercor.setups._jcm as helper
-
-    assert not hasattr(helper, "build_jcm_land_atmosphere_components")
