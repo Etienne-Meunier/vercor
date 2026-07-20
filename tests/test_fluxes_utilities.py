@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tests.assertions import assert_allclose_compact
+import vercor.fluxes.utilities as flux_utilities_module
 from vercor.fluxes.bulk_formula_cesm import (
     compute_ocean_surface_fluxes,
     shr_flux_atmIce,
@@ -52,6 +53,13 @@ def _finite_difference_scalar_grad(
     upper = float(fn(x + eps))
     lower = float(fn(x - eps))
     return (upper - lower) / (2.0 * eps)
+
+
+def test_flux_utilities_do_not_duplicate_virtual_temperature_kernel() -> None:
+    assert not hasattr(
+        flux_utilities_module,
+        "_virtual_temperature_from_specific_humidity",
+    )
 
 
 def test_qsat_is_positive_and_increases_with_temperature() -> None:

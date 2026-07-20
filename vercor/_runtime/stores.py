@@ -70,18 +70,6 @@ class FieldStore(PyTreeNodeMixin):
             raise KeyError(f"Runtime field {name!r} not found") from exc
         return self.values[index]
 
-    def get_or_zeros_like(
-        self,
-        name: str,
-        like: str | RuntimeArray,
-    ) -> RuntimeArray:
-        """Return a field by name, or zeros matching another field or array."""
-
-        if name in self:
-            return self.get(name)
-        reference = self.get(like) if isinstance(like, str) else like
-        return jnp.zeros_like(jnp.asarray(reference))
-
     def set(self, name: str, value: RuntimeArray) -> "FieldStore":
         """Return a new store with ``name`` replaced or appended."""
 

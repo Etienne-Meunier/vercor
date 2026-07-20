@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
 
 from vercor.components import (
     ComponentSpec,
@@ -20,7 +19,6 @@ def time_interpolated_data_component(
     inputs: tuple[str, ...] = (),
     outputs: tuple[str, ...],
     initial_fields: Mapping[str, object] | None = None,
-    data_files: Mapping[str, str],
     lifecycle: LifecycleHooks | None = None,
 ) -> DataComponent:
     """Create a data component with the standard time-interpolation metadata."""
@@ -37,5 +35,4 @@ def time_interpolated_data_component(
             transfer=TransferPolicy(time_selection="linear"),
         ),
     )
-    cast(Any, component)._data_files = dict(data_files)
     return component

@@ -778,14 +778,7 @@ def test_runtime_field_store_exposes_mapping_membership_without_default_fallback
     assert tuple(fields) == ("temperature", "humidity")
     assert_allclose_compact(fields["temperature"], np.full((2, 2), 280.0))
     assert not hasattr(store, "get_or")
-    assert_allclose_compact(
-        store.get_or_zeros_like("missing", "temperature"),
-        np.zeros((2, 2)),
-    )
-    assert_allclose_compact(
-        store.get_or_zeros_like("missing", jnp.ones((2, 2))),
-        np.zeros((2, 2)),
-    )
+    assert not hasattr(store, "get_or_zeros_like")
 
 
 def test_runtime_field_store_replace_helpers_preserve_dtype_and_reject_missing() -> (
@@ -815,7 +808,7 @@ def test_runtime_field_store_replace_helpers_preserve_dtype_and_reject_missing()
         )
 
 
-def test_runtime_field_store_new_helpers_are_jit_compatible() -> None:
+def test_runtime_field_store_replace_helpers_are_jit_compatible() -> None:
     store = FieldStore.from_mapping(
         {
             "temperature": jnp.ones((2, 2), dtype=jnp.float32),
@@ -827,7 +820,7 @@ def test_runtime_field_store_new_helpers_are_jit_compatible() -> None:
         return value.replace_many(
             {
                 "temperature": value.get("temperature") + 2.0,
-                "humidity": value.get_or_zeros_like("missing", "temperature") + 0.25,
+                "humidity": jnp.zeros_like(value.get("temperature")) + 0.25,
             }
         )
 

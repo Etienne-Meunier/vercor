@@ -49,7 +49,6 @@ class CallableComponent:
         self.name = name
         self.grid = grid
         self.spec = ComponentSpec() if spec is None else spec
-        self._author_step = step
         self._normalized_step: _ComponentStepCallable = (
             normalize_component_step_callable(step)
         )

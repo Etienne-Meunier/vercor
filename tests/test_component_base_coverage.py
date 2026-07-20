@@ -17,6 +17,7 @@ from vercor.components import (
     LifecycleHooks,
     PrefillResult,
     SetupResult,
+    StepContext,
     StepResult,
 )
 from vercor.coupler import Coupler
@@ -77,6 +78,21 @@ def test_callable_component_adapts_supported_step_arities(arity: int) -> None:
 def test_callable_component_rejects_invalid_step_signatures(step: Any) -> None:
     with pytest.raises(ComponentError, match="1, 2, or 3 positional"):
         CallableComponent("MODEL", make_test_grid(), step)
+
+
+def test_callable_component_preparation_retains_only_normalized_step() -> None:
+    component = CallableComponent("MODEL", make_test_grid(), lambda fields: {})
+    prepared = _coupler(component)._ensure_prepared().components["MODEL"]
+
+    assert not hasattr(component, "_author_step")
+    assert not hasattr(prepared, "_author_step")
+    assert (
+        prepared.step(
+            {},
+            StepContext(dt_seconds=60.0, time=datetime(2000, 1, 1)),
+        )
+        == {}
+    )
 
 
 def test_step_result_can_preserve_replace_and_clear_payload() -> None:

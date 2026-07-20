@@ -55,7 +55,6 @@ def make_era5_land(
         inputs=_ERA5_LAND_INPUT_NAMES,
         outputs=_ERA5_LAND_FIELD_NAMES,
         initial_fields={field_name: 0.0 for field_name in _ERA5_LAND_INPUT_NAMES},
-        data_files=data_files,
     )
 
     return component

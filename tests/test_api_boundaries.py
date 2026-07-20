@@ -1194,7 +1194,7 @@ def test_callable_component_has_one_step_normalization_owner() -> None:
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
 
     assert "def normalize_component_step_callable(" in callable_source
-    assert "normalize_component_step_callable(step)" in base_source
+    assert base_source.count("normalize_component_step_callable(") == 1
 
 
 @pytest.mark.fast_always

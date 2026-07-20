@@ -44,7 +44,6 @@ class _ComponentDeclaration:
     grid: RectilinearGrid
     spec: ComponentSpec
     step: _ComponentStepCallable
-    author_step: Any
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,6 @@ class _ComponentBinding:
     grid: RectilinearGrid
     spec: ComponentSpec
     _step: _ComponentStepCallable
-    _author_step: Any
     _data: Mapping[str, RuntimeArray]
     _payload: Any | None
     _dtype_policy: DTypePolicy
@@ -199,7 +197,6 @@ def normalize_component(component: Component) -> _ComponentDeclaration:
             if normalized_step is None
             else normalized_step
         ),
-        author_step=getattr(component, "_author_step", component.step),
     )
 
 
@@ -250,7 +247,6 @@ def prepare_component(
         grid=grid,
         spec=declaration.spec,
         _step=declaration.step,
-        _author_step=declaration.author_step,
         _data=MappingProxyType(dict(data)),
         _payload=payload,
         _dtype_policy=dtype,

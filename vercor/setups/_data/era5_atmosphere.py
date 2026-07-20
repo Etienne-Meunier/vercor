@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import jax
 import jax.numpy as jnp
@@ -209,13 +209,6 @@ def make_era5_atmosphere(
             field_name: _REFERENCE_SURFACE_TEMPERATURE
             for field_name in _ERA5_ATMOSPHERE_INPUT_NAMES
         },
-        data_files=data_files,
         lifecycle=LifecycleHooks(setup=setup),
     )
-    cast(Any, component)._hybrid_coefficients = {
-        "hyai": hyai,
-        "hybi": hybi,
-        "hyam": hyam,
-        "hybm": hybm,
-    }
     return component

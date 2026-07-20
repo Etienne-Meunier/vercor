@@ -7,20 +7,6 @@ from vercor.dtypes import as_jax_real_array
 from vercor.physics import PhysicalConstants
 
 
-def _virtual_temperature_from_specific_humidity(
-    temperature: ArrayLike,
-    specific_humidity: ArrayLike,
-    virtual_temperature_correction: float,
-) -> jax.Array:
-    """Return virtual temperature for specific humidity in kg/kg."""
-
-    temperature_array = as_jax_real_array(temperature)
-    specific_humidity_array = as_jax_real_array(specific_humidity)
-    return temperature_array * (
-        1.0 + virtual_temperature_correction * specific_humidity_array
-    )
-
-
 def qsat(tk: ArrayLike) -> jax.Array:
     """The saturation humidity of air (kg/m^3)
 

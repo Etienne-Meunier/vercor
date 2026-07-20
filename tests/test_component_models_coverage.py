@@ -684,7 +684,7 @@ def test_era5_land_constructor_uses_masked_grid_and_enables_interpolation(
     component = cast(Any, make_era5_land())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component._data_files == {"surface": str(fake_path)}
+    assert not hasattr(component, "_data_files")
     assert component.spec.transfer.time_selection == "linear"
     assert component.spec.inputs == _DATA_LAND_INPUTS
     assert component.spec.outputs == ("land_surface_temperature",)
@@ -742,7 +742,7 @@ def test_era5_ocean_constructor_applies_land_mask_and_reverses_latitude(
     component = cast(Any, make_era5_ocean())
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component._data_files == {"surface": str(fake_path)}
+    assert not hasattr(component, "_data_files")
     assert component.spec.transfer.time_selection == "linear"
     assert component.spec.inputs == _DATA_OCEAN_INPUTS
     assert component.spec.outputs == ("sea_surface_temperature",)
@@ -797,7 +797,7 @@ def test_erainterim_ocean_constructor_builds_global_masked_grid(
     component = cast(Any, make_erainterim_ocean(resolution="4deg"))
     _step_component(component, timedelta(hours=1), datetime(2000, 1, 1), coupler)
 
-    assert component._data_files == {"model_level": str(fake_path)}
+    assert not hasattr(component, "_data_files")
     assert component.spec.transfer.time_selection == "linear"
     assert component.spec.inputs == _DATA_OCEAN_INPUTS
     assert component.spec.outputs == ("sea_surface_temperature",)
@@ -965,10 +965,8 @@ def test_era5_atmosphere_constructor_initialize_and_step(
     component = cast(Any, make_era5_atmosphere())
     _prepare_component_for_test(component, coupler)
 
-    assert component._data_files == {
-        "model_level": str(model_level_path),
-        "surface": str(surface_path),
-    }
+    assert not hasattr(component, "_data_files")
+    assert not hasattr(component, "_hybrid_coefficients")
     assert component.spec.transfer.time_selection == "linear"
     assert component.spec.inputs == _DATA_ATMOSPHERE_INPUTS
     assert set(_DATA_ATMOSPHERE_INPUTS).issubset(component.spec.initial_fields)

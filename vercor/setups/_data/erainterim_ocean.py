@@ -141,6 +141,5 @@ def make_erainterim_ocean(
         initial_fields={
             field_name: 0.0 for field_name in _ERAINTERIM_OCEAN_INPUT_NAMES
         },
-        data_files=data_files,
     )
     return component
