@@ -304,6 +304,9 @@ def test_veros_state_helpers_cover_non_jitted_paths() -> None:
     state = _FakeVerosState(
         variables=_FakeVariableStore(
             taux=np.zeros((8, 8, 1), dtype=float),
+            tauy=np.zeros((8, 8, 1), dtype=float),
+            qnet=np.zeros((8, 8, 1), dtype=float),
+            qnec=np.zeros((8, 8, 1), dtype=float),
         )
     )
 
@@ -320,15 +323,27 @@ def test_veros_state_helpers_cover_non_jitted_paths() -> None:
     assert calls["step"] == 1
     assert getattr(state, "marker") == "updated"
 
-    result_state = veros_state_module.set_variable(
+    forcing = veros_state_module.VerosForcingFields(
+        taux=jnp.full((4, 4, 1), 9.0),
+        tauy=jnp.full((4, 4, 1), 8.0),
+        qnet=jnp.full((4, 4, 1), 7.0),
+        qnec=jnp.full((4, 4, 1), 6.0),
+    )
+    result_state = veros_state_module.apply_veros_forcing_fields(
         state,
-        "taux",
-        np.full((4, 4, 1), 9.0),
+        forcing,
         jitted=False,
     )
 
     assert result_state is state
-    assert_allclose_compact(
-        state.variables.taux[2:-2, 2:-2, :], np.full((4, 4, 1), 9.0)
-    )
-    assert_allclose_compact(state.variables.taux[:2, :, :], 0.0)
+    for name, expected in zip(
+        ("taux", "tauy", "qnet", "qnec"),
+        (9.0, 8.0, 7.0, 6.0),
+        strict=True,
+    ):
+        value = getattr(state.variables, name)
+        assert_allclose_compact(
+            value[2:-2, 2:-2, :],
+            np.full((4, 4, 1), expected),
+        )
+        assert_allclose_compact(value[:2, :, :], 0.0)

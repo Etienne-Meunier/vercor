@@ -185,7 +185,10 @@ class _FakeSettings(dict[str, Any]):
 
 
 class _FakeVariableStore(SimpleNamespace):
+    unlock_calls: int = 0
+
     def unlock(self) -> _NullContext:
+        self.unlock_calls += 1
         return _NullContext()
 
 
@@ -1739,31 +1742,56 @@ def test_veros_output_variables_rejects_setup_local_field() -> None:
         )
 
 
-def test_veros_set_variable_updates_only_interior_cells(
+def test_apply_veros_forcing_fields_copies_once_and_updates_all_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    variables = _FakeVariableStore(temp=np.zeros((8, 8, 1), dtype=float))
+    variables = _FakeVariableStore(
+        **{
+            name: np.zeros((8, 8, 1), dtype=float)
+            for name in ("taux", "tauy", "qnet", "qnec")
+        }
+    )
     state = SimpleNamespace(variables=variables)
+    copy_calls: list[bool] = []
 
-    monkeypatch.setattr(
-        veros_state_module, "copy_state", lambda tree, jitted=True: deepcopy(tree)
+    def recording_copy(value: Any, jitted: bool = True) -> Any:
+        copy_calls.append(jitted)
+        return deepcopy(value)
+
+    monkeypatch.setattr(veros_state_module, "copy_state", recording_copy)
+    forcing = veros_state_module.VerosForcingFields(
+        taux=jnp.ones((4, 4, 1)),
+        tauy=jnp.full((4, 4, 1), 2.0),
+        qnet=jnp.full((4, 4, 1), 3.0),
+        qnec=jnp.full((4, 4, 1), 4.0),
     )
 
-    updated = veros_state_module.set_variable(
+    result = veros_state_module.apply_veros_forcing_fields(
         state,
-        "temp",
-        jnp.full((4, 4, 1), 9.0),
-        jitted=False,
+        forcing,
+        jitted=True,
     )
 
-    assert isinstance(updated.variables.temp, np.ndarray)
-    assert_allclose_compact(
-        updated.variables.temp[2:-2, 2:-2, :], np.full((4, 4, 1), 9.0)
-    )
-    assert np.count_nonzero(updated.variables.temp[:2, :, :]) == 0
-    assert np.count_nonzero(updated.variables.temp[-2:, :, :]) == 0
-    assert np.count_nonzero(updated.variables.temp[:, :2, :]) == 0
-    assert np.count_nonzero(updated.variables.temp[:, -2:, :]) == 0
+    assert copy_calls == [True]
+    assert not hasattr(veros_state_module, "set_variable")
+    assert result is not state
+    assert result.variables.unlock_calls == 1
+    for name, expected in zip(
+        ("taux", "tauy", "qnet", "qnec"),
+        (1.0, 2.0, 3.0, 4.0),
+        strict=True,
+    ):
+        result_value = getattr(result.variables, name)
+        assert isinstance(result_value, np.ndarray)
+        assert_allclose_compact(
+            result_value[2:-2, 2:-2, :],
+            np.full((4, 4, 1), expected),
+        )
+        assert np.count_nonzero(result_value[:2, :, :]) == 0
+        assert np.count_nonzero(result_value[-2:, :, :]) == 0
+        assert np.count_nonzero(result_value[:, :2, :]) == 0
+        assert np.count_nonzero(result_value[:, -2:, :]) == 0
+        assert np.count_nonzero(getattr(state.variables, name)) == 0
 
 
 def test_veros_initialize_validates_timestep_multiple() -> None:
@@ -1921,14 +1949,17 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
 
-    set_calls: list[tuple[str, np.ndarray]] = []
+    forcing_calls: list[veros_state_module.VerosForcingFields] = []
 
-    def fake_set_variable(
-        state: Any, variable_name: str, variable_value: Any, jitted: bool = True
+    def fake_apply_veros_forcing_fields(
+        state: Any,
+        forcing_fields: veros_state_module.VerosForcingFields,
+        *,
+        jitted: bool,
     ) -> Any:
-        _ = jitted
-        assert isinstance(variable_value, jax.Array)
-        set_calls.append((variable_name, np.asarray(variable_value)))
+        assert jitted is False
+        assert all(isinstance(value, jax.Array) for value in forcing_fields)
+        forcing_calls.append(forcing_fields)
         return state
 
     def fake_step_function(state: Any) -> Any:
@@ -1945,7 +1976,11 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
             np.asarray([[3.0, 4.0], [5.0, 6.0]]),
         ),
     )
-    monkeypatch.setattr(veros_state_module, "set_variable", fake_set_variable)
+    monkeypatch.setattr(
+        veros_state_module,
+        "apply_veros_forcing_fields",
+        fake_apply_veros_forcing_fields,
+    )
     component._step_function = fake_step_function
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
@@ -1965,12 +2000,21 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         component_state.fields.set_many(updates)
     )
 
-    expected_names = ["taux", "tauy", "qnet", "qnec"]
-    assert [name for name, _ in set_calls] == expected_names
+    assert len(forcing_calls) == 1
+    forcing_fields = forcing_calls[0]
     assert_allclose_compact(
-        set_calls[0][1], np.asarray([[[1.0], [3.0]], [[2.0], [4.0]]])
+        forcing_fields.taux,
+        np.asarray([[[1.0], [3.0]], [[2.0], [4.0]]]),
     )
-    assert_allclose_compact(set_calls[3][1], expected_qnec)
+    assert_allclose_compact(
+        forcing_fields.tauy,
+        np.asarray([[[5.0], [7.0]], [[6.0], [8.0]]]),
+    )
+    assert_allclose_compact(
+        forcing_fields.qnet,
+        np.asarray([[[9.0], [11.0]], [[10.0], [12.0]]]),
+    )
+    assert_allclose_compact(forcing_fields.qnec, expected_qnec)
     assert_allclose_compact(
         component_state.fields.get("sea_surface_temperature"),
         np.full((4, 4), 288.15),
@@ -1978,7 +2022,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     assert isinstance(component_state.fields.get("sea_surface_temperature"), jax.Array)
 
 
-def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
+def test_veros_step_nan_cleans_forcing_fields_before_apply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component = veros_gcm_state_module.VerosGCMSetupState.__new__(
@@ -1996,14 +2040,17 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
 
-    set_calls: list[tuple[str, np.ndarray]] = []
+    forcing_calls: list[veros_state_module.VerosForcingFields] = []
 
-    def fake_set_variable(
-        state: Any, variable_name: str, variable_value: Any, jitted: bool = True
+    def fake_apply_veros_forcing_fields(
+        state: Any,
+        forcing_fields: veros_state_module.VerosForcingFields,
+        *,
+        jitted: bool,
     ) -> Any:
-        _ = jitted
-        assert isinstance(variable_value, jax.Array)
-        set_calls.append((variable_name, np.asarray(variable_value)))
+        assert jitted is False
+        assert all(isinstance(value, jax.Array) for value in forcing_fields)
+        forcing_calls.append(forcing_fields)
         return state
 
     monkeypatch.setattr(
@@ -2016,7 +2063,11 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
             np.asarray([[12.0, 13.0], [14.0, np.nan]]),
         ),
     )
-    monkeypatch.setattr(veros_state_module, "set_variable", fake_set_variable)
+    monkeypatch.setattr(
+        veros_state_module,
+        "apply_veros_forcing_fields",
+        fake_apply_veros_forcing_fields,
+    )
     component._step_function = lambda state: state
 
     coupler = _make_coupler(dt_seconds=20.0, run_order=["ATM"])
@@ -2033,16 +2084,21 @@ def test_veros_step_nan_cleans_forcing_fields_before_set_variable(
         None,
     )
 
-    assert [name for name, _ in set_calls] == ["taux", "tauy", "qnet", "qnec"]
+    assert len(forcing_calls) == 1
+    forcing_fields = forcing_calls[0]
     assert_allclose_compact(
-        set_calls[0][1], np.asarray([[[1.0], [3.0]], [[0.0], [4.0]]])
+        forcing_fields.taux,
+        np.asarray([[[1.0], [3.0]], [[0.0], [4.0]]]),
     )
     assert_allclose_compact(
-        set_calls[1][1], np.asarray([[[5.0], [0.0]], [[6.0], [8.0]]])
+        forcing_fields.tauy,
+        np.asarray([[[5.0], [0.0]], [[6.0], [8.0]]]),
     )
     assert_allclose_compact(
-        set_calls[2][1], np.asarray([[[9.0], [11.0]], [[10.0], [0.0]]])
+        forcing_fields.qnet,
+        np.asarray([[[9.0], [11.0]], [[10.0], [0.0]]]),
     )
     assert_allclose_compact(
-        set_calls[3][1], np.asarray([[[12.0], [14.0]], [[13.0], [0.0]]])
+        forcing_fields.qnec,
+        np.asarray([[[12.0], [14.0]], [[13.0], [0.0]]]),
     )

@@ -8,7 +8,6 @@ import jax.numpy as jnp
 
 from vercor.dtypes import as_jax_index_array, as_jax_real_array
 from vercor._host_arrays import runtime_array_to_host
-from vercor.types import RuntimeArray
 
 from veros.state import VerosState
 
@@ -118,25 +117,6 @@ def extract_veros_runtime_sst(state: VerosState) -> jax.Array:
     )
 
 
-def set_variable(
-    state: VerosState,
-    variable_name: str,
-    variable_value: RuntimeArray,
-    jitted: bool = True,
-) -> VerosState:
-    """Return a Veros state with one interior variable replaced."""
-
-    n_state = copy_state(state, jitted=jitted)
-    vs = n_state.variables
-
-    with n_state.variables.unlock():
-        var = getattr(vs, variable_name)
-        updated_var = update_veros_interior(var, variable_value)
-        setattr(vs, variable_name, runtime_array_to_host(updated_var))
-
-    return n_state
-
-
 def apply_veros_forcing_fields(
     state: VerosState,
     forcing_fields: VerosForcingFields,
@@ -145,17 +125,17 @@ def apply_veros_forcing_fields(
 ) -> VerosState:
     """Write prepared VerCOR forcing fields into Veros state variables."""
 
-    updated_state = state
-    for variable_name, variable_value in zip(
-        ("taux", "tauy", "qnet", "qnec"),
-        forcing_fields,
-    ):
-        updated_state = set_variable(
-            updated_state,
-            variable_name,
-            variable_value,
-            jitted=jitted,
-        )
+    updated_state = copy_state(state, jitted=jitted)
+    variables = updated_state.variables
+    with variables.unlock():
+        for variable_name, variable_value in zip(
+            ("taux", "tauy", "qnet", "qnec"),
+            forcing_fields,
+            strict=True,
+        ):
+            current = getattr(variables, variable_name)
+            updated = update_veros_interior(current, variable_value)
+            setattr(variables, variable_name, runtime_array_to_host(updated))
     return updated_state
 
 
@@ -186,5 +166,4 @@ __all__ = [
     "update_veros_interior",
     "copy_state",
     "pure",
-    "set_variable",
 ]
