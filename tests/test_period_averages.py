@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -50,8 +52,12 @@ def test_output_accumulator_replace_preserves_pytree_structure() -> None:
     )(empty)
     reset = jax.jit(lambda accumulator: accumulator.reset())(updated)
 
-    assert jax.tree_util.tree_structure(empty) == jax.tree_util.tree_structure(updated)
-    assert jax.tree_util.tree_structure(updated) == jax.tree_util.tree_structure(reset)
+    assert cast(object, jax.tree_util.tree_structure(empty)) == cast(
+        object, jax.tree_util.tree_structure(updated)
+    )
+    assert cast(object, jax.tree_util.tree_structure(updated)) == cast(
+        object, jax.tree_util.tree_structure(reset)
+    )
     assert_allclose_compact(reset.counts[0], [0, 0])
 
 

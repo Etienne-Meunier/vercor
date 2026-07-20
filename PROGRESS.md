@@ -6,6 +6,38 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Codebase simplification completed locally (2026-07-20): Tasks 1-8 collapsed
+  the private grid hierarchy and scalar regridding, removed unread component/data/store/flux
+  state, centralized output dimensions and immutable accumulator reconstruction,
+  returned topology maps directly, removed the one-use runtime runner, narrowed
+  CAMulator initialization to supported named checkpoints, reduced representative
+  bilinear-interpolator PyTree leaves from 28 to 26, and changed each Veros forcing
+  update from four state copies/unlocks to one. Task RED/GREEN evidence was 3
+  failures then 45 passes; 7 then 66; 2 then 72; 7 then 108; 2 then 107; 2 then
+  90; 2 then 28 (46 final bilinear/interpolator-regrid passes); and 1 then 45
+  (65 final Veros/physics passes), respectively. The final 14-file subsystem
+  focus passed 324/324 with four Flax warning instances. Fast passed 638/638 of
+  1,235 with six known third-party warning instances: four Flax/JAX-effect
+  deprecations and two xarray/NumPy-shape deprecations. Full and coverage each
+  passed 1,235/1,235 with eight known third-party instances: those six plus one
+  JAX scatter-cast future warning and one JCM/xarray merge-default future warning.
+  Branch coverage was 90.71% across 7,265 statements and 1,522 branches. Black
+  left 234 files unchanged and emitted its known Python 3.13/configured Python
+  3.15 safety-parse advisory; final strict flake8 was 0, mypy passed 234 source
+  files, compileall was silent, and whitespace checks were clean. Release-gate
+  review also removed one stale Task 2 `Any` import and applied the repository's
+  typing-only `cast(object, ...)` pattern to two Task 3 `PyTreeDef` comparisons;
+  the affected static and focused gates were rerun. The Task 7 plan's
+  `tests/test_gradients.py` path was stale because that file does not exist;
+  reverse-gradient coverage remains in
+  `tests/test_bilinear_rectilinear_interpolator.py`, and the explicit
+  flatten/unflatten, JIT, JVP, and reverse-gradient probe passed. Incremental
+  Graphify completed from the direct `scipy` interpreter after the sandboxed
+  attempt was denied: 82/82 uncached code files produced 4,281 nodes, 12,503
+  edges, and 175 communities. Relative to the saved graph it added 814 nodes
+  and 884 edges and removed 133 nodes and 244 edges. Graphify warned that the
+  public-signatures JSON produced no AST nodes; the canonical HTML, JSON,
+  report, labels, and manifest were refreshed.
 - Period-average window-start identity completed locally (2026-07-17): filenames and NetCDF times now use each schema's actual start.
   Tests cover partial/subsequent periods, mixed cadences, and Gregorian/no-leap/360-day clocks while preserving calendar ISO formats,
   post-step provider times, means, and incomplete-period behavior. TDD RED was 4/4; clarified GREEN was 4/4; output focus was 25/25.
@@ -57,42 +89,6 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   constants, stable route IDs, strict state validation, workflow-planned chunk
   execution, unified output providers, migrated bundled setups/examples, and a
   public-only installed 0.4 plugin.
-- Task 8 baseline: focused setup/example/plugin and JAXGCM/Veros selection
-  114/114; fast suite 481/481; full suite 1067/1067. Black, strict flake8,
-  mypy, compileall, installed plugin/default-slab artifacts, and whitespace
-  checks passed. Two third-party `FutureWarning`s were known in the full suite.
-- Task 10 documentation contract RED: 6 failed and 1 passed before the 0.4
-  review, migration/release documents, version metadata, and archive rewrite.
-  Metadata/CI contract RED: 2 failed for version 0.3.2 and the absent plugin
-  lane. No production behavior changed.
-- Final Task 10 gates: documentation/release contracts 9/9; distribution
-  boundaries 16/16; Black 239 files; strict flake8 0; mypy 235 files;
-  compileall clean; fast suite 479/479 with 587 deselected; full suite
-  1066/1066; branch coverage 90.41%; installed final-artifact wheel/sdist,
-  plugin, supplied-artifact, and slab probes 4/4; focused JCM/Veros lanes 9/9;
-  output-free JVP/reverse acceptance 3/3. The full and coverage suites emitted
-  only the two known third-party FutureWarnings.
-- Task 10 controller follow-up closed the incomplete signature sample. RED was
-  the absent complete static contract; GREEN freezes and checks all 147
-  concrete callable exports from canonical non-root owner manifests plus 55
-  public class/protocol methods against source and an isolated installed
-  wheel. The focused API/distribution files passed 18/18, fast passed 479/479,
-  and full passed 1066/1066 with only the two known third-party warnings.
-- Final whole-branch Important findings were closed on 2026-07-14. One private
-  normalizer now rejects bare `str`/`bytes` at every audited public name-sequence
-  boundary, `RuntimeOptions.model_year_seconds` eagerly requires and
-  canonicalizes a finite positive real scalar, and prepared bindings no longer
-  delegate private author markers. Primary RED was 37 failed/1 passed; the
-  specialist follow-up RED was 5 failed/38 passed; final focused GREEN is
-  43/43. A first full run caught and localized one private-helper namespace
-  leak before commit; the source and installed-wheel regressions then passed.
-- Final-review fix gates: Black 240 files; strict flake8 0; mypy 236 files;
-  compileall clean; fast suite 522/522 with 587 deselected; full suite
-  1109/1109; branch coverage 90.49%; distribution boundaries 16/16 from fresh
-  source-built artifacts; focused JCM/Veros lanes 9/9; output-free JVP/reverse
-  acceptance 3/3; whitespace clean. Full and coverage runs emitted only the
-  two known third-party `FutureWarning`s. Task 9, version `0.4.0a1`, and release
-  publication state remain unchanged.
 - VerCOR 0.4.0a1 release verification completed locally (2026-07-15) from
   build HEAD `31e803c06a4e65e8e72ee77937b056eac540eb44`. Black warned Python 3.13
   cannot perform its safety parse for configured Python 3.15, while exit
