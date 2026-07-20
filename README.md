@@ -1,70 +1,85 @@
 # VerCOR
 
-Versatile Earth system COupleR (VerCOR) is a JAX-first coupler for composing
-Earth-system model components, forcing data, exchanges, regridding, diagnostics,
-and output. VerCOR 0.4.0a1 uses a protocol-first
-component contract with one immutable declaration for fields, lifecycle hooks,
-and runtime capabilities. Assembly is constructor-only, static workflows feed
-chunk-oriented execution backends, and explicit `OutputProvider`/
-`OutputTarget` contracts keep all output cadence and writes core-owned.
+Versatile Earth system COupleR (VerCOR) connects atmosphere, ocean, sea-ice,
+land, and forcing-data components in one simulation. It is designed for Earth
+system researchers who want to combine models, move fields between their grids,
+run them on a shared clock, and collect diagnostics and output.
+
+VerCOR is built around [JAX](https://github.com/jax-ml/jax), a numerical
+computing library that supports compilation and automatic differentiation.
+Output-free JAX workflows can be differentiated end to end, making VerCOR
+suitable for sensitivity analysis and gradient-based experiments.
+
+> **Alpha release:** The current code is version `0.4.0a1`. Its public API may
+> still change. VerCOR 0.3 applications must use the
+> [0.3-to-0.4 migration guide](docs/migration-0.3-to-0.4.md).
+
+## Key features
+
+- Combine JAX-based and host-side models in one coupled simulation.
+- Exchange scalar and vector fields between rectilinear grids.
+- Use bilinear or conservative regridding.
+- Run on Gregorian, no-leap, or 360-day calendars.
+- Use bundled slab atmosphere, ocean, land, and sea-ice components.
+- Connect optional JCM, Veros, and CAMulator models.
+- Supply static or time-dependent forcing data.
+- Keep simulation state immutable and compatible with JAX transformations.
+- Write period averages, final fields, and component snapshots when requested.
+- Add custom components without inheriting from a VerCOR base class.
+
+## Requirements
+
+- Python 3.12 or newer
+- A JAX installation supported by your platform
+
+The core package also depends on NumPy, SciPy, h5py, h5netcdf, xarray,
+Matplotlib, `jax-datetime`, and `tree-math`. These dependencies are installed
+with the package.
+
+JCM and Veros are optional. CAMulator additionally requires NCAR's
+[MILES-CREDIT](https://github.com/NCAR/miles-credit). A compatible CREDIT
+release has not yet been confirmed or pinned.
 
 ## Installation
 
-Install the core package normally. Development tools are optional:
+Install the core package with pip:
 
 ```bash
 python -m pip install vercor
-python -m pip install "vercor[test]"  # tests only
-python -m pip install "vercor[dev]"   # formatting, lint, typing, build, tests
 ```
 
-Install the `jcm` or `veros` extra before using those external-model factories.
-CAMulator additionally requires NCAR's
-[MILES-CREDIT](https://github.com/NCAR/miles-credit). CREDIT is intentionally
-not pinned until an exact compatible release has been verified.
+> **Package availability:** The repository records say the `0.4.0a1` release
+> candidate has not yet been uploaded. Until publication is confirmed, the
+> command above may install an older release or fail to find this alpha.
 
-## Public API
+Install the relevant optional extra before using a bundled JCM or Veros setup:
 
-The package root intentionally exports exactly `Clock`, `Coupler`, `Exchange`,
-`RectilinearGrid`, `RunState`, and `RuntimeOptions`. Advanced contracts live in
-their canonical owner modules: `vercor.components`, `vercor.runtime`,
-`vercor.physics`, `vercor.topology`, `vercor.coupler`, `vercor.exchanges`,
-`vercor.regridding`, `vercor.grids`, `vercor.fields`, `vercor.state`,
-`vercor.output`, and `vercor.setups`. `vercor.types`, `vercor.dtypes`, and
-`vercor.jax_logging` provide supporting public typing, precision, and logging
-contracts. Component, output, topology, and setup-specific names are not
-duplicated at the root.
+```bash
+python -m pip install "vercor[jcm]"
+python -m pip install "vercor[veros]"
+```
 
-Configuration currently has four owners:
+The repository also defines optional environments for tests and development
+tools:
 
-- `RuntimeOptions` owns static policy for dtype, backend, workflow, topology,
-  and model-year length.
-- `PhysicalConstants` is the frozen traced PyTree owner for physical constants.
-- `ComponentSpec`: inputs, outputs, initial fields, lifecycle, transfer,
-  execution capability, and output.
-- Setup config dataclasses: construction policy for one bundled model.
+```bash
+python -m pip install "vercor[test]"
+python -m pip install "vercor[dev]"
+```
 
-`Coupler(...)` is the sole primary assembly path. Components, exchanges, and
-run order are supplied together and exposed through read-only views; changed
-configuration requires a new coupler. `run_order=()` is valid setup-only
-semantics: setup, validation, state creation, and output preparation still run,
-but no component is advanced by the runtime loop.
+No CAMulator installation command is documented yet. Install MILES-CREDIT
+separately before using the CAMulator factories.
 
-There is no primary `Settings`, `vercor.physical_constants`, or
-`vercor.coupling` module. Physical values come from
-`vercor.physics.PhysicalConstants`, runtime precision from
-`vercor.runtime.RuntimeOptions.dtype`, and setup-specific configuration from
-frozen setup/plugin dataclasses. Host transfer, shared PyTree mechanics, and
-interpolation implementations are private under `vercor._host_arrays`,
-`vercor._pytree`, and `vercor._interpolators`.
+## Getting started
 
-The following snippets share this small grid and clock:
+This example runs a small slab-ocean model for two one-hour steps. A slab model
+is a simplified model that represents the ocean as a single mixed layer.
 
 ```python
 from datetime import datetime
 
-from vercor import Clock, Coupler
-from vercor.grids import RectilinearGrid
+from vercor import Clock, Coupler, RectilinearGrid
+from vercor.setups import make_slab_ocean
 
 grid = RectilinearGrid.uniform(
     "demo",
@@ -73,29 +88,40 @@ grid = RectilinearGrid.uniform(
     longitude=(0.0, 360.0),
     latitude=(-90.0, 90.0),
 )
-clock = Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=2)
-```
 
-### Default built-in setup
-
-Bundled factories return ordinary public components. This dependency-free slab
-ocean is a complete default workflow:
-
-```python
-from vercor.setups import make_slab_ocean
+clock = Clock(
+    start=datetime(2000, 1, 1),
+    dt_seconds=3600.0,
+    steps=2,
+)
 
 ocean = make_slab_ocean(grid)
 coupler = Coupler(clock, components=(ocean,), run_order=("OCN",))
 final_state = coupler.run()
+
 sea_surface_temperature = final_state.component("OCN").field(
     "sea_surface_temperature"
 )
 ```
 
-### Structural custom JAX component
+The main objects are:
 
-No VerCOR inheritance is required. A structural component supplies `name`,
-`grid`, `spec`, and `step`:
+- `RectilinearGrid`: the longitude-latitude grid used by a component.
+- `Clock`: the start time, step length, number of steps, and calendar.
+- `Coupler`: the complete simulation, including components, exchanges, and run
+  order.
+- `RunState`: the immutable state returned by a run.
+
+Create a new `Coupler` when you need different components, exchanges, or runtime
+settings. An empty `run_order=()` is valid when you only want setup, validation,
+state creation, and output preparation without advancing a component.
+
+## Common usage examples
+
+### Create a custom JAX component
+
+A component only needs a name, grid, component specification, and `step`
+method. `ComponentSpec` declares its fields and starting values.
 
 ```python
 from collections.abc import Mapping
@@ -126,29 +152,32 @@ class WarmingModel:
 
 
 model = WarmingModel(grid)
-custom_coupler = Coupler(clock, components=(model,), run_order=(model.name,))
+custom_coupler = Coupler(
+    clock,
+    components=(model,),
+    run_order=(model.name,),
+)
 custom_state = custom_coupler.run()
 ```
 
-Structural lifecycle hooks receive the original `WarmingModel`, not a private
-adapter. `CallableComponent(...)` provides the same JAX contract with less
-boilerplate. `LifecycleHooks(setup=...)` may return
-`SetupResult(fields=..., payload=...)`; `TransferPolicy` selects current,
-linear, or daily source data. A `StepResult` with omitted payload
-preserves it, while an explicit replacement updates it. Compiled scanned JAX
-execution requires every replacement to keep the setup payload's PyTree
-structure; host execution may clear or restructure payload state.
+No VerCOR inheritance is required. For a function-based component with less
+boilerplate, use `vercor.components.CallableComponent`.
 
-### Host component
+Lifecycle hooks can prepare component fields and a payload before the run.
+`TransferPolicy` selects current, linearly interpolated, or daily source data.
+When a JAX-compiled component replaces its payload, the replacement must keep
+the same JAX tree structure, shapes, and data types. Host-side components may
+clear or restructure payload data.
 
-Use `CallableComponent` with `ComponentSpec(execution="host")` for a Python or
-foreign-runtime model. `RuntimeOptions(backend="auto")` selects the host loop:
+### Run a host-side component
+
+Use host execution for a Python model or a model backed by another runtime.
+With `backend="auto"`, VerCOR selects the host loop when a scheduled component
+declares `execution="host"`.
 
 ```python
-from collections.abc import Mapping
-
-from vercor.components import CallableComponent, ComponentSpec
-from vercor.types import RuntimeArray
+from vercor import RuntimeOptions
+from vercor.components import CallableComponent
 
 
 def host_step(
@@ -167,135 +196,59 @@ host = CallableComponent(
         execution="host",
     ),
 )
-host_state = Coupler(clock, components=(host,), run_order=("HOST",)).run()
-```
 
-Forced JAX execution rejects host components. Forced host execution runs every
-component through the Python loop.
-
-### Custom execution backend
-
-A backend consumes core-authored plans through the validated public driver and
-must return `RunState`:
-
-```python
-from vercor import RuntimeOptions
-from vercor.runtime import ExecutionChunk, ExecutionContext, RuntimeDriver
-from vercor.state import RunState
-
-
-class SequentialBackend:
-    def execute(
-        self,
-        state: RunState,
-        *,
-        context: ExecutionContext,
-        chunk: ExecutionChunk,
-        driver: RuntimeDriver,
-    ) -> RunState:
-        for plan in chunk.steps:
-            state = driver.run_step(state, plan)
-        return state
-
-
-backend_model = WarmingModel(grid)
-backend_coupler = Coupler(
+host_coupler = Coupler(
     clock,
-    components=(backend_model,),
-    run_order=(backend_model.name,),
-    runtime=RuntimeOptions(backend=SequentialBackend()),
+    components=(host,),
+    run_order=("HOST",),
+    runtime=RuntimeOptions(backend="auto"),
 )
-backend_state = backend_coupler.run()
+host_state = host_coupler.run()
 ```
 
-VerCOR owns workflow validation, chunk boundaries, cancellation, and period
-output around custom backend calls. A backend must consume every supplied plan
-exactly once through `RuntimeDriver.run_step(...)`.
+Forcing `backend="jax"` rejects host components. Forcing `backend="host"` runs
+every scheduled component through the Python loop.
 
-### Custom topology policy
+### Couple components on different grids
 
-Topology is also structural. Policies inspect a public read-only context and
-return patches keyed by stable exchange `route_id` values:
+An `Exchange` moves named fields from one component to another. A regridder
+translates the data when the source and target grids differ.
 
 ```python
-from vercor import RuntimeOptions
-from vercor.topology import (
-    ExchangeTopologyPatch,
-    TopologyContext,
+from vercor import Exchange
+from vercor.regridding import bilinear
+
+exchange = Exchange(
+    source="ATM",
+    target="OCN",
+    fields=("surface_temperature",),
+    regridder_factory=bilinear,
 )
-
-
-class NoMaskTopology:
-    def build(self, context: TopologyContext) -> ExchangeTopologyPatch:
-        _ = context
-        return ExchangeTopologyPatch()
-
-
-topology_model = WarmingModel(grid)
-topology_coupler = Coupler(
-    clock,
-    components=(topology_model,),
-    run_order=(topology_model.name,),
-    runtime=RuntimeOptions(topology=NoMaskTopology()),
-)
-topology_state = topology_coupler.run()
 ```
 
-Use `vercor.topology.SurfaceMaskPolicy()` for the bundled ATM/OCN/LND policy;
-leave topology as `None` for ordinary setup-agnostic graphs.
+The field must be declared by both endpoints. Each route has a stable
+`route_id`; the default is `"source->target"`. Supply distinct IDs when more
+than one route connects the same pair. VerCOR rejects ambiguous cases where
+multiple routes write the same target field.
 
-### Lifecycle hooks and output
+Use `vercor.topology.SurfaceMaskPolicy()` for the bundled atmosphere/ocean/land
+surface-mask policy. Leave `RuntimeOptions.topology` as `None` for an ordinary
+setup without topology patches.
 
-Lifecycle and output policy belong on one `ComponentSpec`. Snapshot writers
-receive the original public component, its final public state view, the payload,
-and a coordinator-allocated path. Generic period output samples declared runtime
-fields; an empty variable list defaults to declared outputs:
+### Write output
+
+Output is opt-in. Passing an `OutputTarget` enables period files, final fields,
+and component snapshots beneath one directory:
 
 ```python
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
-from vercor.components import (
-    CallableComponent,
-    ComponentSpec,
-    LifecycleHooks,
-    SetupContext,
-)
-from vercor.output import (
-    OutputContext,
-    OutputFrame,
-    OutputSpec,
-    OutputTarget,
-    OutputVariable,
-    PeriodOutput,
-    SnapshotContext,
-)
-from vercor.types import RuntimeArray
-
-
-def setup_hook(owner: Any, context: SetupContext) -> None:
-    assert owner.name == "OUTPUT"
-    context.logger.info("Initialized {}", owner.name)
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput, SnapshotContext
 
 
 def snapshot_writer(context: SnapshotContext) -> None:
     value = context.state.field("temperature")
     context.output_path.write_text(str(value), encoding="utf-8")
-
-
-class KelvinProvider:
-    def sample(self, context: OutputContext) -> OutputFrame:
-        return OutputFrame(
-            {
-                "surface_temperature": OutputVariable(
-                    ("latitude", "longitude"),
-                    context.state.field("temperature"),
-                    {"units": "K"},
-                )
-            },
-            metadata={"source": "custom-provider"},
-        )
 
 
 def output_step(
@@ -311,46 +264,113 @@ output_model = CallableComponent(
     spec=ComponentSpec(
         outputs=("temperature",),
         initial_fields={"temperature": 280.0},
-        lifecycle=LifecycleHooks(setup=setup_hook),
         output=OutputSpec(
-            provider=KelvinProvider(),
+            period=PeriodOutput(frequency="step"),
             snapshot_writer=snapshot_writer,
-            period=PeriodOutput(
-                frequency="step",
-                variables=("surface_temperature",),
-            ),
         ),
     ),
 )
 output_coupler = Coupler(
-    clock, components=(output_model,), run_order=(output_model.name,)
+    clock,
+    components=(output_model,),
+    run_order=(output_model.name,),
 )
+
 output_directory = Path("output")
 output_state = output_coupler.run(output=OutputTarget(output_directory))
 ```
 
-Output is opt-in. `Coupler.run(output=None)` performs no I/O, while one
-`OutputTarget` controls period, final runtime-view, and snapshot output paths.
-`OutputTarget(directory)` enables all three kinds by default; set
-`write_period`, `write_final_fields`, or `write_snapshots` to `False` to disable
-one. For every provider, an empty `PeriodOutput.variables` selects the complete
-frame, a non-empty tuple selects that ordered subset, and an unknown name is an
-error. Providers see the post-step state, payload, and end-of-step model time.
-Enabled output is rejected when `Coupler.run()` receives traced state leaves;
-use the default `output=None` for differentiated or outer-jitted runs.
+Disable individual output types when needed:
 
-## Further reading
+```python
+selected_output_state = output_coupler.run(
+    output=OutputTarget(
+        output_directory,
+        write_period=False,
+        write_final_fields=True,
+        write_snapshots=False,
+    )
+)
+```
 
-The [VerCOR 0.4.0a1 API architecture review](docs/api-architecture-review.md)
-contains the complete public/private inventory and release decisions. Existing
-applications should follow the runnable [0.3-to-0.4 migration guide](docs/migration-0.3-to-0.4.md);
-maintainers use the [release checklist](docs/releasing.md) and
-[changelog](CHANGELOG.md). The independently packaged
-[`tests/fixtures/public_plugin`](tests/fixtures/public_plugin) fixture exercises
-plugin-owned frozen configuration and dependency-injected assembly together
-with a structural component and regridder, a stable route ID, a non-empty
-topology patch, a custom workflow/backend, immutable state replacement, and
-period/snapshot output. It uses only canonical public VerCOR modules, while
-the current fixture proves installed-wheel isolation and strict mypy using
-public imports only. This alpha intentionally ships no legacy adapter namespace;
-0.3-only workflows must follow the migration guide above.
+Components configure output with `OutputSpec`. `PeriodOutput` controls the
+sampling frequency and selected variables. An empty variable list selects all
+variables supplied by the component's output provider; an unknown name is an
+error. Providers sample the post-step state at the end-of-step model time.
+
+Use `output=None`, the default, for differentiated or outer-JIT-compiled runs.
+This performs no file I/O or output sampling. Enabled output does not accept
+traced runtime state.
+
+### Explore complete examples
+
+The [`examples`](examples) directory contains complete configurations for:
+
+- coupled slab atmosphere, ocean, sea-ice, and land components;
+- JCM with slab, ERA5, ERA-Interim, or Veros data and models;
+- Veros with ERA5 forcing;
+- CAMulator with Veros;
+- custom component wrappers; and
+- runtime profiling.
+
+Some examples require external datasets, model configuration files, weights,
+or optional packages. Review each script before running it; the CAMulator
+example currently contains machine-specific configuration and checkpoint
+paths that must be replaced.
+
+## Configuration
+
+VerCOR keeps configuration in four places:
+
+- `RuntimeOptions` controls numeric precision, execution backend, workflow,
+  and topology policy.
+- `vercor.physics.PhysicalConstants` contains physical constants used by the
+  model and remains visible to JAX differentiation.
+- `ComponentSpec` declares one component's input and output fields, initial
+  fields, lifecycle hooks, transfer policy, execution mode, and output policy.
+- Setup configuration classes such as `JAXGCMConfig`, `VerosConfig`, and
+  `CAMulatorConfig` hold settings for bundled model integrations.
+
+The public package root exports `Clock`, `Coupler`, `Exchange`,
+`RectilinearGrid`, `RunState`, and `RuntimeOptions`. More specialized APIs live
+in their subject modules, including `vercor.components`, `vercor.output`,
+`vercor.physics`, `vercor.regridding`, `vercor.runtime`, `vercor.setups`, and
+`vercor.topology`.
+
+## Troubleshooting
+
+### The installed package does not provide the 0.4 API
+
+Version `0.4.0a1` is recorded as an unpublished release candidate. Check the
+installed version before following this README. Publication and source-install
+instructions are currently missing from the user documentation.
+
+### An optional setup cannot be imported
+
+Install the matching `jcm` or `veros` extra. Optional model libraries are loaded
+only when their setup factory is called, so they are not included in the core
+installation. CAMulator requires MILES-CREDIT, but an exact compatible release
+and installation command are not yet documented.
+
+### A host component fails with the JAX backend
+
+Use `RuntimeOptions(backend="auto")` or `RuntimeOptions(backend="host")`.
+The forced JAX backend cannot run components declared with `execution="host"`.
+
+### Output fails inside a differentiated or JIT-compiled call
+
+Run with `output=None`. File output requires host-side work and is intentionally
+disabled for traced runtime state.
+
+### A VerCOR 0.3 import or workflow no longer works
+
+The alpha does not include a legacy compatibility namespace. Follow the
+[migration guide](docs/migration-0.3-to-0.4.md) to update imports and assembly.
+
+## Additional resources
+
+- [API architecture and public-module reference](docs/api-architecture-review.md)
+- [VerCOR 0.3 to 0.4 migration guide](docs/migration-0.3-to-0.4.md)
+- [Design specification](DESIGN.md)
+- [Changelog](CHANGELOG.md)
+- [License](LICENSE)
