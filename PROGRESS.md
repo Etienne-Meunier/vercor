@@ -6,7 +6,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- Final-review documentation alignment completed locally (2026-07-20): removed stale `runner` from the Runtime coordinator inventory; focused architecture/documentation checks passed 48/48.
+- Final-review alignment completed locally (2026-07-20): removed stale `runner`
+  documentation and clarified the pre-stable versioning label after Graphify
+  exposed ambiguous generated wording; focused checks passed 49/49.
 - Codebase simplification completed locally (2026-07-20): Tasks 1-8 collapsed
   the private grid hierarchy and scalar regridding, removed unread component/data/store/flux
   state, centralized output dimensions and immutable accumulator reconstruction,

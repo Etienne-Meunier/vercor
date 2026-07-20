@@ -1,4 +1,4 @@
-# VerCOR Pre-1.0 Versioning Correction Design
+# VerCOR Pre-Stable Versioning Correction Design
 
 **Date:** 2026-07-15
 **Status:** Implemented locally; fresh release-artifact verification completed
@@ -8,7 +8,7 @@ locally as a separate follow-up. Nothing was published.
 
 VerCOR may publish only minor and patch releases until an externally supervised
 and approved first stable release. This correction makes the live candidate
-`0.4.0a1` and normalizes earlier repository evidence to the approved pre-1.0
+`0.4.0a1` and normalizes earlier repository evidence to the approved pre-stable
 series.
 
 This is a release-contract and historical-documentation correction. It does not

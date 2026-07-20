@@ -1210,8 +1210,8 @@
     "semantic_hash": "de3b6b0c4127aca1edf851f317630292"
   },
   "PROGRESS.md": {
-    "mtime": 1784546292.1410162,
-    "ast_hash": "215269b874a9c78e893ec4fb7db8b62f",
+    "mtime": 1784550222.406691,
+    "ast_hash": "a139b8f65a072b66f5b06722ee193365",
     "semantic_hash": ""
   },
   "README.md": {
@@ -1225,8 +1225,8 @@
     "semantic_hash": "62e3aa1aa8db020b9a531947d4ecbcd1"
   },
   "docs/api-architecture-review.md": {
-    "mtime": 1784542442.6343956,
-    "ast_hash": "3c9115f6084b8b563f621f2f5634b256",
+    "mtime": 1784548418.3863986,
+    "ast_hash": "9a84546d4f5d42dcd35e41710f4a8912",
     "semantic_hash": ""
   },
   "docs/migration-0.3-to-0.4.md": {
@@ -1325,9 +1325,9 @@
     "semantic_hash": "60547c78ff95b85c12a5446c59c95a39"
   },
   "docs/superpowers/specs/2026-07-15-vercor-versioning-design.md": {
-    "mtime": 1784120735.981144,
-    "ast_hash": "5975522e3321df9543227032b54c0699",
-    "semantic_hash": "5975522e3321df9543227032b54c0699"
+    "mtime": 1784549163.469589,
+    "ast_hash": "df18003e5598f94dca4f8b542d9e7263",
+    "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-07-16-test-suite-parallelization-design.md": {
     "mtime": 1784200327.2710102,
