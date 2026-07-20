@@ -284,7 +284,11 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         step.get("run", "") for step in plugin_job["steps"] if isinstance(step, dict)
     )
     assert "vercor_public_plugin.smoke" in plugin_commands
-    assert "MYPYPATH" in plugin_commands
+    assert "MYPYPATH" not in plugin_commands
+    assert (
+        'python -m mypy --strict "$PACKAGE_ROOT/vercor_public_plugin" '
+        "public_plugin_use_site.py" in plugin_commands
+    )
 
     assert macos_job["runs-on"] == "macos-latest"
     macos_commands = "\n".join(

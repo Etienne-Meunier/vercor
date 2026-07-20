@@ -125,7 +125,7 @@ jobs:
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
           cp "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/use_site.py" public_plugin_use_site.py
-          MYPYPATH="$PACKAGE_ROOT" mypy --strict "$PACKAGE_ROOT/vercor_public_plugin" public_plugin_use_site.py
+          python -m mypy --strict "$PACKAGE_ROOT/vercor_public_plugin" public_plugin_use_site.py
 
   macos-smoke:
     needs: build-artifacts
