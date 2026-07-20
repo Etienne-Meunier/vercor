@@ -41,8 +41,6 @@ def make_camulator_gcm(
         name=config.name,
         model_weights_path=config.model_weights_path,
         init_noise=config.init_noise,
-        spinup_time=config.spinup.duration,
-        do_spinup=config.spinup.enabled,
         device=config.device,
         logger=config.logger,
     )

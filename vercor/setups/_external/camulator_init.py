@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Any
 
 import torch
 import xarray as xr
@@ -31,10 +31,10 @@ def add_init_noise(
 
 def initialize_camulator(
     config_path: str,
-    model_name: Optional[str] = None,
+    model_name: str,
     device: str = "cuda",
     logger: LoggerLike | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Initialize CAMulator model state and supporting runtime objects."""
 
     camulator_imports.load_credit_modules()
@@ -64,28 +64,12 @@ def initialize_camulator(
     else:
         raise ValueError(f"Unsupported scaler_type: {conf['data']['scaler_type']}")
 
-    log.info(
-        f"Loading model: {model_name if model_name else 'checkpoint.pt (default)'}"
-    )
-    if model_name:
-        model = camulator_imports.load_model_name(
-            conf,
-            model_name,
-            load_weights=True,
-        ).to(current_device)
-    else:
-        model = camulator_imports.load_model(conf, load_weights=True).to(current_device)
-
-    distributed = conf["predict"]["mode"] in ["ddp", "fsdp"]
-    if distributed:
-        log.info(f"Setting up distributed mode: {conf['predict']['mode']}")
-        model = camulator_imports.distributed_model_wrapper(
-            conf,
-            model,
-            current_device,
-        )
-        if conf["predict"]["mode"] == "fsdp":
-            model = camulator_imports.load_model_state(conf, model, current_device)
+    log.info(f"Loading model: {model_name}")
+    model = camulator_imports.load_model_name(
+        conf,
+        model_name,
+        load_weights=True,
+    ).to(current_device)
 
     model.eval()
     log.info("Model loaded and set to eval mode")

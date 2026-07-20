@@ -805,9 +805,21 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
 
 
 def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
+    state_kwargs: dict[str, Any] = {}
     latlons = SimpleNamespace(
         longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
         latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
+    )
+
+    class _RecordingState(camulator_gcm_state_module.CAMulatorGCMSetupState):
+        def __init__(self, **kwargs: Any) -> None:
+            state_kwargs.update(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(
+        camulator_gcm_state_module,
+        "CAMulatorGCMSetupState",
+        _RecordingState,
     )
     monkeypatch.setattr(
         camulator_init_module,
@@ -852,6 +864,8 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
     assert callable(component.spec.output.snapshot_writer)
+    assert "spinup_time" not in state_kwargs
+    assert "do_spinup" not in state_kwargs
 
 
 def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is_custom(
@@ -1025,8 +1039,10 @@ def test_initialize_camulator_logs_lifecycle_through_injected_logger(
         camulator_imports_module,
         "load_model_name",
         lambda conf, model_name, load_weights: _Model(),
-        raising=False,
     )
+    assert not hasattr(camulator_imports_module, "distributed_model_wrapper")
+    assert not hasattr(camulator_imports_module, "load_model_state")
+    assert not hasattr(camulator_imports_module, "load_model")
     monkeypatch.setattr(camulator_init_module.os.path, "exists", lambda path: True)
     monkeypatch.setattr(
         camulator_init_module.torch,

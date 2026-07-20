@@ -39,8 +39,6 @@ class CAMulatorGCMSetupState:
         name: str = "ATM",
         model_weights_path: str = "checkpoint.pt00091.pt",
         init_noise: Optional[float] = None,
-        spinup_time: timedelta = timedelta(days=2),
-        do_spinup: bool = False,
         device: str = "cuda",
         logger: LoggerLike | None = None,
     ) -> None:
@@ -51,8 +49,6 @@ class CAMulatorGCMSetupState:
         self.model_weights_path = model_weights_path
         self.device = device
         self.init_noise = init_noise
-        self.spinup_time = spinup_time
-        self.do_spinup = do_spinup
         self.runtime_cursor = CamulatorRuntimeCursor()
         self._output_prediction: torch.Tensor | None = None
         self._output_prediction_samples: torch.Tensor | None = None
@@ -102,9 +98,6 @@ class CAMulatorGCMSetupState:
             self,
             context.dt_seconds,
             timedelta(hours=self.lead_time_periods),
-        )
-        self.spinup_steps = int(
-            self.spinup_time.total_seconds() // self.coupling_timestep.total_seconds()
         )
 
         if self.init_noise is not None:

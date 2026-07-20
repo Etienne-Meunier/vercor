@@ -7,12 +7,9 @@ from typing import Any
 CREDIT_AVAILABLE = False
 POSTBLOCK_AVAILABLE = False
 
-load_model: Any = None
 load_model_name: Any = None
 load_transforms: Any = None
 Normalize_ERA5_and_Forcing: Any = None
-distributed_model_wrapper: Any = None
-load_model_state: Any = None
 credit_main_parser: Any = None
 
 GlobalMassFixer: Any = None
@@ -24,24 +21,15 @@ def load_credit_modules() -> None:
     """Load CREDIT core modules at the CAMulator execution boundary."""
 
     global CREDIT_AVAILABLE
-    global load_model, load_model_name, load_transforms, Normalize_ERA5_and_Forcing
-    global distributed_model_wrapper, load_model_state, credit_main_parser
+    global load_model_name, load_transforms, Normalize_ERA5_and_Forcing
+    global credit_main_parser
 
     if CREDIT_AVAILABLE:
         return
 
     try:
-        from credit.distributed import (  # type: ignore[import-not-found]
-            distributed_model_wrapper as credit_distributed_model_wrapper,
-        )
-        from credit.models import (  # type: ignore[import-not-found]
-            load_model as credit_load_model,
-        )
         from credit.models import (  # type: ignore[import-not-found]
             load_model_name as credit_load_model_name,
-        )
-        from credit.models.checkpoint import (  # type: ignore[import-not-found]
-            load_model_state as credit_load_model_state,
         )
         from credit.parser import (  # type: ignore[import-not-found]
             credit_main_parser as credit_credit_main_parser,
@@ -58,12 +46,9 @@ def load_credit_modules() -> None:
             "Please ensure credit is installed and importable."
         ) from error
 
-    load_model = credit_load_model
     load_model_name = credit_load_model_name
     load_transforms = credit_load_transforms
     Normalize_ERA5_and_Forcing = credit_normalize
-    distributed_model_wrapper = credit_distributed_model_wrapper
-    load_model_state = credit_load_model_state
     credit_main_parser = credit_credit_main_parser
     CREDIT_AVAILABLE = True
 
@@ -107,9 +92,6 @@ __all__ = [
     "load_credit_modules",
     "load_postblock_modules",
     "credit_main_parser",
-    "distributed_model_wrapper",
-    "load_model",
     "load_model_name",
-    "load_model_state",
     "load_transforms",
 ]
