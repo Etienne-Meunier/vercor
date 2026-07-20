@@ -481,17 +481,18 @@ def test_runtime_driver_uses_each_plan_absolute_step_and_time() -> None:
 
 
 @pytest.mark.fast_always
-def test_runtime_backends_own_loops_without_importing_runner() -> None:
+def test_runtime_backends_own_loops_without_a_runner_module() -> None:
     package_root = Path(vercor.__file__).parent
     backend_source = (package_root / "_runtime" / "backends.py").read_text()
-    runner_source = (package_root / "_runtime" / "runner.py").read_text()
+    facade_source = (package_root / "_runtime" / "facade.py").read_text()
 
+    assert not (package_root / "_runtime" / "runner.py").exists()
     assert "vercor._runtime.runner" not in backend_source
     assert "class _JAXScannedBackend" not in backend_source
     assert "class _HostLoopBackend" not in backend_source
     for implementation in ("execute_jax_chunk", "execute_host_chunk"):
         assert f"def {implementation}" in backend_source
-        assert f"def {implementation}" not in runner_source
+        assert f"def {implementation}" not in facade_source
 
 
 @pytest.mark.fast_always

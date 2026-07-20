@@ -10,33 +10,15 @@ from vercor._runtime.preparation import (
     prepare_runtime_state,
     validate_runtime_state,
 )
+from vercor._runtime.execution import (
+    build_validated_execution_plan,
+    execute_plan,
+)
 from vercor._runtime.prepared import PreparedCoupling, prepare_coupling
 from vercor._runtime.run_context import RuntimeRunContext
-from vercor._runtime.runner import (
-    run_coupler_runtime,
-)
 from vercor.state import RunState
 from vercor.output import OutputTarget
 from vercor.output._session import validate_output_run_state_not_traced
-
-
-def runtime_run_context(
-    *,
-    prepared: PreparedCoupling,
-    logger: LoggerLike,
-    output: OutputTarget | None = None,
-) -> RuntimeRunContext:
-    """Return static runtime inputs bundled for execution."""
-
-    return RuntimeRunContext(
-        run_order=prepared.run_order,
-        clock=prepared.clock,
-        logger=logger,
-        dispatch_context=prepared.dispatch_context,
-        interrupts=prepared.interrupts,
-        options=prepared.runtime,
-        output=output,
-    )
 
 
 def run(
@@ -51,14 +33,17 @@ def run(
     if output is not None and output.enabled:
         validate_output_run_state_not_traced(runtime_state)
     with prepared.interrupts.signal_scope():
-        final_state = run_coupler_runtime(
-            runtime_state,
-            context=runtime_run_context(
-                prepared=prepared,
-                logger=logger,
-                output=output,
-            ),
+        context = RuntimeRunContext(
+            run_order=prepared.run_order,
+            clock=prepared.clock,
+            logger=logger,
+            dispatch_context=prepared.dispatch_context,
+            interrupts=prepared.interrupts,
+            options=prepared.runtime,
+            output=output,
         )
+        plan = build_validated_execution_plan(context)
+        final_state = execute_plan(runtime_state, plan=plan, context=context)
         if output is not None and output.enabled:
             topology_maps = prepared.topology_maps
             if output.write_final_fields:

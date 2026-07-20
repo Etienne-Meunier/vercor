@@ -104,13 +104,12 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert runtime_coupler_state_path.exists()
     assert runtime_backends_path.exists()
     assert runtime_execution_path.exists()
-    assert runtime_runner_path.exists()
+    assert not runtime_runner_path.exists()
     runtime_coupler_state_source = runtime_coupler_state_path.read_text(
         encoding="utf-8"
     )
     runtime_backends_source = runtime_backends_path.read_text(encoding="utf-8")
     runtime_execution_source = runtime_execution_path.read_text(encoding="utf-8")
-    runtime_runner_source = runtime_runner_path.read_text(encoding="utf-8")
     component_contexts_path = Path("vercor/components/contexts.py")
     assert component_contexts_path.exists()
     component_contexts_source = component_contexts_path.read_text(encoding="utf-8")
@@ -283,10 +282,14 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert "prime_runtime_outgoing(" not in runtime_facade_source
     assert "def execute_host_chunk(" in runtime_backends_source
     assert "def execute_jax_chunk(" in runtime_backends_source
-    assert "def execute_host_chunk(" not in runtime_runner_source
-    assert "def execute_jax_chunk(" not in runtime_runner_source
-    assert "def run_coupler_runtime(" in runtime_runner_source
-    assert "class RuntimeRunContext" not in runtime_runner_source
+    assert "def execute_host_chunk(" not in runtime_facade_source
+    assert "def execute_jax_chunk(" not in runtime_facade_source
+    assert "RuntimeRunContext(" in runtime_facade_source
+    assert "build_validated_execution_plan(context)" in runtime_facade_source
+    assert "execute_plan(runtime_state, plan=plan, context=context)" in (
+        runtime_facade_source
+    )
+    assert "class RuntimeRunContext" not in runtime_facade_source
     assert "class RuntimeRunContext" in runtime_run_context_source
     assert "class PreparedCoupling" in runtime_prepared_source
     assert "components:" not in runtime_run_context_source
@@ -295,17 +298,14 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert "contracts:" not in runtime_run_context_source
     assert "settings:" not in runtime_run_context_source
     assert "MutableMapping" not in runtime_run_context_source
-    assert "context: RuntimeRunContext" in runtime_runner_source
     assert "context: RuntimeRunContext" in runtime_backends_source
     assert "from vercor._runtime.run_context import" not in coupler_source
     assert "from vercor._runtime.run_context import" in runtime_facade_source
-    assert "from vercor._runtime.run_context import" in runtime_runner_source
     assert "from vercor._runtime.prepared import PreparedCoupling" in coupler_source
     assert "def _ensure_prepared(" in coupler_source
     assert "RuntimeInputs" not in runtime_facade_source
     assert "donate_state" not in coupler_source
     assert "donate_state" not in runtime_facade_source
-    assert "donate_state" not in runtime_runner_source
     assert "def _run_host_runtime" not in coupler_source
     run_body = coupler_source.split("def run", 1)[1]
     assert "host_component_names(self._components)" not in run_body
@@ -316,19 +316,19 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert "run_coupler_runtime(" not in run_body
     assert "_runtime_facade.run(" in run_body
     assert "_runtime_facade.run_scanned(" not in coupler_source
-    assert "run_coupler_runtime(" in runtime_facade_source
+    assert "run_coupler_runtime(" not in runtime_facade_source
     assert "run_scanned_runtime(" not in runtime_facade_source
     assert "jax.lax.scan" not in coupler_source
     assert "jax.debug.callback" not in coupler_source
-    assert "jax.debug.callback" not in runtime_runner_source
+    assert "jax.debug.callback" not in runtime_facade_source
     assert "jax.debug.callback" in runtime_progress_source
     assert "FieldStore.from_mapping" not in coupler_source
     assert "_runtime_step_progress_message" not in coupler_source
     assert "_runtime_component_progress_message" not in coupler_source
-    assert "def runtime_step_progress_message(" not in runtime_runner_source
-    assert "def runtime_component_progress_message(" not in runtime_runner_source
-    assert "def log_scanned_step_progress(" not in runtime_runner_source
-    assert "def log_scanned_component_progress(" not in runtime_runner_source
+    assert "def runtime_step_progress_message(" not in runtime_facade_source
+    assert "def runtime_component_progress_message(" not in runtime_facade_source
+    assert "def log_scanned_step_progress(" not in runtime_facade_source
+    assert "def log_scanned_component_progress(" not in runtime_facade_source
     assert "def runtime_step_progress_message(" in runtime_progress_source
     assert "def runtime_component_progress_message(" in runtime_progress_source
     assert "def log_scanned_step_progress(" in runtime_progress_source
@@ -375,7 +375,7 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert "from vercor.components._validation import" not in coupler_source
     for source in (
         runtime_driver_source,
-        runtime_runner_source,
+        runtime_facade_source,
         runtime_component_state_source,
         runtime_initialization_source,
     ):

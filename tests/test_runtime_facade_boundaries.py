@@ -997,17 +997,19 @@ def test_runtime_facade_reexports_preparation_without_owning_it() -> None:
 
 
 @pytest.mark.fast_always
-def test_runtime_runner_selects_and_delegates_to_backend_owners() -> None:
-    runner_source = source_for("vercor/_runtime/runner.py")
+def test_runtime_facade_builds_and_executes_the_validated_plan_directly() -> None:
+    runner_path = Path("vercor/_runtime/runner.py")
+    facade_source = source_for("vercor/_runtime/facade.py")
     backend_source = source_for("vercor/_runtime/backends.py")
     execution_source = source_for("vercor/_runtime/execution.py")
-    run_coupler_body = runner_source.split("def run_coupler_runtime(", 1)[1]
+    run_body = facade_source.split("def run(", 1)[1]
 
+    assert not runner_path.exists()
     assert "def execute_jax_chunk(" in backend_source
     assert "def execute_host_chunk(" in backend_source
     assert "def execute_custom_chunk(" in backend_source
-    assert "def execute_jax_chunk(" not in runner_source
-    assert "def execute_host_chunk(" not in runner_source
+    assert "def execute_jax_chunk(" not in facade_source
+    assert "def execute_host_chunk(" not in facade_source
     assert "def execute_plan(" in execution_source
     assert "execute_jax_chunk(" in execution_source
     assert "execute_host_chunk(" in execution_source
@@ -1015,17 +1017,16 @@ def test_runtime_runner_selects_and_delegates_to_backend_owners() -> None:
     assert "vercor._runtime.runner" not in backend_source
     assert "class _JAXScannedBackend" not in backend_source
     assert "class _HostLoopBackend" not in backend_source
-    assert "def _raise_if_donating_host_runtime(" not in runner_source
-    assert "compiled_runtime_cache_key(" not in run_coupler_body
-    assert "def compiled_runtime_cache_key(" not in runner_source
-    assert "get_or_compile_for_context(" not in runner_source
-    assert "context.compiled_runtime_cache_key(" not in runner_source
-    assert "get_or_compile(" not in runner_source
-    assert "signal_scope(" not in run_coupler_body
-    facade_source = source_for("vercor/_runtime/facade.py")
+    assert "RuntimeRunContext(" in run_body
+    assert "build_validated_execution_plan(context)" in run_body
+    assert "execute_plan(runtime_state, plan=plan, context=context)" in run_body
+    assert "compiled_runtime_cache_key(" not in run_body
+    assert "get_or_compile_for_context(" not in facade_source
+    assert "context.compiled_runtime_cache_key(" not in facade_source
+    assert "get_or_compile(" not in facade_source
     assert facade_source.count("signal_scope(") == 1
-    assert "donate_state" not in runner_source
-    assert "raise CouplerError(" not in run_coupler_body
+    assert "donate_state" not in facade_source
+    assert "raise CouplerError(" not in run_body
 
 
 def test_runtime_package_has_no_top_level_import_cycles() -> None:

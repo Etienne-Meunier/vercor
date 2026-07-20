@@ -1205,7 +1205,6 @@ def test_production_runtime_modules_use_coupler_state_name() -> None:
         Path("vercor/_runtime/exchange_dispatch.py"),
         Path("vercor/_runtime/facade.py"),
         Path("vercor/_runtime/preparation.py"),
-        Path("vercor/_runtime/runner.py"),
         Path("vercor/_runtime/state_validation.py"),
         Path("vercor/output/_runtime.py"),
     )
