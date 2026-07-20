@@ -288,9 +288,15 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "vercor_public_plugin.smoke" in plugin_commands
     assert "MYPYPATH" not in plugin_commands
     assert "PACKAGE_ROOT=$(" not in plugin_commands
+    assert "tests/fixtures/public_plugin/src" not in plugin_commands
+    assert "PLUGIN_PACKAGE_DIR=$(" in plugin_commands
     assert (
-        'python -m mypy --strict "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/'
-        'src/vercor_public_plugin" public_plugin_use_site.py' in plugin_commands
+        'cp -R "$PLUGIN_PACKAGE_DIR" "$RUNNER_TEMP/plugin-typecheck/'
+        'vercor_public_plugin"' in plugin_commands
+    )
+    assert (
+        'python -P -m mypy --strict "$RUNNER_TEMP/plugin-typecheck/'
+        'vercor_public_plugin" public_plugin_use_site.py' in plugin_commands
     )
 
     assert macos_job["runs-on"] == "macos-latest"

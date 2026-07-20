@@ -124,7 +124,10 @@ jobs:
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
           cp "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/use_site.py" public_plugin_use_site.py
-          python -m mypy --strict "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/src/vercor_public_plugin" public_plugin_use_site.py
+          PLUGIN_PACKAGE_DIR=$(python -c 'import pathlib, vercor_public_plugin; print(pathlib.Path(vercor_public_plugin.__file__).parent)')
+          mkdir -p "$RUNNER_TEMP/plugin-typecheck"
+          cp -R "$PLUGIN_PACKAGE_DIR" "$RUNNER_TEMP/plugin-typecheck/vercor_public_plugin"
+          python -P -m mypy --strict "$RUNNER_TEMP/plugin-typecheck/vercor_public_plugin" public_plugin_use_site.py
 
   macos-smoke:
     needs: build-artifacts

@@ -6,9 +6,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- CI fixes completed locally (2026-07-20): artifact boundaries pass; CAMulator
-  preflights CREDIT and normalizes tensor output through NumPy so mypy does not
-  depend on optional PyTorch typing. TDD and installed checks passed.
+- CI fixes completed locally (2026-07-20): plugin smoke uses installed artifacts;
+  strict mypy checks a copied installed plugin outside the checkout with Python
+  safe-path isolation. TDD and isolated checks passed.
 - Final-review alignment completed locally (2026-07-20): removed stale `runner`
   documentation and clarified the pre-stable versioning label after Graphify
   exposed ambiguous generated wording; focused checks passed 49/49.
