@@ -45,13 +45,13 @@ jobs:
               tests/test_setup_boundaries.py::test_setup_subprocess_helpers_honor_installed_package_root
               tests/test_distribution_boundaries.py
           - environment: jcm
-            extra: "[jcm]"
+            extra: "[jcm,veros]"
             pytest-target: >-
               tests/test_setup_lifecycle_helpers.py::test_make_jcm_land_atmosphere_replaces_only_missing_forcing
               tests/test_external_components_coverage.py::test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up
               tests/test_external_components_coverage.py::test_jax_gcm_initialize_builds_default_forcing_when_missing
           - environment: veros
-            extra: "[veros]"
+            extra: "[jcm,veros]"
             pytest-target: >-
               tests/test_setup_boundaries.py::test_veros_implementation_import_does_not_configure_runtime
               tests/test_setup_boundaries.py::test_veros_factory_configures_once_before_implementation_import

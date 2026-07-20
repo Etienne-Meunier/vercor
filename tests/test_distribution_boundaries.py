@@ -237,6 +237,8 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert matrix["artifact"] == ["wheel"]
     included = {item["environment"]: item for item in matrix["include"]}
     assert {"base", "jcm", "veros"}.issubset(included)
+    assert included["jcm"]["extra"] == "[jcm,veros]"
+    assert included["veros"]["extra"] == "[jcm,veros]"
     assert (
         "test_make_jcm_land_atmosphere_replaces_only_missing_forcing"
         in included["jcm"]["pytest-target"]
