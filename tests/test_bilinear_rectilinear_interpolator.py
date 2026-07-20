@@ -50,8 +50,21 @@ def test_init_accepts_jax_arrays_and_tracks_source_orientation() -> None:
     )
 
     assert interp._lon_flipped is True
-    assert interp.lat_descending is True
     assert_array_equal_compact(interp.lon_src_deg, np.array([0.0, 1.0, 2.0]))
+
+
+def test_descending_latitude_is_constructor_only_and_interpolates_correctly() -> None:
+    interp = _scalar_interp(
+        np.asarray([0.0, 1.0]),
+        np.asarray([1.0, 0.0]),
+        np.asarray([0.5]),
+        np.asarray([0.5]),
+        periodic_longitude=False,
+    )
+    result = interp.apply_scalar(np.asarray([[3.0, 5.0], [1.0, 3.0]]))
+
+    assert_allclose_compact(result, np.asarray([[3.0]]))
+    assert not hasattr(interp, "lat_descending")
 
 
 def test_scalar_bilinear_exact_on_2x2_cell() -> None:
@@ -364,6 +377,26 @@ def test_interpolator_pytree_round_trip_preserves_jittable_state() -> None:
     assert_allclose_compact(restored.apply_scalar(src), interp.apply_scalar(src))
     assert_array_equal_compact(restored.i0, interp.i0)
     assert_array_equal_compact(restored.i1, interp.i1)
+
+
+def test_interpolator_pytree_omits_construction_only_weights() -> None:
+    interp = _scalar_interp(
+        np.asarray([0.0, 1.0]),
+        np.asarray([0.0, 1.0]),
+        np.asarray([0.25]),
+        np.asarray([0.75]),
+        periodic_longitude=False,
+    )
+    leaves, treedef = jax.tree_util.tree_flatten(interp)
+    restored = jax.tree_util.tree_unflatten(treedef, leaves)
+
+    assert len(leaves) == 26
+    for name in ("fx", "fy", "nx_source", "ny_source"):
+        assert not hasattr(restored, name)
+    assert_allclose_compact(
+        jax.jit(restored.apply_scalar)(np.asarray([[5.0, 7.0], [8.0, 10.0]])),
+        np.asarray([[7.75]]),
+    )
 
 
 def test_scalar_apply_supports_jax_jit() -> None:

@@ -44,8 +44,6 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         "i1",
         "j0",
         "j1",
-        "fx",
-        "fy",
         "w00",
         "w10",
         "w01",
@@ -66,12 +64,9 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         "fill_value",
         "nlon",
         "nlat",
-        "nx_source",
-        "ny_source",
         "tshape",
         "_lon_flipped",
         "lat_ascending",
-        "lat_descending",
     )
 
     def __init__(
@@ -116,12 +111,13 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         else:
             self._lon_flipped = False
 
-        self.lat_ascending = _geometry.all_positive(lat_diff)
-        self.lat_descending = _geometry.all_negative(lat_diff)
-        if not (self.lat_ascending or self.lat_descending):
+        lat_ascending = _geometry.all_positive(lat_diff)
+        lat_descending = _geometry.all_negative(lat_diff)
+        if not (lat_ascending or lat_descending):
             raise ValueError(
                 "lat_src must be strictly monotonic (ascending or descending)."
             )
+        self.lat_ascending = lat_ascending
 
         self.lon_src_deg = lon_src_deg
         self.lat_src_deg = lat_src_deg
@@ -129,8 +125,6 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         self.lat_src_rad = jnp.deg2rad(lat_src_deg)
         self.nlon = int(lon_src_deg.size)
         self.nlat = int(lat_src_deg.size)
-        self.nx_source = self.nlon
-        self.ny_source = self.nlat
 
         lon_tgt_array = as_jax_real_array(lon_tgt)
         lat_tgt_array = as_jax_real_array(lat_tgt)
@@ -144,10 +138,10 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         self._lat_tgt_flat = self.lat_tgt_rad.reshape(-1)
 
         if src_mask is None:
-            src_mask_array = jnp.ones((self.ny_source, self.nx_source), dtype=bool)
+            src_mask_array = jnp.ones((self.nlat, self.nlon), dtype=bool)
         else:
             src_mask_array = jnp.broadcast_to(
-                jnp.asarray(src_mask, dtype=bool), (self.ny_source, self.nx_source)
+                jnp.asarray(src_mask, dtype=bool), (self.nlat, self.nlon)
             )
         if self._lon_flipped:
             src_mask_array = jnp.flip(src_mask_array, axis=1)
@@ -189,8 +183,6 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         self.i1 = weights.i1.astype(jax_index_dtype())
         self.j0 = weights.j0.astype(jax_index_dtype())
         self.j1 = weights.j1.astype(jax_index_dtype())
-        self.fx = weights.fx
-        self.fy = weights.fy
         self.w00 = weights.w00
         self.w10 = weights.w10
         self.w01 = weights.w01
