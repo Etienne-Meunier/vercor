@@ -127,3 +127,6 @@ ENV/
 
 # graphifyy output
 graphify-out
+
+# CODEX
+.codex/
