@@ -291,7 +291,7 @@ The private runtime package consists of `vercor._runtime` and these focused
 owners: `backends`, `component_state`, `contracts`, `coupler_state`,
 `dispatch_context`, `driver`, `exchange_dispatch`,
 `exchange_topology`, `execution`, `facade`, `field_transfer`, `initialization`,
-`interrupts`, `preparation`, `prepared`, `progress`, `run_context`, `runner`,
+`interrupts`, `preparation`, `prepared`, `progress`, `run_context`,
 `state`, `state_validation`, `stores`, `surface_masks`, `time`, `topology`,
 `topology_policy`, `topology_state`, and `validation`, each beneath
 `vercor._runtime`.
