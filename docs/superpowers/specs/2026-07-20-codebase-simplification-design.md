@@ -37,7 +37,6 @@ Delete state that has no reader or runtime effect:
 - `CallableComponent._author_step`, `_ComponentDeclaration.author_step`, and
   `_ComponentBinding._author_step`;
 - `_OutputSchema.index`;
-- the repeated `target.write_period` condition;
 - the unused virtual-temperature helper in `vercor.fluxes.utilities`;
 - setup-only `_data_files` and `_hybrid_coefficients` attributes;
 - `FieldStore.get_or_zeros_like()` and `RuntimeTopologyMaps.empty()`;
@@ -48,6 +47,10 @@ Delete state that has no reader or runtime effect:
 No replacement abstraction will be introduced for deleted state. If a future
 feature needs one of these values, it must add it at the real point of use with
 tests for that use.
+
+Move `_Grid` mask validation and display behavior directly onto
+`RectilinearGrid`, its only production subclass, and remove the private ABC.
+The public `RectilinearGrid.from_coordinates()` constructor remains unchanged.
 
 ### 2. Consolidate regridding behavior
 
@@ -84,9 +87,9 @@ formats are externally observable and independently tested.
   will store `topology_maps` directly.
 - Move the checked surface-role component lookup into `surface_masks` and
   remove the one-caller `_NamedComponent` protocol/module.
-- Inline `RuntimeRunContext` construction at the run boundary and move the
-  two-call plan-build/execute coordination into the existing execution owner,
-  removing the one-use runner wrapper.
+- Inline `RuntimeRunContext` construction at the run boundary and call the
+  existing execution owner's plan-build/execute functions directly, removing
+  the one-use runner wrapper.
 
 `RuntimeTopologyMaps`, `RuntimeInitializationState`, `RuntimeRunContext`, and
 `RuntimeDispatchContext` remain. They group multiple cohesive values and carry
@@ -102,7 +105,9 @@ Keep `fx` and `fy` local to weight construction rather than storing them on
 `BilinearRectilinearInterpolator` as unused target-sized dynamic leaves. Remove
 redundant `nx_source` and `ny_source` aliases in favor of the existing `nlon`
 and `nlat` values. Treat descending-latitude detection as construction state
-unless a real post-construction consumer is found.
+unless a real post-construction consumer is found. Remove the duplicate
+`self.nlon` constructor assignment. Keep both source-validity calculations:
+they belong to distinct bilinear and extrapolation paths and are not dead code.
 
 Focused tests must verify:
 
