@@ -121,11 +121,10 @@ jobs:
           python -m pip install --upgrade pip mypy
           python -m pip install "${GITHUB_WORKSPACE}/dist/vercor-0.4.0a1-py3-none-any.whl"
           python -m pip install --no-deps "${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
-          PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
           cp "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/use_site.py" public_plugin_use_site.py
-          python -m mypy --strict "$PACKAGE_ROOT/vercor_public_plugin" public_plugin_use_site.py
+          python -m mypy --strict "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/src/vercor_public_plugin" public_plugin_use_site.py
 
   macos-smoke:
     needs: build-artifacts

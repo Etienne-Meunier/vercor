@@ -6,9 +6,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- Plugin-contract CI mypy fix completed locally (2026-07-20): removed
-  `site-packages` from `MYPYPATH` and switched to `python -m mypy`. Regression
-  RED/GREEN passed; isolated installed-wheel smoke and strict mypy passed 4/4.
+- Plugin-contract CI mypy fixes completed locally (2026-07-20): installed-wheel
+  smoke remains isolated while strict mypy checks plugin source outside
+  `site-packages`. Both regression RED/GREEN cycles and isolated checks passed.
 - Final-review alignment completed locally (2026-07-20): removed stale `runner`
   documentation and clarified the pre-stable versioning label after Graphify
   exposed ambiguous generated wording; focused checks passed 49/49.
