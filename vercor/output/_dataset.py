@@ -10,6 +10,19 @@ from vercor.output._period import TIME_NAME, output_time_value_and_attrs
 from vercor.output import OutputVariable
 
 
+def grid_field_dims(
+    name: str,
+    shape: tuple[int, ...],
+    grid_shape: tuple[int, int] | None,
+) -> tuple[str, ...]:
+    """Return stable generic dimensions for one optional grid-shaped field."""
+
+    if grid_shape is not None and len(shape) >= 2 and shape[-2:] == grid_shape:
+        prefix = tuple(f"{name}_dim_{index}" for index in range(len(shape) - 2))
+        return (*prefix, "nlat", "nlon")
+    return tuple(f"{name}_dim_{index}" for index in range(len(shape)))
+
+
 def time_coordinate_variable(
     output_time: datetime | ModelDateTime,
     *,
@@ -37,4 +50,4 @@ def used_dimension_names(
     return tuple(used)
 
 
-__all__ = ["time_coordinate_variable", "used_dimension_names"]
+__all__ = ["grid_field_dims", "time_coordinate_variable", "used_dimension_names"]

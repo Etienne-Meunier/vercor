@@ -9,6 +9,7 @@ import pytest
 
 from tests.assertions import assert_allclose_compact
 from vercor.output import OutputFrame, OutputVariable
+from vercor.output._dataset import grid_field_dims
 from vercor.output._period import period_mean_sample_to_output_variable
 from vercor.output._session import _OutputAccumulator
 
@@ -23,6 +24,35 @@ def _frame(
         {"temp": OutputVariable(dims, values, {"units": "K"})},
         sample_dimension=sample_dimension,
     )
+
+
+@pytest.mark.parametrize(
+    ("shape", "grid_shape", "expected"),
+    [
+        ((2, 3), (2, 3), ("nlat", "nlon")),
+        ((4, 2, 3), (2, 3), ("temperature_dim_0", "nlat", "nlon")),
+        ((4,), (2, 3), ("temperature_dim_0",)),
+        ((2, 3), None, ("temperature_dim_0", "temperature_dim_1")),
+    ],
+)
+def test_grid_field_dims_is_the_single_output_layout_rule(
+    shape: tuple[int, ...],
+    grid_shape: tuple[int, int] | None,
+    expected: tuple[str, ...],
+) -> None:
+    assert grid_field_dims("temperature", shape, grid_shape) == expected
+
+
+def test_output_accumulator_replace_preserves_pytree_structure() -> None:
+    empty = _OutputAccumulator.zeros_from_frame(_frame(jnp.asarray([0.0, 0.0])))
+    updated = jax.jit(
+        lambda accumulator: accumulator.add_frame(_frame(jnp.asarray([1.0, 3.0])))
+    )(empty)
+    reset = jax.jit(lambda accumulator: accumulator.reset())(updated)
+
+    assert jax.tree_util.tree_structure(empty) == jax.tree_util.tree_structure(updated)
+    assert jax.tree_util.tree_structure(updated) == jax.tree_util.tree_structure(reset)
+    assert_allclose_compact(reset.counts[0], [0, 0])
 
 
 def test_output_accumulator_is_an_immutable_jax_pytree() -> None:

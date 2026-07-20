@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import fields
 from datetime import datetime
 import inspect
 from pathlib import Path
@@ -512,6 +513,11 @@ def test_any_enabled_output_rejects_traced_state_before_io(tmp_path: Path) -> No
 def test_period_accumulation_is_immutable_and_preserves_nan_counts() -> None:
     import vercor.output._session as session_module
 
+    assert tuple(field.name for field in fields(session_module._OutputSchema)) == (
+        "component",
+        "provider",
+        "period",
+    )
     accumulator_type = getattr(session_module, "_OutputAccumulator", None)
     assert accumulator_type is not None, "missing unified immutable accumulator"
     variable = _api("OutputVariable")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 import re
 from typing import TYPE_CHECKING, Any
@@ -23,7 +23,7 @@ from vercor.output import (
     OutputVariable,
     PeriodOutput,
 )
-from vercor.output._dataset import time_coordinate_variable
+from vercor.output._dataset import grid_field_dims, time_coordinate_variable
 from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output._period import (
     _sample_sum_and_counts,
@@ -183,47 +183,22 @@ class _OutputAccumulator(PyTreeNodeMixin):
                 raise ValueError(f"Output variable {name!r} attributes changed.")
             sums.append(self.sum_values[index] + sample_sum)
             counts.append(self.counts[index] + sample_counts)
-        return _OutputAccumulator(
-            names=self.names,
-            select_all=self.select_all,
-            dims=self.dims,
-            dtypes=self.dtypes,
-            attrs=self.attrs,
+        return replace(
+            self,
             sum_values=tuple(sums),
             counts=tuple(counts),
-            coordinate_names=coordinate_names,
-            coordinate_dims=coordinate_dims,
             coordinate_shapes=_coordinate_shapes(coordinate_values),
             coordinate_dtypes=_coordinate_dtypes(coordinate_values),
             coordinate_values=coordinate_values,
-            coordinate_attrs=coordinate_attrs,
-            metadata=tuple(frame.metadata.items()),
-            sample_dimension=self.sample_dimension,
-            time_dimension=self.time_dimension,
-            dimension_order=self.dimension_order,
         )
 
     def reset(self) -> "_OutputAccumulator":
         """Return an empty accumulator with unchanged static schema."""
 
-        return _OutputAccumulator(
-            names=self.names,
-            select_all=self.select_all,
-            dims=self.dims,
-            dtypes=self.dtypes,
-            attrs=self.attrs,
+        return replace(
+            self,
             sum_values=tuple(jnp.zeros_like(value) for value in self.sum_values),
             counts=tuple(jnp.zeros_like(value) for value in self.counts),
-            coordinate_names=self.coordinate_names,
-            coordinate_dims=self.coordinate_dims,
-            coordinate_shapes=self.coordinate_shapes,
-            coordinate_dtypes=self.coordinate_dtypes,
-            coordinate_values=self.coordinate_values,
-            coordinate_attrs=self.coordinate_attrs,
-            metadata=self.metadata,
-            sample_dimension=self.sample_dimension,
-            time_dimension=self.time_dimension,
-            dimension_order=self.dimension_order,
         )
 
     def mean_frame(self) -> OutputFrame:
@@ -325,7 +300,7 @@ class _RuntimeFieldProvider:
     def sample(self, context: OutputContext) -> OutputFrame:
         variables = {
             name: OutputVariable(
-                _generic_field_dims(
+                grid_field_dims(
                     name,
                     tuple(context.state.field(name).shape),
                     self._component.grid.shape,
@@ -349,7 +324,6 @@ class _OutputSchema:
     component: "_ComponentBinding"
     provider: Any
     period: PeriodOutput
-    index: int
 
 
 @dataclass(frozen=True)
@@ -462,7 +436,7 @@ def build_output_plan(
         if period is None:
             continue
         provider = component.spec.output.provider or _RuntimeFieldProvider(component)
-        schemas.append(_OutputSchema(component, provider, period, len(schemas)))
+        schemas.append(_OutputSchema(component, provider, period))
     boundaries = _output_boundaries(
         tuple(schemas),
         clock,
@@ -528,17 +502,6 @@ def write_output_boundary(
             ) from exc
         accumulators[index] = accumulator.reset()
     return _OutputSession(tuple(accumulators))
-
-
-def _generic_field_dims(
-    name: str,
-    shape: tuple[int, ...],
-    grid_shape: tuple[int, int],
-) -> tuple[str, ...]:
-    if len(shape) >= 2 and shape[-2:] == grid_shape:
-        prefix = tuple(f"{name}_dim_{index}" for index in range(len(shape) - 2))
-        return (*prefix, "nlat", "nlon")
-    return tuple(f"{name}_dim_{index}" for index in range(len(shape)))
 
 
 def _output_boundaries(

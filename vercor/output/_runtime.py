@@ -13,6 +13,7 @@ from vercor.calendar import ModelDateTime
 from vercor.exceptions import ComponentError
 from vercor.exchanges import Exchange
 from vercor.output import SnapshotContext
+from vercor.output._dataset import grid_field_dims
 from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output import OutputVariable
 from vercor.state import ComponentState, RunState
@@ -118,15 +119,12 @@ def _runtime_output_variable(
     field_name: str,
 ) -> OutputVariable:
     shape = tuple(value.shape)
-    if view.grid is not None and len(shape) >= 2 and shape[-2:] == view.grid.shape:
-        leading_dims = tuple(
-            f"{field_name}_dim_{index}" for index in range(len(shape) - 2)
-        )
-        dims = (*leading_dims, "nlat", "nlon")
-    else:
-        dims = tuple(f"{field_name}_dim_{index}" for index in range(len(shape)))
     return OutputVariable(
-        dims,
+        grid_field_dims(
+            field_name,
+            shape,
+            view.grid.shape if view.grid is not None else None,
+        ),
         value,
         {
             "component": view.name,
