@@ -37,7 +37,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-jcm = ["jcm==1.1.1"]
+jcm = ["dinosaur==1.3.5", "jcm==1.1.1"]
 veros = ["veros"]
 test = [
   "PyYAML",
