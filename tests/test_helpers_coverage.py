@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
 
@@ -13,40 +12,34 @@ from tests.assertions import assert_allclose_compact
 from vercor.exceptions import GridError
 from vercor.exchanges import Exchange
 from vercor.fields import vector
-from vercor.grids import _Grid, RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges
 from vercor.grid_masks import compute_land_mask
 from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 from vercor._regridders.bilinear import bilinear
 
 
-@dataclass(frozen=True)
-class ExampleGrid(_Grid):
-    longitude_size: int = 3
-    latitude_size: int = 2
-
-    @property
-    def shape(self) -> tuple[int, int]:
-        return (self.latitude_size, self.longitude_size)
-
-
 @pytest.mark.fast_always
-def test_grid_and_rectilinear_grid_validations_and_reprs() -> None:
-    grid = ExampleGrid(name="example", binary_mask=np.ones((2, 3)))
-    assert "Grid name:  example" in str(grid)
-    assert "longitude_size=3" in repr(grid)
+def test_rectilinear_grid_owns_grid_behavior_without_private_base() -> None:
+    import vercor.grids as grids
 
-    with pytest.raises(GridError, match="Mask must be a 2D array"):
-        ExampleGrid(name="bad-mask", binary_mask=np.ones((2, 3, 1)))
-
-    rectilinear = RectilinearGrid(
+    grid = RectilinearGrid(
         name="rect",
         longitude=np.asarray([0.0, 120.0, 240.0]),
         latitude=np.asarray([-45.0, 45.0]),
+        binary_mask=np.ones((2, 3)),
     )
-    assert rectilinear.shape == (2, 3)
-    assert "RectilinearGrid" in str(rectilinear)
-    assert "shape=(2, 3)" in repr(rectilinear)
+
+    assert not hasattr(grids, "_Grid")
+    assert "Grid name:  rect" in str(grid)
+    assert "shape=(2, 3)" in repr(grid)
+    with pytest.raises(GridError, match="Mask must be a 2D array"):
+        RectilinearGrid(
+            name="bad-mask",
+            longitude=np.asarray([0.0, 120.0, 240.0]),
+            latitude=np.asarray([-45.0, 45.0]),
+            binary_mask=np.ones((2, 3, 1)),
+        )
 
     with pytest.raises(GridError, match="1D arrays"):
         RectilinearGrid(

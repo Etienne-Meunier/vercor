@@ -1,6 +1,4 @@
-from typing import Any, Optional
-
-from vercor.exceptions import RegridderError
+from typing import Optional
 from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges, grids_identical
 from vercor._interpolators.conservative_remap_rectilinear import (
@@ -60,18 +58,6 @@ class ConservativeRectilinearRegridder(_BaseRegridder):
             interpolator=interpolator,
             has_identical_grids=has_identical_grids,
         )
-
-    def regrid(self, field: Any) -> Any:
-        """Apply conservative scalar regridding."""
-
-        if self.has_identical_grids:
-            return field
-
-        interpolator = self.interpolator
-        if interpolator is None:
-            raise RegridderError("Regridder not properly set up")
-        return interpolator.apply_scalar(field)
-
 
 def conservative(
     source_grid: RectilinearGrid,

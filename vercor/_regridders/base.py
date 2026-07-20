@@ -1,5 +1,6 @@
 from typing import Any
 
+from vercor.exceptions import RegridderError
 from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import grids_identical
 
@@ -49,7 +50,11 @@ class _BaseRegridder:
     def regrid(self, field: Any) -> Any:
         """Transfer one scalar field from the source grid to the target grid."""
 
-        raise NotImplementedError
+        if self.has_identical_grids:
+            return field
+        if self.interpolator is None:
+            raise RegridderError("Regridder not properly set up")
+        return self.interpolator.apply_scalar(field)
 
     def __str__(self) -> str:
         return (

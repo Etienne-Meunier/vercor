@@ -47,16 +47,6 @@ class BilinearRectilinearRegridder(_BaseRegridder):
             has_identical_grids=has_identical_grids,
         )
 
-    def regrid(self, field: Any) -> Any:
-        """Apply bilinear scalar regridding."""
-        if self.has_identical_grids:
-            return field
-
-        interpolator = self.interpolator
-        if interpolator is None:
-            raise RegridderError("Regridder not properly set up")
-        return interpolator.apply_scalar(field)
-
     def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
         """Apply bilinear vector regridding."""
 

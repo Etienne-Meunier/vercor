@@ -8,6 +8,7 @@ import pytest
 
 from tests.assertions import assert_array_equal_compact
 from vercor.grids import RectilinearGrid
+from vercor._regridders.base import _BaseRegridder
 from vercor._regridders.bilinear import BilinearRectilinearRegridder, bilinear
 from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
 
@@ -19,6 +20,11 @@ def _make_grid(
     mask: Any | None = None,
 ) -> RectilinearGrid:
     return RectilinearGrid(name=name, longitude=lon, latitude=lat, binary_mask=mask)
+
+
+def test_scalar_regrid_is_owned_by_shared_private_base() -> None:
+    assert "regrid" not in BilinearRectilinearRegridder.__dict__
+    assert BilinearRectilinearRegridder.regrid is _BaseRegridder.regrid
 
 
 def test_regridder_constructor_sets_interpolator_and_grids() -> None:

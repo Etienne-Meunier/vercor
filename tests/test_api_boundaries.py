@@ -1216,7 +1216,7 @@ def test_production_runtime_modules_use_coupler_state_name() -> None:
 
 
 @pytest.mark.fast_always
-def test_concrete_regridders_own_call_dispatch() -> None:
+def test_shared_base_owns_scalar_regrid_dispatch() -> None:
     regridder_base_source = Path("vercor/_regridders/base.py").read_text(
         encoding="utf-8"
     )
@@ -1230,11 +1230,11 @@ def test_concrete_regridders_own_call_dispatch() -> None:
     assert "def regrid_vector(" not in regridder_base_source
     assert "def _ensure_ready(" not in regridder_base_source
     assert "def __call__(" not in bilinear_source
-    assert "def regrid(" in bilinear_source
+    assert "def regrid(" not in bilinear_source
     assert "def regrid_vector(" in bilinear_source
     assert "apply_vector" in bilinear_source
     assert "def __call__(" not in conservative_source
-    assert "def regrid(" in conservative_source
+    assert "def regrid(" not in conservative_source
     assert "def regrid_vector(" not in conservative_source
     assert "def _ensure_ready(" not in conservative_source
     assert "apply_vector" not in conservative_source

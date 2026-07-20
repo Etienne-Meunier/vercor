@@ -12,6 +12,7 @@ from vercor.grids import RectilinearGrid
 from vercor._interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
+from vercor._regridders.base import _BaseRegridder
 from vercor._regridders.conservative import (
     ConservativeRectilinearRegridder,
     conservative,
@@ -33,6 +34,11 @@ def _grid(
         longitude_edges=lon_edges,
         latitude_edges=lat_edges,
     )
+
+
+def test_scalar_regrid_is_owned_by_shared_private_base() -> None:
+    assert "regrid" not in ConservativeRectilinearRegridder.__dict__
+    assert ConservativeRectilinearRegridder.regrid is _BaseRegridder.regrid
 
 
 def test_regridder_constructor_sets_interpolator_and_grids() -> None:

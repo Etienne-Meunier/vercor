@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import abc
 from dataclasses import dataclass
 from typing import Any, Self
 
@@ -21,40 +20,9 @@ def _is_strictly_increasing(values: jax.Array) -> bool:
     return bool(jnp.all(jnp.diff(values) > 0.0))
 
 
-@dataclass(frozen=True)
-class _Grid(abc.ABC):
-    """Base class for public grid containers."""
-
-    name: str
-    binary_mask: _RuntimeArray | None = None
-
-    def __post_init__(self) -> None:
-        if self.binary_mask is not None:
-            mask = jnp.asarray(self.binary_mask)
-            if mask.ndim != 2:
-                raise _GridError("Mask must be a 2D array.")
-            object.__setattr__(self, "binary_mask", mask)
-
-    @property
-    @abc.abstractmethod
-    def shape(self) -> tuple[int, int]:
-        """Return ``(nlat, nlon)`` for horizontal grid-shaped fields."""
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"├── Grid name:  {self.name}\n"
-            f"├── Grid shape: {self.shape}\n"
-            f"└── Binary mask: {'Provided' if self.binary_mask is not None else 'Not provided'}\n"
-        )
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name}, shape={self.shape})"
-
-
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, init=False, repr=False, kw_only=True)
-class RectilinearGrid(_PyTreeNodeMixin, _Grid):
+class RectilinearGrid(_PyTreeNodeMixin):
     """JAX-friendly public rectilinear grid with 1D lon/lat coordinates."""
 
     pytree_children = (
@@ -66,6 +34,8 @@ class RectilinearGrid(_PyTreeNodeMixin, _Grid):
     )
     pytree_aux_data = ("name",)
 
+    name: str
+    binary_mask: _RuntimeArray | None
     longitude: _RuntimeArray
     latitude: _RuntimeArray
     longitude_edges: _RuntimeArray | None
@@ -111,9 +81,10 @@ class RectilinearGrid(_PyTreeNodeMixin, _Grid):
         ):
             raise _GridError("longitude and latitude must be strictly monotonic.")
 
+        if binary_mask_array is not None and binary_mask_array.ndim != 2:
+            raise _GridError("Mask must be a 2D array.")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "binary_mask", binary_mask_array)
-        _Grid.__post_init__(self)
         object.__setattr__(self, "longitude", longitude_array)
         object.__setattr__(self, "latitude", latitude_array)
         object.__setattr__(self, "longitude_edges", longitude_edges_array)
@@ -124,6 +95,18 @@ class RectilinearGrid(_PyTreeNodeMixin, _Grid):
         """Return ``(nlat, nlon)`` for horizontal grid-shaped fields."""
 
         return (int(self.latitude.size), int(self.longitude.size))
+
+    def __str__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"├── Grid name:  {self.name}\n"
+            f"├── Grid shape: {self.shape}\n"
+            f"└── Binary mask: "
+            f"{'Provided' if self.binary_mask is not None else 'Not provided'}\n"
+        )
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self.name}, shape={self.shape})"
 
     def with_precision(self, policy: _PrecisionPolicy) -> "RectilinearGrid":
         """Return this grid with real arrays converted to ``policy`` precision."""
