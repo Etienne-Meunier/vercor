@@ -6,10 +6,10 @@ from vercor.grid_geometry import grids_identical
 
 
 class _BaseRegridder:
-    """Shared grid, interpolator, and display state for concrete regridders.
+    """Shared grid, interpolator, display state, and scalar regridding.
 
-    Concrete subclasses own their call contracts because scalar/vector support
-    differs by regridding method.
+    Bilinear regridders alone add vector dispatch because vector support is
+    specific to that regridding method.
     """
 
     def __init__(
