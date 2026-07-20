@@ -14,7 +14,6 @@ from vercor.grid_masks import (
 from vercor.grid_geometry import grids_identical
 from vercor.jax_logging import LoggerLike
 from vercor._regridders.conservative import ConservativeRectilinearRegridder
-from vercor._runtime.component_topology import require_component
 from vercor.types import RuntimeArray
 from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyContext
 
@@ -63,11 +62,16 @@ def _require_surface_role(
     """Return a surface-role component with a policy-oriented error."""
 
     try:
-        return require_component(components, role_name)
-    except CouplerError as exc:
+        component = components[role_name]
+    except KeyError as exc:
         raise CouplerError(
             f"Surface mask policy requires role component {role_name!r} to be registered"
         ) from exc
+    if component.name != role_name:
+        raise CouplerError(
+            f"Surface mask policy requires role component {role_name!r} to be registered"
+        )
+    return component
 
 
 def create_surface_exchange_masks(

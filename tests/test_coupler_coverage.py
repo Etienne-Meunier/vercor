@@ -54,10 +54,7 @@ from vercor._runtime.surface_masks import (
 )
 from vercor.state import ComponentState
 from vercor._runtime.topology import build_exchange_topology
-from vercor._runtime.topology_state import (
-    ExchangeTopologyState,
-    RuntimeTopologyMaps,
-)
+from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor.topology import SurfaceMaskPolicy
 
 
@@ -785,7 +782,7 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
 
 
 @pytest.mark.fast_always
-def test_build_exchange_topology_returns_explicit_patched_state(
+def test_build_exchange_topology_returns_runtime_topology_maps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     components = _topology_components()
@@ -805,7 +802,7 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         ),
     )
 
-    state = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
         dtype=DTypePolicy(),
@@ -813,13 +810,12 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         logger=cast(Any, _RecordingLogger()),
     )
 
-    assert isinstance(state, ExchangeTopologyState)
-    assert set(state.topology_maps.regridders) == {"OCN->ATM"}
+    assert isinstance(topology_maps, RuntimeTopologyMaps)
+    assert set(topology_maps.regridders) == {"OCN->ATM"}
     assert_allclose_compact(
-        state.topology_maps.fractional_masks["OCN->ATM"],
+        topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
     )
-    assert not hasattr(state, "surface_masks")
 
 
 @pytest.mark.fast_always
@@ -881,7 +877,7 @@ def test_surface_mask_policy_uses_one_build_protocol(
         ),
     )
 
-    state = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
         dtype=DTypePolicy(),
@@ -891,7 +887,7 @@ def test_surface_mask_policy_uses_one_build_protocol(
 
     assert events == ["build"]
     assert_allclose_compact(
-        state.topology_maps.fractional_masks["OCN->ATM"],
+        topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
     )
 
@@ -907,9 +903,13 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
         fields=["soil_moisture"],
         regridder_factory=bilinear,
     )
-    existing_regridders: dict[str, Any] = {}
-    existing_binary_masks: dict[str, Any] = {}
-    existing_fractional_masks: dict[str, Any] = {}
+    seeded_route = "seeded"
+    seeded_regridder = object()
+    seeded_binary_mask = np.ones((2, 2))
+    seeded_fractional_mask = np.full((2, 2), 0.25)
+    existing_regridders: dict[str, Any] = {seeded_route: seeded_regridder}
+    existing_binary_masks: dict[str, Any] = {seeded_route: seeded_binary_mask}
+    existing_fractional_masks: dict[str, Any] = {seeded_route: seeded_fractional_mask}
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
@@ -920,7 +920,7 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
         ),
     )
 
-    state = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
         topology_maps=RuntimeTopologyMaps(
@@ -933,12 +933,15 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
         logger=cast(Any, _RecordingLogger()),
     )
 
-    assert existing_regridders == {}
-    assert existing_binary_masks == {}
-    assert existing_fractional_masks == {}
-    assert state.topology_maps.regridders is not existing_regridders
+    assert existing_regridders == {seeded_route: seeded_regridder}
+    assert existing_binary_masks[seeded_route] is seeded_binary_mask
+    assert existing_fractional_masks[seeded_route] is seeded_fractional_mask
+    assert topology_maps.regridders is not existing_regridders
+    assert topology_maps.regridders[seeded_route] is seeded_regridder
+    assert topology_maps.binary_masks[seeded_route] is seeded_binary_mask
+    assert topology_maps.fractional_masks[seeded_route] is seeded_fractional_mask
     assert_allclose_compact(
-        state.topology_maps.binary_masks["LND->ATM"],
+        topology_maps.binary_masks["LND->ATM"],
         np.asarray([[1.0, 0.0], [0.0, 1.0]]),
     )
 

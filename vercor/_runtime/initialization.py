@@ -18,10 +18,7 @@ from vercor.jax_logging import LoggerLike
 from vercor.physics import PhysicalConstants
 from vercor._runtime.contracts import ExchangeContract, build_exchange_contracts
 from vercor._runtime.topology import build_exchange_topology
-from vercor._runtime.topology_state import (
-    ExchangeTopologyState,
-    RuntimeTopologyMaps,
-)
+from vercor._runtime.topology_state import RuntimeTopologyMaps
 from vercor._runtime.validation import (
     check_not_empty_import_export_lists,
     validate_exchange_fields_declared,
@@ -38,7 +35,7 @@ class RuntimeInitializationState:
 
     components: MappingProxyType[str, _ComponentBinding]
     runtime_contracts: dict[str, ExchangeContract]
-    topology: ExchangeTopologyState
+    topology_maps: RuntimeTopologyMaps
 
 
 def initialize_coupler_runtime(
@@ -87,7 +84,7 @@ def initialize_coupler_runtime(
             check_not_empty_import_export_lists(component, contract)
             validate_exchange_fields_declared(component, contract)
 
-    topology = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=prepared_components,
         exchanges=exchanges,
         topology_maps=topology_maps,
@@ -98,5 +95,5 @@ def initialize_coupler_runtime(
     return RuntimeInitializationState(
         components=MappingProxyType(prepared_components),
         runtime_contracts=runtime_contracts,
-        topology=topology,
+        topology_maps=topology_maps,
     )

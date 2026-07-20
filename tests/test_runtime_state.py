@@ -142,7 +142,7 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert runtime_validation_path.exists()
     assert runtime_state_validation_path.exists()
     assert runtime_topology_path.exists()
-    assert runtime_component_topology_path.exists()
+    assert not runtime_component_topology_path.exists()
     assert runtime_initialization_path.exists()
     assert runtime_preparation_path.exists()
     assert runtime_facade_path.exists()
@@ -168,9 +168,6 @@ def test_runtime_modules_use_current_domain_owners() -> None:
         encoding="utf-8"
     )
     runtime_topology_source = runtime_topology_path.read_text(encoding="utf-8")
-    runtime_component_topology_source = runtime_component_topology_path.read_text(
-        encoding="utf-8"
-    )
     runtime_initialization_source = runtime_initialization_path.read_text(
         encoding="utf-8"
     )
@@ -427,7 +424,7 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     )
 
     assert "def build_exchange_topology_maps(" in runtime_exchange_topology_source
-    assert "class ExchangeTopologyState" in runtime_topology_state_source
+    assert "class ExchangeTopologyState" not in runtime_topology_state_source
     assert "class RuntimeTopologyMaps" in runtime_topology_state_source
     assert "class SurfaceExchangeMasks" not in runtime_topology_state_source
     assert "def build_exchange_topology(" in runtime_topology_source
@@ -441,13 +438,7 @@ def test_runtime_modules_use_current_domain_owners() -> None:
     assert "def validate_component_topology_names(" not in runtime_topology_source
     assert "def get_component(" not in runtime_topology_source
     assert "def require_component(" not in runtime_topology_source
-    assert (
-        "def validate_component_topology_names("
-        not in runtime_component_topology_source
-    )
-    assert "def require_component(" in runtime_component_topology_source
-    assert "def get_component(" not in runtime_component_topology_source
-    assert ".values()" not in runtime_component_topology_source
+    assert "def _require_surface_role(" in runtime_surface_masks_source
     assert "from vercor._runtime.topology import" not in coupler_source
     assert "from vercor._runtime.topology_state import" in runtime_prepared_source
     assert "RuntimeTopologyMaps" in runtime_prepared_source

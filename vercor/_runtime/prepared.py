@@ -72,7 +72,7 @@ def prepare_coupling(
     )
     contracts = MappingProxyType(dict(initialized.runtime_contracts))
     immutable_components = initialized.components
-    topology_maps = initialized.topology.topology_maps
+    topology_maps = initialized.topology_maps
     dispatch_context = build_runtime_dispatch_context(
         immutable_components,
         immutable_exchanges,

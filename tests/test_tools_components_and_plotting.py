@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 import os
 from pathlib import Path
 import tempfile
-from typing import cast
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -13,11 +12,10 @@ import numpy as np
 import pytest
 
 import tests.conftest as conftest_module
-from tests._tools_support import DummyComponentA, DummyComponentB
+from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
-import vercor._runtime.component_topology as component_topology_module
-from vercor.components import Component
+import vercor._runtime.surface_masks as surface_masks_module
 from vercor.exceptions import CouplerError
 from vercor.fields import vector
 from vercor.grids import RectilinearGrid
@@ -79,27 +77,16 @@ def test_grids_identical_detects_equal_and_unequal_grids() -> None:
     assert not grids_identical(g0, g2)
 
 
-def test_require_component_uses_canonical_component_mapping_keys() -> None:
-    allcomponents = cast(
-        Mapping[str, Component],
-        {
-            "ATM": DummyComponentA(name="ATM"),
-            "OCN": DummyComponentB(name="OCN"),
-        },
-    )
-    require_component = component_topology_module.require_component
+def test_surface_role_lookup_checks_mapping_key_and_component_name() -> None:
+    message = "Surface mask policy requires role component 'ATM' to be registered"
+    components = {"ATM": SimpleNamespace(name="WRONG", grid=make_test_grid())}
+    with pytest.raises(CouplerError, match=message) as mismatched:
+        surface_masks_module._require_surface_role(components, "ATM")
+    assert mismatched.value.__cause__ is None
 
-    selected = require_component(allcomponents, "ATM")
-    assert isinstance(selected, DummyComponentA)
-
-    with pytest.raises(CouplerError, match="No component"):
-        require_component(allcomponents, "UNKNOWN")
-
-    with pytest.raises(CouplerError, match="registered under key 'ATM'"):
-        require_component(
-            cast(Mapping[str, Component], {"ATM": DummyComponentA(name="OCN")}),
-            "ATM",
-        )
+    with pytest.raises(CouplerError, match=message) as missing:
+        surface_masks_module._require_surface_role({}, "ATM")
+    assert isinstance(missing.value.__cause__, KeyError)
 
 
 def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:

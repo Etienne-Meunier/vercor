@@ -864,23 +864,20 @@ def test_runtime_preparation_module_owns_runtime_state_preparation() -> None:
 
 
 @pytest.mark.fast_always
-def test_component_topology_module_only_owns_role_lookup() -> None:
-    component_topology_source = source_for("vercor/_runtime/component_topology.py")
+def test_surface_masks_owns_surface_role_lookup() -> None:
+    component_topology_path = Path("vercor/_runtime/component_topology.py")
     topology_source = source_for("vercor/_runtime/topology.py")
     surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
     topology_policy_source = source_for("vercor/_runtime/topology_policy.py")
     initialization_source = source_for("vercor/_runtime/initialization.py")
 
-    assert "VALID_TOPOLOGY_COMPONENT_NAMES" not in component_topology_source
-    assert "def validate_component_topology_names(" not in component_topology_source
-    assert "def require_component(" in component_topology_source
-    assert "def get_component(" not in component_topology_source
-    assert ".values()" not in component_topology_source
+    assert not component_topology_path.exists()
     assert "def validate_component_topology_names(" not in topology_source
     assert "def get_component(" not in topology_source
     assert "def require_component(" not in topology_source
     assert "from vercor._runtime.component_topology import" not in topology_source
-    assert "from vercor._runtime.component_topology import" in surface_masks_source
+    assert "def _require_surface_role(" in surface_masks_source
+    assert "from vercor._runtime.component_topology import" not in surface_masks_source
     assert (
         "from vercor._runtime.component_topology import" not in topology_policy_source
     )
@@ -898,13 +895,14 @@ def test_runtime_topology_state_groups_read_only_maps() -> None:
     assert is_dataclass(RuntimeTopologyMaps)
     assert getattr(RuntimeTopologyMaps, "__dataclass_params__").frozen is True
     assert hasattr(RuntimeTopologyMaps, "__slots__")
+    assert not hasattr(RuntimeTopologyMaps, "empty")
     assert [field.name for field in fields(RuntimeTopologyMaps)] == [
         "regridders",
         "binary_masks",
         "fractional_masks",
     ]
     assert "class RuntimeTopologyMaps" in topology_state_source
-    assert "topology_maps: RuntimeTopologyMaps" in topology_state_source
+    assert "class ExchangeTopologyState" not in topology_state_source
     assert "class RuntimeTopologyMaps" not in topology_source
     assert "MappingProxyType" in topology_state_source
     assert not Path("vercor/_runtime/resources.py").exists()
@@ -918,11 +916,7 @@ def test_runtime_topology_policy_boundaries_are_focused() -> None:
     surface_masks_source = source_for("vercor/_runtime/surface_masks.py")
     topology_policy_source = source_for("vercor/_runtime/topology_policy.py")
     topology_source = source_for("vercor/_runtime/topology.py")
-    ExchangeTopologyState = topology_state_module.ExchangeTopologyState
-    assert is_dataclass(ExchangeTopologyState)
-    assert [field.name for field in fields(ExchangeTopologyState)] == [
-        "topology_maps",
-    ]
+    assert not hasattr(topology_state_module, "ExchangeTopologyState")
     assert not hasattr(topology_state_module, "SurfaceExchangeMasks")
 
     assert "RuntimeRegridder =" not in topology_state_source

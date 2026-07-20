@@ -35,25 +35,5 @@ class RuntimeTopologyMaps:
             MappingProxyType(dict(self.fractional_masks)),
         )
 
-    @classmethod
-    def empty(cls) -> "RuntimeTopologyMaps":
-        """Return an empty grouped topology-map bundle."""
 
-        return cls(
-            regridders={},
-            binary_masks={},
-            fractional_masks={},
-        )
-
-
-@dataclass(frozen=True)
-class ExchangeTopologyState:
-    """Prepared exchange topology maps."""
-
-    topology_maps: RuntimeTopologyMaps
-
-
-__all__ = [
-    "ExchangeTopologyState",
-    "RuntimeTopologyMaps",
-]
+__all__ = ["RuntimeTopologyMaps"]
