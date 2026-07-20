@@ -806,6 +806,7 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
 
 def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     state_kwargs: dict[str, Any] = {}
+    monkeypatch.setattr(camulator_imports_module, "load_credit_modules", lambda: None)
     latlons = SimpleNamespace(
         longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
         latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
@@ -872,6 +873,7 @@ def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is
     monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(camulator_imports_module, "load_credit_modules", lambda: None)
     latlons = SimpleNamespace(
         longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
         latitude=SimpleNamespace(values=np.asarray([-45.0, 45.0])),

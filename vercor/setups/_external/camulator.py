@@ -25,6 +25,10 @@ def make_camulator_gcm(
             "CAMulator spinup is not implemented; set Spinup(enabled=False)."
         )
 
+    from vercor.setups._external import camulator_imports
+
+    camulator_imports.load_credit_modules()
+
     from vercor.setups._external.camulator_runtime_settings import (
         configure_camulator_runtime,
     )

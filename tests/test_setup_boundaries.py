@@ -71,7 +71,7 @@ print(json.dumps({{
 def _run_missing_dependency_probe(
     *,
     factory_name: str,
-    dependency_root: str,
+    dependency_roots: tuple[str, ...],
     invocation: str,
 ) -> dict[str, str]:
     script = f"""
@@ -83,7 +83,7 @@ factory = setups.{factory_name}
 real_import = builtins.__import__
 
 def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == {dependency_root!r} or name.startswith({dependency_root!r} + "."):
+    if name.partition(".")[0] in {dependency_roots!r}:
         raise ModuleNotFoundError("blocked optional dependency: " + name)
     return real_import(name, globals, locals, fromlist, level)
 
@@ -177,23 +177,23 @@ def test_vercor_setups_is_the_only_setup_lazy_export_registry() -> None:
 
 @pytest.mark.fast_always
 @pytest.mark.parametrize(
-    ("factory_name", "dependency_root", "invocation", "message"),
+    ("factory_name", "dependency_roots", "invocation", "message"),
     (
         (
             "make_jax_gcm",
-            "jcm",
+            ("jcm",),
             "factory(None, None)",
             "requires the jcm package.*pip install jcm",
         ),
         (
             "make_veros_gcm",
-            "veros",
+            ("veros",),
             "factory()",
             "requires the Veros package.*pip install veros",
         ),
         (
             "make_camulator_gcm",
-            "credit",
+            ("credit", "torch"),
             (
                 "factory(config=setups.CAMulatorConfig("
                 "config_path='missing.yml', device='cpu'))"
@@ -204,13 +204,13 @@ def test_vercor_setups_is_the_only_setup_lazy_export_registry() -> None:
 )
 def test_missing_optional_dependencies_fail_at_factory_invocation(
     factory_name: str,
-    dependency_root: str,
+    dependency_roots: tuple[str, ...],
     invocation: str,
     message: str,
 ) -> None:
     result = _run_missing_dependency_probe(
         factory_name=factory_name,
-        dependency_root=dependency_root,
+        dependency_roots=dependency_roots,
         invocation=invocation,
     )
 
@@ -341,7 +341,7 @@ def test_setup_subprocess_helpers_honor_installed_package_root(
     _run_setup_probe("import vercor")
     _run_missing_dependency_probe(
         factory_name="make_veros_gcm",
-        dependency_root="veros",
+        dependency_roots=("veros",),
         invocation="factory()",
     )
 
