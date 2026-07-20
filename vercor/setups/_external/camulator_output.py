@@ -244,7 +244,7 @@ def _prediction_values(
     *,
     require_single_time: bool = True,
 ) -> np.ndarray:
-    values = prediction.detach().cpu().numpy()
+    values = np.asarray(prediction.detach().cpu().numpy())
     if values.ndim == 5:
         if values.shape[2] != 1:
             raise ValueError(

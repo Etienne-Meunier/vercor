@@ -333,6 +333,37 @@ def _camulator_prediction(
     ).reshape(1, total_channels, 1, height, width)
 
 
+def test_camulator_prediction_values_normalizes_array_like_tensor_output() -> None:
+    class _ArrayLike:
+        ndim = 4
+        shape = (1, 1, 2, 2)
+
+        def __array__(
+            self,
+            dtype: np.dtype[Any] | None = None,
+            copy: bool | None = None,
+        ) -> np.ndarray:
+            _ = copy
+            return np.ones(self.shape, dtype=dtype)
+
+    class _Prediction:
+        def detach(self) -> _Prediction:
+            return self
+
+        def cpu(self) -> _Prediction:
+            return self
+
+        def numpy(self) -> _ArrayLike:
+            return _ArrayLike()
+
+    values = camulator_output_module._prediction_values(
+        cast(torch.Tensor, cast(object, _Prediction()))
+    )
+
+    assert isinstance(values, np.ndarray)
+    assert values.shape == (1, 1, 2, 2)
+
+
 def test_camulator_native_variables_preserve_credit_channel_order() -> None:
     prediction = _camulator_prediction(total_channels=7)
     data_vars = camulator_output_module.camulator_period_output_variables(

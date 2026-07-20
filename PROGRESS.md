@@ -6,9 +6,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- Installed-artifact CI fixes completed locally (2026-07-20): plugin mypy uses
-  source, optional lanes install collection extras, and CAMulator preflights
-  CREDIT before heavy imports. TDD and installed-wheel checks passed.
+- CI fixes completed locally (2026-07-20): artifact boundaries pass; CAMulator
+  preflights CREDIT and normalizes tensor output through NumPy so mypy does not
+  depend on optional PyTorch typing. TDD and installed checks passed.
 - Final-review alignment completed locally (2026-07-20): removed stale `runner`
   documentation and clarified the pre-stable versioning label after Graphify
   exposed ambiguous generated wording; focused checks passed 49/49.
