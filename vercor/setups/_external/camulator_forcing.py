@@ -135,6 +135,12 @@ def initialize_camulator_forcing_cursor(
 
     if time_alignment not in ("strict", "forcing_start"):
         raise ValueError("time_alignment must be 'strict' or 'forcing_start'")
+    if not isinstance(coupler_start_datetime, datetime):
+        raise ValueError(
+            "CAMulator forcing setup requires a standard-library datetime "
+            "coupler clock; no-leap and 360-day model-calendar clocks are "
+            "not supported."
+        )
 
     start_datetime_raw = conf["predict"]["start_datetime"]
     loc = dynamic_ds.indexes["time"].get_loc(start_datetime_raw)

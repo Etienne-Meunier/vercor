@@ -32,10 +32,10 @@ host transfer, period files, final fields, and snapshots. Optional JCM, Veros,
 and CAMulator dependencies remain lazy. CAMulator is source-tested but is not
 installed or pinned for this alpha.
 
-Component identity is immutable through setup: the declared name, grid, and
-specification remain author-owned configuration. External model evolution lives
-only in setup/runtime payloads and is replaced functionally by each step, never
-retained as hidden adapter state.
+Component identity is immutable through every lifecycle callback: the declared
+name, grid, and specification remain author-owned configuration. External model
+evolution lives only in setup/runtime payloads and is replaced functionally by
+each step, never retained as hidden adapter state.
 
 ## 2. Duplication map
 
@@ -57,29 +57,30 @@ separate because JAX traces the former and uses the latter to control arrays.
 
 ## 3. Bad design decisions
 
-The review identified and removed the following failure-prone designs:
+Each decision below records the observed problem, its consequence, the concrete
+0.4 correction, and whether it is required for a sound public contract or is
+deferred internal cleanup.
 
-- Broad root reexports made ownership ambiguous and allowed aliases to drift.
-- Mutable coupler assembly made a prepared graph disagree with visible
-  configuration.
-- Reflection over author objects created an unstable prepared snapshot and
-  encouraged hidden mutable configuration.
-- Component-specific output markers and native accumulators duplicated cadence
-  and silently skipped output under compiled execution.
-- Custom backends that could call arbitrary component steps made schedule,
-  cancellation, and output boundaries unverifiable.
-- Callable-derived exchange identity collided for repeated endpoints and could
-  not address topology patches reliably.
-- Shape-only foreign-state checks admitted changed coordinates, dtypes, and
-  invalid masks.
-- Eager optional-model imports made core import depend on unused frameworks and
-  their process configuration.
+| Problem | Consequence | Concrete fix | Priority |
+| --- | --- | --- | --- |
+| Broad root reexports and aliases had multiple apparent owners. | Imports drifted and users could not tell which module defined compatibility. | Keep exactly six root conveniences and one canonical public owner for every advanced symbol. | **must change** |
+| Mutable coupler assembly and lifecycle replacement of `name`, `grid`, or `spec` could change identity after registration. | Public component maps, prepared bindings, routes, and runtime state could disagree. | Use constructor-only assembly, preserve the original identity references, and revalidate after setup, prefill, and validation callbacks. | **must change** |
+| Reflection over arbitrary author attributes tried to infer configuration identity. | Harmless caches looked like configuration while hidden mutable state escaped validation. | Validate only the explicit structural contract and the three static identity attributes. | **must change** |
+| Veros and CAMulator evolution lived on adapter closures. | Reusing or supplying a `RunState` was not reproducible, and output could sample a different run. | Seed native state in `SetupResult.payload`, return replacements in `StepResult`, and sample output contexts only. | **must change** |
+| CAMulator silently reindexed mismatched starts and accepted model-calendar clocks it cannot represent. | A run could use the wrong forcing index or fail later during host execution. | Require explicit `strict` or `forcing_start` policy and reject non-standard-library datetime clocks during lifecycle setup. | **must change** |
+| Static typing and runtime introspection used different regridder-factory definitions. | Built-ins and plugins could satisfy one checker while violating the other. | Define one runtime-checkable `RegridderFactory` protocol requiring the source and target grids. | **must change** |
+| Plugin metadata excluded the alpha it was intended to test, while installation bypassed dependency resolution. | The fixture did not prove a normally installable third-party extension. | Require `vercor>=0.4.0a1,<0.5` and install the fixture with ordinary resolution against built artifacts. | **must change** |
+| Component-specific output markers and native accumulators duplicated cadence. | Compiled execution could skip output, and native adapters disagreed about paths and means. | Keep provider sampling at components but give one private session cadence, accumulation, host transfer, and file ownership. | **must change** |
+| Custom backends could invoke arbitrary component steps. | Schedule order, cancellation, state checks, and output boundaries were unverifiable. | Give backends core-authored chunks and require exact consumption through `RuntimeDriver.run_step`. | **must change** |
+| Callable-derived exchange identity collided for repeated endpoints. | Topology patches and diagnostics could not address routes deterministically. | Give every exchange a stable explicit or deterministic `route_id` and reject collisions and ambiguous fan-in. | **must change** |
+| Shape-only foreign-state checks admitted changed coordinates, dtypes, payload schemas, and masks. | Structurally incompatible state could reach physics kernels or external backends. | Validate exact names, grids, shapes, dtypes, payload structure where required, and finite mask constraints at every boundary. | **must change** |
+| Eager optional-model imports made core import depend on unused frameworks. | Installing or importing core VerCOR could fail because of an unselected model stack. | Keep `vercor.setups` as a lazy facade and load optional frameworks only when their factory is called. | **must change** |
+| Runtime schema information is still represented by several private views. | Internal changes require coordinated edits even though public behavior is correct. | Consider one private schema owner in a later internal-only refactor; do not expose it. | **nice to improve** |
+| Output finalization remains split across a few private coordinator helpers. | Internal ownership takes more navigation than necessary but cadence and writes are already singular. | Consider consolidating finalization behind the existing private session without changing provider or target contracts. | **nice to improve** |
 
-The corresponding 0.4 rules are constructor-only assembly, explicit route IDs,
-exact workflow plans, validated driver calls, strict state schemas, one output
-coordinator, and lazy setup factories. Ambiguous fan-in remains an error. A
-fan-in reducer, public prepared graph, registry, entry-point discovery,
-Pydantic model, and fractional subcycling are not part of this release.
+A fan-in reducer, public prepared graph, registry, entry-point discovery,
+Pydantic hierarchy, and fractional subcycling remain out of scope: no evidenced
+0.4 workflow requires them.
 
 ## 4. Public API redesign
 
@@ -407,7 +408,84 @@ in section 5 are descriptive and may change without a deprecation cycle.
 
 ## 8. Final rewritten API
 
-The final alpha data flow is:
+### 8.1 Complete proposed public API
+
+The complete proposed public module/class/function/protocol/configuration
+inventory is the executable manifest in section 4. It is the actual hardened
+`0.4.0a1` surface, not a future sketch. Exact signatures for every callable
+export and public behavioral method are in
+[`vercor-0.4.0a1-public-signatures.json`](../tests/contracts/vercor-0.4.0a1-public-signatures.json);
+section 4 also gives the five central readable signatures.
+
+The stable workflow-facing subset is:
+
+| Public owner | Stable contracts and purpose |
+| --- | --- |
+| `vercor` | `Clock`, `Coupler`, `Exchange`, `RectilinearGrid`, `RunState`, and `RuntimeOptions` for assembly and execution. |
+| `vercor.components` | Structural `Component`; `ComponentSpec`; lifecycle contexts/results; `CallableComponent` and `DataComponent`. |
+| `vercor.regridding`, `vercor.exchanges`, `vercor.topology` | `Regridder`, `VectorRegridder`, `RegridderFactory`, `Exchange`, and route-keyed topology policies. |
+| `vercor.runtime` | `Workflow`, plans, chunks, `ExecutionBackend`, contexts, and the validated `RuntimeDriver`. |
+| `vercor.output` | Providers, frames, variables, cadence/specification, targets, and snapshot contexts. |
+| `vercor.state`, `vercor.physics`, `vercor.grids`, `vercor.types` | Opaque immutable state, traced physical constants, canonical grids, and runtime array typing. |
+| `vercor.setups` | Frozen setup configurations and lazy built-in factories; retained alpha inventory rather than an additional plugin tier. |
+
+The built-in path remains a small constructor workflow:
+
+```python
+from datetime import datetime
+
+from vercor import Clock, Coupler, RectilinearGrid
+from vercor.setups import make_slab_ocean
+
+grid = RectilinearGrid.uniform(
+    "ocean", nlon=4, nlat=3,
+    longitude=(0.0, 360.0), latitude=(-90.0, 90.0),
+)
+ocean = make_slab_ocean(grid)
+coupler = Coupler(
+    Clock(datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+    components=(ocean,),
+    run_order=(ocean.name,),
+)
+final_state = coupler.run(output=None)
+```
+
+The complete custom configuration/component/regridder/topology/workflow/backend/
+output example is executable in
+[`plugin-authoring.md`](plugin-authoring.md). The independently built fixture in
+`tests/fixtures/public_plugin` verifies the same imports, strict typing, normal
+dependency resolution, non-default configuration, immutable state replacement,
+period output, and snapshot output outside the checkout.
+
+### 8.2 Complete proposed private API
+
+The complete proposed private module inventory is the code block in section 5;
+the responsibility groups immediately below it define every internal owner's
+role. These names document `0.4.0a1` implementation relationships but are not
+import or compatibility promises. Useful internal boundaries include:
+
+```text
+normalize_component(component) -> _ComponentDeclaration
+prepare_component(declaration, context, dtype) -> _ComponentBinding
+initialize_coupler_runtime(...) -> RuntimeInitializationState
+create_runtime_state(*, prepared, prefill_missing) -> RunState
+validate_runtime_state(runtime_state, *, prepared) -> None
+build_validated_execution_plan(context) -> ExecutionPlan
+execute_plan(state, *, plan, context) -> RunState
+```
+
+Public-to-private relationships are intentionally one-way:
+
+| Public contract | Private support and reason it remains private |
+| --- | --- |
+| `Component` / `ComponentSpec` | `components._adapter`, `_contracts`, `_runtime_fields`: normalization, identity checks, payload copying, and dispatch policy may evolve. |
+| `Coupler` / `RunState` | `_runtime.prepared`, `preparation`, `state_validation`, `facade`: prepared graphs, stores, schemas, and orchestration are implementation details. |
+| `Exchange` / topology policies | `_regridders` and `_runtime.exchange_*`, `topology_*`, `field_transfer`: compiled routes, masks, and dispatch maps are backend-owned internals. |
+| Workflows / execution backends | `_runtime.execution`, `backends`, `driver`, `interrupts`: chunk grouping, JIT scans, cancellation, and call accounting must remain core-controlled. |
+| Output providers / targets | `output._session`, `_period`, `_dataset`, `_netcdf`, `_runtime`: schema locking, accumulation, filenames, host transfer, and writes remain replaceable internals. |
+| `vercor.setups` factories | `setups._lazy_imports`, `_data`, `_external`, and `_slab`: framework adapters and model-specific validation can change independently. |
+
+The final public/private data flow is:
 
 ```text
 components + exchanges + clock + RuntimeOptions
@@ -430,12 +508,10 @@ components + exchanges + clock + RuntimeOptions
       no host I/O      one output coordinator
 ```
 
-The release contract is `0.4.0a1`, Python 3.12+, a six-symbol root, one owner
-per advanced public symbol, constructor-only coupling, protocol-first
-components, stable route IDs, exact workflow plans, chunk backends, strict
-state validation, opaque immutable public state, and one opt-in output
-coordinator. Wheel and installed-sdist probes verify the packaged surface and
-PEP 561 marker outside the checkout.
+Everything below the public contracts in that flow remains private so it can be
+optimized or reorganized without forcing plugin migrations. Wheel and
+installed-sdist probes verify the public surface and PEP 561 marker outside the
+checkout.
 
 Deferred features stay deferred: no registry, entry-point discovery, Pydantic,
 fan-in reducer, public prepared graph, fractional subcycling, or CAMulator

@@ -564,6 +564,72 @@ def test_component_setup_cannot_change_static_identity(attribute: str) -> None:
 
 
 @pytest.mark.fast_always
+@pytest.mark.parametrize("phase", ("prefill", "validate"))
+@pytest.mark.parametrize("attribute", ("name", "grid", "spec"))
+def test_component_runtime_lifecycle_cannot_change_static_identity(
+    phase: str,
+    attribute: str,
+) -> None:
+    class InvalidatingComponent:
+        def __init__(self) -> None:
+            self.name = "MODEL"
+            self.grid = make_test_grid(name=f"{phase}-identity-mutation")
+
+            def mutate_identity(owner: Any) -> None:
+                replacements = {
+                    "name": "CHANGED",
+                    "grid": make_test_grid(name=f"changed-{phase}-grid"),
+                    "spec": ComponentSpec(),
+                }
+                setattr(owner, attribute, replacements[attribute])
+
+            def prefill_identity(
+                owner: Any,
+                context: PrefillContext,
+            ) -> PrefillResult:
+                _ = context
+                mutate_identity(owner)
+                return PrefillResult()
+
+            def validate_identity(owner: Any, context: ValidationContext) -> None:
+                _ = context
+                mutate_identity(owner)
+
+            self.spec = ComponentSpec(
+                lifecycle=LifecycleHooks(
+                    prefill=prefill_identity if phase == "prefill" else None,
+                    validate=validate_identity if phase == "validate" else None,
+                )
+            )
+
+        def step(
+            self,
+            fields: Mapping[str, Any],
+            context: StepContext,
+            payload: object | None = None,
+        ) -> Mapping[str, Any]:
+            _ = context, payload
+            return fields
+
+    component = InvalidatingComponent()
+    coupler = Coupler(
+        Clock(datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match=rf"MODEL.*{attribute}.*during {phase}",
+    ):
+        coupler.initial_state()
+
+    assert tuple(coupler.components) == ("MODEL",)
+    assert coupler._prepared is not None
+    assert tuple(coupler._prepared.components) == ("MODEL",)
+
+
+@pytest.mark.fast_always
 def test_structural_lifecycle_hooks_receive_original_object_in_order() -> None:
     events: list[str] = []
     hook_owners: list[object] = []

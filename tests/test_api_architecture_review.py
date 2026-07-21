@@ -268,6 +268,32 @@ def test_architecture_review_has_exact_v0_4_title_and_eight_sections() -> None:
 
 
 @pytest.mark.fast_always
+def test_architecture_review_has_prioritized_decisions_and_complete_final_api() -> None:
+    """Require the requested per-issue decisions and two-part final API."""
+
+    review = REVIEW_PATH.read_text(encoding="utf-8")
+    decisions = review.split("## 3. Bad design decisions", 1)[1].split(
+        "## 4. Public API redesign", 1
+    )[0]
+    for column in ("Problem", "Consequence", "Concrete fix", "Priority"):
+        assert f"| {column} " in decisions
+    assert decisions.count("**must change**") >= 10
+    assert decisions.count("**nice to improve**") >= 2
+
+    final_api = review.split("## 8. Final rewritten API", 1)[1]
+    assert "### 8.1 Complete proposed public API" in final_api
+    assert "### 8.2 Complete proposed private API" in final_api
+    for reference in (
+        "section 4",
+        "section 5",
+        "vercor-0.4.0a1-public-signatures.json",
+        "plugin-authoring.md",
+    ):
+        assert reference in final_api
+    assert "Public-to-private relationships" in final_api
+
+
+@pytest.mark.fast_always
 def test_documented_public_manifest_matches_live_canonical_owners() -> None:
     """Execute the review's public inventory against live ``__all__`` values."""
 

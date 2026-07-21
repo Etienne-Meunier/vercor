@@ -6,16 +6,16 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- VerCOR 0.4 API hardening final gates passed locally (2026-07-21): the full
-  `b9356ac..HEAD` audit found no additional contract defect; dependency order
-  now follows CAMulator forcing's logging import, its in-place accessor fake
-  proves the supplied atmosphere payload is unchanged, and direct setup seeds
-  `CAMulatorRuntimePayload`. Focused passed 98/98 and fast passed 646/646.
-  Full and branch-coverage runs passed 1,250/1,250; coverage was 91.01% across
-  7,333 statements and 1,550 branches, with four known Flax warnings and one
-  known JCM/xarray warning. Black formatted 234 files with its known advisory;
-  flake8, mypy (234 files), compileall, and whitespace passed. Offline
-  wheel/sdist/plugin builds succeeded and installed boundaries passed 16/16.
+- Final-review corrections completed locally (2026-07-21): runtime bindings
+  preserve original component identity and reject name/grid/spec replacement
+  after setup, prefill, and validation callbacks. CAMulator rejects no-leap and
+  360-day clocks during setup under both alignment policies. The architecture
+  review now has per-issue decisions and complete referenced public/private API
+  designs. TDD RED was 10 lifecycle/calendar plus 1 documentation failure;
+  focused GREEN passed 84/84, fast passed 657/657, and full passed 1,261/1,261
+  with four known Flax warnings and one known JCM/xarray warning. Black,
+  flake8, mypy (234 files), compileall, and whitespace passed. Prior final
+  coverage (91.01%) and installed-artifact gates (16/16) remain valid.
   Deferred private cleanup remains runtime-schema and output-owner unification.
 - Installed plugin evidence and author guidance completed locally (2026-07-21):
   the fixture accepts `0.4.0a1` through `<0.5`, its non-default configuration

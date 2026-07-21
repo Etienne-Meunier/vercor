@@ -78,7 +78,9 @@ data; there are no other concrete convenience hierarchies.
 and returns `SetupResult(fields, payload)`. Prefill and validation use typed
 contexts and immutable result mappings. Scalar initial/setup values expand to
 the component grid. Every declared field is normalized and checked before the
-runtime state is created.
+runtime state is created. The private binding preserves the original name,
+grid, and specification references and revalidates them after setup, prefill,
+and validation callbacks.
 
 A mapping step result replaces declared fields and preserves payload. A
 `StepResult` may explicitly replace payload. Compiled JAX execution requires
@@ -203,7 +205,10 @@ produce factory-oriented errors without affecting core import.
 Bundled slab, data, JCM, Veros, and CAMulator factories return the same
 structural components used by external plugins. JAXGCM/Veros spinup is
 controlled only by `Spinup.enabled`. CAMulator enabled spinup is rejected
-because it is not implemented.
+because it is not implemented. CAMulator forcing alignment is explicitly
+`strict` or `forcing_start`; both policies require a standard-library
+`datetime` clock because no-leap and 360-day CAMulator conversion is not
+implemented.
 
 The installed public-plugin fixture demonstrates the external boundary with
 plugin-owned frozen configuration and factory, structural JAX/host components,

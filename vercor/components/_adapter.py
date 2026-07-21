@@ -47,6 +47,15 @@ class _ComponentDeclaration:
 
 
 @dataclass(frozen=True)
+class _ComponentIdentity:
+    """Original author-owned references that lifecycle hooks may not replace."""
+
+    name: str
+    grid: RectilinearGrid
+    spec: ComponentSpec
+
+
+@dataclass(frozen=True)
 class _ComponentBinding:
     """Immutable runtime binding produced once after setup and dtype selection."""
 
@@ -58,6 +67,7 @@ class _ComponentBinding:
     _data: Mapping[str, RuntimeArray]
     _payload: Any | None
     _dtype_policy: DTypePolicy
+    _identity: _ComponentIdentity
 
     @property
     def field_names(self) -> tuple[str, ...]:
@@ -101,6 +111,11 @@ class _ComponentBinding:
                 receives=contract.receives,
                 sends=contract.sends,
             ),
+        )
+        _validate_component_identity(
+            self._component,
+            self._identity,
+            phase="prefill",
         )
         if result is None:
             return
@@ -156,6 +171,11 @@ class _ComponentBinding:
                 sends=contract.sends,
             ),
         )
+        _validate_component_identity(
+            self._component,
+            self._identity,
+            phase="validate",
+        )
 
 
 def validate_component_contract(component: object) -> None:
@@ -200,24 +220,29 @@ def normalize_component(component: Component) -> _ComponentDeclaration:
     )
 
 
-def _validate_component_identity(declaration: _ComponentDeclaration) -> None:
+def _validate_component_identity(
+    component: Component,
+    identity: _ComponentIdentity,
+    *,
+    phase: str,
+) -> None:
     """Reject lifecycle replacement of static component identity."""
 
-    validate_component_contract(declaration.component)
-    if declaration.component.name != declaration.name:
+    if getattr(component, "name", None) != identity.name:
         changed = "name"
-    elif declaration.component.grid is not declaration.grid:
+    elif getattr(component, "grid", None) is not identity.grid:
         changed = "grid"
-    elif declaration.component.spec is not declaration.spec:
+    elif getattr(component, "spec", None) is not identity.spec:
         changed = "spec"
     else:
         changed = None
     if changed is not None:
         raise ComponentError(
-            f"Component '{declaration.name}' changed static {changed} during setup. "
+            f"Component '{identity.name}' changed static {changed} during {phase}. "
             "Component name, grid, and spec must remain unchanged; return "
             "evolving state through SetupResult.payload."
         )
+    validate_component_contract(component)
 
 
 def prepare_component(
@@ -227,6 +252,11 @@ def prepare_component(
 ) -> _ComponentBinding:
     """Run setup once and freeze normalized fields/payload in a runtime binding."""
 
+    identity = _ComponentIdentity(
+        name=declaration.name,
+        grid=declaration.grid,
+        spec=declaration.spec,
+    )
     grid = declaration.grid.with_precision(dtype)
     data = normalize_field_values(
         component_name=declaration.name,
@@ -240,7 +270,11 @@ def prepare_component(
 
     hook = declaration.spec.lifecycle.setup
     result = None if hook is None else hook(declaration.component, context)
-    _validate_component_identity(declaration)
+    _validate_component_identity(
+        declaration.component,
+        identity,
+        phase="setup",
+    )
     if result is not None and not isinstance(result, SetupResult):
         raise ComponentError(
             f"Component '{declaration.name}' setup must return SetupResult or None; "
@@ -271,6 +305,7 @@ def prepare_component(
         _data=MappingProxyType(dict(data)),
         _payload=payload,
         _dtype_policy=dtype,
+        _identity=identity,
     )
 
 

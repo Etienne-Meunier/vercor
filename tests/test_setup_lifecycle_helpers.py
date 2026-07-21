@@ -9,6 +9,7 @@ from typing import Any
 import jax.numpy as jnp
 import pytest
 
+from vercor.calendar import DateTime360, DateTime365
 from vercor.setups._time_helpers import (
     align_model_timestep,
     assign_model_timestep_alignment,
@@ -364,6 +365,35 @@ def test_initialize_camulator_forcing_cursor_accepts_integer_index() -> None:
     assert cursor.start_ix == 3
     assert cursor.init_str == "2000-01-01T00Z"
     assert logger.warnings == []
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "coupler_start",
+    (
+        DateTime360(2000, 1, 1, 0, 0, 0, 0),
+        DateTime365(2000, 1, 1, 0, 0, 0, 0),
+    ),
+)
+@pytest.mark.parametrize("time_alignment", ("strict", "forcing_start"))
+def test_initialize_camulator_forcing_cursor_rejects_model_calendar_clocks(
+    coupler_start: DateTime360 | DateTime365,
+    time_alignment: str,
+) -> None:
+    logger = _RecordingLogger()
+    forcing_start = datetime(2000, 1, 1)
+    dynamic_ds = SimpleNamespace(indexes={"time": _TimeIndex(0)})
+
+    with pytest.raises(ValueError, match="standard-library datetime"):
+        initialize_camulator_forcing_cursor(
+            conf={"predict": {"start_datetime": forcing_start}},
+            dynamic_ds=dynamic_ds,
+            coupler_start_datetime=coupler_start,
+            logger=logger,
+            time_alignment=time_alignment,  # type: ignore[arg-type]
+        )
+
+    assert logger.infos == []
 
 
 def test_camulator_runtime_cursor_initializes_indexes_and_advances() -> None:
