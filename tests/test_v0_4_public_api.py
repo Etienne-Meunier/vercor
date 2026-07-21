@@ -868,14 +868,18 @@ def test_regridder_factory_is_one_runtime_protocol_with_public_hints(
         str(PROJECT_ROOT / "tests" / "fixtures" / "public_plugin" / "src")
     )
     from vercor.grids import RectilinearGrid
-    from vercor.regridding import Regridder, RegridderFactory
+    from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
     from vercor_public_plugin import PluginRegridderFactory
 
     assert isinstance(PluginRegridderFactory("typed-route"), RegridderFactory)
     hints = get_type_hints(RegridderFactory.__call__)
+    assert set(hints) == {"source_grid", "target_grid", "return"}
     assert hints["source_grid"] is RectilinearGrid
     assert hints["target_grid"] is RectilinearGrid
     assert hints["return"] is Regridder
+    assert isinstance(bilinear, RegridderFactory)
+    assert isinstance(conservative, RegridderFactory)
+    assert Exchange("SOURCE", "TARGET", ("field",)).regridder_factory is bilinear
 
 
 def test_prepared_runtime_has_no_reflective_configuration_snapshot() -> None:

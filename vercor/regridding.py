@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from vercor.grids import RectilinearGrid as _RectilinearGrid
 from vercor._regridders.bilinear import bilinear as _bilinear
@@ -48,7 +48,6 @@ class RegridderFactory(Protocol):
         self,
         source_grid: _RectilinearGrid,
         target_grid: _RectilinearGrid,
-        **kwargs: Any,
     ) -> Regridder:
         """Return a regridder configured for the supplied grids."""
 

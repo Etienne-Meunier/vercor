@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from vercor.regridding import RegridderFactory
+from vercor.exchanges import Exchange
+from vercor.regridding import RegridderFactory, bilinear, conservative
 from vercor_public_plugin import PluginRegridderFactory, run_smoke
 
 
@@ -13,6 +14,11 @@ def accepts_factory(factory: RegridderFactory) -> RegridderFactory:
 
 
 typed_factory = accepts_factory(PluginRegridderFactory("typed-route"))
+typed_bilinear: RegridderFactory = bilinear
+typed_conservative: RegridderFactory = conservative
+typed_exchange_factory: RegridderFactory = Exchange(
+    "SOURCE", "TARGET", ("field",)
+).regridder_factory
 
 
 def exercise_plugin(output_dir: Path) -> dict[str, object]:

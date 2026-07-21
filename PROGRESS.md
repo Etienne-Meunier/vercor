@@ -12,7 +12,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   review/design distinguish that tier from retained alpha inventory and JAX
   integration hooks. RED was the expected `TYPE_CHECKING` source-boundary and
   extension-import failures; focused GREEN and strict plugin mypy passed, as
-  did the full suite. No public export was removed.
+  did the full suite. The user-approved follow-up narrowed the factory protocol
+  to its two required grids, restoring built-in/default factory compatibility.
+  No public export was removed.
 - CAMulator atmosphere payload ownership completed locally (2026-07-21): setup seeds a frozen native payload; functional stepping clones and advances payload-owned model state, cursor, forecast hour, and predictions; providers and snapshots sample only context payloads. TDD RED was 5 expected failures; exact focus passed 18/18, complete focus passed 90/90, static gates passed, and full passed 1,242/1,242 with five known third-party warnings.
 - Explicit CAMulator forcing alignment and functional land cursor completed locally (2026-07-21): `strict` now rejects coupler/forcing start mismatches, `forcing_start` opts in without warnings, typed configuration carries the policy, the immutable cursor advances functionally, and land owns its cursor in runtime payload; TDD RED was 4 expected failures and focused GREEN passed all selected tests.
 - Veros payload ownership completed locally (2026-07-21): setup seeds the native payload; runtime returns `StepResult` without mutating setup resources; provider and snapshot output read context payloads. RED was 4 transition/provider plus 2 setup failures; focused GREEN passed 79/79 (8/8 non-fast ownership), and full passed 1,242/1,242 with five known third-party warnings.

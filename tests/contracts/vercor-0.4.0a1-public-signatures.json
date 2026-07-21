@@ -207,6 +207,6 @@
     "vercor.state.RunState.replace_fields": "(self, component: str, fields: collections.abc.Mapping[str, numpy.typing.NDArray[typing.Any] | jax.Array]) -> vercor.state.RunState",
     "vercor.topology.SurfaceMaskPolicy.build": "(self, context: vercor.topology.TopologyContext) -> vercor.topology.ExchangeTopologyPatch",
     "vercor.topology.TopologyPolicy.build": "(self, context: vercor.topology.TopologyContext) -> vercor.topology.ExchangeTopologyPatch",
-    "vercor.regridding.RegridderFactory.__call__": "(self, source_grid: vercor.grids.RectilinearGrid, target_grid: vercor.grids.RectilinearGrid, **kwargs: Any) -> vercor.regridding.Regridder"
+    "vercor.regridding.RegridderFactory.__call__": "(self, source_grid: vercor.grids.RectilinearGrid, target_grid: vercor.grids.RectilinearGrid) -> vercor.regridding.Regridder"
   }
 }
