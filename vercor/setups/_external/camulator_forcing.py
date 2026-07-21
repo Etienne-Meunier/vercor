@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import xarray as xr
 import yaml
 
+from vercor.jax_logging import LoggerLike
 from vercor.setups._time_helpers import runtime_forcing_index
 from vercor.setups._external import camulator_imports
 
@@ -70,9 +71,9 @@ class CAMulatorForcingCursor:
     init_str: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class CamulatorRuntimeCursor:
-    """Mutable CAMulator forcing cursor shared by host setup adapters."""
+    """Immutable CAMulator forcing cursor shared by host setup adapters."""
 
     start_ix: int = 0
     init_datetime: datetime | None = None
@@ -80,28 +81,32 @@ class CamulatorRuntimeCursor:
     model_substeps: int = 0
     timestep_counter: int = 0
 
+    @classmethod
     def initialize(
-        self,
+        cls,
         *,
         conf: dict[str, Any],
         dynamic_ds: Any,
         coupler_start_datetime: object,
         model_substeps: int,
-        logger: Any,
-    ) -> None:
-        """Initialize forcing index metadata and reset the runtime counter."""
+        logger: LoggerLike,
+        time_alignment: Literal["strict", "forcing_start"],
+    ) -> "CamulatorRuntimeCursor":
+        """Return a newly initialized runtime cursor."""
 
         cursor = initialize_camulator_forcing_cursor(
             conf=conf,
             dynamic_ds=dynamic_ds,
             coupler_start_datetime=coupler_start_datetime,
             logger=logger,
+            time_alignment=time_alignment,
         )
-        self.start_ix = cursor.start_ix
-        self.init_datetime = cursor.init_datetime
-        self.init_str = cursor.init_str
-        self.model_substeps = int(model_substeps)
-        self.timestep_counter = 0
+        return cls(
+            start_ix=cursor.start_ix,
+            init_datetime=cursor.init_datetime,
+            init_str=cursor.init_str,
+            model_substeps=int(model_substeps),
+        )
 
     def current_index(self) -> int:
         """Return the current forcing index for this cursor."""
@@ -112,10 +117,10 @@ class CamulatorRuntimeCursor:
             model_substeps=self.model_substeps,
         )
 
-    def advance(self) -> None:
-        """Advance the cursor by one runtime counter step."""
+    def advanced(self) -> "CamulatorRuntimeCursor":
+        """Return the cursor for the next coupling step."""
 
-        self.timestep_counter += 1
+        return replace(self, timestep_counter=self.timestep_counter + 1)
 
 
 def initialize_camulator_forcing_cursor(
@@ -123,9 +128,13 @@ def initialize_camulator_forcing_cursor(
     conf: dict[str, Any],
     dynamic_ds: Any,
     coupler_start_datetime: object,
-    logger: Any,
+    logger: LoggerLike,
+    time_alignment: Literal["strict", "forcing_start"],
 ) -> CAMulatorForcingCursor:
     """Initialize CAMulator forcing time indexing from config and xarray indexes."""
+
+    if time_alignment not in ("strict", "forcing_start"):
+        raise ValueError("time_alignment must be 'strict' or 'forcing_start'")
 
     start_datetime_raw = conf["predict"]["start_datetime"]
     loc = dynamic_ds.indexes["time"].get_loc(start_datetime_raw)
@@ -135,11 +144,12 @@ def initialize_camulator_forcing_cursor(
     init_datetime = parse_datetime_from_config(conf)
     init_str = init_datetime.strftime("%Y-%m-%dT%HZ")
 
-    if coupler_start_datetime != init_datetime:
-        logger.warning(
-            f"Coupler start datetime ({coupler_start_datetime}) does not match "
-            f"CAMulator forcing start datetime ({start_datetime_raw}). "
-            f"Using CAMulator start datetime for indexing."
+    if coupler_start_datetime != init_datetime and time_alignment == "strict":
+        raise ValueError(
+            "CAMulator forcing start datetime "
+            f"({init_datetime}) does not match coupler start datetime "
+            f"({coupler_start_datetime}); set time_alignment='forcing_start' "
+            "to request CAMulator-start indexing explicitly."
         )
 
     return CAMulatorForcingCursor(

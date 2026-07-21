@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import jax.numpy as jnp
 import pytest
@@ -30,11 +30,26 @@ class _RecordingLogger:
         self.infos: list[str] = []
         self.warnings: list[str] = []
 
-    def info(self, message: str) -> None:
-        self.infos.append(message)
+    def debug(self, message: object, *args: Any, **kwargs: Any) -> None:
+        _ = message, args, kwargs
 
-    def warning(self, message: str) -> None:
-        self.warnings.append(message)
+    def info(self, message: object, *args: Any, **kwargs: Any) -> None:
+        _ = args, kwargs
+        self.infos.append(str(message))
+
+    def warning(self, message: object, *args: Any, **kwargs: Any) -> None:
+        _ = args, kwargs
+        self.warnings.append(str(message))
+
+    def error(self, message: object, *args: Any, **kwargs: Any) -> None:
+        _ = message, args, kwargs
+
+    def setLevel(self, level: int | str) -> None:
+        _ = level
+
+    def isEnabledFor(self, level: int) -> bool:
+        _ = level
+        return True
 
 
 class _TimeIndex:
@@ -300,26 +315,38 @@ def test_make_jcm_land_atmosphere_replaces_only_missing_forcing(
     assert replaced.forcing_data is caller_forcing
 
 
-def test_initialize_camulator_forcing_cursor_returns_index_and_warns_on_mismatch() -> (
+def test_initialize_camulator_forcing_cursor_requires_explicit_mismatch_policy() -> (
     None
 ):
     logger = _RecordingLogger()
     forcing_start = datetime(2000, 1, 1, 6)
     dynamic_ds = SimpleNamespace(indexes={"time": _TimeIndex(slice(7, 9))})
 
+    with pytest.raises(ValueError, match="forcing start.*coupler start"):
+        initialize_camulator_forcing_cursor(
+            conf={"predict": {"start_datetime": forcing_start}},
+            dynamic_ds=dynamic_ds,
+            coupler_start_datetime=datetime(2000, 1, 1),
+            logger=logger,
+            time_alignment="strict",
+        )
+
     cursor = initialize_camulator_forcing_cursor(
         conf={"predict": {"start_datetime": forcing_start}},
         dynamic_ds=dynamic_ds,
         coupler_start_datetime=datetime(2000, 1, 1),
         logger=logger,
+        time_alignment="forcing_start",
     )
 
     assert cursor.start_ix == 7
     assert cursor.init_str == "2000-01-01T06Z"
     assert cursor.init_datetime == forcing_start
-    assert logger.infos == ["Starting integration at time index: 7"]
-    assert len(logger.warnings) == 1
-    assert "does not match" in logger.warnings[0]
+    assert logger.infos == [
+        "Starting integration at time index: 7",
+        "Starting integration at time index: 7",
+    ]
+    assert logger.warnings == []
 
 
 def test_initialize_camulator_forcing_cursor_accepts_integer_index() -> None:
@@ -331,6 +358,7 @@ def test_initialize_camulator_forcing_cursor_accepts_integer_index() -> None:
         dynamic_ds=dynamic_ds,
         coupler_start_datetime=datetime(2000, 1, 1),
         logger=logger,
+        time_alignment="strict",
     )
 
     assert cursor.start_ix == 3
@@ -342,26 +370,25 @@ def test_camulator_runtime_cursor_initializes_indexes_and_advances() -> None:
     logger = _RecordingLogger()
     forcing_start = datetime(2000, 1, 1)
     dynamic_ds = SimpleNamespace(indexes={"time": _TimeIndex(4)})
-    cursor = camulator_forcing_module.CamulatorRuntimeCursor()
-
-    result = cast(Any, cursor.initialize)(
+    cursor = camulator_forcing_module.CamulatorRuntimeCursor.initialize(
         conf={"predict": {"start_datetime": forcing_start}},
         dynamic_ds=dynamic_ds,
         coupler_start_datetime=forcing_start,
         model_substeps=3,
         logger=logger,
+        time_alignment="strict",
     )
 
-    assert result is None
     assert cursor.start_ix == 4
     assert cursor.init_datetime == forcing_start
     assert cursor.init_str == "2000-01-01T00Z"
     assert cursor.timestep_counter == 0
     assert cursor.current_index() == 4
 
-    cursor.advance()
-    assert cursor.timestep_counter == 1
-    assert cursor.current_index() == 7
+    advanced = cursor.advanced()
+    assert advanced.timestep_counter == cursor.timestep_counter + 1
+    assert cursor.timestep_counter == 0
+    assert advanced.current_index() == 7
 
 
 def test_make_jcm_land_atmosphere_patches_mask_and_options(

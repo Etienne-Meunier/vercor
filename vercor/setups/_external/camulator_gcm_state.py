@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Optional
+from typing import Literal, Optional
 
 import torch
 import xarray as xr
@@ -40,6 +40,7 @@ class CAMulatorGCMSetupState:
         model_weights_path: str = "checkpoint.pt00091.pt",
         init_noise: Optional[float] = None,
         device: str = "cuda",
+        time_alignment: Literal["strict", "forcing_start"] = "strict",
         logger: LoggerLike | None = None,
     ) -> None:
         """Build CAMulator model resources and the VerCOR atmosphere grid."""
@@ -49,6 +50,7 @@ class CAMulatorGCMSetupState:
         self.model_weights_path = model_weights_path
         self.device = device
         self.init_noise = init_noise
+        self.time_alignment = time_alignment
         self.runtime_cursor = CamulatorRuntimeCursor()
         self._output_prediction: torch.Tensor | None = None
         self._output_prediction_samples: torch.Tensor | None = None
@@ -132,12 +134,13 @@ class CAMulatorGCMSetupState:
 
         self.dynamic_ds = self.forcing_ds_norm[self.df_vars]
 
-        self.runtime_cursor.initialize(
+        self.runtime_cursor = CamulatorRuntimeCursor.initialize(
             conf=self.conf,
             dynamic_ds=self.dynamic_ds,
             coupler_start_datetime=self.coupler_start_datetime,
             model_substeps=self.model_substeps,
             logger=logger,
+            time_alignment=self.time_alignment,
         )
 
         self.accessor_input = _camulator_tensors.StateVariableAccessor(

@@ -879,6 +879,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
         config=CAMulatorConfig(
             config_path="dummy.yaml",
             device="cpu",
+            time_alignment="forcing_start",
             output=OutputSpec(period=PeriodOutput(frequency="month")),
         ),
     )
@@ -898,6 +899,7 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert callable(component.spec.output.snapshot_writer)
     assert "spinup_time" not in state_kwargs
     assert "do_spinup" not in state_kwargs
+    assert state_kwargs["time_alignment"] == "forcing_start"
 
 
 def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is_custom(
@@ -1188,18 +1190,26 @@ def test_camulator_land_stores_jax_runtime_arrays(
     )
 
     coupler = _make_coupler(start)
+    initial_component_state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=ExchangeContract(),
+    )
+    step_context = StepContext(
+        dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
+        time=start,
+        logger=coupler.logger,
+    )
     component_state = step_component_runtime_state(
         component,
-        create_runtime_component_state(
-            component,
-            prefill_missing=True,
-            contract=ExchangeContract(),
-        ),
-        StepContext(
-            dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
-            time=start,
-            logger=coupler.logger,
-        ),
+        initial_component_state,
+        step_context,
+        allow_host_runtime=True,
+    )
+    repeated_component_state = step_component_runtime_state(
+        component,
+        initial_component_state,
+        step_context,
         allow_host_runtime=True,
     )
     land_surface_temperature = component_state.fields.get("land_surface_temperature")
@@ -1208,6 +1218,25 @@ def test_camulator_land_stores_jax_runtime_arrays(
         land_surface_temperature,
         np.asarray([[281.0, 282.0], [283.0, 284.0]]),
     )
+    assert_allclose_compact(
+        repeated_component_state.fields.get("land_surface_temperature"),
+        np.asarray([[281.0, 282.0], [283.0, 284.0]]),
+    )
+    assert isinstance(
+        initial_component_state.payload,
+        camulator_forcing_module.CamulatorRuntimeCursor,
+    )
+    assert isinstance(
+        component_state.payload,
+        camulator_forcing_module.CamulatorRuntimeCursor,
+    )
+    assert isinstance(
+        repeated_component_state.payload,
+        camulator_forcing_module.CamulatorRuntimeCursor,
+    )
+    assert initial_component_state.payload.timestep_counter == 0
+    assert component_state.payload.timestep_counter == 1
+    assert repeated_component_state.payload.timestep_counter == 1
 
 
 @pytest.mark.fast_always

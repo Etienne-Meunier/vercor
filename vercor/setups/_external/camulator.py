@@ -46,6 +46,7 @@ def make_camulator_gcm(
         model_weights_path=config.model_weights_path,
         init_noise=config.init_noise,
         device=config.device,
+        time_alignment=config.time_alignment,
         logger=config.logger,
     )
     output_provider = (

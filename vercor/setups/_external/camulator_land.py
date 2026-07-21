@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from vercor.components import (
     LifecycleHooks,
@@ -9,11 +9,14 @@ from vercor.components import (
     ComponentSpec,
     SetupResult,
     SetupContext,
+    StepResult,
     StepContext,
 )
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
+from vercor.exceptions import ComponentError
+from vercor.jax_logging import LoggerLike
 from vercor.setups._time_helpers import assign_model_timestep_alignment
 from vercor.setups._external.camulator_forcing import (
     CamulatorRuntimeCursor,
@@ -42,9 +45,6 @@ class _CAMulatorLandState:
     model_timestep: timedelta | None = None
     model_substeps: int = 0
     dynamic_ds: Any | None = None
-    runtime_cursor: CamulatorRuntimeCursor = field(
-        default_factory=CamulatorRuntimeCursor
-    )
 
 
 def make_camulator_land(
@@ -52,6 +52,8 @@ def make_camulator_land(
     camulator_grid: RectilinearGrid,
     ocn_grid: RectilinearGrid,
     name: str = "LND",
+    *,
+    time_alignment: Literal["strict", "forcing_start"] = "strict",
 ) -> Component:
     """Return a host-backed CAMulator land forcing component."""
 
@@ -97,34 +99,41 @@ def make_camulator_land(
         ]
 
         # Use the config datetime directly because xarray may expect cftime.
-        state.runtime_cursor.initialize(
+        cursor = CamulatorRuntimeCursor.initialize(
             conf=state.conf,
             dynamic_ds=state.dynamic_ds,
             coupler_start_datetime=state.coupler_start_datetime,
             model_substeps=state.model_substeps,
-            logger=logger,
+            logger=cast(LoggerLike, logger),
+            time_alignment=time_alignment,
         )
 
         _ = component
-        return SetupResult()
+        return SetupResult(payload=cursor)
 
     def step(
         fields: dict[str, Any],
         context: StepContext,
         payload: Any | None,
-    ) -> dict[str, Any]:
-        _ = fields, payload
+    ) -> StepResult:
+        _ = fields
+        if not isinstance(payload, CamulatorRuntimeCursor):
+            raise ComponentError(
+                "CAMulator land runtime requires an initialized immutable cursor "
+                f"payload for component '{name}'"
+            )
         time = context.time
         if time is None:
-            return {}
+            return StepResult(payload=payload)
 
-        idx = state.runtime_cursor.current_index()
+        idx = payload.current_index()
         dynamic_ds = cast(Any, state.dynamic_ds)
         ts = dynamic_ds.isel(time=idx).load()
 
-        state.runtime_cursor.advance()
-
-        return {"land_surface_temperature": as_jax_real_array(ts["TS"].values)}
+        return StepResult(
+            fields={"land_surface_temperature": as_jax_real_array(ts["TS"].values)},
+            payload=payload.advanced(),
+        )
 
     return CallableComponent(
         name,

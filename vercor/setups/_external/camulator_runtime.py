@@ -165,7 +165,7 @@ def step_camulator_runtime(
     )
     state._output_prediction = prediction
     state._output_prediction_samples = prediction_samples
-    state.runtime_cursor.advance()
+    state.runtime_cursor = state.runtime_cursor.advanced()
 
     mapped_fields = _camulator_fields.map_camulator_prediction_to_runtime_fields(
         context.constants,

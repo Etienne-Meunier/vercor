@@ -4,8 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
+from vercor.jax_logging import LoggerLike
 from vercor.output import OutputSpec, PeriodOutput
 
 
@@ -74,7 +75,14 @@ class CAMulatorConfig:
     spinup: Spinup = field(default_factory=Spinup)
     output: OutputSpec = field(default_factory=OutputSpec)
     device: str = "cuda"
-    logger: Any | None = None
+    time_alignment: Literal["strict", "forcing_start"] = "strict"
+    logger: LoggerLike | None = None
+
+    def __post_init__(self) -> None:
+        """Validate CAMulator forcing-time alignment policy."""
+
+        if self.time_alignment not in ("strict", "forcing_start"):
+            raise ValueError("time_alignment must be 'strict' or 'forcing_start'")
 
 
 def _default_jcm_atmosphere_config() -> JAXGCMConfig:
