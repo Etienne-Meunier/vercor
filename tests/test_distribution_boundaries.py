@@ -315,6 +315,19 @@ def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
         )
     )
     quality = workflow["jobs"]["quality"]
+    assert quality["needs"] == "build-artifacts"
+    download = next(
+        step
+        for step in quality["steps"]
+        if step.get("uses") == "actions/download-artifact@v4"
+    )
+    assert download["with"] == {
+        "name": "vercor-distributions",
+        "path": "dist/",
+    }
+    assert quality["env"]["VERCOR_ARTIFACT_DIR"] == (
+        "${{ github.workspace }}/dist"
+    )
     checkout = next(
         step for step in quality["steps"] if step.get("uses") == "actions/checkout@v4"
     )
