@@ -920,6 +920,82 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     assert state_kwargs["time_alignment"] == "forcing_start"
 
 
+@pytest.mark.fast_always
+def test_camulator_gcm_setup_returns_initial_runtime_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start = datetime(2000, 1, 1)
+    initial_model_state = torch.zeros((1, 2, 1, 2, 2), dtype=torch.float32)
+    dynamic_forcing = xr.Dataset(
+        data_vars={
+            "F1": (
+                ("time", "lat", "lon"),
+                np.ones((1, 2, 2), dtype=np.float32),
+            )
+        },
+        coords={"time": [start]},
+    )
+    physics = xr.Dataset(
+        data_vars={
+            "hyai": (("interface",), np.asarray([0.0, 1.0])),
+            "hyam": (("level",), np.asarray([0.5, 1.0])),
+            "hybi": (("interface",), np.asarray([0.0, 1.0])),
+            "hybm": (("level",), np.asarray([0.5, 1.0])),
+            "LANDM_COSLAT": (
+                ("lat", "lon"),
+                np.zeros((2, 2), dtype=np.float32),
+            ),
+        }
+    )
+    resources = cast(
+        Any,
+        camulator_gcm_state_module.CAMulatorGCMSetupState.__new__(
+            camulator_gcm_state_module.CAMulatorGCMSetupState
+        ),
+    )
+    resources.initial_model_state = initial_model_state
+    resources.init_noise = None
+    resources.stepper = SimpleNamespace(model=lambda value: value)
+    resources.lead_time_periods = 6
+    resources.conf = {
+        "data": {"save_loc_physics": "physics.nc"},
+        "predict": {"start_datetime": start},
+    }
+    resources.forcing_ds_norm = dynamic_forcing
+    resources.df_vars = ["F1"]
+    resources.device = "cpu"
+    resources.time_alignment = "strict"
+
+    monkeypatch.setattr(
+        camulator_gcm_state_module.torch.jit,
+        "trace",
+        lambda model, dummy_input: model,
+    )
+    monkeypatch.setattr(
+        camulator_gcm_state_module.xr,
+        "open_dataset",
+        lambda path: physics,
+    )
+    monkeypatch.setattr(
+        camulator_tensors_module,
+        "StateVariableAccessor",
+        lambda conf, tensor_type: SimpleNamespace(tensor_type=tensor_type),
+    )
+
+    result = resources.setup(cast(Any, None), _make_coupler(start))
+
+    assert isinstance(
+        result.payload, camulator_gcm_state_module.CAMulatorRuntimePayload
+    )
+    assert result.payload.model_state is initial_model_state
+    assert result.payload.forecast_hour == 1
+    assert result.payload.output_prediction is None
+    assert result.payload.output_prediction_samples is None
+    assert result.payload.cursor.start_ix == 0
+    assert result.payload.cursor.model_substeps == 1
+    assert result.payload.cursor.timestep_counter == 0
+
+
 def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is_custom(
     monkeypatch: Any,
     tmp_path: Path,
@@ -1386,12 +1462,11 @@ def test_camulator_runtime_step_is_reproducible_from_one_payload(
             return prediction
 
     class _StepAccessor:
-        def set_state_var(
-            self, state: torch.Tensor, variable_name: str, value: torch.Tensor
-        ) -> None:
-            _ = state
+        def set_state_var(self, state: Any, variable_name: str, value: Any) -> None:
             assert variable_name == "SST"
             captured["sst"] = value.detach().cpu()
+            first_sst_channel = state.shape[1] - value.shape[1]
+            state[:, first_sst_channel:, ...].copy_(value)
 
     class _OutputAccessor:
         def get_state_var(
@@ -1498,6 +1573,7 @@ def test_camulator_runtime_step_is_reproducible_from_one_payload(
     assert first.payload.cursor.timestep_counter == 1
     assert second.payload.cursor.timestep_counter == 1
     assert initial_payload.cursor.timestep_counter == 0
+    assert torch.count_nonzero(initial_payload.model_state).item() == 0
     assert torch.equal(
         first.payload.output_prediction,
         second.payload.output_prediction,

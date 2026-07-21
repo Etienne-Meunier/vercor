@@ -6,6 +6,17 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- VerCOR 0.4 API hardening final gates passed locally (2026-07-21): the full
+  `b9356ac..HEAD` audit found no additional contract defect; dependency order
+  now follows CAMulator forcing's logging import, its in-place accessor fake
+  proves the supplied atmosphere payload is unchanged, and direct setup seeds
+  `CAMulatorRuntimePayload`. Focused passed 98/98 and fast passed 646/646.
+  Full and branch-coverage runs passed 1,250/1,250; coverage was 91.01% across
+  7,333 statements and 1,550 branches, with four known Flax warnings and one
+  known JCM/xarray warning. Black formatted 234 files with its known advisory;
+  flake8, mypy (234 files), compileall, and whitespace passed. Offline
+  wheel/sdist/plugin builds succeeded and installed boundaries passed 16/16.
+  Deferred private cleanup remains runtime-schema and output-owner unification.
 - Installed plugin evidence and author guidance completed locally (2026-07-21):
   the fixture accepts `0.4.0a1` through `<0.5`, its non-default configuration
   produces independently observable JAX, host, exchange, and backend results,
