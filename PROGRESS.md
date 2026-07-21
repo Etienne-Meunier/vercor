@@ -6,6 +6,13 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Stable extension and factory typing completed locally (2026-07-21):
+  `RegridderFactory` is one runtime-checkable public protocol, the plugin
+  fixture may import only the six-symbol root/stable extension tier, and the
+  review/design distinguish that tier from retained alpha inventory and JAX
+  integration hooks. RED was the expected `TYPE_CHECKING` source-boundary and
+  extension-import failures; focused GREEN and strict plugin mypy passed, as
+  did the full suite. No public export was removed.
 - CAMulator atmosphere payload ownership completed locally (2026-07-21): setup seeds a frozen native payload; functional stepping clones and advances payload-owned model state, cursor, forecast hour, and predictions; providers and snapshots sample only context payloads. TDD RED was 5 expected failures; exact focus passed 18/18, complete focus passed 90/90, static gates passed, and full passed 1,242/1,242 with five known third-party warnings.
 - Explicit CAMulator forcing alignment and functional land cursor completed locally (2026-07-21): `strict` now rejects coupler/forcing start mismatches, `forcing_start` opts in without warnings, typed configuration carries the policy, the immutable cursor advances functionally, and land owns its cursor in runtime payload; TDD RED was 4 expected failures and focused GREEN passed all selected tests.
 - Veros payload ownership completed locally (2026-07-21): setup seeds the native payload; runtime returns `StepResult` without mutating setup resources; provider and snapshot output read context payloads. RED was 4 transition/provider plus 2 setup failures; focused GREEN passed 79/79 (8/8 non-fast ownership), and full passed 1,242/1,242 with five known third-party warnings.
@@ -16,38 +23,10 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 - Final-review alignment completed locally (2026-07-20): removed stale `runner`
   documentation and clarified the pre-stable versioning label after Graphify
   exposed ambiguous generated wording; focused checks passed 49/49.
-- Codebase simplification completed locally (2026-07-20): Tasks 1-8 collapsed
-  the private grid hierarchy and scalar regridding, removed unread component/data/store/flux
-  state, centralized output dimensions and immutable accumulator reconstruction,
-  returned topology maps directly, removed the one-use runtime runner, narrowed
-  CAMulator initialization to supported named checkpoints, reduced representative
-  bilinear-interpolator PyTree leaves from 28 to 26, and changed each Veros forcing
-  update from four state copies/unlocks to one. Task RED/GREEN evidence was 3
-  failures then 45 passes; 7 then 66; 2 then 72; 7 then 108; 2 then 107; 2 then
-  90; 2 then 28 (46 final bilinear/interpolator-regrid passes); and 1 then 45
-  (65 final Veros/physics passes), respectively. The final 14-file subsystem
-  focus passed 324/324 with four Flax warning instances. Fast passed 638/638 of
-  1,235 with six known third-party warning instances: four Flax/JAX-effect
-  deprecations and two xarray/NumPy-shape deprecations. Full and coverage each
-  passed 1,235/1,235 with eight known third-party instances: those six plus one
-  JAX scatter-cast future warning and one JCM/xarray merge-default future warning.
-  Branch coverage was 90.71% across 7,265 statements and 1,522 branches. Black
-  left 234 files unchanged and emitted its known Python 3.13/configured Python
-  3.15 safety-parse advisory; final strict flake8 was 0, mypy passed 234 source
-  files, compileall was silent, and whitespace checks were clean. Release-gate
-  review also removed one stale Task 2 `Any` import and applied the repository's
-  typing-only `cast(object, ...)` pattern to two Task 3 `PyTreeDef` comparisons;
-  the affected static and focused gates were rerun. The Task 7 plan's
-  `tests/test_gradients.py` path was stale because that file does not exist;
-  reverse-gradient coverage remains in
-  `tests/test_bilinear_rectilinear_interpolator.py`, and the explicit
-  flatten/unflatten, JIT, JVP, and reverse-gradient probe passed. Incremental
-  Graphify completed from the direct `scipy` interpreter after the sandboxed
-  attempt was denied: 82/82 uncached code files produced 4,281 nodes, 12,503
-  edges, and 175 communities. Relative to the saved graph it added 814 nodes
-  and 884 edges and removed 133 nodes and 244 edges. Graphify warned that the
-  public-signatures JSON produced no AST nodes; the canonical HTML, JSON,
-  report, labels, and manifest were refreshed.
+- Codebase simplification completed locally (2026-07-20): Tasks 1-8 reduced
+  private grid/regridding/runtime/component state and focused setup paths while
+  preserving public behavior; all task focuses, fast/full/coverage, and static
+  gates passed. Detailed evidence is retained in the task reports and archive.
 - Period-average window-start identity completed locally (2026-07-17): filenames and NetCDF times use each schema's actual start across partial/subsequent periods, mixed cadences, and Gregorian/no-leap/360-day clocks while preserving calendar ISO formats, post-step provider times, means, and incomplete-period behavior. TDD RED/GREEN was 4/4; output focus 25/25.
   Black/flake8/mypy/compileall passed; fast passed 636/636 and full/coverage 1224/1224 (90.50% across 7,361 statements and 1,538 branches), with known third-party warnings.
 - VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits `f82588f` through `04e6f45`. Obsolete evidence,

@@ -11,7 +11,7 @@ from typing import Any
 
 import jax.numpy as jnp
 
-from vercor.clock import Clock
+from vercor import Clock
 from vercor.components import (
     Component,
     ComponentSpec,

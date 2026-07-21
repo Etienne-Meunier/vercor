@@ -18,12 +18,24 @@ have one canonical owner. `ComponentSpec` is the sole component declaration;
 `PhysicalConstants` is the traced physics PyTree; `RuntimeOptions` owns static
 execution policy; setup configuration belongs to the setup or plugin.
 
+The stable extension tier is the six-symbol root plus `vercor.components`,
+`vercor.coupler`, `vercor.exchanges`, `vercor.grids`, `vercor.output`,
+`vercor.physics`, `vercor.regridding`, `vercor.runtime`, `vercor.state`,
+`vercor.topology`, and `vercor.types`. The complete public manifest and
+signature JSON retain the rest of the alpha inventory without making every
+helper an independent workflow-stability promise.
+
 The differentiable default is `Coupler.run(output=None)`. That path performs no
 I/O and retains JVP and reverse-mode behavior. An `OutputTarget` opts into the
 single coordinator for provider sampling, selection, immutable accumulation,
 host transfer, period files, final fields, and snapshots. Optional JCM, Veros,
 and CAMulator dependencies remain lazy. CAMulator is source-tested but is not
 installed or pinned for this alpha.
+
+Component identity is immutable through setup: the declared name, grid, and
+specification remain author-owned configuration. External model evolution lives
+only in setup/runtime payloads and is replaced functionally by each step, never
+retained as hidden adapter state.
 
 ## 2. Duplication map
 
@@ -383,8 +395,11 @@ API is restored.
 
 Compatibility within the 0.4.x line is defined by canonical public owner
 manifests, signatures, public-only plugin behavior, output-free gradients, and
-installed wheel/sdist tests. Private module names in section 5 are descriptive
-and may change without a deprecation cycle.
+installed wheel/sdist tests. The root and stable extension tier are the
+workflow-facing compatibility commitments; the remaining manifest is an alpha
+inventory retained without export removal. Public PyTree hooks are JAX
+integration details, not independent workflow promises. Private module names
+in section 5 are descriptive and may change without a deprecation cycle.
 
 ## 8. Final rewritten API
 

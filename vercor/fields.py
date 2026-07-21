@@ -79,7 +79,7 @@ def _normalize_field_items(
         if isinstance(field, tuple):
             raise TypeError(
                 "Tuple vector field declarations are unsupported; use "
-                "vercor.vector('u_field', 'v_field') to create a VectorField."
+                "vercor.fields.vector('u_field', 'v_field') to create a VectorField."
             )
         raise TypeError(
             "Exchange fields must be strings or VectorField instances, got "

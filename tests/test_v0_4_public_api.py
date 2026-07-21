@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import ast
 from datetime import datetime
 import importlib
 import inspect
@@ -848,6 +849,33 @@ def test_public_callable_annotations_resolve_without_private_types() -> None:
                     check_hints(f"{label}.{method_name}", descriptor)
 
     assert violations == [], "private public hints: " + "; ".join(violations[:20])
+
+
+def test_regridder_factory_is_one_runtime_protocol_with_public_hints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep runtime and static factory contracts on one public protocol."""
+
+    source = (PROJECT_ROOT / "vercor" / "regridding.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert "if TYPE_CHECKING" not in source
+    assert any(
+        isinstance(node, ast.ClassDef) and node.name == "RegridderFactory"
+        for node in tree.body
+    )
+
+    monkeypatch.syspath_prepend(
+        str(PROJECT_ROOT / "tests" / "fixtures" / "public_plugin" / "src")
+    )
+    from vercor.grids import RectilinearGrid
+    from vercor.regridding import Regridder, RegridderFactory
+    from vercor_public_plugin import PluginRegridderFactory
+
+    assert isinstance(PluginRegridderFactory("typed-route"), RegridderFactory)
+    hints = get_type_hints(RegridderFactory.__call__)
+    assert hints["source_grid"] is RectilinearGrid
+    assert hints["target_grid"] is RectilinearGrid
+    assert hints["return"] is Regridder
 
 
 def test_prepared_runtime_has_no_reflective_configuration_snapshot() -> None:

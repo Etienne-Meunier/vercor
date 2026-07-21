@@ -46,6 +46,19 @@ EXPECTED_INSTALLED_ROOT = (
 )
 EXPECTED_INSTALLED_OWNER_MANIFESTS = PUBLIC_MODULE_EXPORTS
 EXPECTED_INSTALLED_SIGNATURES = _public_signature_contract()
+STABLE_EXTENSION_MODULES = {
+    "vercor.components",
+    "vercor.coupler",
+    "vercor.exchanges",
+    "vercor.grids",
+    "vercor.output",
+    "vercor.physics",
+    "vercor.regridding",
+    "vercor.runtime",
+    "vercor.state",
+    "vercor.topology",
+    "vercor.types",
+}
 REMOVED_PRIMARY_MODULES = (
     "vercor.coupling",
     "vercor.settings",
@@ -164,6 +177,14 @@ def test_public_plugin_fixture_is_isolated_and_never_imports_private_modules() -
                     assert not any(
                         part.startswith("_") for part in module.split(".")[1:]
                     ), f"{path} imports private VerCOR module {module}"
+                    assert (
+                        module == "vercor" or module in STABLE_EXTENSION_MODULES
+                    ), f"{path} imports unstable VerCOR module {module}"
+                    if isinstance(node, ast.ImportFrom) and module == "vercor":
+                        assert all(
+                            alias.name in EXPECTED_INSTALLED_ROOT
+                            for alias in node.names
+                        ), f"{path} imports a non-root contract from vercor"
 
 
 @pytest.mark.fast_always
@@ -178,7 +199,6 @@ def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> Non
     assert project["version"] == "0.1.0"
     assert project["dependencies"] == ["vercor>=0.4,<0.5"]
     for owner in (
-        "vercor.clock",
         "vercor.components",
         "vercor.coupler",
         "vercor.exchanges",
@@ -191,6 +211,7 @@ def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> Non
         "vercor.types",
     ):
         assert f"from {owner} import" in source, owner
+    assert "from vercor import Clock" in source
     for contract in (
         "DataComponent",
         "PluginConfig",

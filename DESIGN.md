@@ -29,11 +29,19 @@ The root exports exactly `Clock`, `Coupler`, `Exchange`, `RectilinearGrid`,
 owner modules. A public module has an explicit `__all__`; private imports are
 underscored and public annotations resolve without leaking private names.
 
+The stable extension tier is the six-symbol root plus `vercor.components`,
+`vercor.coupler`, `vercor.exchanges`, `vercor.grids`, `vercor.output`,
+`vercor.physics`, `vercor.regridding`, `vercor.runtime`, `vercor.state`,
+`vercor.topology`, and `vercor.types`. Other existing public manifests remain
+available as the alpha inventory; they are protected by the complete
+manifest/signature JSON, but are not independent plugin-workflow promises.
+
 `Coupler(...)` is the only assembly path. It receives the complete clock,
 component collection, exchange collection, run order, runtime policy, physical
 constants, and logging policy. It copy-owns the collections but retains the
 original component author objects, which are treated as immutable
-configuration. Reconfiguration constructs a new coupler.
+configuration with immutable name, grid, and specification identity.
+Reconfiguration constructs a new coupler.
 
 The public state surface is intentionally opaque. `RunState.component(...)`,
 `RunState.components(...)`, and `RunState.replace_fields(...)` provide reads and
@@ -76,7 +84,9 @@ A mapping step result replaces declared fields and preserves payload. A
 `StepResult` may explicitly replace payload. Compiled JAX execution requires
 payload PyTree structure, leaf shapes, and dtypes to remain stable; host
 execution may clear or restructure payload. Standard containers and NumPy
-leaves are defensively owned during preparation.
+leaves are defensively owned during preparation. External model state belongs
+to that payload from setup through every functional step; it is never retained
+as hidden evolving adapter state.
 
 One private adapter performs structural validation, setup, declaration
 normalization, payload ownership, and runtime callback dispatch. There is no
@@ -92,7 +102,9 @@ by both endpoints.
 
 `Regridder` defines scalar transfer. `VectorRegridder` adds vector transfer and
 is required for vector fields. Runtime preparation verifies that each factory
-result supports the route's field capabilities.
+result supports the route's field capabilities. `RegridderFactory` is one
+runtime-checkable protocol, so static typing and runtime introspection share
+the same public callable contract.
 
 A `TopologyPolicy.build(TopologyContext)` returns one
 `ExchangeTopologyPatch` keyed by configured route IDs. Patch masks must match

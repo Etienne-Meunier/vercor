@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from vercor.grids import RectilinearGrid as _RectilinearGrid
 from vercor._regridders.bilinear import bilinear as _bilinear
@@ -41,21 +40,17 @@ class VectorRegridder(Regridder, Protocol):
         """Transfer one vector field pair to the target grid."""
 
 
-if TYPE_CHECKING:
-    RegridderFactory: TypeAlias = Callable[..., Regridder]
-else:
+@runtime_checkable
+class RegridderFactory(Protocol):
+    """Build a scalar-capable regridder for one source/target grid pair."""
 
-    @runtime_checkable
-    class RegridderFactory(Protocol):
-        """Public protocol for factories that build regridders for two grids."""
-
-        def __call__(
-            self,
-            source_grid: _RectilinearGrid,
-            target_grid: _RectilinearGrid,
-            **kwargs: Any,
-        ) -> Regridder:
-            """Return a regridder configured for one source/target grid pair."""
+    def __call__(
+        self,
+        source_grid: _RectilinearGrid,
+        target_grid: _RectilinearGrid,
+        **kwargs: Any,
+    ) -> Regridder:
+        """Return a regridder configured for the supplied grids."""
 
 
 def bilinear(
