@@ -205,13 +205,20 @@ from vercor.output import (
 
 class GuideProvider:
     def sample(self, context: OutputContext) -> OutputFrame:
+        if context.payload is None:
+            raise ValueError("GuideModel output payload is missing")
         return OutputFrame(
             {
                 "temperature": OutputVariable(
                     ("nlat", "nlon"),
                     context.state.field("temperature"),
                     {"units": "K"},
-                )
+                ),
+                "payload_offset": OutputVariable(
+                    (),
+                    jnp.asarray(context.payload, dtype=jnp.float32),
+                    {"long_name": "runtime payload offset"},
+                ),
             }
         )
 ```
@@ -251,8 +258,45 @@ outside the checkout and protects the documented extension tier.
 from datetime import datetime
 
 from vercor import Clock, Coupler, Exchange
-from vercor.components import DataComponent
+from vercor.components import Component, DataComponent
 from vercor.runtime import RuntimeOptions
+
+
+@dataclass(frozen=True)
+class GuideAssembly:
+    components: tuple[Component, ...]
+    exchanges: tuple[Exchange, ...]
+    run_order: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GuideFactory:
+    config: GuideConfig
+    regridder_factory: GuideRegridderFactory
+    route_id: str = "guide-forcing"
+
+    def build(
+        self,
+        grid: RectilinearGrid,
+        output: OutputSpec,
+    ) -> GuideAssembly:
+        source = DataComponent(
+            "FORCING", grid, {"forcing": self.config.forcing}
+        )
+        model = GuideModel(grid, self.config, output)
+        return GuideAssembly(
+            components=(source, model),
+            exchanges=(
+                Exchange(
+                    "FORCING",
+                    "MODEL",
+                    ("forcing",),
+                    route_id=self.route_id,
+                    regridder_factory=self.regridder_factory,
+                ),
+            ),
+            run_order=("FORCING", "MODEL"),
+        )
 
 
 guide_config = GuideConfig()
@@ -263,35 +307,26 @@ guide_grid = RectilinearGrid.uniform(
     longitude=(0.0, 360.0),
     latitude=(-90.0, 90.0),
 )
-guide_source = DataComponent(
-    "FORCING", guide_grid, {"forcing": guide_config.forcing}
-)
-guide_model = GuideModel(
+guide_factory = GuideFactory(guide_config, GuideRegridderFactory())
+guide_assembly = guide_factory.build(
     guide_grid,
-    guide_config,
     OutputSpec(
         provider=GuideProvider(),
-        period=PeriodOutput(frequency="step", variables=("temperature",)),
-    ),
-)
-guide_route_id = "guide-forcing"
-guide_coupler = Coupler(
-    Clock(datetime(2000, 1, 1), dt_seconds=60.0, steps=guide_config.steps),
-    components=(guide_source, guide_model),
-    exchanges=(
-        Exchange(
-            "FORCING",
-            "MODEL",
-            ("forcing",),
-            route_id=guide_route_id,
-            regridder_factory=GuideRegridderFactory(),
+        period=PeriodOutput(
+            frequency="step",
+            variables=("temperature", "payload_offset"),
         ),
     ),
-    run_order=("FORCING", "MODEL"),
+)
+guide_coupler = Coupler(
+    Clock(datetime(2000, 1, 1), dt_seconds=60.0, steps=guide_config.steps),
+    components=guide_assembly.components,
+    exchanges=guide_assembly.exchanges,
+    run_order=guide_assembly.run_order,
     runtime=RuntimeOptions(
         backend=GuideBackend(),
         workflow=GuideWorkflow(),
-        topology=GuideTopology(guide_route_id),
+        topology=GuideTopology(guide_factory.route_id),
     ),
 )
 guide_final_state = guide_coupler.run(

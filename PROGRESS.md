@@ -11,7 +11,9 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   produces independently observable JAX, host, exchange, and backend results,
   and CI now resolves the plugin against the installed VerCOR wheel. The new
   public-only author guide executes configuration, payload, regridding,
-  topology, workflow/backend, output, and fake-testing examples in order.
+  topology, workflow/backend, output, and fake-testing examples in order. The
+  reviewed guide composes through a plugin-owned factory, samples payload state,
+  and release instructions preserve normal plugin dependency resolution.
 - Stable extension and factory typing completed locally (2026-07-21):
   `RegridderFactory` is one runtime-checkable public protocol, the plugin
   fixture may import only the six-symbol root/stable extension tier, and the

@@ -35,6 +35,7 @@ from tests.test_v0_4_public_api import PUBLIC_MODULE_EXPORTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
+RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
 EXPECTED_PLUGIN_WHEEL_NAME = "vercor_public_plugin-0.1.0-py3-none-any.whl"
 EXPECTED_INSTALLED_ROOT = (
     "Clock",
@@ -338,6 +339,18 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
     )
     assert "--no-deps" not in macos_plugin_install_line
+
+
+@pytest.mark.fast_always
+def test_release_guide_resolves_installed_plugin_dependencies() -> None:
+    releasing = RELEASING_PATH.read_text(encoding="utf-8")
+    plugin_install_line = next(
+        line
+        for line in releasing.splitlines()
+        if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
+    )
+
+    assert "--no-deps" not in plugin_install_line
 
 
 @pytest.mark.fast_always

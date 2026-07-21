@@ -80,7 +80,7 @@ plugin outside the checkout:
 
 ```bash
 python -m pip install "dist/vercor-0.4.0a1-py3-none-any.whl"
-python -m pip install --no-deps "dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+python -m pip install "dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
 cd "$(mktemp -d)"
 python -m vercor_public_plugin.smoke --output-dir "$(pwd)/plugin-output"
 ```

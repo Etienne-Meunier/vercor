@@ -13,6 +13,7 @@ from typing import Any, cast
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import xarray as xr
 
 import vercor
 from tests._coverage_support import make_test_grid
@@ -42,6 +43,62 @@ from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyCo
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_AUTHORING_GUIDE = PROJECT_ROOT / "docs" / "plugin-authoring.md"
+STABLE_EXTENSION_MODULES = {
+    "vercor.components",
+    "vercor.coupler",
+    "vercor.exchanges",
+    "vercor.grids",
+    "vercor.output",
+    "vercor.physics",
+    "vercor.regridding",
+    "vercor.runtime",
+    "vercor.state",
+    "vercor.topology",
+    "vercor.types",
+}
+STABLE_ROOT_EXPORTS = {
+    "Clock",
+    "Coupler",
+    "Exchange",
+    "RectilinearGrid",
+    "RunState",
+    "RuntimeOptions",
+}
+
+
+def _assert_stable_extension_imports(source: str, *, owner: str) -> None:
+    """Reject imports outside the documented plugin compatibility tier."""
+
+    tree = ast.parse(source, filename=owner)
+    for node in ast.walk(tree):
+        modules: list[str] = []
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules.append(node.module)
+        for module in modules:
+            if module != "vercor" and not module.startswith("vercor."):
+                continue
+            assert module == "vercor" or module in STABLE_EXTENSION_MODULES, module
+            if isinstance(node, ast.ImportFrom) and module == "vercor":
+                assert all(
+                    alias.name in STABLE_ROOT_EXPORTS for alias in node.names
+                ), module
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from vercor.setups import make_slab_ocean",
+        "from vercor import OutputSpec",
+        "import vercor._runtime",
+    ),
+)
+def test_plugin_authoring_import_policy_rejects_unstable_contracts(
+    source: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        _assert_stable_extension_imports(source, owner="unstable-plugin.py")
 
 
 @pytest.mark.fast_always
@@ -68,26 +125,26 @@ def test_plugin_authoring_guide_is_public_only_and_executable(
     namespace: dict[str, object] = {}
     monkeypatch.chdir(tmp_path)
     for index, snippet in enumerate(snippets):
-        tree = ast.parse(snippet, filename=f"plugin-authoring.md:{index}")
-        for node in ast.walk(tree):
-            modules: list[str] = []
-            if isinstance(node, ast.Import):
-                modules.extend(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module is not None:
-                modules.append(node.module)
-            for module in modules:
-                if module != "vercor" and not module.startswith("vercor."):
-                    continue
-                assert not any(
-                    part.startswith("_") for part in module.split(".")[1:]
-                ), module
+        owner = f"plugin-authoring.md:{index}"
+        _assert_stable_extension_imports(snippet, owner=owner)
+        tree = ast.parse(snippet, filename=owner)
         exec(compile(tree, f"plugin-authoring.md:{index}", "exec"), namespace)
+
+    config = cast(Any, namespace["guide_config"])
+    factory = cast(Any, namespace["guide_factory"])
+    assembly = cast(Any, namespace["guide_assembly"])
+    assert factory.config is config
+    assert assembly.run_order == ("FORCING", "MODEL")
 
     final_state = cast(RunState, namespace["guide_final_state"])
     assert_allclose_compact(
         final_state.component("MODEL").field("temperature"),
         jnp.full((2, 2), 3.0),
     )
+    period_files = tuple((tmp_path / "guide-output").glob("*.averages.*.nc"))
+    assert len(period_files) == 1
+    with xr.open_dataset(period_files[0], engine="h5netcdf") as dataset:
+        assert float(dataset["payload_offset"].values[0]) == pytest.approx(2.0)
 
 
 @pytest.mark.fast_always
