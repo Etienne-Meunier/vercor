@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import FrozenInstanceError
 from datetime import datetime
+import ast
 import importlib
+from pathlib import Path
+import re
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -36,6 +39,55 @@ from vercor.runtime import (
 )
 from vercor.state import ComponentState, RunState
 from vercor.topology import ExchangeTopologyPatch, SurfaceMaskPolicy, TopologyContext
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_AUTHORING_GUIDE = PROJECT_ROOT / "docs" / "plugin-authoring.md"
+
+
+@pytest.mark.fast_always
+def test_plugin_authoring_guide_is_public_only_and_executable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Execute the guide's cumulative public extension example."""
+
+    markdown = PLUGIN_AUTHORING_GUIDE.read_text(encoding="utf-8")
+    for heading in (
+        "Package and configuration",
+        "Structural components and payload state",
+        "Regridders and topology",
+        "Workflows and execution backends",
+        "Output providers",
+        "Testing with fakes",
+        "Installed example",
+    ):
+        assert f"## {heading}" in markdown
+
+    snippets = tuple(re.findall(r"```python\n(.*?)```", markdown, flags=re.DOTALL))
+    assert snippets
+    namespace: dict[str, object] = {}
+    monkeypatch.chdir(tmp_path)
+    for index, snippet in enumerate(snippets):
+        tree = ast.parse(snippet, filename=f"plugin-authoring.md:{index}")
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                modules.append(node.module)
+            for module in modules:
+                if module != "vercor" and not module.startswith("vercor."):
+                    continue
+                assert not any(
+                    part.startswith("_") for part in module.split(".")[1:]
+                ), module
+        exec(compile(tree, f"plugin-authoring.md:{index}", "exec"), namespace)
+
+    final_state = cast(RunState, namespace["guide_final_state"])
+    assert_allclose_compact(
+        final_state.component("MODEL").field("temperature"),
+        jnp.full((2, 2), 3.0),
+    )
 
 
 @pytest.mark.fast_always

@@ -6,6 +6,12 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Installed plugin evidence and author guidance completed locally (2026-07-21):
+  the fixture accepts `0.4.0a1` through `<0.5`, its non-default configuration
+  produces independently observable JAX, host, exchange, and backend results,
+  and CI now resolves the plugin against the installed VerCOR wheel. The new
+  public-only author guide executes configuration, payload, regridding,
+  topology, workflow/backend, output, and fake-testing examples in order.
 - Stable extension and factory typing completed locally (2026-07-21):
   `RegridderFactory` is one runtime-checkable public protocol, the plugin
   fixture may import only the six-symbol root/stable extension tier, and the

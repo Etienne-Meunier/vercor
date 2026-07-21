@@ -97,6 +97,10 @@ plan may reorder or omit registered components, but it may not invent or repeat
 one. A custom backend receives core-authored `ExecutionChunk` objects and must
 consume each supplied plan exactly once through `RuntimeDriver.run_step`.
 
+The [plugin authoring guide](plugin-authoring.md) provides an executable,
+public-only example of these contracts together with configuration, payload,
+regridding, topology, output, and installed-package guidance.
+
 ## Output migration
 
 Attach sampling policy to `ComponentSpec.output` with `OutputSpec`,

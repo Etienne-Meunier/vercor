@@ -377,6 +377,10 @@ imports:
 The plugin wheel is installed next to built VerCOR artifacts in a clean target,
 its smoke runs outside the checkout, and its package plus external use site pass
 strict mypy. CI repeats native 0.4 plugin lanes on Python 3.12 and 3.13.
+The executable [plugin authoring guide](plugin-authoring.md) documents the same
+public-only contracts. This remains an alpha; the installed fixture protects
+the documented stable extension tier rather than promising every retained
+public manifest as an independent plugin workflow.
 
 Bundled slab, JCM, and Veros factories return ordinary structural components
 and use the same constructor and output contracts. CI has installed base, JCM,

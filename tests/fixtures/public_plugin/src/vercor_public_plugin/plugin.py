@@ -226,10 +226,10 @@ class SequentialBackend:
         """Advance every plan in one core-defined chunk."""
 
         if not self.state_replacement:
-            initial_temperature = state.component("JAX").field("temperature")
+            host_value = state.component("HOST").field("host_value")
             state = state.replace_fields(
-                "JAX",
-                {"temperature": jnp.full_like(initial_temperature, 10.0)},
+                "HOST",
+                {"host_value": jnp.full_like(host_value, 11.0)},
             )
             self.state_replacement = True
         self.calls += 1
@@ -337,7 +337,7 @@ class PluginFactory:
 def run_smoke(output_dir: Path) -> dict[str, object]:
     """Run all required public extension points and return compact evidence."""
 
-    config = PluginConfig()
+    config = PluginConfig(forcing=2.0, initial_temperature=3.0, steps=3)
     config_frozen = False
     try:
         setattr(config, "steps", 3)
@@ -390,7 +390,7 @@ def run_smoke(output_dir: Path) -> dict[str, object]:
         raise AssertionError("custom workflow was not invoked exactly once")
     if topology.events != [f"build:{factory.route_id}"]:
         raise AssertionError("custom topology policy was not applied")
-    if temperature != 13.0 or host_value != 14.0 or exchange_forcing != 1.0:
+    if temperature != 12.0 or host_value != 17.0 or exchange_forcing != 2.0:
         raise AssertionError("sequential backend produced unexpected fields")
     if not backend.state_replacement:
         raise AssertionError("public RunState.replace_fields was not exercised")

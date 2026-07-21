@@ -163,6 +163,10 @@ custom_state = custom_coupler.run()
 No VerCOR inheritance is required. For a function-based component with less
 boilerplate, use `vercor.components.CallableComponent`.
 
+For a complete independently packaged extension, including payload state,
+regridders, topology, workflows, backends, and output providers, follow the
+[plugin authoring guide](docs/plugin-authoring.md).
+
 Lifecycle hooks can prepare component fields and a payload before the run.
 `TransferPolicy` selects current, linearly interpolated, or daily source data.
 When a JAX-compiled component replaces its payload, the replacement must keep
@@ -370,6 +374,7 @@ The alpha does not include a legacy compatibility namespace. Follow the
 ## Additional resources
 
 - [API architecture and public-module reference](docs/api-architecture-review.md)
+- [Plugin authoring guide](docs/plugin-authoring.md)
 - [VerCOR 0.3 to 0.4 migration guide](docs/migration-0.3-to-0.4.md)
 - [Design specification](DESIGN.md)
 - [Changelog](CHANGELOG.md)

@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 import pytest
 
+from examples import custom_component_wrapping
 import vercor._host_arrays as host_arrays_module
 from vercor.diagnostics import component_vector_speed
 from vercor.grids import RectilinearGrid
@@ -13,6 +14,18 @@ from vercor._host_arrays import transposed_host_array
 from tests.assertions import assert_allclose_compact
 from vercor._host_arrays import runtime_array_to_host
 from vercor.state import ComponentState
+
+
+def test_custom_component_example_runs_behaviorally() -> None:
+    grid = custom_component_wrapping.make_example_grid()
+    coupler = custom_component_wrapping.make_custom_coupler(grid)
+
+    final_state = coupler.run()
+
+    assert_allclose_compact(
+        final_state.component("MODEL").field("custom_flux"),
+        jnp.full(grid.shape, 3.0),
+    )
 
 
 def test_runtime_array_to_host_is_canonical_host_transfer() -> None:

@@ -197,7 +197,7 @@ def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> Non
     )
 
     assert project["version"] == "0.1.0"
-    assert project["dependencies"] == ["vercor>=0.4,<0.5"]
+    assert project["dependencies"] == ["vercor>=0.4.0a1,<0.5"]
     for owner in (
         "vercor.components",
         "vercor.coupler",
@@ -319,6 +319,12 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         'python -P -m mypy --strict "$RUNNER_TEMP/plugin-typecheck/'
         'vercor_public_plugin" public_plugin_use_site.py' in plugin_commands
     )
+    plugin_install_line = next(
+        line
+        for line in plugin_commands.splitlines()
+        if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
+    )
+    assert "--no-deps" not in plugin_install_line
 
     assert macos_job["runs-on"] == "macos-latest"
     macos_commands = "\n".join(
@@ -326,6 +332,12 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     )
     assert EXPECTED_WHEEL_NAME in macos_commands
     assert "vercor_public_plugin.smoke" in macos_commands
+    macos_plugin_install_line = next(
+        line
+        for line in macos_commands.splitlines()
+        if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
+    )
+    assert "--no-deps" not in macos_plugin_install_line
 
 
 @pytest.mark.fast_always
@@ -482,7 +494,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         )
         plugin_metadata = plugin_archive.read(plugin_metadata_name).decode("utf-8")
     assert "Version: 0.1.0" in plugin_metadata
-    assert "Requires-Dist: vercor>=0.4,<0.5" in plugin_metadata
+    assert "Requires-Dist: vercor>=0.4.0a1,<0.5" in plugin_metadata
 
     with tarfile.open(distributions.sdist, "r:gz") as sdist:
         sdist_names = set(sdist.getnames())
@@ -684,14 +696,14 @@ print(json.dumps({{
         text=True,
     )
     evidence = json.loads(smoke.stdout.splitlines()[-1])
-    assert evidence["temperature"] == 13.0
-    assert evidence["host_value"] == 14.0
-    assert evidence["exchange_forcing"] == 1.0
+    assert evidence["temperature"] == 12.0
+    assert evidence["host_value"] == 17.0
+    assert evidence["exchange_forcing"] == 2.0
     assert evidence["state_replacement"] is True
     assert evidence["config"] == {
-        "forcing": 1.0,
-        "initial_temperature": 0.0,
-        "steps": 2,
+        "forcing": 2.0,
+        "initial_temperature": 3.0,
+        "steps": 3,
     }
     assert evidence["config_frozen"] is True
     assert evidence["factory"] == ["FORCING", "JAX", "HOST"]
@@ -699,12 +711,13 @@ print(json.dumps({{
     assert evidence["period_files"] == [
         "jax.averages.2000-01-01T000000.000000.step00000000.schema0000.nc",
         "jax.averages.2000-01-01T000100.000000.step00000001.schema0000.nc",
+        "jax.averages.2000-01-01T000200.000000.step00000002.schema0000.nc",
     ]
     assert evidence["regridder_calls"] == ["plugin-forcing"]
     assert evidence["topology"] == ["build:plugin-forcing"]
     assert evidence["topology_patch_routes"] == ["plugin-forcing"]
     assert evidence["workflow"] == ["build"]
-    assert evidence["snapshot"] == {"component": "JAX", "temperature": 13.0}
+    assert evidence["snapshot"] == {"component": "JAX", "temperature": 12.0}
 
     mypy_environment = environment.copy()
     mypy_environment["MYPYPATH"] = str(target)
@@ -890,8 +903,8 @@ print(json.dumps({
         text=True,
     )
     plugin_evidence = json.loads(smoke.stdout.splitlines()[-1])
-    assert plugin_evidence["temperature"] == 13.0
-    assert plugin_evidence["host_value"] == 14.0
+    assert plugin_evidence["temperature"] == 12.0
+    assert plugin_evidence["host_value"] == 17.0
 
 
 def test_supplied_wheels_install_and_run_without_build_environment(
@@ -948,5 +961,5 @@ def test_supplied_wheels_install_and_run_without_build_environment(
     )
 
     evidence = json.loads(smoke.stdout.splitlines()[-1])
-    assert evidence["temperature"] == 13.0
-    assert evidence["host_value"] == 14.0
+    assert evidence["temperature"] == 12.0
+    assert evidence["host_value"] == 17.0
