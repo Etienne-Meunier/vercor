@@ -198,7 +198,10 @@ def test_load_jcm_inputs_scopes_h5netcdf_preference(
 ) -> None:
     coords = SimpleNamespace(name="coords")
     observed_orders: list[tuple[str, ...]] = []
-    original_order = tuple(xr.get_options()["netcdf_engine_order"])
+    options = xr.get_options()
+    if "netcdf_engine_order" not in options:
+        pytest.skip("xarray does not support netcdf_engine_order")
+    original_order = tuple(options["netcdf_engine_order"])
 
     monkeypatch.setattr(
         jax_gcm_tools_module,
@@ -238,8 +241,51 @@ def test_prefer_h5netcdf_is_noop_without_engine_order(
 ) -> None:
     monkeypatch.setattr(jax_gcm_tools_module.xr, "get_options", lambda: {})
 
+    def fail_if_called(**kwargs: Any) -> Any:
+        pytest.fail(f"set_options must not be called: {kwargs}")
+
+    monkeypatch.setattr(jax_gcm_tools_module.xr, "set_options", fail_if_called)
+
     with jax_gcm_tools_module._prefer_h5netcdf():
         pass
+
+
+def test_load_jcm_inputs_restores_custom_engine_order_after_read_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = xr.get_options()
+    if "netcdf_engine_order" not in options:
+        pytest.skip("xarray does not support netcdf_engine_order")
+    original_order = tuple(options["netcdf_engine_order"])
+    custom_order = ("scipy", "h5netcdf", "netcdf4")
+    observed_orders: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module,
+        "get_speedy_coords",
+        lambda spectral_truncation: SimpleNamespace(name="coords"),
+    )
+
+    def raise_after_recording_order(path: Path, coords: Any) -> None:
+        _ = path, coords
+        observed_orders.append(tuple(xr.get_options()["netcdf_engine_order"]))
+        raise RuntimeError("terrain read failed")
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module.TerrainData,
+        "from_file",
+        staticmethod(raise_after_recording_order),
+    )
+
+    with xr.set_options(netcdf_engine_order=custom_order):
+        with pytest.raises(RuntimeError, match="terrain read failed"):
+            jax_gcm_tools_module.load_jcm_coords_terrain_forcing(
+                input_data_directory=Path("/tmp/jcm-inputs"),
+            )
+        assert tuple(xr.get_options()["netcdf_engine_order"]) == custom_order
+
+    assert observed_orders == [("h5netcdf", "scipy", "netcdf4")]
+    assert tuple(xr.get_options()["netcdf_engine_order"]) == original_order
 
 
 def test_jax_gcm_tree_helpers_transform_pytrees() -> None:
