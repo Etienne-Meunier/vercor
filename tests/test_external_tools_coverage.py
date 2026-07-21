@@ -9,6 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import xarray as xr
 
 import vercor.setups._external._jax_gcm_pytree as jax_gcm_pytree_module
 import vercor.setups._external.jax_gcm_tools as jax_gcm_tools_module
@@ -190,6 +191,55 @@ def test_load_jcm_coords_terrain_forcing_uses_expected_paths(
     assert calls["forcing"] == (expected_root / "forcing.nc", coords)
     if input_data_directory is None:
         assert calls["package_name"] == "jcm.data.bc.t30.clim"
+
+
+def test_load_jcm_inputs_scopes_h5netcdf_preference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coords = SimpleNamespace(name="coords")
+    observed_orders: list[tuple[str, ...]] = []
+    original_order = tuple(xr.get_options()["netcdf_engine_order"])
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module,
+        "get_speedy_coords",
+        lambda spectral_truncation: coords,
+    )
+
+    def record_order(path: Path, coords: Any) -> str:
+        _ = path, coords
+        observed_orders.append(tuple(xr.get_options()["netcdf_engine_order"]))
+        return "loaded"
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module.TerrainData,
+        "from_file",
+        staticmethod(record_order),
+    )
+    monkeypatch.setattr(
+        jax_gcm_tools_module.ForcingData,
+        "from_file",
+        staticmethod(record_order),
+    )
+
+    _, terrain, forcing = jax_gcm_tools_module.load_jcm_coords_terrain_forcing(
+        input_data_directory=Path("/tmp/jcm-inputs"),
+    )
+
+    assert terrain == "loaded"
+    assert forcing == "loaded"
+    assert len(observed_orders) == 2
+    assert all(order[0] == "h5netcdf" for order in observed_orders)
+    assert tuple(xr.get_options()["netcdf_engine_order"]) == original_order
+
+
+def test_prefer_h5netcdf_is_noop_without_engine_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jax_gcm_tools_module.xr, "get_options", lambda: {})
+
+    with jax_gcm_tools_module._prefer_h5netcdf():
+        pass
 
 
 def test_jax_gcm_tree_helpers_transform_pytrees() -> None:

@@ -1,7 +1,10 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from importlib import resources
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
+
+import xarray as xr
 
 from dinosaur.coordinate_systems import CoordinateSystem
 
@@ -11,6 +14,20 @@ from jcm.physics.speedy.speedy_coords import get_speedy_coords
 from jcm.physics.speedy.params import Parameters
 
 from vercor.dtypes import as_jax_real_array
+
+
+def _prefer_h5netcdf() -> AbstractContextManager[object]:
+    """Temporarily prefer h5netcdf when xarray supports engine ordering."""
+
+    options = xr.get_options()
+    if "netcdf_engine_order" not in options:
+        return nullcontext()
+    configured = tuple(cast(Sequence[str], options["netcdf_engine_order"]))
+    preferred = (
+        "h5netcdf",
+        *(engine for engine in configured if engine != "h5netcdf"),
+    )
+    return xr.set_options(netcdf_engine_order=preferred)
 
 
 def change_jcm_parameter_values(
@@ -65,10 +82,11 @@ def load_jcm_coords_terrain_forcing(
         data_dir = Path(input_data_directory)
 
     terrain_file = data_dir / "terrain.nc"
-    terrain = TerrainData.from_file(terrain_file, coords=coords)
 
     # Load realistic forcing data (SST, sea ice, soil moisture, etc.) interpolated to T31 grid
     forcing_file = data_dir / "forcing.nc"
-    forcing = ForcingData.from_file(forcing_file, coords=coords)
+    with _prefer_h5netcdf():
+        terrain = TerrainData.from_file(terrain_file, coords=coords)
+        forcing = ForcingData.from_file(forcing_file, coords=coords)
 
     return (coords, terrain, forcing)
