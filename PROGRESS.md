@@ -6,8 +6,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- CI fixes completed locally (2026-07-20): plugin smoke uses installed artifacts;
-  strict mypy checks a copied installed plugin outside the checkout with Python
+- JAXGCM runtime dtype warning fixed locally (2026-07-21): the adapter applies the runtime-owned `DTypePolicy` before pressure and altitude calculations, preventing `float64` promotion and the incompatible JAX scatter into `float32`; the warning-as-error and mapped-field dtype regression had 1/1 RED, focused GREEN passed 11/11, fast/full passed 638/638 and 1,235/1,235 without the scatter warning, Black left 234 files unchanged, flake8 was 0, mypy passed 234 source files, and whitespace checks were clean.
+- CI fixes completed locally (2026-07-20): plugin smoke uses installed artifacts; strict mypy checks a copied installed plugin outside the checkout with Python
   safe-path isolation. TDD and isolated checks passed.
 - Final-review alignment completed locally (2026-07-20): removed stale `runner`
   documentation and clarified the pre-stable versioning label after Graphify

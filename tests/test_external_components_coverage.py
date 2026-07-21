@@ -416,7 +416,12 @@ def test_map_jcm_output_fields_supports_jit(
         ),
     )
 
-    mapped_fields = jax.jit(jax_gcm_fields_module.map_jcm_output_fields)(
+    mapped_fields = jax.jit(
+        lambda *args: jax_gcm_fields_module.map_jcm_output_fields(
+            *args,
+            dtype=DTypePolicy(),
+        )
+    )(
         2.5e6,
         1.0e5,
         jnp.asarray([0.2, 1.0]),

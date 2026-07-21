@@ -234,6 +234,7 @@ def step_jax_gcm_runtime(
         averaged_prediction.dynamics.v_wind,
         averaged_prediction.dynamics.temperature,
         averaged_prediction.dynamics.specific_humidity,
+        dtype=dtype,
     )
 
     step_result = StepResult(

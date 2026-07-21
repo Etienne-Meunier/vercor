@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 
-from vercor.dtypes import as_jax_real_array
+from vercor.dtypes import DTypePolicy, as_jax_real_array
 from vercor.fluxes.vertical_coordinates import (
     compute_sigma_pressure_levels,
     get_altitudes_sigma_levels,
@@ -88,7 +90,7 @@ def prepare_surface_temperature_forcing(
     return land_surface_temperature, sea_surface_temperature
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("dtype",))
 def map_jcm_output_fields(
     latvap: float,
     reference_pressure: float,
@@ -106,45 +108,58 @@ def map_jcm_output_fields(
     v_wind: object,
     temperature: object,
     specific_humidity: object,
+    *,
+    dtype: DTypePolicy,
 ) -> dict[str, jax.Array]:
-    u_velocity = as_jax_real_array(u_wind)[-1, :, :].T
-    v_velocity = as_jax_real_array(v_wind)[-1, :, :].T
-    temperature_2m = as_jax_real_array(temperature)[-1, :, :].T
-    specific_humidity_2m = as_jax_real_array(specific_humidity)[-1, :, :].T / 1000.0
+    latvap_array = as_jax_real_array(latvap, dtype)
+    reference_pressure_array = as_jax_real_array(reference_pressure, dtype)
+    sigma_levels_array = as_jax_real_array(sigma_levels, dtype)
+    mwdair_array = as_jax_real_array(mwdair, dtype)
+    rgas_array = as_jax_real_array(rgas, dtype)
+    potential_temperature_reference_pressure_array = as_jax_real_array(
+        potential_temperature_reference_pressure, dtype
+    )
+    cappa_array = as_jax_real_array(cappa, dtype)
+    temperature_array = as_jax_real_array(temperature, dtype)
+    specific_humidity_array = as_jax_real_array(specific_humidity, dtype)
+
+    u_velocity = as_jax_real_array(u_wind, dtype)[-1, :, :].T
+    v_velocity = as_jax_real_array(v_wind, dtype)[-1, :, :].T
+    temperature_2m = temperature_array[-1, :, :].T
+    specific_humidity_2m = specific_humidity_array[-1, :, :].T / 1000.0
 
     sensible_heat_flux = -jnp.sum(
-        as_jax_real_array(surface_sensible_heat_flux), axis=2
+        as_jax_real_array(surface_sensible_heat_flux, dtype), axis=2
     ).T
     latent_heat_flux = -jnp.sum(
-        as_jax_real_array(surface_evaporation) / 1e3 * latvap,
+        as_jax_real_array(surface_evaporation, dtype) / 1e3 * latvap_array,
         axis=2,
     ).T
-    net_shortwave_radiation_flux_2m = as_jax_real_array(net_shortwave_radiation_flux).T
+    net_shortwave_radiation_flux_2m = as_jax_real_array(
+        net_shortwave_radiation_flux, dtype
+    ).T
     downward_longwave_radiation_flux_2m = as_jax_real_array(
-        downward_longwave_radiation_flux
+        downward_longwave_radiation_flux, dtype
     ).T
 
     pressure = compute_sigma_pressure_levels(
-        as_jax_real_array(reference_pressure),
-        as_jax_real_array(0.0),
-        as_jax_real_array(sigma_levels),
-        as_jax_real_array(normalized_surface_pressure).T,
+        reference_pressure_array,
+        as_jax_real_array(0.0, dtype),
+        sigma_levels_array,
+        as_jax_real_array(normalized_surface_pressure, dtype).T,
     )
 
-    density = (
-        as_jax_real_array(mwdair)
-        / as_jax_real_array(rgas)
-        * pressure[-1, ...]
-        / temperature_2m
+    density = mwdair_array / rgas_array * pressure[-1, :, :] / temperature_2m
+    potential_temperature = (
+        temperature_2m
+        * (potential_temperature_reference_pressure_array / pressure[-1, :, :])
+        ** cappa_array
     )
-    potential_temperature = temperature_2m * (
-        as_jax_real_array(potential_temperature_reference_pressure) / pressure[-1, ...]
-    ) ** as_jax_real_array(cappa)
 
     model_level_height = get_altitudes_sigma_levels(
-        as_jax_real_array(temperature).transpose((0, 2, 1))[::-1, :, :],
+        temperature_array.transpose((0, 2, 1))[::-1, :, :],
         pressure[::-1, :, :],
-        as_jax_real_array(specific_humidity).transpose((0, 2, 1))[::-1, :, :] / 1000.0,
+        specific_humidity_array.transpose((0, 2, 1))[::-1, :, :] / 1000.0,
     )[1, :, :]
 
     return {

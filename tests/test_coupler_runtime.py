@@ -1653,6 +1653,9 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     assert_allclose_compact(gradient[1:11], np.zeros((10, 2, 2)))
 
 
+@pytest.mark.filterwarnings(
+    "error:scatter inputs have incompatible types:FutureWarning"
+)
 def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     jax.config.update("jax_enable_x64", True)
     grid = make_test_grid(name="jcm-runtime")
@@ -1684,6 +1687,11 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     assert isinstance(sensible_heat_flux, jax.Array)
     assert np.all(np.isfinite(np.asarray(temperature)))
     assert np.all(np.isfinite(np.asarray(sensible_heat_flux)))
+    mapped_float_dtypes = {
+        atmosphere_state.fields.get(field_name).dtype
+        for field_name in (*JAXGCM_OUTPUT_GRID_FIELD_NAMES, "pressure")
+    }
+    assert mapped_float_dtypes == {jnp.dtype(jnp.float32)}
     assert atmosphere_state.payload is not None
     initial_float_dtypes = tuple(
         jnp.asarray(leaf).dtype
