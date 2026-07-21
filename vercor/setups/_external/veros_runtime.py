@@ -25,6 +25,8 @@ def step_veros_runtime(
     if payload is None:
         raise ComponentError("Veros runtime requires a native runtime payload.")
     native_state = payload
+    if not resources.jitted:
+        native_state = _veros_state.copy_state(native_state, jitted=True)
     time = context.time
     if time is None:
         return StepResult(payload=native_state)

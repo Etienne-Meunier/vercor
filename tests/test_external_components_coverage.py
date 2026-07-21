@@ -206,9 +206,13 @@ class _ConstructedVerosState:
         self._dimensions = dimensions
         self._plugin_interfaces = plugin_interfaces
         self.settings = _FakeSettings(settings_meta, {})
-        self._variables: dict[str, Any] = {}
+        self._variables: Any = {}
         self.timers: dict[str, Any] = {}
         self.profile_timers: dict[str, Any] = {}
+
+    @property
+    def variables(self) -> Any:
+        return self._variables
 
 
 def _accumulate_frames(frames: Sequence[OutputFrame]) -> _OutputAccumulator:
@@ -253,6 +257,19 @@ def _make_fake_veros_state(surface_temperature: float = 10.0) -> Any:
     temp = np.full((8, 8, 1, 1), surface_temperature, dtype=float)
     variables = SimpleNamespace(temp=temp, tau=0)
     return SimpleNamespace(variables=variables)
+
+
+def _make_copyable_fake_veros_state(surface_temperature: float = 10.0) -> Any:
+    state = _ConstructedVerosState({}, {}, {}, {})
+    state._variables = _FakeVariableStore(
+        temp=np.full((8, 8, 1, 1), surface_temperature, dtype=float),
+        tau=0,
+        **{
+            name: np.zeros((6, 6, 1), dtype=float)
+            for name in ("taux", "tauy", "qnet", "qnec")
+        },
+    )
+    return state
 
 
 def _make_veros_output_state(offset: float = 0.0) -> Any:
@@ -1950,13 +1967,14 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     restore_to_climatology: bool,
     expected_qnec: np.ndarray,
 ) -> None:
+    monkeypatch.setattr(veros_state_module, "VerosState", _ConstructedVerosState)
     component = veros_gcm_state_module.VerosGCMSetupState.__new__(
         veros_gcm_state_module.VerosGCMSetupState
     )
     component.restore_to_climatology = restore_to_climatology
     component.model_substeps = 2
     component.jitted = False
-    initial_native_state = _make_fake_veros_state(surface_temperature=12.0)
+    initial_native_state = _make_copyable_fake_veros_state(surface_temperature=12.0)
     component._veros_state = initial_native_state
     component.name = "OCN"
     component.grid = make_test_grid(
@@ -1965,19 +1983,6 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         latitude=np.arange(4.0),
     )
     component.data = {"sea_surface_temperature": np.zeros((4, 4), dtype=float)}
-
-    forcing_calls: list[veros_state_module.VerosForcingFields] = []
-
-    def fake_apply_veros_forcing_fields(
-        state: Any,
-        forcing_fields: veros_state_module.VerosForcingFields,
-        *,
-        jitted: bool,
-    ) -> Any:
-        assert jitted is False
-        assert all(isinstance(value, jax.Array) for value in forcing_fields)
-        forcing_calls.append(forcing_fields)
-        return deepcopy(state)
 
     def fake_step_function(state: Any) -> Any:
         state.variables.temp = np.full((8, 8, 1, 1), 15.0, dtype=float)
@@ -1992,11 +1997,6 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
             np.asarray([[9.0, 10.0], [11.0, 12.0]]),
             np.asarray([[3.0, 4.0], [5.0, 6.0]]),
         ),
-    )
-    monkeypatch.setattr(
-        veros_state_module,
-        "apply_veros_forcing_fields",
-        fake_apply_veros_forcing_fields,
     )
     component._step_function = fake_step_function
 
@@ -2017,21 +2017,22 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     assert isinstance(result, StepResult)
     assert result.payload is not initial_native_state
     assert component._veros_state is initial_native_state
-    assert len(forcing_calls) == 1
-    forcing_fields = forcing_calls[0]
     assert_allclose_compact(
-        forcing_fields.taux,
+        result.payload.variables.taux[2:-2, 2:-2, :],
         np.asarray([[[1.0], [3.0]], [[2.0], [4.0]]]),
     )
     assert_allclose_compact(
-        forcing_fields.tauy,
+        result.payload.variables.tauy[2:-2, 2:-2, :],
         np.asarray([[[5.0], [7.0]], [[6.0], [8.0]]]),
     )
     assert_allclose_compact(
-        forcing_fields.qnet,
+        result.payload.variables.qnet[2:-2, 2:-2, :],
         np.asarray([[[9.0], [11.0]], [[10.0], [12.0]]]),
     )
-    assert_allclose_compact(forcing_fields.qnec, expected_qnec)
+    assert_allclose_compact(result.payload.variables.qnec[2:-2, 2:-2, :], expected_qnec)
+    for name in ("taux", "tauy", "qnet", "qnec"):
+        assert np.count_nonzero(getattr(initial_native_state.variables, name)) == 0
+    assert_allclose_compact(initial_native_state.variables.temp, 12.0)
     assert_allclose_compact(
         result.fields["sea_surface_temperature"],
         np.full((4, 4), 288.15),
@@ -2057,7 +2058,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_apply(
     )
     component.restore_to_climatology = True
     component.model_substeps = 0
-    component.jitted = False
+    component.jitted = True
     component._veros_state = _make_fake_veros_state(surface_temperature=12.0)
     component.name = "OCN"
     component.grid = make_test_grid(
@@ -2075,7 +2076,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_apply(
         *,
         jitted: bool,
     ) -> Any:
-        assert jitted is False
+        assert jitted is True
         assert all(isinstance(value, jax.Array) for value in forcing_fields)
         forcing_calls.append(forcing_fields)
         return state
