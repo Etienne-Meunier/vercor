@@ -27,7 +27,7 @@ from vercor.components import (
     StepContext,
     ValidationContext,
 )
-from vercor.exceptions import CouplerError
+from vercor.exceptions import ComponentError, CouplerError
 from vercor.runtime import (
     ExecutionChunk,
     ExecutionContext,
@@ -416,15 +416,21 @@ def test_vercor_component_validation_uses_the_structural_contract_path(
 
 
 @pytest.mark.fast_always
-def test_component_binding_is_stable_when_setup_mutates_original_owner() -> None:
+@pytest.mark.parametrize("attribute", ("name", "grid", "spec"))
+def test_component_setup_cannot_change_static_identity(attribute: str) -> None:
     class InvalidatingComponent:
-        def __init__(self, name: str, grid: Any) -> None:
-            self.name = name
-            self.grid = grid
+        def __init__(self) -> None:
+            self.name = "MODEL"
+            self.grid = make_test_grid(name="identity-mutation")
 
-            def setup(owner: object, context: SetupContext) -> None:
+            def setup(owner: Any, context: SetupContext) -> None:
                 _ = context
-                owner.name = "CHANGED"  # type: ignore[attr-defined]
+                replacements = {
+                    "name": "CHANGED",
+                    "grid": make_test_grid(name="changed-grid"),
+                    "spec": ComponentSpec(),
+                }
+                setattr(owner, attribute, replacements[attribute])
 
             self.spec = ComponentSpec(lifecycle=LifecycleHooks(setup=setup))
 
@@ -437,23 +443,15 @@ def test_component_binding_is_stable_when_setup_mutates_original_owner() -> None
             _ = context, payload
             return fields
 
-    component = InvalidatingComponent(
-        "MODEL",
-        make_test_grid(name="initialize-contract-mutation"),
-    )
+    component = InvalidatingComponent()
     coupler = Coupler(
-        Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        Clock(datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("MODEL",),
-        runtime=RuntimeOptions(topology=None),
     )
 
-    state = coupler.initial_state()
-
-    assert component.name == "CHANGED"
-    assert tuple(state.components()) == ("MODEL",)
-    assert coupler._prepared is not None
-    assert coupler._prepared.components["MODEL"].name == "MODEL"
+    with pytest.raises(ComponentError, match=rf"MODEL.*{attribute}.*during setup"):
+        coupler.initial_state()
 
 
 @pytest.mark.fast_always

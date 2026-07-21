@@ -200,6 +200,26 @@ def normalize_component(component: Component) -> _ComponentDeclaration:
     )
 
 
+def _validate_component_identity(declaration: _ComponentDeclaration) -> None:
+    """Reject lifecycle replacement of static component identity."""
+
+    validate_component_contract(declaration.component)
+    if declaration.component.name != declaration.name:
+        changed = "name"
+    elif declaration.component.grid is not declaration.grid:
+        changed = "grid"
+    elif declaration.component.spec is not declaration.spec:
+        changed = "spec"
+    else:
+        changed = None
+    if changed is not None:
+        raise ComponentError(
+            f"Component '{declaration.name}' changed static {changed} during setup. "
+            "Component name, grid, and spec must remain unchanged; return "
+            "evolving state through SetupResult.payload."
+        )
+
+
 def prepare_component(
     declaration: _ComponentDeclaration,
     context: SetupContext,
@@ -220,6 +240,7 @@ def prepare_component(
 
     hook = declaration.spec.lifecycle.setup
     result = None if hook is None else hook(declaration.component, context)
+    _validate_component_identity(declaration)
     if result is not None and not isinstance(result, SetupResult):
         raise ComponentError(
             f"Component '{declaration.name}' setup must return SetupResult or None; "

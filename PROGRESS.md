@@ -6,6 +6,7 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Static component identity through setup completed locally (2026-07-21): setup cannot replace declared name, grid, or spec; the adapter revalidates after the hook before examining its result. TDD RED was 3/3 expected failures; focused GREEN passed 42/42.
 - CI artifact and NetCDF backend stability completed locally (2026-07-21): the quality job now reuses the build-once artifact bundle, forcing fixtures explicitly use h5netcdf, and JCM packaged input loading temporarily prefers h5netcdf without leaking xarray configuration. After the formatting follow-up, the static gates passed: Black left 234 files unchanged (with its known Python 3.13/target-Python-3.15 safety-parse advisory), flake8 was 0, mypy passed 234 source files, and compileall/whitespace checks were clean. The exact direct-`scipy`-interpreter workflow contract command with `-n0` passed 1/1. Fast passed 638/638 with four Flax/JAX-effect deprecation warnings; full and branch coverage passed 1,235/1,235 without NetCDF/HDF failures, with those four warnings plus one JCM/xarray merge-default future warning. Branch coverage was 90.75% across 7,287 statements and 1,524 branches.
 - JAXGCM runtime dtype warning fixed locally (2026-07-21): the adapter applies the runtime-owned `DTypePolicy` before pressure and altitude calculations, preventing `float64` promotion and the incompatible JAX scatter into `float32`; the warning-as-error and mapped-field dtype regression had 1/1 RED, focused GREEN passed 11/11, fast/full passed 638/638 and 1,235/1,235 without the scatter warning, Black left 234 files unchanged, flake8 was 0, mypy passed 234 source files, and whitespace checks were clean.
 - CI fixes completed locally (2026-07-20): plugin smoke uses installed artifacts; strict mypy checks a copied installed plugin outside the checkout with Python safe-path isolation. TDD and isolated checks passed.
@@ -44,12 +45,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
   and 884 edges and removed 133 nodes and 244 edges. Graphify warned that the
   public-signatures JSON produced no AST nodes; the canonical HTML, JSON,
   report, labels, and manifest were refreshed.
-- Period-average window-start identity completed locally (2026-07-17): filenames and NetCDF times now use each schema's actual start.
-  Tests cover partial/subsequent periods, mixed cadences, and Gregorian/no-leap/360-day clocks while preserving calendar ISO formats,
-  post-step provider times, means, and incomplete-period behavior. TDD RED was 4/4; clarified GREEN was 4/4; output focus was 25/25.
-  Black reformatted 2 files and left 234 unchanged with its Python 3.13/target-3.15 advisory; flake8 was 0, mypy passed 236 files,
-  and compileall was clean. Fast passed 636/636 with six third-party warnings; full and coverage passed 1224/1224 with eight.
-  Coverage was 90.50% across 7,361 statements and 1,538 branches.
+- Period-average window-start identity completed locally (2026-07-17): filenames and NetCDF times use each schema's actual start across partial/subsequent periods, mixed cadences, and Gregorian/no-leap/360-day clocks while preserving calendar ISO formats, post-step provider times, means, and incomplete-period behavior. TDD RED/GREEN was 4/4; output focus 25/25.
+  Black/flake8/mypy/compileall passed; fast passed 636/636 and full/coverage 1224/1224 (90.50% across 7,361 statements and 1,538 branches), with known third-party warnings.
 - VerCOR 0.4 deprecation cleanup completed locally (2026-07-17) in commits `f82588f` through `04e6f45`. Obsolete evidence,
   mutable helpers, absence-only guards, and old adapter tests are gone; positive contracts cover public ownership, lifecycle,
   immutable state, artifacts, output, numerics, JIT, and gradients. Supported foreign-state, calendar, transform, lazy-import,
