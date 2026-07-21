@@ -28,7 +28,7 @@
 - Consumes: the `vercor-distributions` artifact uploaded by `build-artifacts`.
 - Produces: `VERCOR_ARTIFACT_DIR=${{ github.workspace }}/dist` for both quality pytest invocations.
 
-- [ ] **Step 1: Extend the quality workflow contract test**
+- [x] **Step 1: Extend the quality workflow contract test**
 
 Add these assertions to `test_ci_quality_job_enforces_static_full_and_coverage_gates` after `quality` is loaded:
 
@@ -48,7 +48,7 @@ Add these assertions to `test_ci_quality_job_enforces_static_full_and_coverage_g
     )
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -58,7 +58,7 @@ Run:
 
 Expected: FAIL because `quality` has no `needs`, artifact download, or artifact-directory environment.
 
-- [ ] **Step 3: Wire the quality job to the artifact producer**
+- [x] **Step 3: Wire the quality job to the artifact producer**
 
 Change the start of the job and insert the download after Python setup:
 
@@ -81,7 +81,7 @@ Change the start of the job and insert the download after Python setup:
           path: dist/
 ```
 
-- [ ] **Step 4: Run the focused workflow tests and verify GREEN**
+- [x] **Step 4: Run the focused workflow tests and verify GREEN**
 
 Run:
 
@@ -91,7 +91,7 @@ Run:
 
 Expected: 3 passed.
 
-- [ ] **Step 5: Commit the artifact-flow fix**
+- [x] **Step 5: Commit the artifact-flow fix**
 
 ```bash
 git add .github/workflows/python-package.yml tests/test_distribution_boundaries.py
@@ -107,7 +107,7 @@ git commit -m "fix: reuse built artifacts in quality CI"
 - Consumes: `xarray.Dataset.to_netcdf(..., engine="h5netcdf")`.
 - Produces: deterministic valid NetCDF fixtures for `vercor.forcing_data.read_forcing`.
 
-- [ ] **Step 1: Reproduce the existing fixture/backend mismatch**
+- [x] **Step 1: Reproduce the existing fixture/backend mismatch**
 
 Run the affected tests with xarray's installed default engine and record that the test source makes four implicit `to_netcdf(path)` calls:
 
@@ -118,7 +118,7 @@ rg -n 'to_netcdf\(path\)' tests/test_forcing_data.py
 
 Expected before the edit: four implicit calls are reported; the tests may pass in Conda because its HDF5 libraries are unified, while the approved CI RED evidence fails in `netCDF4` before `read_forcing` executes.
 
-- [ ] **Step 2: Make every valid fixture use h5netcdf**
+- [x] **Step 2: Make every valid fixture use h5netcdf**
 
 Change the two success fixtures and the missing-variable fixture to:
 
@@ -146,7 +146,7 @@ def test_read_forcing_reports_missing_mapping_key() -> None:
         read_forcing({"sample": "unused.nc"}, "foo", "missing")
 ```
 
-- [ ] **Step 3: Verify the forcing focus is GREEN**
+- [x] **Step 3: Verify the forcing focus is GREEN**
 
 Run:
 
@@ -156,7 +156,7 @@ Run:
 
 Expected: 5 passed without the xarray `netCDF4` write warning.
 
-- [ ] **Step 4: Commit the fixture fix**
+- [x] **Step 4: Commit the fixture fix**
 
 ```bash
 git add tests/test_forcing_data.py
@@ -173,7 +173,7 @@ git commit -m "test: use h5netcdf forcing fixtures"
 - Consumes: `xarray.get_options()` and, when available, `xarray.set_options(netcdf_engine_order=...)`.
 - Produces: `_prefer_h5netcdf() -> AbstractContextManager[object]`; JCM terrain and forcing reads execute inside it and prior xarray state is restored.
 
-- [ ] **Step 1: Add the scoped-engine regression**
+- [x] **Step 1: Add the scoped-engine regression**
 
 Import xarray in `tests/test_external_tools_coverage.py`, then add:
 
@@ -222,7 +222,7 @@ def test_load_jcm_inputs_scopes_h5netcdf_preference(
     assert tuple(xr.get_options()["netcdf_engine_order"]) == original_order
 ```
 
-- [ ] **Step 2: Run the new test and verify RED**
+- [x] **Step 2: Run the new test and verify RED**
 
 Run:
 
@@ -232,7 +232,7 @@ Run:
 
 Expected: FAIL because the observed default order begins with `netcdf4`.
 
-- [ ] **Step 3: Add the compatibility-aware context manager**
+- [x] **Step 3: Add the compatibility-aware context manager**
 
 Add imports and the private helper to `jax_gcm_tools.py`:
 
@@ -273,7 +273,7 @@ Wrap the external reads:
         forcing = ForcingData.from_file(forcing_file, coords=coords)
 ```
 
-- [ ] **Step 4: Add and verify the older-xarray fallback**
+- [x] **Step 4: Add and verify the older-xarray fallback**
 
 Add:
 
@@ -295,7 +295,7 @@ Run:
 
 Expected: 3 passed; the real packaged-data test may emit only its existing JCM/xarray future warning.
 
-- [ ] **Step 5: Run the complete JCM/tools focus and verify GREEN**
+- [x] **Step 5: Run the complete JCM/tools focus and verify GREEN**
 
 Run:
 
@@ -305,7 +305,7 @@ Run:
 
 Expected: all selected tests pass without `NetCDF: HDF error`.
 
-- [ ] **Step 6: Commit the production integration fix**
+- [x] **Step 6: Commit the production integration fix**
 
 ```bash
 git add vercor/setups/_external/jax_gcm_tools.py tests/test_external_tools_coverage.py
@@ -321,7 +321,7 @@ git commit -m "fix: prefer h5netcdf for JCM inputs"
 - Consumes: completed Tasks 1-3.
 - Produces: verified CI-stability change and a durable progress entry.
 
-- [ ] **Step 1: Run formatting and static gates**
+- [x] **Step 1: Run formatting and static gates**
 
 ```bash
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -m black --check vercor examples tests
@@ -333,7 +333,7 @@ git diff --check
 
 Expected: all commands exit 0; Black changes no files, flake8 reports 0, mypy reports success, and compileall/whitespace checks are silent.
 
-- [ ] **Step 2: Run fast and full pytest**
+- [x] **Step 2: Run fast and full pytest**
 
 ```bash
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -m pytest tests/ -q --fast --tb=short
@@ -342,7 +342,7 @@ Expected: all commands exit 0; Black changes no files, flake8 reports 0, mypy re
 
 Expected: both suites pass without NetCDF/HDF failures.
 
-- [ ] **Step 3: Run branch coverage**
+- [x] **Step 3: Run branch coverage**
 
 ```bash
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -m pytest tests/ -q --tb=short --cov=vercor --cov-branch --cov-report=term-missing --cov-fail-under=90
@@ -350,7 +350,7 @@ Expected: both suites pass without NetCDF/HDF failures.
 
 Expected: suite passes with branch coverage at or above 90%.
 
-- [ ] **Step 4: Record the durable result**
+- [x] **Step 4: Record the durable result**
 
 Add this dated item at the start of `PROGRESS.md` Current Status and append the actual gate counts from Steps 1-3:
 
@@ -358,14 +358,14 @@ Add this dated item at the start of `PROGRESS.md` Current Status and append the 
 - CI artifact and NetCDF backend stability completed locally (2026-07-21): the quality job now reuses the build-once artifact bundle, forcing fixtures explicitly use h5netcdf, and JCM packaged input loading temporarily prefers h5netcdf without leaking xarray configuration. The focused, static, fast, full, and coverage gates passed without NetCDF/HDF failures.
 ```
 
-- [ ] **Step 5: Commit progress documentation**
+- [x] **Step 5: Commit progress documentation**
 
 ```bash
 git add PROGRESS.md docs/superpowers/plans/2026-07-21-ci-h5netcdf-stability.md
 git commit -m "docs: record CI stability verification"
 ```
 
-- [ ] **Step 6: Inspect the final branch**
+- [x] **Step 6: Inspect the final branch**
 
 ```bash
 git status --short --branch
