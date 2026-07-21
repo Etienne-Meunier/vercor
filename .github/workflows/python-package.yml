@@ -1,4 +1,4 @@
-name: VerCOR
+name: vercor
 
 on:
   push:
