@@ -325,9 +325,7 @@ def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
         "name": "vercor-distributions",
         "path": "dist/",
     }
-    assert quality["env"]["VERCOR_ARTIFACT_DIR"] == (
-        "${{ github.workspace }}/dist"
-    )
+    assert quality["env"]["VERCOR_ARTIFACT_DIR"] == ("${{ github.workspace }}/dist")
     checkout = next(
         step for step in quality["steps"] if step.get("uses") == "actions/checkout@v4"
     )
