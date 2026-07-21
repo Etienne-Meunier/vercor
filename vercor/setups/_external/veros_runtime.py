@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from vercor.components import StepContext
+from vercor.components import StepContext, StepResult
+from vercor.exceptions import ComponentError
 import vercor.setups._external.veros_fluxes as _veros_fluxes
 import vercor.setups._external.veros_state as _veros_state
 
@@ -14,45 +15,49 @@ if TYPE_CHECKING:
 
 
 def step_veros_runtime(
-    state: "VerosGCMSetupState",
+    resources: "VerosGCMSetupState",
     fields: Mapping[str, Any],
     context: StepContext,
     payload: Any | None,
-) -> Mapping[str, Any]:
-    """Advance the private host-backed Veros ocean boundary."""
+) -> StepResult:
+    """Advance the payload-owned host-backed Veros ocean boundary."""
 
-    _ = payload
+    if payload is None:
+        raise ComponentError("Veros runtime requires a native runtime payload.")
+    native_state = payload
     time = context.time
-    logger = context.logger
     if time is None:
-        return {}
+        return StepResult(payload=native_state)
 
     taux, tauy, qnet, qnec = _veros_fluxes.compute_fluxes(
-        state._veros_state,
+        native_state,
         fields,
         context.constants,
         context.dtype,
     )
     forcing_fields = _veros_state.prepare_surface_forcing_fields(
-        taux, tauy, qnet, qnec, state.restore_to_climatology
+        taux, tauy, qnet, qnec, resources.restore_to_climatology
     )
 
-    state._veros_state = _veros_state.apply_veros_forcing_fields(
-        state._veros_state,
+    native_state = _veros_state.apply_veros_forcing_fields(
+        native_state,
         forcing_fields,
-        jitted=state.jitted,
+        jitted=resources.jitted,
     )
-    state._veros_state = _veros_state.advance_veros_substeps(
-        state._veros_state,
-        step_function=state._step_function,
-        model_substeps=state.model_substeps,
-        logger=logger,
+    native_state = _veros_state.advance_veros_substeps(
+        native_state,
+        step_function=resources._step_function,
+        model_substeps=resources.model_substeps,
+        logger=context.logger,
     )
-    return {
-        "sea_surface_temperature": _veros_state.extract_veros_runtime_sst(
-            state._veros_state
-        )
-    }
+    return StepResult(
+        fields={
+            "sea_surface_temperature": _veros_state.extract_veros_runtime_sst(
+                native_state
+            )
+        },
+        payload=native_state,
+    )
 
 
 __all__ = ["step_veros_runtime"]

@@ -15,9 +15,9 @@ def test_bundled_factories_install_native_output_providers() -> None:
     camulator = _source("vercor/setups/_external/camulator.py")
 
     assert "jax_gcm_output_provider(state)" in jax_gcm
-    assert "veros_output_provider(state)" in veros
+    assert "veros_output_provider()" in veros
     assert "camulator_output_provider(state)" in camulator
-    assert "variables=(" not in veros.split("veros_output_provider(state)", 1)[0][-200:]
+    assert "variables=(" not in veros.split("veros_output_provider()", 1)[0][-200:]
 
 
 def test_core_output_session_owns_native_output_boundaries() -> None:

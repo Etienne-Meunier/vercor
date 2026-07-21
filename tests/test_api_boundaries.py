@@ -1300,22 +1300,31 @@ def test_external_runtime_helpers_use_concrete_setup_state_annotations() -> None
         "vercor/setups/_external/jax_gcm_runtime.py": (
             "JAXGCMSetupState",
             "vercor.setups._external.jax_gcm_state",
+            "state",
         ),
         "vercor/setups/_external/veros_runtime.py": (
             "VerosGCMSetupState",
             "vercor.setups._external.veros_gcm_state",
+            "resources",
         ),
         "vercor/setups/_external/camulator_runtime.py": (
             "CAMulatorGCMSetupState",
             "vercor.setups._external.camulator_gcm_state",
+            "state",
         ),
     }
 
-    for path_name, (state_name, state_module) in runtime_sources.items():
+    for path_name, (
+        state_name,
+        state_module,
+        parameter_name,
+    ) in runtime_sources.items():
         source = Path(path_name).read_text(encoding="utf-8")
         assert "Protocol" not in source
         assert f"from {state_module} import {state_name}" in source
-        assert f"state: {state_name}" in source or f'state: "{state_name}"' in source
+        assert f"{parameter_name}: {state_name}" in source or (
+            f'{parameter_name}: "{state_name}"' in source
+        )
 
 
 @pytest.mark.fast_always
@@ -1452,6 +1461,14 @@ def test_veros_factory_binds_current_runtime_step_and_setup() -> None:
     )
     assert "partial(_veros_runtime.step_veros_runtime, state)" in factory_source
     assert "LifecycleHooks(setup=state.setup)" in factory_source
+    assert "_veros_output.veros_output_provider()" in factory_source
+    assert "partial(_veros_output.write_veros_snapshot_output, state)" not in (
+        factory_source
+    )
+    runtime_source = Path("vercor/setups/_external/veros_runtime.py").read_text(
+        encoding="utf-8"
+    )
+    assert "resources._veros_state" not in runtime_source
 
 
 @pytest.mark.fast_always

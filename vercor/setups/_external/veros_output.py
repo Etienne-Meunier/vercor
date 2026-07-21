@@ -188,22 +188,22 @@ def veros_average_coordinate_variables(
 
 
 class _VerosOutputProvider:
-    """Ordinary provider adapting the current mutable Veros host state."""
-
-    def __init__(self, state: Any) -> None:
-        self._state = state
+    """Ordinary provider adapting the current payload-owned Veros host state."""
 
     def sample(self, context: OutputContext) -> OutputFrame:
         """Extract the active native variables after one Veros host step."""
 
+        veros_state = context.payload
+        if veros_state is None:
+            raise ValueError("Veros output requires a native runtime payload.")
         native_variables = _native_output_variables(
-            self._state._veros_state,
-            _active_output_variable_names(self._state._veros_state),
+            veros_state,
+            _active_output_variable_names(veros_state),
         )
         return OutputFrame(
             native_variables,
             coordinates=veros_average_coordinate_variables(
-                veros_state=self._state._veros_state,
+                veros_state=veros_state,
                 output_time=context.time,
                 variables=native_variables,
             ),
@@ -211,10 +211,10 @@ class _VerosOutputProvider:
         )
 
 
-def veros_output_provider(state: Any) -> _VerosOutputProvider:
+def veros_output_provider() -> _VerosOutputProvider:
     """Return the native Veros provider installed by the setup factory."""
 
-    return _VerosOutputProvider(state)
+    return _VerosOutputProvider()
 
 
 def _coordinate_dimension_is_extractable(veros_state: Any, dim: str) -> bool:
@@ -279,19 +279,21 @@ def _native_output_variables(
 
 
 def write_veros_snapshot_output(
-    state: Any,
     context: SnapshotContext,
     *,
     variables: Sequence[str] = _DEFAULT_OUTPUT_VARIABLES,
 ) -> None:
     """Write one final Veros native-state snapshot through the shared adapter."""
 
+    veros_state = context.payload
+    if veros_state is None:
+        raise ValueError("Veros snapshot output requires a native runtime payload.")
     selected = tuple(variables) or _DEFAULT_OUTPUT_VARIABLES
-    native_variables = _native_output_variables(state._veros_state, selected)
+    native_variables = _native_output_variables(veros_state, selected)
     frame = OutputFrame(
         native_variables,
         coordinates=veros_average_coordinate_variables(
-            veros_state=state._veros_state,
+            veros_state=veros_state,
             output_time=context.time,
             variables=native_variables,
         ),

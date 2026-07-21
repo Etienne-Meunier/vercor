@@ -130,7 +130,8 @@ class VerosGCMSetupState:
                 "sea_surface_temperature": _veros_state.extract_veros_runtime_sst(
                     self._veros_state
                 )
-            }
+            },
+            payload=self._veros_state,
         )
 
 

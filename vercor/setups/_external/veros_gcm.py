@@ -74,12 +74,12 @@ def make_veros_gcm(
             lifecycle=LifecycleHooks(setup=state.setup),
             output=OutputSpec(
                 provider=(
-                    _veros_output.veros_output_provider(state)
+                    _veros_output.veros_output_provider()
                     if config.output.provider is None
                     else config.output.provider
                 ),
                 snapshot_writer=config.output.snapshot_writer
-                or partial(_veros_output.write_veros_snapshot_output, state),
+                or _veros_output.write_veros_snapshot_output,
                 period=config.output.period,
             ),
         ),

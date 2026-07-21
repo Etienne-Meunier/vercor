@@ -35,8 +35,10 @@ from tests._coverage_support import capture_logger_output, make_test_grid
 from tests.assertions import assert_allclose_compact
 from vercor.calendar import DateTime360, DateTime365
 from vercor.components.contracts import PrefillContext
+from vercor.components import StepResult
 from vercor.components.data import DataComponent
 from vercor.components.contexts import SetupContext, StepContext
+from vercor.exceptions import ComponentError
 from vercor.output import (
     OutputContext,
     OutputFrame,
@@ -1553,22 +1555,32 @@ def test_veros_output_provider_exposes_active_native_variable_universe() -> None
         active=True,
         dims=local_dimensions,
     )
-    provider = veros_output_module.veros_output_provider(
-        SimpleNamespace(_veros_state=state)
-    )
+    later_state = deepcopy(state)
+    later_state.variables.temp = later_state.variables.temp + 1000.0
+    provider = veros_output_module.veros_output_provider()
 
-    frame = provider.sample(
+    first_frame = provider.sample(
         OutputContext(
             component=cast(Any, None),
             state=cast(Any, None),
-            payload=None,
+            payload=state,
             step=0,
             time=datetime(2000, 1, 2),
             dt=timedelta(days=1),
         )
     )
+    later_frame = provider.sample(
+        OutputContext(
+            component=cast(Any, None),
+            state=cast(Any, None),
+            payload=later_state,
+            step=1,
+            time=datetime(2000, 1, 3),
+            dt=timedelta(days=1),
+        )
+    )
 
-    assert tuple(frame.variables) == (
+    assert tuple(first_frame.variables) == (
         "temp",
         "salt",
         "u",
@@ -1581,13 +1593,17 @@ def test_veros_output_provider_exposes_active_native_variable_universe() -> None
         "surface_tauy",
         "psi",
     )
-    assert "sss_clim" not in frame.variables
-    assert "line_psin" not in frame.variables
-    assert "Ai_ez" not in frame.variables
-    assert "time" not in frame.variables
-    assert "time" in frame.coordinates
+    assert "sss_clim" not in first_frame.variables
+    assert "line_psin" not in first_frame.variables
+    assert_allclose_compact(
+        later_frame.variables["temp"].values,
+        first_frame.variables["temp"].values + 1000.0,
+    )
+    assert "Ai_ez" not in first_frame.variables
+    assert "time" not in first_frame.variables
+    assert "time" in first_frame.coordinates
     assert local_dimension_resolutions == 0
-    assert frame.variables["temp"].dims == ("zt", "yt", "xt")
+    assert first_frame.variables["temp"].dims == ("zt", "yt", "xt")
 
 
 def test_veros_write_output_persists_period_mean_and_coordinates(
@@ -1687,12 +1703,8 @@ def test_veros_write_output_persists_period_mean_and_coordinates(
     )
 
 
-def test_veros_snapshot_output_uses_native_state_variables(tmp_path: Path) -> None:
+def test_veros_snapshot_output_uses_native_state_payload(tmp_path: Path) -> None:
     state = _make_veros_output_state()
-    setup_state = SimpleNamespace(
-        _veros_state=state,
-        output_variables=("temp", "surface_taux"),
-    )
     component_state = _runtime_component_state(
         "OCN",
         {"temp": np.full((2, 3, 2), -999.0)},
@@ -1700,11 +1712,10 @@ def test_veros_snapshot_output_uses_native_state_variables(tmp_path: Path) -> No
     output = tmp_path / "OCN.snapshot.nc"
 
     veros_output_module.write_veros_snapshot_output(
-        setup_state,
         SnapshotContext(
             component=cast(Any, None),
             state=ComponentState._from_runtime("OCN", None, component_state),
-            payload=component_state.payload,
+            payload=state,
             output_path=output,
             time=datetime(2000, 1, 2),
             logger=None,
@@ -1850,6 +1861,7 @@ def test_veros_initialize_spinup_follows_enabled_only(
 
     assert component.model_substeps == 2
     assert step_calls["count"] == expected_steps
+    assert setup_result.payload is component._veros_state
     assert isinstance(setup_result.fields["sea_surface_temperature"], jax.Array)
     assert_allclose_compact(
         setup_result.fields["sea_surface_temperature"],
@@ -1917,10 +1929,9 @@ def test_veros_constructor_builds_jax_backed_grid(
     )
     assert component.spec.outputs == ("sea_surface_temperature",)
     assert component.grid.binary_mask.shape == (4, 4)
-    assert callable(component.spec.output.snapshot_writer)
-    assert "variables" not in getattr(
-        component.spec.output.snapshot_writer,
-        "keywords",
+    assert (
+        component.spec.output.snapshot_writer
+        is veros_output_module.write_veros_snapshot_output
     )
     expected_mask = np.ones((4, 4))
     expected_mask[1, 0] = 0.0
@@ -1945,7 +1956,8 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     component.restore_to_climatology = restore_to_climatology
     component.model_substeps = 2
     component.jitted = False
-    component._veros_state = _make_fake_veros_state(surface_temperature=12.0)
+    initial_native_state = _make_fake_veros_state(surface_temperature=12.0)
+    component._veros_state = initial_native_state
     component.name = "OCN"
     component.grid = make_test_grid(
         name="ocn",
@@ -1965,7 +1977,7 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         assert jitted is False
         assert all(isinstance(value, jax.Array) for value in forcing_fields)
         forcing_calls.append(forcing_fields)
-        return state
+        return deepcopy(state)
 
     def fake_step_function(state: Any) -> Any:
         state.variables.temp = np.full((8, 8, 1, 1), 15.0, dtype=float)
@@ -1995,16 +2007,16 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
         time=datetime(2000, 1, 1),
         logger=coupler.logger,
     )
-    updates = veros_runtime_module.step_veros_runtime(
+    result = veros_runtime_module.step_veros_runtime(
         component,
         component_state.fields.to_mapping(),
         step_context,
-        None,
-    )
-    component_state = component_state.with_fields(
-        component_state.fields.set_many(updates)
+        initial_native_state,
     )
 
+    assert isinstance(result, StepResult)
+    assert result.payload is not initial_native_state
+    assert component._veros_state is initial_native_state
     assert len(forcing_calls) == 1
     forcing_fields = forcing_calls[0]
     assert_allclose_compact(
@@ -2021,10 +2033,20 @@ def test_veros_step_sets_forcing_fields_and_refreshes_sst(
     )
     assert_allclose_compact(forcing_fields.qnec, expected_qnec)
     assert_allclose_compact(
-        component_state.fields.get("sea_surface_temperature"),
+        result.fields["sea_surface_temperature"],
         np.full((4, 4), 288.15),
     )
-    assert isinstance(component_state.fields.get("sea_surface_temperature"), jax.Array)
+    assert isinstance(result.fields["sea_surface_temperature"], jax.Array)
+
+
+def test_veros_step_requires_native_runtime_payload() -> None:
+    resources = veros_gcm_state_module.VerosGCMSetupState.__new__(
+        veros_gcm_state_module.VerosGCMSetupState
+    )
+    context = StepContext(dt_seconds=20.0, time=None, logger=None)
+
+    with pytest.raises(ComponentError, match="native runtime payload"):
+        veros_runtime_module.step_veros_runtime(resources, {}, context, None)
 
 
 def test_veros_step_nan_cleans_forcing_fields_before_apply(
@@ -2086,7 +2108,7 @@ def test_veros_step_nan_cleans_forcing_fields_before_apply(
         component,
         component_state.fields.to_mapping(),
         step_context,
-        None,
+        component._veros_state,
     )
 
     assert len(forcing_calls) == 1
