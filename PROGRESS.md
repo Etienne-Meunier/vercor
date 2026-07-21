@@ -6,6 +6,7 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- CAMulator atmosphere payload ownership completed locally (2026-07-21): setup seeds a frozen native payload; functional stepping clones and advances payload-owned model state, cursor, forecast hour, and predictions; providers and snapshots sample only context payloads. TDD RED was 5 expected failures; exact focus passed 18/18, complete focus passed 90/90, static gates passed, and full passed 1,242/1,242 with five known third-party warnings.
 - Explicit CAMulator forcing alignment and functional land cursor completed locally (2026-07-21): `strict` now rejects coupler/forcing start mismatches, `forcing_start` opts in without warnings, typed configuration carries the policy, the immutable cursor advances functionally, and land owns its cursor in runtime payload; TDD RED was 4 expected failures and focused GREEN passed all selected tests.
 - Veros payload ownership completed locally (2026-07-21): setup seeds the native payload; runtime returns `StepResult` without mutating setup resources; provider and snapshot output read context payloads. RED was 4 transition/provider plus 2 setup failures; focused GREEN passed 79/79 (8/8 non-fast ownership), and full passed 1,242/1,242 with five known third-party warnings.
 - Static component identity through setup completed locally (2026-07-21): setup cannot replace declared name, grid, or spec; the adapter revalidates after the hook before examining its result. TDD RED was 3/3 expected failures; focused GREEN passed 42/42.

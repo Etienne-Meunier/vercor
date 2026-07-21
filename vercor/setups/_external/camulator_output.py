@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from importlib import resources
 from os.path import expandvars
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
@@ -18,6 +18,9 @@ from vercor.output import OutputContext, OutputFrame, SnapshotContext
 from vercor.output._dataset import time_coordinate_variable, used_dimension_names
 from vercor.output._netcdf import write_netcdf_dataset
 from vercor.output import OutputVariable
+
+if TYPE_CHECKING:
+    from vercor.setups._external.camulator_gcm_state import CAMulatorRuntimePayload
 
 CAMULATOR_TIME_DIM = "time"
 _LEVEL_NAME = "level"
@@ -125,17 +128,19 @@ def camulator_average_data_variables(
 class _CAMulatorOutputProvider:
     """Ordinary provider adapting the latest CAMulator prediction tensor."""
 
-    def __init__(self, state: Any, *, latest_only: bool = False) -> None:
-        self._state = state
+    def __init__(self, resources: Any, *, latest_only: bool = False) -> None:
+        self._resources = resources
         self._latest_only = latest_only
 
     def sample(self, context: OutputContext) -> OutputFrame:
         """Extract the latest native prediction with CAMulator metadata."""
 
+        payload = context.payload
+        payload = _require_camulator_runtime_payload(payload)
         prediction = (
-            self._state._output_prediction
+            payload.output_prediction
             if self._latest_only
-            else self._state._output_prediction_samples
+            else payload.output_prediction_samples
         )
         if prediction is None:
             raise ValueError("CAMulator output requires a completed prediction.")
@@ -143,22 +148,22 @@ class _CAMulatorOutputProvider:
             raise TypeError("CAMulator output requires a datetime timestamp.")
         variables = camulator_period_output_variables(
             prediction,
-            metadata=self._state.metadata,
-            conf=self._state.conf,
-            state_transformer=self._state.state_transformer,
+            metadata=self._resources.metadata,
+            conf=self._resources.conf,
+            state_transformer=self._resources.state_transformer,
         )
         return OutputFrame(
             camulator_average_data_variables(
                 variables,
-                metadata=self._state.metadata,
+                metadata=self._resources.metadata,
             ),
             coordinates=camulator_average_coordinate_variables(
                 variables,
                 output_time=context.time,
-                latitude=self._state.latlons.latitude.values,
-                longitude=self._state.latlons.longitude.values,
-                metadata=self._state.metadata,
-                conf=self._state.conf,
+                latitude=self._resources.latlons.latitude.values,
+                longitude=self._resources.latlons.longitude.values,
+                metadata=self._resources.metadata,
+                conf=self._resources.conf,
             ),
             sample_dimension=CAMULATOR_TIME_DIM,
             time_dimension=CAMULATOR_TIME_DIM,
@@ -166,29 +171,32 @@ class _CAMulatorOutputProvider:
 
 
 def camulator_output_provider(
-    state: Any,
+    resources: Any,
     *,
     latest_only: bool = False,
 ) -> _CAMulatorOutputProvider:
     """Return the native CAMulator provider installed by the setup factory."""
 
-    return _CAMulatorOutputProvider(state, latest_only=latest_only)
+    return _CAMulatorOutputProvider(resources, latest_only=latest_only)
 
 
 def write_camulator_snapshot_output(
-    state: Any,
+    resources: Any,
     provider: _CAMulatorOutputProvider,
     context: SnapshotContext,
 ) -> None:
     """Write one final CAMulator prediction snapshot through the shared adapter."""
 
-    if state._output_prediction is None:
+    _ = resources
+    payload = context.payload
+    payload = _require_camulator_runtime_payload(payload)
+    if payload.output_prediction is None:
         return
     frame = provider.sample(
         OutputContext(
             component=context.component,
             state=context.state,
-            payload=context.payload,
+            payload=payload,
             step=0,
             time=context.time,
             dt=timedelta(0),
@@ -201,6 +209,16 @@ def write_camulator_snapshot_output(
         global_attrs=frame.metadata or None,
         logger=context.logger,
     )
+
+
+def _require_camulator_runtime_payload(payload: Any) -> "CAMulatorRuntimePayload":
+    """Return a validated payload without creating an initialization import cycle."""
+
+    from vercor.setups._external.camulator_gcm_state import CAMulatorRuntimePayload
+
+    if not isinstance(payload, CAMulatorRuntimePayload):
+        raise ValueError("CAMulator output requires a native runtime payload.")
+    return payload
 
 
 def _validate_supported_output_options(conf: Mapping[str, Any]) -> None:

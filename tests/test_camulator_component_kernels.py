@@ -28,7 +28,7 @@ from tests.assertions import assert_allclose_compact
 from vercor.recipes import ATMOSPHERE_TO_LAND_RADIATION_FIELDS
 from vercor._runtime.contracts import build_exchange_contracts
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.components import ComponentSpec, DataComponent
+from vercor.components import ComponentSpec, DataComponent, StepResult
 from vercor.components._adapter import normalize_component, prepare_component
 from vercor.components.runtime_execution import step_component_runtime_state
 from vercor.dtypes import DTypePolicy
@@ -333,6 +333,20 @@ def _camulator_prediction(
     ).reshape(1, total_channels, 1, height, width)
 
 
+def _camulator_runtime_payload(
+    *,
+    model_state: torch.Tensor,
+    prediction: torch.Tensor | None = None,
+    prediction_samples: torch.Tensor | None = None,
+) -> Any:
+    return camulator_gcm_state_module.CAMulatorRuntimePayload(
+        model_state=model_state,
+        cursor=camulator_forcing_module.CamulatorRuntimeCursor(),
+        output_prediction=prediction,
+        output_prediction_samples=prediction_samples,
+    )
+
+
 def test_camulator_prediction_values_normalizes_array_like_tensor_output() -> None:
     class _ArrayLike:
         ndim = 4
@@ -447,9 +461,7 @@ def test_camulator_output_provider_returns_native_frame(
         "latitude": {"units": "degrees_north"},
     }
 
-    state = SimpleNamespace(
-        _output_prediction=prediction,
-        _output_prediction_samples=prediction,
+    resources = SimpleNamespace(
         metadata=metadata,
         conf=conf,
         state_transformer=None,
@@ -458,13 +470,17 @@ def test_camulator_output_provider_returns_native_frame(
             longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
         ),
     )
-    provider = camulator_output_module.camulator_output_provider(state)
+    provider = camulator_output_module.camulator_output_provider(resources)
 
     frame = provider.sample(
         OutputContext(
             component=cast(Any, None),
             state=cast(Any, None),
-            payload=None,
+            payload=_camulator_runtime_payload(
+                model_state=torch.zeros_like(prediction),
+                prediction=prediction,
+                prediction_samples=prediction,
+            ),
             step=0,
             time=datetime(2000, 1, 2),
             dt=timedelta(days=1),
@@ -488,9 +504,7 @@ def test_camulator_output_provider_preserves_every_model_substep() -> None:
         2 * 8 * 2 * 2,
         dtype=torch.float32,
     ).reshape(2, 8, 1, 2, 2)
-    state = SimpleNamespace(
-        _output_prediction=predictions[-1:],
-        _output_prediction_samples=predictions,
+    resources = SimpleNamespace(
         metadata={},
         conf=_camulator_output_conf(save_vars=["T"]),
         state_transformer=None,
@@ -500,11 +514,15 @@ def test_camulator_output_provider_preserves_every_model_substep() -> None:
         ),
     )
 
-    frame = camulator_output_module.camulator_output_provider(state).sample(
+    frame = camulator_output_module.camulator_output_provider(resources).sample(
         OutputContext(
             component=cast(Any, None),
             state=cast(Any, None),
-            payload=None,
+            payload=_camulator_runtime_payload(
+                model_state=torch.zeros_like(predictions[-1:]),
+                prediction=predictions[-1:],
+                prediction_samples=predictions,
+            ),
             step=0,
             time=datetime(2000, 1, 2),
             dt=timedelta(days=1),
@@ -934,14 +952,15 @@ def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is
     )
 
     samples: list[str] = []
+    sample_payloads: list[Any] = []
 
     class _Provider:
         def __init__(self, name: str) -> None:
             self.name = name
 
         def sample(self, context: OutputContext) -> OutputFrame:
-            _ = context
             samples.append(self.name)
+            sample_payloads.append(context.payload)
             return OutputFrame({"temperature": OutputVariable((), np.asarray(280.0))})
 
     custom_provider = _Provider("custom")
@@ -972,15 +991,18 @@ def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is
         )
     )
     writer = cast(Any, component.spec.output.snapshot_writer)
-    setup_state = writer.args[0]
-    setup_state._output_prediction = torch.ones((1, 1, 1, 1, 1))
-    setup_state._output_prediction_samples = setup_state._output_prediction
+    prediction = torch.ones((1, 1, 1, 1, 1))
+    payload = _camulator_runtime_payload(
+        model_state=torch.zeros_like(prediction),
+        prediction=prediction,
+        prediction_samples=prediction,
+    )
 
     writer(
         SnapshotContext(
             component=component,
             state=cast(Any, None),
-            payload=None,
+            payload=payload,
             output_path=tmp_path / "camulator.snapshot.nc",
             time=datetime(2000, 1, 2),
             logger=None,
@@ -988,6 +1010,7 @@ def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is
     )
 
     assert samples == ["native"]
+    assert sample_payloads == [payload]
     assert native_modes == [True]
 
 
@@ -1305,7 +1328,7 @@ def test_camulator_land_declares_radiation_exchange_inputs(
         validate_exchange_fields_declared(component, contracts[name])
 
 
-def test_camulator_step_uses_jax_prepared_forcing_boundaries(
+def test_camulator_runtime_step_is_reproducible_from_one_payload(
     monkeypatch: Any,
 ) -> None:
     start = datetime(2000, 1, 1, 0, 0, 0)
@@ -1335,9 +1358,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     captured: dict[str, torch.Tensor] = {}
 
     class _Stepper:
-        def __init__(self) -> None:
-            self.model_calls = 0
-
         def build_input_with_forcing(
             self,
             state: torch.Tensor,
@@ -1351,12 +1371,11 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         def shift_state_forward(
             self, state: torch.Tensor, prediction: torch.Tensor
         ) -> torch.Tensor:
-            _ = prediction
-            return state
+            _ = state
+            return prediction
 
         def model(self, model_input: torch.Tensor) -> torch.Tensor:
-            self.model_calls += 1
-            return torch.full_like(model_input, float(self.model_calls))
+            return torch.full_like(model_input, float(model_input.flatten()[0] + 1))
 
         def _apply_postprocessing(
             self,
@@ -1388,7 +1407,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         ),
     )
     component.model_substeps = 2
-    component.runtime_cursor = camulator_forcing_module.CamulatorRuntimeCursor(
+    cursor = camulator_forcing_module.CamulatorRuntimeCursor(
         start_ix=0,
         init_str="2000-01-01T00Z",
         model_substeps=2,
@@ -1398,7 +1417,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     component.device = "cpu"
     component.stepper = _Stepper()
     component.static_forcing = torch.zeros((1, 1, 1, 2, 2))
-    component.state = torch.zeros((1, 6, 1, 2, 2))
     component.LANDM_COSLAT = jnp.asarray([[0.0, 1.0], [0.5, 0.0]])
     component.name = "ATM"
     component.grid = RectilinearGrid(
@@ -1428,7 +1446,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     )
     component.lead_time_periods = 6
     component.output_frequency = None
-    component.forecast_hour = 1
     component.metadata = {}
     component.state_transformer = SimpleNamespace(
         inverse_transform=lambda prediction: prediction
@@ -1456,16 +1473,35 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         time=start,
         logger=cast(Any, _RecordingLogger()),
     )
-    updates = camulator_runtime_module.step_camulator_runtime(
+    initial_payload = camulator_gcm_state_module.CAMulatorRuntimePayload(
+        model_state=torch.zeros((1, 6, 1, 2, 2)),
+        cursor=cursor,
+    )
+    first = camulator_runtime_module.step_camulator_runtime(
         component,
         component_state.fields.to_mapping(),
         step_context,
-        None,
+        initial_payload,
+    )
+    second = camulator_runtime_module.step_camulator_runtime(
+        component,
+        component_state.fields.to_mapping(),
+        step_context,
+        initial_payload,
     )
     component_state = component_state.with_fields(
-        component_state.fields.set_many(updates)
+        component_state.fields.set_many(first.fields)
     )
 
+    assert isinstance(first, StepResult)
+    assert isinstance(second, StepResult)
+    assert first.payload.cursor.timestep_counter == 1
+    assert second.payload.cursor.timestep_counter == 1
+    assert initial_payload.cursor.timestep_counter == 0
+    assert torch.equal(
+        first.payload.output_prediction,
+        second.payload.output_prediction,
+    )
     assert captured["dynamic_forcing"].shape == (1, 2, 1, 2, 2)
     assert_allclose_compact(
         captured["dynamic_forcing"][0, :, 0],
@@ -1487,17 +1523,16 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     assert_allclose_compact(
         component_state.fields.get("temperature"), np.full((2, 2), 9.0)
     )
-    assert component.runtime_cursor.timestep_counter == 1
     assert_allclose_compact(
-        component._output_prediction,
-        torch.full_like(component._output_prediction, 2.0),
+        first.payload.output_prediction,
+        torch.full_like(first.payload.output_prediction, 2.0),
     )
     assert_allclose_compact(
         captured["runtime_prediction"],
         torch.full_like(captured["runtime_prediction"], 2.0),
     )
-    assert component._output_prediction_samples.shape[0] == 2
+    assert first.payload.output_prediction_samples.shape[0] == 2
     assert_allclose_compact(
-        component._output_prediction_samples[:, 0, 0, 0, 0],
+        first.payload.output_prediction_samples[:, 0, 0, 0, 0],
         np.asarray([1.0, 2.0]),
     )

@@ -1310,7 +1310,7 @@ def test_external_runtime_helpers_use_concrete_setup_state_annotations() -> None
         "vercor/setups/_external/camulator_runtime.py": (
             "CAMulatorGCMSetupState",
             "vercor.setups._external.camulator_gcm_state",
-            "state",
+            "resources",
         ),
     }
 
@@ -1513,8 +1513,26 @@ def test_camulator_gcm_factory_passes_runtime_step_directly() -> None:
         "import vercor.setups._external.camulator_runtime as _camulator_runtime"
         in gcm_source
     )
-    assert "partial(_camulator_runtime.step_camulator_runtime, state)" in gcm_source
-    assert "LifecycleHooks(setup=state.setup)" in gcm_source
+    assert "partial(_camulator_runtime.step_camulator_runtime, resources)" in gcm_source
+    assert "LifecycleHooks(setup=resources.setup)" in gcm_source
+    setup_attributes = {
+        target.attr
+        for node in ast.walk(setup_state_class)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
+        if isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    }
+    assert setup_attributes.isdisjoint(
+        {
+            "state",
+            "runtime_cursor",
+            "_output_prediction",
+            "_output_prediction_samples",
+            "forecast_hour",
+        }
+    )
 
 
 @pytest.mark.fast_always

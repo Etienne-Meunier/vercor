@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Literal, Optional
 
@@ -24,6 +25,17 @@ import vercor.setups._external.camulator_contracts as _camulator_contracts
 from vercor.setups._external.camulator_forcing import CamulatorRuntimeCursor
 import vercor.setups._external.camulator_init as _camulator_init
 import vercor.setups._external.camulator_tensors as _camulator_tensors
+
+
+@dataclass(frozen=True)
+class CAMulatorRuntimePayload:
+    """Evolving CAMulator state owned by one VerCOR RunState."""
+
+    model_state: torch.Tensor
+    cursor: CamulatorRuntimeCursor
+    forecast_hour: int = 1
+    output_prediction: torch.Tensor | None = None
+    output_prediction_samples: torch.Tensor | None = None
 
 
 class CAMulatorGCMSetupState:
@@ -51,9 +63,6 @@ class CAMulatorGCMSetupState:
         self.device = device
         self.init_noise = init_noise
         self.time_alignment = time_alignment
-        self.runtime_cursor = CamulatorRuntimeCursor()
-        self._output_prediction: torch.Tensor | None = None
-        self._output_prediction_samples: torch.Tensor | None = None
 
         context = _camulator_init.initialize_camulator(
             config_path=self.config_path,
@@ -66,7 +75,7 @@ class CAMulatorGCMSetupState:
         self.stepper = context["stepper"]
         self.forcing_ds_norm = context["forcing_dataset"]
         self.static_forcing = context["static_forcing"]
-        self.state = context["initial_state"]
+        self.initial_model_state = context["initial_state"]
         self.latlons = context["latlons"]
         self.metadata = context["metadata"]
         self.device = context["device"]
@@ -102,15 +111,16 @@ class CAMulatorGCMSetupState:
             timedelta(hours=self.lead_time_periods),
         )
 
+        model_state = self.initial_model_state
         if self.init_noise is not None:
-            self.state = _camulator_init.add_init_noise(
-                self.state,
+            model_state = _camulator_init.add_init_noise(
+                model_state,
                 noise_std=self.init_noise,
                 logger=logger,
             )
 
         logger.info("Tracing model with torch.jit...")
-        dummy_input = torch.zeros_like(self.state)
+        dummy_input = torch.zeros_like(model_state)
         traced_model = torch.jit.trace(self.stepper.model, dummy_input)
         self.stepper.model = traced_model
         logger.info(f"Model traced with input shape: {dummy_input.shape}")
@@ -134,7 +144,7 @@ class CAMulatorGCMSetupState:
 
         self.dynamic_ds = self.forcing_ds_norm[self.df_vars]
 
-        self.runtime_cursor = CamulatorRuntimeCursor.initialize(
+        cursor = CamulatorRuntimeCursor.initialize(
             conf=self.conf,
             dynamic_ds=self.dynamic_ds,
             coupler_start_datetime=self.coupler_start_datetime,
@@ -149,18 +159,19 @@ class CAMulatorGCMSetupState:
         self.accessor_output = _camulator_tensors.StateVariableAccessor(
             self.conf, tensor_type="output"
         )
-        self._output_prediction = None
-        self._output_prediction_samples = None
-
-        self.forecast_hour = 1
         _ = component
         return SetupResult(
             fields=grid_field_defaults(
                 _camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
-            )
+            ),
+            payload=CAMulatorRuntimePayload(
+                model_state=model_state,
+                cursor=cursor,
+            ),
         )
 
 
 __all__ = [
     "CAMulatorGCMSetupState",
+    "CAMulatorRuntimePayload",
 ]

@@ -40,7 +40,7 @@ def make_camulator_gcm(
     import vercor.setups._external.camulator_runtime as _camulator_runtime
     from vercor.setups._external.camulator_gcm_state import CAMulatorGCMSetupState
 
-    state = CAMulatorGCMSetupState(
+    resources = CAMulatorGCMSetupState(
         config_path=config.config_path,
         name=config.name,
         model_weights_path=config.model_weights_path,
@@ -50,31 +50,31 @@ def make_camulator_gcm(
         logger=config.logger,
     )
     output_provider = (
-        _camulator_output.camulator_output_provider(state)
+        _camulator_output.camulator_output_provider(resources)
         if config.output.provider is None
         else config.output.provider
     )
     snapshot_writer = config.output.snapshot_writer
     if snapshot_writer is None:
         snapshot_provider = _camulator_output.camulator_output_provider(
-            state,
+            resources,
             latest_only=True,
         )
         snapshot_writer = partial(
             _camulator_output.write_camulator_snapshot_output,
-            state,
+            resources,
             snapshot_provider,
         )
     component = CallableComponent(
         config.name,
-        state.grid,
-        partial(_camulator_runtime.step_camulator_runtime, state),
+        resources.grid,
+        partial(_camulator_runtime.step_camulator_runtime, resources),
         spec=ComponentSpec(
             inputs=("sea_surface_temperature", "land_surface_temperature"),
             outputs=_camulator_contracts.CAMULATOR_RUNTIME_FIELD_NAMES,
             initial_fields=_camulator_contracts.camulator_runtime_field_defaults(),
             execution="host",
-            lifecycle=LifecycleHooks(setup=state.setup),
+            lifecycle=LifecycleHooks(setup=resources.setup),
             output=OutputSpec(
                 provider=output_provider,
                 snapshot_writer=snapshot_writer,
