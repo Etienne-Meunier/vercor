@@ -4,9 +4,15 @@
 
 **Goal:** Reuse the solver created by one Veros component across its copy-owned runtime states without rebuilding the ILU preconditioner or retaining copied states in Veros' cache.
 
-**Architecture:** `VerosGCMSetupState` captures its setup-created solver once and passes it into the existing copy-before-mutate step helper. That helper temporarily binds each copied `VerosState` identity to the component solver in Veros' native cache, calls the native step, and restores or removes the temporary entry in `finally`.
+**Architecture:** `VerosGCMSetupState` captures its setup-created solver once,
+removes the setup-state cache key, and passes the solver into the existing
+copy-before-mutate step helper. That helper temporarily binds each copied
+`VerosState` identity to the component solver in Veros' native cache, calls the
+native step, and restores or removes the temporary entry in `finally`. A
+single private compatibility helper validates the shared mutable cache exposed
+by Veros `>=1.6.2,<1.7` before either operation.
 
-**Tech Stack:** Python 3.13, Veros 1.6.2, SciPy, JAX, pytest, Black, flake8, mypy.
+**Tech Stack:** Python 3.13, Veros >=1.6.2,<1.7, SciPy, JAX, pytest, Black, flake8, mypy.
 
 ## Global Constraints
 

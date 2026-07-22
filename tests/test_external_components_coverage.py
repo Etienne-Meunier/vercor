@@ -1509,6 +1509,92 @@ def test_veros_pure_restores_solver_cache_when_step_fails(
     assert solver_cache == ({key: prior_solver} if has_prior_entry else {})
 
 
+def test_veros_component_solvers_are_isolated_and_release_owner_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_owner = _FakeVerosStepState(counter=1)
+    second_owner = _FakeVerosStepState(counter=1)
+    first_copied_state = _FakeVerosStepState(counter=1)
+    second_copied_state = _FakeVerosStepState(counter=1)
+    unrelated_state = _FakeVerosStepState(counter=1)
+    first_solver = object()
+    second_solver = object()
+    unrelated_solver = object()
+    solver_cache: dict[tuple[Any, ...], Any] = {
+        (first_owner,): first_solver,
+        (second_owner,): second_solver,
+        (unrelated_state,): unrelated_solver,
+    }
+    copied_states = {
+        first_owner: first_copied_state,
+        second_owner: second_copied_state,
+    }
+
+    monkeypatch.setattr(veros_get_linear_solver, "cache", solver_cache)
+    monkeypatch.setattr(veros_get_linear_solver.__wrapped__, "cache", solver_cache)
+    monkeypatch.setattr(
+        veros_state_module,
+        "copy_state",
+        lambda state, jitted=True: copied_states[state],
+    )
+
+    assert veros_state_module.get_component_linear_solver(first_owner) is first_solver
+    assert solver_cache == {
+        (second_owner,): second_solver,
+        (unrelated_state,): unrelated_solver,
+    }
+    assert veros_state_module.get_component_linear_solver(second_owner) is second_solver
+    assert solver_cache == {(unrelated_state,): unrelated_solver}
+
+    observed_solvers: list[Any] = []
+
+    def first_step(state: Any) -> None:
+        observed_solvers.append(veros_get_linear_solver(state))
+
+    def failing_second_step(state: Any) -> None:
+        observed_solvers.append(veros_get_linear_solver(state))
+        raise RuntimeError("second owner failed")
+
+    assert (
+        veros_state_module.pure(
+            first_owner,
+            jitted=False,
+            step=first_step,
+            linear_solver=first_solver,
+        )
+        is first_copied_state
+    )
+    with pytest.raises(RuntimeError, match="second owner failed"):
+        veros_state_module.pure(
+            second_owner,
+            jitted=False,
+            step=failing_second_step,
+            linear_solver=second_solver,
+        )
+
+    assert observed_solvers == [first_solver, second_solver]
+    assert solver_cache == {(unrelated_state,): unrelated_solver}
+
+
+@pytest.mark.parametrize("cache_mode", ("not_mapping", "different_mapping"))
+def test_veros_component_solver_cache_requires_supported_native_interface(
+    monkeypatch: pytest.MonkeyPatch,
+    cache_mode: str,
+) -> None:
+    state = _FakeVerosStepState(counter=1)
+    cache: Any = {} if cache_mode == "different_mapping" else object()
+    wrapped_cache: Any = {} if cache_mode == "different_mapping" else cache
+
+    monkeypatch.setattr(veros_get_linear_solver, "cache", cache)
+    monkeypatch.setattr(veros_get_linear_solver.__wrapped__, "cache", wrapped_cache)
+
+    with pytest.raises(
+        RuntimeError,
+        match="component-scoped Veros solver caching requires Veros >=1.6.2,<1.7",
+    ):
+        veros_state_module.get_component_linear_solver(state)
+
+
 def test_veros_update_veros_interior_supports_jit_and_gradients() -> None:
     array = jnp.zeros((8, 8, 1), dtype=jnp.float64)
     interior = jnp.arange(16.0, dtype=jnp.float64).reshape(4, 4, 1)

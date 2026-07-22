@@ -48,7 +48,8 @@ payload-ownership contract.
 `VerosGCMSetupState` captures the solver that Veros creates during
 `model.setup()`. Looking it up through Veros' existing memoized accessor does
 not construct a second solver because the original setup state is already a
-cache key.
+cache key. Capture then removes exactly that setup-state key, so a discarded
+component does not remain retained by Veros' process-level cache.
 
 The existing private copy-before-mutate step helper receives this component-
 owned solver. Immediately before invoking the native Veros step, a focused
@@ -59,8 +60,13 @@ modification and receives the retained solver through its normal accessor.
 The temporary association is scoped with `try`/`finally`. If the copied state
 had no prior entry, the helper removes it after the step. If an entry already
 existed, the helper restores it. Cleanup therefore occurs on both successful
-and failing steps, avoids cache growth, and does not disturb Veros' original
-setup-state entry.
+and failing steps, avoids cache growth, and preserves unrelated cache entries.
+
+This integration relies on Veros' private memoization interface and therefore
+supports `veros>=1.6.2,<1.7`. One private VerCOR helper validates that
+`get_linear_solver.cache` and the wrapped accessor expose the same mutable
+mapping before cache access; an incompatible interface raises a clear
+component-scoped compatibility error.
 
 No public VerCOR API, component declaration, runtime payload type, model
 numerics, output contract, or dependency order changes.

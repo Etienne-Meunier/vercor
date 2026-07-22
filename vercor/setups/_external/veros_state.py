@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from copy import deepcopy
 from typing import Any, Callable, NamedTuple, cast
 
@@ -102,12 +103,37 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
     return state_copy
 
 
-def get_component_linear_solver(state: VerosState) -> Any:
-    """Return the native linear solver created for one Veros component."""
+def _get_veros_linear_solver_interface() -> (
+    tuple[Callable[[VerosState], Any], MutableMapping[tuple[VerosState], Any]]
+):
+    """Return Veros' supported memoized solver accessor and shared cache."""
 
     from veros.core.external.solvers import get_linear_solver
 
-    return get_linear_solver(state)
+    solver_cache = getattr(get_linear_solver, "cache", None)
+    wrapped_solver = getattr(get_linear_solver, "__wrapped__", None)
+    wrapped_cache = getattr(wrapped_solver, "cache", None)
+    if (
+        not isinstance(solver_cache, MutableMapping)
+        or solver_cache is not wrapped_cache
+    ):
+        raise RuntimeError(
+            "component-scoped Veros solver caching requires Veros >=1.6.2,<1.7 "
+            "with get_linear_solver.cache and its wrapped accessor exposing "
+            "the same mutable mapping"
+        )
+    return cast(Callable[[VerosState], Any], get_linear_solver), cast(
+        MutableMapping[tuple[VerosState], Any], solver_cache
+    )
+
+
+def get_component_linear_solver(state: VerosState) -> Any:
+    """Return and detach the native linear solver for one Veros component."""
+
+    get_linear_solver, solver_cache = _get_veros_linear_solver_interface()
+    solver = get_linear_solver(state)
+    solver_cache.pop((state,), None)
+    return solver
 
 
 def pure(
@@ -118,10 +144,8 @@ def pure(
 ) -> VerosState:
     """Copy state and run one native step with the component-owned solver."""
 
-    from veros.core.external.solvers import get_linear_solver
-
     next_state = copy_state(state, jitted=jitted)
-    solver_cache = cast(dict[tuple[VerosState], Any], get_linear_solver.cache)
+    _, solver_cache = _get_veros_linear_solver_interface()
     cache_key = (next_state,)
     missing = object()
     previous_solver = solver_cache.get(cache_key, missing)

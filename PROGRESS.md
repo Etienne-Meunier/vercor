@@ -9,10 +9,10 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`,
 
 - Veros component-scoped linear-solver caching completed locally (2026-07-22):
   the setup-created solver is reused across copy-owned native states with
-  exception-safe temporary cache binding. TDD RED/GREEN was 4/4; the real
-  Veros cache stayed 1→1→1 with no runtime ILU rebuild; external-component,
-  fast, full, coverage, formatting, lint, typing, compile, and whitespace gates
-  passed. Public APIs, native payloads, and model numerics remain unchanged.
+  exception-safe temporary cache binding, setup-key release, owner isolation,
+  and validated Veros >=1.6.2,<1.7 cache ABI. TDD RED/GREEN, real-cache,
+  external-component, fast, full, coverage, formatting, lint, typing, compile,
+  and whitespace gates passed. Public APIs, native payloads, and numerics stay unchanged.
 - Final-review corrections completed locally (2026-07-21): lifecycle identity,
   CAMulator calendar rejection, and API review evidence are complete. Focused,
   fast, full, static, prior 91.01% coverage, and artifact gates passed. Deferred
