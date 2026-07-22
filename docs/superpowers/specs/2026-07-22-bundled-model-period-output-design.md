@@ -53,9 +53,10 @@ def step_period_output() -> OutputSpec:
 
 The four slab factories pass this policy to their existing `ComponentSpec`
 instances. The shared `time_interpolated_data_component` helper passes the same
-policy to its `ComponentSpec`, so ERA5, ERA-Interim, JCM data, and future
-bundled data factories using that helper receive consistent behavior without
-duplicating declarations.
+policy to its `ComponentSpec`, so ERA5, ERA-Interim, and future bundled data
+factories using that helper receive consistent behavior without duplicating
+declarations. The direct JCM land data factory reuses the same policy in its
+existing `ComponentSpec`.
 
 The component classes, output coordinator, provider implementation, NetCDF
 writer, and model kernels do not change. This preserves the existing ownership
@@ -91,6 +92,7 @@ Behavior-first tests will establish the change through a red/green cycle:
 - a representative slab component run with `OutputTarget` writes one period
   file per step containing declared outputs and excluding input-only fields;
 - the shared data-component factory declares the same step-period policy;
+- the direct JCM land data factory declares the same step-period policy;
 - a representative data component run writes declared outputs and excludes
   input-only fields;
 - existing output tests continue to prove `output=None` performs no I/O and
