@@ -6,17 +6,15 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
-- Final-review corrections completed locally (2026-07-21): runtime bindings
-  preserve original component identity and reject name/grid/spec replacement
-  after setup, prefill, and validation callbacks. CAMulator rejects no-leap and
-  360-day clocks during setup under both alignment policies. The architecture
-  review now has per-issue decisions and complete referenced public/private API
-  designs. TDD RED was 10 lifecycle/calendar plus 1 documentation failure;
-  focused GREEN passed 84/84, fast passed 657/657, and full passed 1,261/1,261
-  with four known Flax warnings and one known JCM/xarray warning. Black,
-  flake8, mypy (234 files), compileall, and whitespace passed. Prior final
-  coverage (91.01%) and installed-artifact gates (16/16) remain valid.
-  Deferred private cleanup remains runtime-schema and output-owner unification.
+- Veros payload copy compatibility fixed locally (2026-07-22): both
+  `copy_state()` paths freeze the native settings `dict_keys` view, preserving
+  generic payload ownership. RED/GREEN was 2/2; affected tests passed 81/81,
+  runnable fast passed 656/656, real preparation and static gates passed. Apple
+  Git later became available and the remaining repository policy test passed.
+- Final-review corrections completed locally (2026-07-21): lifecycle identity,
+  CAMulator calendar rejection, and API review evidence are complete. Focused,
+  fast, full, static, prior 91.01% coverage, and artifact gates passed. Deferred
+  private cleanup remains runtime-schema and output-owner unification.
 - Installed plugin evidence and author guidance completed locally (2026-07-21):
   the fixture accepts `0.4.0a1` through `<0.5`, its non-default configuration
   produces independently observable JAX, host, exchange, and backend results,

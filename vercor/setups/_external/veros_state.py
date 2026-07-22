@@ -94,6 +94,11 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
     else:
         state_copy = tree
 
+    object.__setattr__(
+        state_copy.settings,
+        "__fields__",
+        tuple(state_copy.settings.__fields__),
+    )
     return state_copy
 
 

@@ -169,6 +169,7 @@ class _FakeSettings(dict[str, Any]):
     def __init__(self, metadata: dict[str, Any], values: dict[str, Any]) -> None:
         super().__init__(values)
         object.__setattr__(self, "__metadata__", metadata)
+        object.__setattr__(self, "__fields__", metadata.keys())
 
     def unlock(self) -> _NullContext:
         return _NullContext()
@@ -1403,6 +1404,23 @@ def test_veros_copy_state_jitted_path_deep_copies_state(
     assert copied.settings["dt_tracer"] == 600.0
     assert copied.settings.__metadata__ == state.settings.__metadata__
     assert copied.settings.__metadata__ is not state.settings.__metadata__
+
+
+@pytest.mark.parametrize("jitted", (False, True))
+def test_veros_copy_state_returns_deepcopy_compatible_state(
+    monkeypatch: pytest.MonkeyPatch,
+    jitted: bool,
+) -> None:
+    monkeypatch.setattr(veros_state_module, "VerosState", _ConstructedVerosState)
+    source = _make_copyable_fake_veros_state()
+
+    copied = veros_state_module.copy_state(source, jitted=jitted)
+    copied_again = deepcopy(copied)
+
+    assert isinstance(copied.settings.__fields__, tuple)
+    assert copied_again is not copied
+    assert copied_again.settings is not copied.settings
+    assert copied_again.variables is not copied.variables
 
 
 def test_veros_pure_runs_step_on_copied_state(monkeypatch: pytest.MonkeyPatch) -> None:
