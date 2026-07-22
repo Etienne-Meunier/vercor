@@ -102,12 +102,38 @@ def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
     return state_copy
 
 
-def pure(state: VerosState, jitted: bool, step: Callable) -> VerosState:
-    """Convert an in-place Veros step into a copy-before-mutate helper."""
+def get_component_linear_solver(state: VerosState) -> Any:
+    """Return the native linear solver created for one Veros component."""
 
-    n_state = copy_state(state, jitted=jitted)
-    step(n_state)
-    return n_state
+    from veros.core.external.solvers import get_linear_solver
+
+    return get_linear_solver(state)
+
+
+def pure(
+    state: VerosState,
+    jitted: bool,
+    step: Callable[[VerosState], None],
+    linear_solver: Any,
+) -> VerosState:
+    """Copy state and run one native step with the component-owned solver."""
+
+    from veros.core.external.solvers import get_linear_solver
+
+    next_state = copy_state(state, jitted=jitted)
+    solver_cache = cast(dict[tuple[VerosState], Any], get_linear_solver.cache)
+    cache_key = (next_state,)
+    missing = object()
+    previous_solver = solver_cache.get(cache_key, missing)
+    solver_cache[cache_key] = linear_solver
+    try:
+        step(next_state)
+    finally:
+        if previous_solver is missing:
+            solver_cache.pop(cache_key, None)
+        else:
+            solver_cache[cache_key] = previous_solver
+    return next_state
 
 
 def extract_veros_runtime_sst(state: VerosState) -> jax.Array:
@@ -167,6 +193,7 @@ __all__ = [
     "apply_veros_forcing_fields",
     "extract_surface_temperature",
     "extract_veros_runtime_sst",
+    "get_component_linear_solver",
     "prepare_surface_forcing_fields",
     "update_veros_interior",
     "copy_state",

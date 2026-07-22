@@ -45,6 +45,7 @@ class VerosGCMSetupState:
     coupling_timestep: timedelta
     model_timestep: timedelta
     model_substeps: int
+    _linear_solver: Any
     _step_function: Callable[[Any], Any]
 
     def __init__(
@@ -63,13 +64,18 @@ class VerosGCMSetupState:
 
         self.model = _veros_setup.CustomGlobalFourDegree(override=override)
         self.model.setup()
-        self._veros_state = _veros_state.copy_state(self.model.state, jitted=jitted)
+        self._linear_solver = _veros_state.get_component_linear_solver(self.model.state)
+        self._veros_state = _veros_state.copy_state(
+            self.model.state,
+            jitted=jitted,
+        )
         self._step_function = cast(
             Callable[[Any], Any],
             partial(
                 _veros_state.pure,
                 jitted=jitted,
                 step=self.model.step,
+                linear_solver=self._linear_solver,
             ),
         )
 

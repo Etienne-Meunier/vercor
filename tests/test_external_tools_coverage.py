@@ -415,7 +415,12 @@ def test_veros_state_helpers_cover_non_jitted_paths() -> None:
         calls["step"] += 1
         current_state.marker = "updated"
 
-    pure_state = veros_state_module.pure(state, jitted=False, step=fake_step)
+    pure_state = veros_state_module.pure(
+        state,
+        jitted=False,
+        step=fake_step,
+        linear_solver=object(),
+    )
     assert pure_state is state
     assert calls["step"] == 1
     assert getattr(state, "marker") == "updated"

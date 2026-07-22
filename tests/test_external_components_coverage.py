@@ -16,6 +16,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import xarray as xr
+from veros.core.external.solvers import (
+    get_linear_solver as veros_get_linear_solver,
+)
 
 import vercor.setups._external.jax_gcm as jax_gcm_module
 import vercor.setups._external._jax_gcm_pytree as jax_gcm_pytree_module
@@ -214,6 +217,11 @@ class _ConstructedVerosState:
     @property
     def variables(self) -> Any:
         return self._variables
+
+
+class _FakeVerosStepState:
+    def __init__(self, counter: int) -> None:
+        self.counter = counter
 
 
 def _accumulate_frames(frames: Sequence[OutputFrame]) -> _OutputAccumulator:
@@ -1423,25 +1431,82 @@ def test_veros_copy_state_returns_deepcopy_compatible_state(
     assert copied_again.variables is not copied.variables
 
 
-def test_veros_pure_runs_step_on_copied_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    original_state = SimpleNamespace(counter=1)
-    copied_state = SimpleNamespace(counter=1)
+def test_veros_pure_reuses_component_solver_for_copied_states(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_state = _FakeVerosStepState(counter=1)
+    copied_states = iter(
+        (_FakeVerosStepState(counter=1), _FakeVerosStepState(counter=1))
+    )
+    solver = object()
+    solver_cache: dict[tuple[Any, ...], Any] = {}
 
-    def fake_copy_state(state: Any, jitted: bool = True) -> Any:
-        assert state is original_state
-        assert jitted is False
-        return copied_state
+    monkeypatch.setattr(veros_get_linear_solver, "cache", solver_cache)
+    monkeypatch.setattr(veros_get_linear_solver.__wrapped__, "cache", solver_cache)
+    monkeypatch.setattr(
+        veros_state_module,
+        "copy_state",
+        lambda state, jitted=True: next(copied_states),
+    )
 
-    monkeypatch.setattr(veros_state_module, "copy_state", fake_copy_state)
+    stepped_states: list[Any] = []
 
     def fake_step(state: Any) -> None:
+        assert veros_get_linear_solver(state) is solver
         state.counter += 1
+        stepped_states.append(state)
 
-    result = veros_state_module.pure(original_state, jitted=False, step=fake_step)
+    results = tuple(
+        veros_state_module.pure(
+            original_state,
+            jitted=False,
+            step=fake_step,
+            linear_solver=solver,
+        )
+        for _ in range(2)
+    )
 
-    assert result is copied_state
-    assert copied_state.counter == 2
+    assert results == tuple(stepped_states)
+    assert [state.counter for state in results] == [2, 2]
     assert original_state.counter == 1
+    assert solver_cache == {}
+
+
+@pytest.mark.parametrize("has_prior_entry", (False, True))
+def test_veros_pure_restores_solver_cache_when_step_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    has_prior_entry: bool,
+) -> None:
+    original_state = _FakeVerosStepState(counter=1)
+    copied_state = _FakeVerosStepState(counter=1)
+    component_solver = object()
+    prior_solver = object()
+    solver_cache: dict[tuple[Any, ...], Any] = {}
+    key = (copied_state,)
+    if has_prior_entry:
+        solver_cache[key] = prior_solver
+
+    monkeypatch.setattr(veros_get_linear_solver, "cache", solver_cache)
+    monkeypatch.setattr(veros_get_linear_solver.__wrapped__, "cache", solver_cache)
+    monkeypatch.setattr(
+        veros_state_module,
+        "copy_state",
+        lambda state, jitted=True: copied_state,
+    )
+
+    def failing_step(state: Any) -> None:
+        assert veros_get_linear_solver(state) is component_solver
+        raise RuntimeError("native step failed")
+
+    with pytest.raises(RuntimeError, match="native step failed"):
+        veros_state_module.pure(
+            original_state,
+            jitted=False,
+            step=failing_step,
+            linear_solver=component_solver,
+        )
+
+    assert solver_cache == ({key: prior_solver} if has_prior_entry else {})
 
 
 def test_veros_update_veros_interior_supports_jit_and_gradients() -> None:
@@ -1934,6 +1999,19 @@ def test_veros_constructor_builds_jax_backed_grid(
         "configure_veros_runtime",
         lambda: None,
     )
+    component_solver = object()
+    solver_states: list[Any] = []
+
+    def fake_get_component_linear_solver(veros_state: Any) -> Any:
+        solver_states.append(veros_state)
+        return component_solver
+
+    monkeypatch.setattr(
+        veros_state_module,
+        "get_component_linear_solver",
+        fake_get_component_linear_solver,
+        raising=False,
+    )
 
     component = veros_gcm_module.make_veros_gcm(
         config=VerosConfig(
@@ -1948,6 +2026,7 @@ def test_veros_constructor_builds_jax_backed_grid(
         ),
     )
 
+    assert solver_states == [state]
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)

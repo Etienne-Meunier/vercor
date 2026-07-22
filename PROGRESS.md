@@ -7,12 +7,12 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`,
 
 ## Current Status
 
-- IN PROGRESS — Veros component-scoped linear-solver caching (2026-07-22):
-  copy-owned `VerosState` identities grow the Veros 1.6.2 solver cache from 1
-  to 2 to 3 and rebuild the ILU on consecutive steps. The approved design
-  retains the setup-created solver per component and binds it temporarily to
-  copied states with exception-safe cleanup; public API and payload types stay
-  unchanged.
+- Veros component-scoped linear-solver caching completed locally (2026-07-22):
+  the setup-created solver is reused across copy-owned native states with
+  exception-safe temporary cache binding. TDD RED/GREEN was 4/4; the real
+  Veros cache stayed 1→1→1 with no runtime ILU rebuild; external-component,
+  fast, full, coverage, formatting, lint, typing, compile, and whitespace gates
+  passed. Public APIs, native payloads, and model numerics remain unchanged.
 - Final-review corrections completed locally (2026-07-21): lifecycle identity,
   CAMulator calendar rejection, and API review evidence are complete. Focused,
   fast, full, static, prior 91.01% coverage, and artifact gates passed. Deferred
