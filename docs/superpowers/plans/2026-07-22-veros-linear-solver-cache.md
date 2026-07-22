@@ -28,15 +28,18 @@ by Veros `>=1.6.2,<1.7` before either operation.
 ### Task 1: Component-scoped Veros solver reuse
 
 **Files:**
-- Modify: `tests/test_external_components_coverage.py:1426`
-- Modify: `tests/test_external_components_coverage.py:1900`
-- Modify: `vercor/setups/_external/veros_state.py:105`
-- Modify: `vercor/setups/_external/veros_gcm_state.py:40`
-- Modify: `PROGRESS.md:9`
+- Modify: `pyproject.toml`
+- Modify: `tests/test_external_components_coverage.py`
+- Modify: `tests/test_external_tools_coverage.py`
+- Modify: `vercor/setups/_external/veros_state.py`
+- Modify: `vercor/setups/_external/veros_gcm_state.py`
+- Modify: `docs/superpowers/specs/2026-07-22-veros-linear-solver-cache-design.md`
+- Modify: `docs/superpowers/plans/2026-07-22-veros-linear-solver-cache.md`
+- Modify: `PROGRESS.md`
 
 **Interfaces:**
-- Consumes: Veros' untyped `get_linear_solver(state)` accessor and its decorator-owned `cache` mapping keyed by `(state,)`.
-- Produces: `get_component_linear_solver(state: VerosState) -> Any` for setup-time solver capture.
+- Consumes: Veros' untyped `get_linear_solver(state)` accessor and its validated decorator-owned shared mutable cache mapping keyed by `(state,)`.
+- Produces: `get_component_linear_solver(state: VerosState) -> Any` for setup-time solver capture and setup-key release.
 - Produces: `pure(state: VerosState, jitted: bool, step: Callable[[VerosState], None], linear_solver: Any) -> VerosState` for copy-before-mutate stepping with scoped solver binding.
 - Preserves: `VerosGCMSetupState._step_function: Callable[[Any], Any]` and the native `VerosState` runtime payload.
 
@@ -186,6 +189,18 @@ The `raising=False` argument makes the test fail by assertion on the current
 code instead of failing during monkeypatch setup because the function does not
 exist yet.
 
+- [ ] **Step 4b: Add final-review isolation and capability coverage**
+
+Add a behavior regression with two owner identities, two distinct solver
+tokens, two copied runtime states, and one unrelated native-cache entry. It
+must call `get_component_linear_solver()` for both owners, prove that only each
+owner key is released, use the native accessor inside successful and failing
+steps to observe each correct solver, and prove that cleanup leaves the
+unrelated entry unchanged. Add parametrized capability coverage for a
+non-mutable cache and for different accessor/wrapped cache mappings. Both must
+raise the component-scoped `Veros >=1.6.2,<1.7` compatibility error before a
+native solver is constructed.
+
 - [ ] **Step 5: Run the exact tests and verify RED**
 
 Run:
@@ -201,21 +216,65 @@ conda run -n scipy pytest \
 Expected: four failing cases. The three `pure()` cases reject the new
 `linear_solver` argument, and the constructor case reports `solver_states == []`.
 
-- [ ] **Step 6: Add setup-time solver capture and exception-safe cache binding**
+Then run the final-review RED selection:
 
-In `vercor/setups/_external/veros_state.py`, add the setup-time accessor before
-`pure()`:
+```bash
+conda run -n scipy pytest \
+  tests/test_external_components_coverage.py::test_veros_component_solvers_are_isolated_and_release_owner_entries \
+  tests/test_external_components_coverage.py::test_veros_component_solver_cache_requires_supported_native_interface \
+  -q --tb=short -n0
+```
+
+Expected against the initial cache implementation: three failures—the setup
+owner remains retained, and the two incompatible native cache shapes leak
+native `TypeError`s instead of the compatibility error.
+
+- [ ] **Step 6: Add validated capture, setup-key release, and exception-safe binding**
+
+In `vercor/setups/_external/veros_state.py`, import `MutableMapping` and add
+the one private native-cache introspection boundary before `pure()`:
 
 ```python
-def get_component_linear_solver(state: VerosState) -> Any:
-    """Return the native linear solver created for one Veros component."""
+def _get_veros_linear_solver_interface() -> (
+    tuple[Callable[[VerosState], Any], MutableMapping[tuple[VerosState], Any]]
+):
+    """Return Veros' supported memoized solver accessor and shared cache."""
 
     from veros.core.external.solvers import get_linear_solver
 
-    return get_linear_solver(state)
+    solver_cache = getattr(get_linear_solver, "cache", None)
+    wrapped_solver = getattr(get_linear_solver, "__wrapped__", None)
+    wrapped_cache = getattr(wrapped_solver, "cache", None)
+    if (
+        not isinstance(solver_cache, MutableMapping)
+        or solver_cache is not wrapped_cache
+    ):
+        raise RuntimeError(
+            "component-scoped Veros solver caching requires Veros >=1.6.2,<1.7 "
+            "with get_linear_solver.cache and its wrapped accessor exposing "
+            "the same mutable mapping"
+        )
+    return cast(Callable[[VerosState], Any], get_linear_solver), cast(
+        MutableMapping[tuple[VerosState], Any], solver_cache
+    )
 ```
 
-Replace `pure()` with the typed solver-aware implementation:
+The explicit `veros>=1.6.2,<1.7` dependency pin and this error are the
+supported private-ABI contract. Do not duplicate accessor/cache introspection.
+
+Capture then removes exactly the original setup key:
+
+```python
+def get_component_linear_solver(state: VerosState) -> Any:
+    """Return and detach the native linear solver for one Veros component."""
+
+    get_linear_solver, solver_cache = _get_veros_linear_solver_interface()
+    solver = get_linear_solver(state)
+    solver_cache.pop((state,), None)
+    return solver
+```
+
+Use the same helper in the typed solver-aware `pure()` implementation:
 
 ```python
 def pure(
@@ -226,10 +285,8 @@ def pure(
 ) -> VerosState:
     """Copy state and run one native step with the component-owned solver."""
 
-    from veros.core.external.solvers import get_linear_solver
-
     next_state = copy_state(state, jitted=jitted)
-    solver_cache = cast(dict[tuple[VerosState], Any], get_linear_solver.cache)
+    _, solver_cache = _get_veros_linear_solver_interface()
     cache_key = (next_state,)
     missing = object()
     previous_solver = solver_cache.get(cache_key, missing)
@@ -284,12 +341,14 @@ Run:
 conda run -n scipy pytest \
   tests/test_external_components_coverage.py::test_veros_pure_reuses_component_solver_for_copied_states \
   tests/test_external_components_coverage.py::test_veros_pure_restores_solver_cache_when_step_fails \
+  tests/test_external_components_coverage.py::test_veros_component_solvers_are_isolated_and_release_owner_entries \
+  tests/test_external_components_coverage.py::test_veros_component_solver_cache_requires_supported_native_interface \
   tests/test_external_components_coverage.py::test_veros_constructor_builds_jax_backed_grid \
   -q --tb=short -n0
 conda run -n scipy pytest tests/test_external_components_coverage.py -q --fast --tb=short
 ```
 
-Expected: the exact selection passes 4/4, and the complete external-component
+Expected: the exact selection passes 7/7, and the complete external-component
 file passes with no failures.
 
 - [ ] **Step 8: Reproduce two real Veros steps with stable cache size**
@@ -301,7 +360,7 @@ conda run -n scipy python -c 'from vercor.setups._external.veros_runtime_setting
 ```
 
 Expected: setup emits `Computing ILU preconditioner...` once; neither runtime
-step emits it; the printed cache sizes are `1`, `1`, and `1`.
+step emits it; the printed cache sizes are `0`, `0`, and `0`.
 
 - [ ] **Step 9: Replace the active progress entry with the completed outcome**
 
@@ -310,10 +369,11 @@ Replace the current `IN PROGRESS` block in `PROGRESS.md` with:
 ```markdown
 - Veros component-scoped linear-solver caching completed locally (2026-07-22):
   the setup-created solver is reused across copy-owned native states with
-  exception-safe temporary cache binding. TDD RED/GREEN was 4/4; the real
-  Veros cache stayed 1→1→1 with no runtime ILU rebuild; external-component,
-  fast, full, coverage, formatting, lint, typing, compile, and whitespace gates
-  passed. Public APIs, native payloads, and model numerics remain unchanged.
+  exception-safe temporary cache binding, setup-key release, owner isolation,
+  and validated Veros >=1.6.2,<1.7 cache ABI. The real cache stays 0→0→0 with
+  no runtime ILU rebuild; external-component, fast, full, coverage, formatting,
+  lint, typing, compile, and whitespace gates pass. Public APIs, native
+  payloads, and numerics stay unchanged.
 ```
 
 Confirm `PROGRESS.md` remains at or below its enforced 180-line limit:
@@ -347,27 +407,31 @@ warnings may remain.
 
 - [ ] **Step 11: Review scope and commit the implementation**
 
-Inspect the final diff and confirm that it contains only the approved cache
-behavior, its tests, the plan, and the final progress entry:
+Inspect the final diff and confirm that it contains the approved cache behavior,
+all affected tests, the dependency pin, revised design/plan, and final progress
+entry:
 
 ```bash
 git diff --stat
-git diff -- vercor/setups/_external/veros_state.py vercor/setups/_external/veros_gcm_state.py tests/test_external_components_coverage.py PROGRESS.md docs/superpowers/plans/2026-07-22-veros-linear-solver-cache.md
+git diff -- pyproject.toml vercor/setups/_external/veros_state.py vercor/setups/_external/veros_gcm_state.py tests/test_external_components_coverage.py tests/test_external_tools_coverage.py docs/superpowers/specs/2026-07-22-veros-linear-solver-cache-design.md docs/superpowers/plans/2026-07-22-veros-linear-solver-cache.md PROGRESS.md
 ```
 
-Then stage and verify exactly those files:
+Then stage and verify every actual scope file:
 
 ```bash
 git add \
+  pyproject.toml \
   vercor/setups/_external/veros_state.py \
   vercor/setups/_external/veros_gcm_state.py \
   tests/test_external_components_coverage.py \
+  tests/test_external_tools_coverage.py \
+  docs/superpowers/specs/2026-07-22-veros-linear-solver-cache-design.md \
   PROGRESS.md \
   docs/superpowers/plans/2026-07-22-veros-linear-solver-cache.md
 git diff --cached --check
 git diff --cached --stat
-git commit -m "fix: reuse Veros linear solver across runtime steps"
 ```
 
-Expected: one implementation commit is created after every required gate has
-passed; no push, tag, PR, release, or publication occurs.
+Commit each intentional implementation or fix wave only after every required
+gate passes. Do not push, tag, open a PR, release, or publish without separate
+authority.
