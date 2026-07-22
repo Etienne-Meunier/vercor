@@ -114,8 +114,8 @@ def test_slab_period_file_contains_declared_outputs_only(tmp_path: Path) -> None
     )
 
     with h5netcdf.File(tmp_path / "atm.averages.2000-01-01.nc", "r") as dataset:
-        assert set(component.spec.outputs).issubset(dataset.variables)
-        assert "sea_surface_temperature" not in dataset.variables
+        field_variables = set(dataset.variables) - {"time", "latitude", "longitude"}
+        assert field_variables == set(component.spec.outputs)
 
 
 def test_data_period_file_contains_declared_outputs_only(tmp_path: Path) -> None:
