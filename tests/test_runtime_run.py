@@ -397,34 +397,64 @@ def test_period_output_precomputes_all_frequency_boundaries_and_resets(
 
 @pytest.mark.fast_always
 @pytest.mark.parametrize(
-    ("start", "calendar", "steps", "expected_starts", "expected_isoformats"),
+    ("frequency", "start", "dt_seconds", "expected_filename"),
+    [
+        ("day", datetime(2000, 2, 1), 86_400.0, "model.averages.2000-02-01.nc"),
+        ("month", datetime(2000, 2, 1), 29 * 86_400.0, "model.averages.2000-02.nc"),
+        ("year", datetime(2000, 2, 1), 365 * 86_400.0, "model.averages.2000.nc"),
+    ],
+)
+def test_period_filename_precision_matches_frequency(
+    frequency: str,
+    start: datetime,
+    dt_seconds: float,
+    expected_filename: str,
+    tmp_path: Path,
+) -> None:
+    _make_period_output_coupler(
+        execution="jax",
+        frequency=frequency,
+        start=start,
+        dt_seconds=dt_seconds,
+        steps=1,
+    ).run(output=_period_target(tmp_path))
+
+    paths = tuple(tmp_path.glob("model.averages.*.nc"))
+    assert [path.name for path in paths] == [expected_filename]
+    with h5netcdf.File(paths[0], "r") as dataset:
+        assert dataset.variables["time"].attrs["isoformat"] == start.isoformat()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("start", "calendar", "steps", "expected_filenames", "expected_isoformats"),
     [
         (
             datetime(2000, 1, 1),
             "gregorian",
             31,
-            ("2000-01-01",),
+            ("2000-01",),
             ("2000-01-01T00:00:00",),
         ),
         (
             datetime(2001, 1, 3),
             "noleap",
             57,
-            ("2001-01-03", "2001-02-01"),
+            ("2001-01", "2001-02"),
             ("2001-01-03T00:00:00.000000", "2001-02-01T00:00:00.000000"),
         ),
         (
             datetime(2001, 2, 5),
             "noleap",
             24,
-            ("2001-02-05",),
+            ("2001-02",),
             ("2001-02-05T00:00:00.000000",),
         ),
         (
             datetime(2001, 2, 5),
             "360_day",
             26,
-            ("2001-02-05",),
+            ("2001-02",),
             ("2001-02-05T00:00:00.000000",),
         ),
     ],
@@ -433,7 +463,7 @@ def test_monthly_period_identity_uses_actual_window_start(
     start: datetime,
     calendar: Any,
     steps: int,
-    expected_starts: tuple[str, ...],
+    expected_filenames: tuple[str, ...],
     expected_isoformats: tuple[str, ...],
     tmp_path: Path,
 ) -> None:
@@ -447,7 +477,7 @@ def test_monthly_period_identity_uses_actual_window_start(
 
     paths = sorted(tmp_path.glob("model.averages.*.nc"))
     assert [path.name for path in paths] == [
-        f"model.averages.{window_start}.nc" for window_start in expected_starts
+        f"model.averages.{date_token}.nc" for date_token in expected_filenames
     ]
     for path, isoformat in zip(paths, expected_isoformats, strict=True):
         with h5netcdf.File(path, "r") as dataset:
@@ -556,7 +586,7 @@ def test_mixed_component_period_frequencies_coexist(
         "daily.averages.2000-02-01.nc",
     ]
     monthly_paths = tuple(tmp_path.glob("monthly.averages.*.nc"))
-    assert [path.name for path in monthly_paths] == ["monthly.averages.2000-01-30.nc"]
+    assert [path.name for path in monthly_paths] == ["monthly.averages.2000-01.nc"]
     with h5netcdf.File(monthly_paths[0], "r") as dataset:
         assert_allclose_compact(
             np.asarray(dataset.variables["temperature"]),

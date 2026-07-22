@@ -6,6 +6,8 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
 
 ## Current Status
 
+- Cadence-aware period filename precision implemented locally (2026-07-22): daily, monthly, and yearly means now use `YYYY-MM-DD`, `YYYY-MM`, and `YYYY`; step filenames and exact NetCDF window-start metadata remain unchanged. TDD RED was 7 failed/2 passed, GREEN 9/9, output focus 17/17, fast 660/660, and full/coverage 1,266/1,266 at 91%.
+  Black left 234 files unchanged (known Python 3.13 safety-parse advisory), flake8 0, mypy 234 source files, and compileall/whitespace passed; the Veros fake-state coverage fixture now supplies the minimal empty settings field tuple.
 - Veros payload copy compatibility fixed locally (2026-07-22): both
   `copy_state()` paths freeze the native settings `dict_keys` view, preserving
   generic payload ownership. RED/GREEN was 2/2; affected tests passed 81/81,

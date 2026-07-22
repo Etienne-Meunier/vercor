@@ -526,7 +526,7 @@ def _output_boundaries(
             period_starts = tuple(window_starts[index] for index in due)
             bases = tuple(
                 f"{_safe_token(schemas[index].component.name)}.averages."
-                f"{period_start.strftime('%Y-%m-%d')}.nc"
+                f"{_period_filename_date(period_start, schemas[index].period)}.nc"
                 for index, period_start in zip(due, period_starts, strict=True)
             )
             raw.append((step + 1, due, period_starts, bases))
@@ -564,6 +564,18 @@ def _output_boundaries(
             request += 1
         result.append(_OutputBoundary(stop, due, period_starts, tuple(allocated)))
     return tuple(result)
+
+
+def _period_filename_date(period_start: _Time, period: PeriodOutput) -> str:
+    """Return a filename date token at the configured cadence's precision."""
+
+    format_by_frequency = {
+        "step": "%Y-%m-%d",
+        "day": "%Y-%m-%d",
+        "month": "%Y-%m",
+        "year": "%Y",
+    }
+    return period_start.strftime(format_by_frequency[period.frequency])
 
 
 def _safe_token(value: str) -> str:

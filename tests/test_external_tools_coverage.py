@@ -34,6 +34,7 @@ class _FakeVariableStore:
 class _FakeVerosState:
     def __init__(self, variables: _FakeVariableStore) -> None:
         self.variables = variables
+        self.settings = SimpleNamespace(__fields__=())
 
 
 def test_change_and_get_default_jcm_parameter_values() -> None:
