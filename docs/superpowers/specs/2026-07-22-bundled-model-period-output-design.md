@@ -17,10 +17,10 @@ accumulation, cadence boundaries, NetCDF dimensions, filenames, host transfer,
 and writes.
 
 Bundled external components may install native providers and snapshot writers.
-Bundled slab factories and the shared data-component factory currently leave
-`ComponentSpec.output` at `OutputSpec()`, whose `period` is `None`. Therefore a
-bare `OutputTarget` writes their final runtime fields but does not schedule
-period-average files.
+Before this change, bundled slab factories and the shared data-component factory
+left `ComponentSpec.output` at `OutputSpec()`, whose `period` is `None`.
+Therefore a bare `OutputTarget` wrote their final runtime fields but did not
+schedule period-average files.
 
 ## Scope
 

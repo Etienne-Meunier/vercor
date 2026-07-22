@@ -302,6 +302,12 @@ sampling frequency and selected variables. An empty variable list selects all
 variables supplied by the component's output provider; an unknown name is an
 error. Providers sample the post-step state at the end-of-step model time.
 
+Bundled slab and data factories declare step-cadence period output by default.
+Their generic provider writes only fields declared in `ComponentSpec.outputs`.
+Custom and third-party components remain opt-in and must attach their own
+`OutputSpec(period=PeriodOutput(...))`. In every case, files are written only
+when `Coupler.run` receives an enabled `OutputTarget`.
+
 Use `output=None`, the default, for differentiated or outer-JIT-compiled runs.
 This performs no file I/O or output sampling. Enabled output does not accept
 traced runtime state.
