@@ -273,6 +273,7 @@ vercor.setups._external.veros_setup
 vercor.setups._external.veros_state
 vercor.setups._jcm
 vercor.setups._lazy_imports
+vercor.setups._output
 vercor.setups._slab
 vercor.setups._slab.atmosphere
 vercor.setups._slab.land

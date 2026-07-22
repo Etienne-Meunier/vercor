@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from vercor.components import CallableComponent, Component, ComponentSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
+from vercor.setups._output import step_period_output
 
 _SEAICE_INPUTS = ("sea_surface_temperature",)
 _SEAICE_OUTPUTS = ("ice_fraction",)
@@ -39,5 +40,6 @@ def make_slab_seaice(grid: RectilinearGrid, name: str = "ICE") -> Component:
             inputs=_SEAICE_INPUTS,
             outputs=_SEAICE_OUTPUTS,
             initial_fields=_SEAICE_DEFAULT_FIELDS,
+            output=step_period_output(),
         ),
     )

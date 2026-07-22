@@ -9,6 +9,7 @@ from vercor.components import (
     TransferPolicy,
 )
 from vercor.grids import RectilinearGrid
+from vercor.setups._output import step_period_output
 
 
 def time_interpolated_data_component(
@@ -33,6 +34,7 @@ def time_interpolated_data_component(
             initial_fields=initial_fields,
             lifecycle=lifecycle,
             transfer=TransferPolicy(time_selection="linear"),
+            output=step_period_output(),
         ),
     )
     return component

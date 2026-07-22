@@ -12,6 +12,7 @@ from vercor.components import (
 )
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
+from vercor.setups._output import step_period_output
 
 _LAND_INPUTS = ("latent_heat_flux", "sensible_heat_flux")
 _LAND_OUTPUTS = ("soil_moisture", "land_surface_temperature")
@@ -63,5 +64,6 @@ def make_slab_land(grid: RectilinearGrid, name: str = "LND") -> Component:
             inputs=_LAND_INPUTS,
             outputs=_LAND_OUTPUTS,
             initial_fields=_LAND_DEFAULT_FIELDS,
+            output=step_period_output(),
         ),
     )

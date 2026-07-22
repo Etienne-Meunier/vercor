@@ -12,6 +12,7 @@ from vercor.components import (
 )
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
+from vercor.setups._output import step_period_output
 
 _REFERENCE_SEA_SURFACE_TEMPERATURE = 273.15 + 15.0
 _OCEAN_INPUTS = (
@@ -115,5 +116,6 @@ def make_slab_ocean(
             inputs=_OCEAN_INPUTS,
             outputs=_OCEAN_OUTPUTS,
             initial_fields=_OCEAN_DEFAULT_FIELDS,
+            output=step_period_output(),
         ),
     )
