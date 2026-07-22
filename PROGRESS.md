@@ -1,18 +1,18 @@
 # VerCOR Progress
 
 This is the bounded orientation log for active development. Detailed history is
-preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md` and
-`docs/progress-archive-2026-05-16-to-2026-07-14.md`.
+preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`,
+`docs/progress-archive-2026-05-16-to-2026-07-14.md`, and
+`docs/progress-archive-2026-07-22.md`.
 
 ## Current Status
 
-- Cadence-aware period filename precision implemented locally (2026-07-22): daily, monthly, and yearly means now use `YYYY-MM-DD`, `YYYY-MM`, and `YYYY`; step filenames and exact NetCDF window-start metadata remain unchanged. TDD RED was 7 failed/2 passed, GREEN 9/9, output focus 17/17, fast 660/660, and full/coverage 1,266/1,266 at 91%.
-  Black left 234 files unchanged (known Python 3.13 safety-parse advisory), flake8 0, mypy 234 source files, and compileall/whitespace passed; the Veros fake-state coverage fixture now supplies the minimal empty settings field tuple.
-- Veros payload copy compatibility fixed locally (2026-07-22): both
-  `copy_state()` paths freeze the native settings `dict_keys` view, preserving
-  generic payload ownership. RED/GREEN was 2/2; affected tests passed 81/81,
-  runnable fast passed 656/656, real preparation and static gates passed. Apple
-  Git later became available and the remaining repository policy test passed.
+- IN PROGRESS — Veros component-scoped linear-solver caching (2026-07-22):
+  copy-owned `VerosState` identities grow the Veros 1.6.2 solver cache from 1
+  to 2 to 3 and rebuild the ILU on consecutive steps. The approved design
+  retains the setup-created solver per component and binds it temporarily to
+  copied states with exception-safe cleanup; public API and payload types stay
+  unchanged.
 - Final-review corrections completed locally (2026-07-21): lifecycle identity,
   CAMulator calendar rejection, and API review evidence are complete. Focused,
   fast, full, static, prior 91.01% coverage, and artifact gates passed. Deferred
