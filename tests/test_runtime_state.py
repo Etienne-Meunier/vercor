@@ -24,6 +24,7 @@ from vercor.runtime import RuntimeOptions
 from vercor.setups._external.jax_gcm_runtime import JAXGCMRuntimePayload
 from vercor._runtime.contracts import ExchangeContract
 from vercor._runtime.component_state import create_runtime_component_state
+import vercor._runtime.field_transfer as field_transfer_module
 from vercor._runtime.field_transfer import send_runtime_fields
 from vercor._runtime.state import ComponentRuntimeState
 from vercor._runtime.stores import FieldStore
@@ -905,6 +906,43 @@ def test_runtime_component_state_preserves_optional_payload_under_jit() -> None:
         updated.payload.jcm_state["metadata"],
         np.asarray(2.0),
     )
+
+
+def test_shared_runtime_field_selector_applies_every_transfer_policy() -> None:
+    step_info = jax.tree_util.tree_map(
+        lambda value: value[0],
+        RuntimeStepInfo.from_sequences([0], [1], [0.75], [0.25], [2]),
+    )
+    forcing = jnp.arange(4 * 2 * 2, dtype=jnp.float64).reshape((4, 2, 2))
+
+    current = field_transfer_module.select_runtime_field(
+        forcing,
+        TransferPolicy("current"),
+        step_info,
+    )
+    linear = field_transfer_module.select_runtime_field(
+        forcing,
+        TransferPolicy("linear"),
+        step_info,
+    )
+    daily = field_transfer_module.select_runtime_field(
+        forcing,
+        TransferPolicy("daily"),
+        step_info,
+    )
+    without_step_metadata = field_transfer_module.select_runtime_field(
+        forcing,
+        TransferPolicy("linear"),
+        None,
+    )
+
+    assert current is forcing
+    assert without_step_metadata is forcing
+    assert_allclose_compact(
+        linear,
+        0.75 * np.asarray(forcing[0]) + 0.25 * np.asarray(forcing[1]),
+    )
+    assert_allclose_compact(daily, np.asarray(forcing[2]))
 
 
 def test_runtime_send_applies_monthly_interpolation_under_jit_and_grad() -> None:

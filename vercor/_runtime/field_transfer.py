@@ -10,7 +10,7 @@ from vercor._runtime.time import RuntimeStepInfo
 from vercor.types import RuntimeArray
 
 if TYPE_CHECKING:
-    from vercor.components.contracts import Component
+    from vercor.components.contracts import Component, TransferPolicy
 
 
 def receive_runtime_fields(
@@ -29,30 +29,27 @@ def receive_runtime_fields(
     )
 
 
-def _select_runtime_field_for_send(
-    component: "Component",
-    component_state: ComponentRuntimeState,
-    field_name: str,
+def select_runtime_field(
+    field: RuntimeArray,
+    transfer: "TransferPolicy",
     step_info: RuntimeStepInfo | None,
 ) -> RuntimeArray:
-    field = component_state.fields.get(field_name)
+    """Select one current, linearly interpolated, or daily runtime field."""
+
     if step_info is None:
         return field
 
-    time_selection = component.spec.transfer.time_selection
-
+    time_selection = transfer.time_selection
     if time_selection == "linear":
-        arr = jnp.asarray(field)
-        left = jnp.take(arr, step_info.monthly_index_left, axis=0)
-        right = jnp.take(arr, step_info.monthly_index_right, axis=0)
+        array = jnp.asarray(field)
+        left = jnp.take(array, step_info.monthly_index_left, axis=0)
+        right = jnp.take(array, step_info.monthly_index_right, axis=0)
         return (
             step_info.monthly_weight_left * left
             + step_info.monthly_weight_right * right
         )
-
     if time_selection == "daily":
         return jnp.take(jnp.asarray(field), step_info.daily_index, axis=0)
-
     return field
 
 
@@ -68,10 +65,9 @@ def send_runtime_fields(
     return component_state.with_sent(
         component_state.sent.set_many(
             {
-                field_name: _select_runtime_field_for_send(
-                    component,
-                    component_state,
-                    field_name,
+                field_name: select_runtime_field(
+                    component_state.fields.get(field_name),
+                    component.spec.transfer,
                     step_info,
                 )
                 for field_name in contract.sends
