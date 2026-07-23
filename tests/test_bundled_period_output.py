@@ -1,4 +1,4 @@
-"""Bundled slab and data factories declare generic step-period output."""
+"""Bundled slab and data factories support opt-in configurable period output."""
 
 from __future__ import annotations
 
