@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from vercor.jax_logging import LoggerLike
 from vercor.output import OutputSpec, PeriodOutput
+from vercor.setups._output import step_period_output
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,7 @@ class JCMLandAtmosphereConfig:
 
     atmosphere: JAXGCMConfig = field(default_factory=_default_jcm_atmosphere_config)
     land_name: str = "LND"
+    land_output: OutputSpec = field(default_factory=step_period_output)
 
     def __post_init__(self) -> None:
         """Validate paired setup component names."""

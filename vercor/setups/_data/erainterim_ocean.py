@@ -9,6 +9,7 @@ from vercor.components import DataComponent
 from vercor.dtypes import as_jax_real_array, jax_arange
 from vercor.forcing_data import read_forcing as _read_forcing
 from vercor.grids import RectilinearGrid
+from vercor.output import OutputSpec
 from vercor.setups._data.assets import get_forcing_data
 from vercor.setups._data._component_helpers import time_interpolated_data_component
 from vercor.setups._data._field_helpers import (
@@ -77,6 +78,8 @@ def make_erainterim_ocean(
     name: str = "OCN",
     resolution: str = "4deg",
     model_level_file: Optional[Path] = None,
+    *,
+    output: OutputSpec | None = None,
 ) -> DataComponent:
     """Return an ERA-Interim ocean forcing component."""
 
@@ -141,5 +144,6 @@ def make_erainterim_ocean(
         initial_fields={
             field_name: 0.0 for field_name in _ERAINTERIM_OCEAN_INPUT_NAMES
         },
+        output=output,
     )
     return component

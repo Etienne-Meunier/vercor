@@ -9,7 +9,8 @@ from vercor.components import (
     TransferPolicy,
 )
 from vercor.grids import RectilinearGrid
-from vercor.setups._output import step_period_output
+from vercor.output import OutputSpec
+from vercor.setups._output import bundled_output
 
 
 def time_interpolated_data_component(
@@ -21,6 +22,7 @@ def time_interpolated_data_component(
     outputs: tuple[str, ...],
     initial_fields: Mapping[str, object] | None = None,
     lifecycle: LifecycleHooks | None = None,
+    output: OutputSpec | None = None,
 ) -> DataComponent:
     """Create a data component with the standard time-interpolation metadata."""
 
@@ -34,7 +36,7 @@ def time_interpolated_data_component(
             initial_fields=initial_fields,
             lifecycle=lifecycle,
             transfer=TransferPolicy(time_selection="linear"),
-            output=step_period_output(),
+            output=bundled_output(output),
         ),
     )
     return component

@@ -22,6 +22,7 @@ from vercor.fluxes.vertical_coordinates import (
 from vercor.grids import RectilinearGrid
 from vercor.components import SetupContext
 from vercor.forcing_data import read_forcing as _read_forcing
+from vercor.output import OutputSpec
 from vercor.physics import PhysicalConstants
 from vercor.setups._data.assets import get_forcing_data
 from vercor.setups._data._component_helpers import time_interpolated_data_component
@@ -100,6 +101,8 @@ def make_era5_atmosphere(
     name: str = "ATM",
     model_level_file: Optional[Path] = None,
     surface_file: Optional[Path] = None,
+    *,
+    output: OutputSpec | None = None,
 ) -> DataComponent:
     """Return an ERA5 atmosphere forcing component."""
 
@@ -210,5 +213,6 @@ def make_era5_atmosphere(
             for field_name in _ERA5_ATMOSPHERE_INPUT_NAMES
         },
         lifecycle=LifecycleHooks(setup=setup),
+        output=output,
     )
     return component

@@ -19,6 +19,10 @@ from vercor.components import CallableComponent, ComponentSpec
 from vercor.coupler import Coupler
 from vercor.output import OutputSpec, OutputTarget, PeriodOutput
 from vercor.setups import (
+    make_era5_atmosphere,
+    make_era5_land,
+    make_era5_ocean,
+    make_erainterim_ocean,
     make_slab_atmosphere,
     make_slab_land,
     make_slab_ocean,
@@ -35,6 +39,12 @@ _SLAB_FACTORIES = (
     make_slab_land,
     make_slab_ocean,
     make_slab_seaice,
+)
+_DATA_FACTORIES = (
+    make_era5_atmosphere,
+    make_era5_land,
+    make_era5_ocean,
+    make_erainterim_ocean,
 )
 
 
@@ -87,9 +97,37 @@ def test_shared_data_factory_declares_step_period_output() -> None:
     _assert_step_period_output(component)
 
 
-def test_direct_jcm_land_data_factory_declares_step_period_output(
+def test_shared_data_factory_accepts_output_spec() -> None:
+    grid = make_test_grid(name="configured-data-output")
+    custom_output = OutputSpec(period=PeriodOutput(frequency="month"))
+
+    component = time_interpolated_data_component(
+        name="DATA",
+        grid=grid,
+        fields={"temperature": jnp.full(grid.shape, 280.0)},
+        outputs=("temperature",),
+        output=custom_output,
+    )
+
+    assert component.spec.output is custom_output
+
+
+@pytest.mark.parametrize("factory", _DATA_FACTORIES)
+def test_public_data_factory_accepts_keyword_only_output_spec(factory: Any) -> None:
+    output_parameter = signature(factory).parameters["output"]
+    assert output_parameter.kind is Parameter.KEYWORD_ONLY
+    assert output_parameter.default is None
+    custom_output = OutputSpec(period=PeriodOutput(frequency="month"))
+
+    component = factory(output=custom_output)
+
+    assert component.spec.output is custom_output
+
+
+def _make_test_jcm_land(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    output: OutputSpec | None = None,
+) -> Any:
     grid = make_test_grid(name="jcm-land-output")
     monkeypatch.setattr(
         jcm_land_module,
@@ -110,13 +148,35 @@ def test_direct_jcm_land_data_factory_declares_step_period_output(
         soilw_am=jnp.full(grid.shape, 0.25),
     )
 
-    component = jcm_land_module.make_jcm_land(
+    if output is None:
+        return jcm_land_module.make_jcm_land(
+            cast(Any, coords),
+            cast(Any, forcing),
+            grid,
+        )
+    return jcm_land_module.make_jcm_land(
         cast(Any, coords),
         cast(Any, forcing),
         grid,
+        output=output,
     )
 
+
+def test_direct_jcm_land_data_factory_declares_step_period_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component = _make_test_jcm_land(monkeypatch)
     _assert_step_period_output(component)
+
+
+def test_direct_jcm_land_data_factory_accepts_output_spec(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_output = OutputSpec(period=PeriodOutput(frequency="month"))
+
+    component = _make_test_jcm_land(monkeypatch, custom_output)
+
+    assert component.spec.output is custom_output
 
 
 def test_slab_period_file_contains_declared_outputs_only(tmp_path: Path) -> None:
@@ -140,6 +200,82 @@ def test_slab_period_file_contains_declared_outputs_only(tmp_path: Path) -> None
     with h5netcdf.File(tmp_path / "atm.averages.2000-01-01.nc", "r") as dataset:
         field_variables = set(dataset.variables) - {"time", "latitude", "longitude"}
         assert field_variables == set(component.spec.outputs)
+
+
+def test_slab_output_spec_can_disable_period_files(tmp_path: Path) -> None:
+    grid = make_test_grid(name="disabled-slab-period")
+    component = make_slab_atmosphere(grid, output=OutputSpec())
+    coupler = Coupler(
+        Clock(datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=(component.name,),
+        log_level="WARNING",
+    )
+
+    coupler.run(
+        output=OutputTarget(
+            tmp_path,
+            write_final_fields=False,
+            write_snapshots=False,
+        )
+    )
+
+    assert not tuple(tmp_path.glob("*.averages.*.nc"))
+
+
+def test_slab_month_output_averages_coupler_step_samples(tmp_path: Path) -> None:
+    grid = make_test_grid(name="monthly-slab-period")
+    start = datetime(2000, 1, 30)
+    dt_seconds = 86_400.0
+
+    def run_without_output(steps: int) -> np.ndarray:
+        component = make_slab_atmosphere(grid, output=OutputSpec())
+        coupler = Coupler(
+            Clock(start, dt_seconds=dt_seconds, steps=steps),
+            components=(component,),
+            run_order=(component.name,),
+            log_level="WARNING",
+        )
+        return np.asarray(
+            coupler.run().component(component.name).field("temperature_2m")
+        )
+
+    expected_mean = 0.5 * (run_without_output(1) + run_without_output(2))
+    component = make_slab_atmosphere(
+        grid,
+        output=OutputSpec(
+            period=PeriodOutput(
+                frequency="month",
+                variables=("temperature_2m",),
+            )
+        ),
+    )
+    coupler = Coupler(
+        Clock(start, dt_seconds=dt_seconds, steps=2),
+        components=(component,),
+        run_order=(component.name,),
+        log_level="WARNING",
+    )
+
+    coupler.run(
+        output=OutputTarget(
+            tmp_path,
+            write_final_fields=False,
+            write_snapshots=False,
+        )
+    )
+
+    with h5netcdf.File(tmp_path / "atm.averages.2000-01.nc", "r") as dataset:
+        assert set(dataset.variables) == {
+            "time",
+            "latitude",
+            "longitude",
+            "temperature_2m",
+        }
+        np.testing.assert_allclose(
+            dataset.variables["temperature_2m"][0],
+            expected_mean,
+        )
 
 
 def test_data_period_file_contains_declared_outputs_only(tmp_path: Path) -> None:

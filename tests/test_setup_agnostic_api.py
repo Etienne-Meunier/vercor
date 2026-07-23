@@ -415,6 +415,7 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
     terrain = SimpleNamespace(fmask=None)
     forcing = object()
     captured_config: dict[str, JAXGCMConfig] = {}
+    captured_land_output: list[OutputSpec | None] = []
 
     def fake_load_inputs() -> jcm_setup_module.JCMInputs:
         return jcm_setup_module.JCMInputs(
@@ -429,10 +430,12 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
         loaded_ocn_grid: object,
         *,
         name: str = "LND",
+        output: OutputSpec | None = None,
     ) -> DataComponent:
         assert loaded_coords is coords
         assert loaded_forcing is forcing
         assert loaded_ocn_grid is ocn_grid
+        captured_land_output.append(output)
         return DataComponent(
             name,
             jcm_grid,
@@ -470,9 +473,13 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
         output=OutputSpec(period=PeriodOutput(frequency="day")),
         jitted=False,
     )
+    land_output = OutputSpec(period=PeriodOutput(frequency="month"))
     setup = jcm_setup_module.make_jcm_land_atmosphere(
         ocn_grid,
-        config=JCMLandAtmosphereConfig(atmosphere=config),
+        config=JCMLandAtmosphereConfig(
+            atmosphere=config,
+            land_output=land_output,
+        ),
     )
 
     assert setup.atmosphere.name == "CUSTOM_ATM"
@@ -482,3 +489,4 @@ def test_make_jcm_land_atmosphere_accepts_jax_gcm_config(
     assert captured_config["value"].spinup == config.spinup
     assert captured_config["value"].output == config.output
     assert captured_config["value"].jitted == config.jitted
+    assert captured_land_output == [land_output]

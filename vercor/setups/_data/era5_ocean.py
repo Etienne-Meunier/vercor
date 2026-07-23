@@ -7,6 +7,7 @@ from jax.typing import ArrayLike
 from vercor.components import DataComponent
 from vercor.forcing_data import read_forcing as _read_forcing
 from vercor.grids import RectilinearGrid
+from vercor.output import OutputSpec
 from vercor.setups._data.assets import get_forcing_data
 from vercor.setups._data._component_helpers import time_interpolated_data_component
 from vercor.setups._data._field_helpers import (
@@ -37,6 +38,8 @@ def _ocean_binary_mask_from_land_fraction(land_fraction: ArrayLike) -> jax.Array
 def make_era5_ocean(
     name: str = "OCN",
     surface_file: Optional[Path] = None,
+    *,
+    output: OutputSpec | None = None,
 ) -> DataComponent:
     """Return an ERA5 ocean forcing component."""
 
@@ -72,6 +75,7 @@ def make_era5_ocean(
         inputs=_ERA5_OCEAN_INPUT_NAMES,
         outputs=_ERA5_OCEAN_FIELD_NAMES,
         initial_fields={field_name: 0.0 for field_name in _ERA5_OCEAN_INPUT_NAMES},
+        output=output,
     )
 
     return component

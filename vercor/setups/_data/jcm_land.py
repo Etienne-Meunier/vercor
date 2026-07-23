@@ -9,8 +9,9 @@ from vercor.components import (
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 from vercor.grid_masks import create_lnd_mask_from_ocn
+from vercor.output import OutputSpec
 from vercor.setups._data._field_helpers import canonicalize_surface_field
-from vercor.setups._output import step_period_output
+from vercor.setups._output import bundled_output
 
 if TYPE_CHECKING:
     from dinosaur.coordinate_systems import CoordinateSystem as _CoordinateSystem
@@ -28,6 +29,8 @@ def make_jcm_land(
     jcm_forcing: _ForcingData | Any,
     ocn_grid: RectilinearGrid,
     name: str = "LND",
+    *,
+    output: OutputSpec | None = None,
 ) -> DataComponent:
     """Return a JCM land forcing component."""
 
@@ -60,7 +63,7 @@ def make_jcm_land(
             outputs=_JCM_LAND_FIELD_NAMES,
             initial_fields={field_name: 0.0 for field_name in _JCM_LAND_INPUT_NAMES},
             transfer=TransferPolicy(time_selection="daily"),
-            output=step_period_output(),
+            output=bundled_output(output),
         ),
     )
 

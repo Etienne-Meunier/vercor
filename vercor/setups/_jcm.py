@@ -75,7 +75,13 @@ def make_jcm_land_atmosphere(
     coords = jcm_inputs.coords
     terrain = jcm_inputs.terrain
     forcing = jcm_inputs.forcing
-    land = make_jcm_land(coords, forcing, ocn_grid, name=config.land_name)
+    land = make_jcm_land(
+        coords,
+        forcing,
+        ocn_grid,
+        name=config.land_name,
+        output=config.land_output,
+    )
 
     # JAXGCM expects the terrain mask in host/transposed JCM layout.
     if land.grid.binary_mask is None:
