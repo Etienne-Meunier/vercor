@@ -184,6 +184,6 @@ jobs:
           python -m pytest tests/ -q --tb=short --cov=vercor --cov-branch
           --cov-report=xml --cov-fail-under=90
       - name: Upload coverage reports to Codecov
-          uses: codecov/codecov-action@v5
-          with:
-            token: ${{ secrets.CODECOV_TOKEN }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
