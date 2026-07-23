@@ -1,5 +1,10 @@
 # Bundled Model Period Output Design
 
+> Revised by
+> `docs/superpowers/specs/2026-07-23-bundled-output-configurability-design.md`,
+> which adds per-component `OutputSpec` factory parameters while preserving the
+> default behavior described here.
+
 ## Goal
 
 Enable step-cadence period output for VerCOR's bundled slab and data model
