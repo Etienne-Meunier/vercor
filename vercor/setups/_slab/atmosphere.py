@@ -8,7 +8,7 @@ from vercor.components import CallableComponent, Component, ComponentSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
 from vercor.output import OutputSpec
-from vercor.setups._output import bundled_output
+from vercor.setups._output import resolve_output
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 _ATMOSPHERE_INPUTS = (
@@ -111,6 +111,6 @@ def make_slab_atmosphere(
             inputs=_ATMOSPHERE_INPUTS,
             outputs=_ATMOSPHERE_OUTPUTS,
             initial_fields=_ATMOSPHERE_DEFAULT_FIELDS,
-            output=bundled_output(output),
+            output=resolve_output(output),
         ),
     )

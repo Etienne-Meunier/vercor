@@ -10,7 +10,7 @@ from vercor.components import (
 )
 from vercor.grids import RectilinearGrid
 from vercor.output import OutputSpec
-from vercor.setups._output import bundled_output
+from vercor.setups._output import resolve_output
 
 
 def time_interpolated_data_component(
@@ -36,7 +36,7 @@ def time_interpolated_data_component(
             initial_fields=initial_fields,
             lifecycle=lifecycle,
             transfer=TransferPolicy(time_selection="linear"),
-            output=bundled_output(output),
+            output=resolve_output(output),
         ),
     )
     return component

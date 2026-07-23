@@ -1,22 +1,16 @@
 """Shared output declarations for bundled setup factories."""
 
-from vercor.output import OutputSpec, PeriodOutput
+from vercor.output import OutputSpec
 
 
-def bundled_output(output: OutputSpec | None = None) -> OutputSpec:
-    """Return a validated output declaration with the bundled default."""
+def resolve_output(output: OutputSpec | None = None) -> OutputSpec:
+    """Return a validated explicit or disabled output declaration."""
 
     if output is None:
-        return OutputSpec(period=PeriodOutput(frequency="step"))
+        return OutputSpec()
     if not isinstance(output, OutputSpec):
         raise TypeError("output must be OutputSpec or None")
     return output
-
-
-def step_period_output() -> OutputSpec:
-    """Return the generic step-cadence policy for bundled model output."""
-
-    return bundled_output()
 
 
 __all__: list[str] = []

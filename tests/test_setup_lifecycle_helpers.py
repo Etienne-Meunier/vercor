@@ -255,7 +255,7 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         forcing,
         ocean_grid,
         "LND",
-        OutputSpec(period=PeriodOutput(frequency="step")),
+        OutputSpec(),
     )
     assert calls["atmosphere_args"] == (
         coords,
@@ -514,7 +514,7 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         forcing,
         ocean_grid,
         "CUSTOM_LND",
-        OutputSpec(period=PeriodOutput(frequency="step")),
+        OutputSpec(),
     )
     assert calls["atmosphere_args"] == (
         coords,

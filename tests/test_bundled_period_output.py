@@ -32,7 +32,6 @@ from vercor.setups._data import jcm_land as jcm_land_module
 from vercor.setups._data._component_helpers import (
     time_interpolated_data_component,
 )
-from vercor.setups._output import bundled_output
 
 _SLAB_FACTORIES = (
     make_slab_atmosphere,
@@ -48,19 +47,16 @@ _DATA_FACTORIES = (
 )
 
 
-def _assert_step_period_output(component: Any) -> None:
-    output = component.spec.output
-    assert isinstance(output, OutputSpec)
-    assert output.provider is None
-    assert output.period == PeriodOutput(frequency="step")
+def _assert_output_disabled_by_default(component: Any) -> None:
+    assert component.spec.output == OutputSpec()
 
 
 @pytest.mark.parametrize(
     "factory",
     _SLAB_FACTORIES,
 )
-def test_all_bundled_slab_factories_declare_step_period_output(factory: Any) -> None:
-    _assert_step_period_output(factory(make_test_grid(name="slab-output")))
+def test_all_bundled_slab_factories_disable_output_by_default(factory: Any) -> None:
+    _assert_output_disabled_by_default(factory(make_test_grid(name="slab-output")))
 
 
 @pytest.mark.parametrize("factory", _SLAB_FACTORIES)
@@ -80,10 +76,13 @@ def test_slab_factory_accepts_keyword_only_output_spec(factory: Any) -> None:
 
 def test_bundled_output_rejects_invalid_override() -> None:
     with pytest.raises(TypeError, match="output must be OutputSpec or None"):
-        bundled_output(cast(Any, "month"))
+        make_slab_atmosphere(
+            make_test_grid(name="invalid-output"),
+            output=cast(Any, "month"),
+        )
 
 
-def test_shared_data_factory_declares_step_period_output() -> None:
+def test_shared_data_factory_disables_output_by_default() -> None:
     grid = make_test_grid(name="data-output")
     component = time_interpolated_data_component(
         name="DATA",
@@ -94,7 +93,7 @@ def test_shared_data_factory_declares_step_period_output() -> None:
         initial_fields={"forcing": 1.0},
     )
 
-    _assert_step_period_output(component)
+    _assert_output_disabled_by_default(component)
 
 
 def test_shared_data_factory_accepts_output_spec() -> None:
@@ -122,6 +121,13 @@ def test_public_data_factory_accepts_keyword_only_output_spec(factory: Any) -> N
     component = factory(output=custom_output)
 
     assert component.spec.output is custom_output
+
+
+@pytest.mark.parametrize("factory", _DATA_FACTORIES)
+def test_public_data_factory_disables_output_by_default(factory: Any) -> None:
+    component = factory()
+
+    _assert_output_disabled_by_default(component)
 
 
 def _make_test_jcm_land(
@@ -162,11 +168,11 @@ def _make_test_jcm_land(
     )
 
 
-def test_direct_jcm_land_data_factory_declares_step_period_output(
+def test_direct_jcm_land_data_factory_disables_output_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     component = _make_test_jcm_land(monkeypatch)
-    _assert_step_period_output(component)
+    _assert_output_disabled_by_default(component)
 
 
 def test_direct_jcm_land_data_factory_accepts_output_spec(
@@ -181,7 +187,11 @@ def test_direct_jcm_land_data_factory_accepts_output_spec(
 
 def test_slab_period_file_contains_declared_outputs_only(tmp_path: Path) -> None:
     grid = make_test_grid(name="slab-period")
-    component = make_slab_atmosphere(grid, name="ATM")
+    component = make_slab_atmosphere(
+        grid,
+        name="ATM",
+        output=OutputSpec(period=PeriodOutput(frequency="step")),
+    )
     coupler = Coupler(
         Clock(datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
         components=(component,),
@@ -202,9 +212,9 @@ def test_slab_period_file_contains_declared_outputs_only(tmp_path: Path) -> None
         assert field_variables == set(component.spec.outputs)
 
 
-def test_slab_output_spec_can_disable_period_files(tmp_path: Path) -> None:
+def test_slab_omitted_output_writes_no_period_files(tmp_path: Path) -> None:
     grid = make_test_grid(name="disabled-slab-period")
-    component = make_slab_atmosphere(grid, output=OutputSpec())
+    component = make_slab_atmosphere(grid)
     coupler = Coupler(
         Clock(datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
         components=(component,),
@@ -221,6 +231,27 @@ def test_slab_output_spec_can_disable_period_files(tmp_path: Path) -> None:
     )
 
     assert not tuple(tmp_path.glob("*.averages.*.nc"))
+
+
+def test_slab_omitted_output_still_writes_final_fields(tmp_path: Path) -> None:
+    grid = make_test_grid(name="final-fields-without-period")
+    component = make_slab_atmosphere(grid)
+    coupler = Coupler(
+        Clock(datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=(component.name,),
+        log_level="WARNING",
+    )
+
+    coupler.run(
+        output=OutputTarget(
+            tmp_path,
+            write_snapshots=False,
+        )
+    )
+
+    assert not tuple(tmp_path.glob("*.averages.*.nc"))
+    assert (tmp_path / "atm.runtime_fields.nc").is_file()
 
 
 def test_slab_month_output_averages_coupler_step_samples(tmp_path: Path) -> None:
@@ -287,6 +318,7 @@ def test_data_period_file_contains_declared_outputs_only(tmp_path: Path) -> None
         inputs=("forcing",),
         outputs=("temperature",),
         initial_fields={"forcing": 1.0},
+        output=OutputSpec(period=PeriodOutput(frequency="step")),
     )
     coupler = Coupler(
         Clock(datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
