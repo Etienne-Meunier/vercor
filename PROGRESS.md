@@ -12,7 +12,11 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`,
   `OutputSpec()`, matching external configs with no period policy; explicit
   step/month policies and final-field output remain independent. TDD RED was
   14 expected failures; focused passed 57/57 and the applicable
-  output/setup/API/artifact fast set passed 51/51. Full verification is pending.
+  output/setup/API/artifact fast set passed 51/51. Fast passed 664/664 with four
+  known Flax/JAX warnings; full and branch coverage passed 1,298/1,298 with one
+  additional JCM/xarray warning. Coverage is 91.10% across 7,398 statements and
+  1,560 branches. Black left 236 files unchanged; flake8 was 0, mypy passed 236
+  files, compileall, installed artifacts, and whitespace checks passed.
 - Bundled slab/data `OutputSpec` configurability completed locally
   (2026-07-23; default superseded): keyword-only full declarations, paired-JCM
   land ownership, monthly averaging, signatures, artifacts, 1,293 tests, and
