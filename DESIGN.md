@@ -174,9 +174,10 @@ An `OutputProvider.sample(OutputContext)` returns an immutable `OutputFrame` of
 named `OutputVariable` values, coordinates, dimensions, attributes, and
 metadata. `PeriodOutput.variables` uses identical empty/subset/unknown behavior
 for runtime, JAXGCM, Veros, CAMulator, and third-party providers.
-Bundled slab and data factories default to step cadence but accept a complete
-keyword-only `OutputSpec`, allowing cadence, variable selection, providers, and
-snapshots to be configured independently per component.
+Bundled slab and data factories default to `OutputSpec()` with no period
+policy, matching bundled external configuration defaults. They accept a
+complete keyword-only `OutputSpec`, allowing cadence, variable selection,
+providers, and snapshots to be configured independently per component.
 
 One private session owns:
 
@@ -214,10 +215,11 @@ because it is not implemented. CAMulator forcing alignment is explicitly
 implemented.
 
 Every slab and data factory accepts a final keyword-only
-`output: OutputSpec | None` argument. Omission selects the bundled step-period
-default; a supplied declaration is retained unchanged. Paired JCM construction
-owns its land declaration independently as
-`JCMLandAtmosphereConfig.land_output`.
+`output: OutputSpec | None` argument. Omission selects `OutputSpec()`; a
+supplied declaration is retained unchanged. Paired JCM construction owns its
+land declaration independently as `JCMLandAtmosphereConfig.land_output`, which
+also defaults to `OutputSpec()`. The paired atmosphere retains its explicit
+historic monthly policy.
 
 The installed public-plugin fixture demonstrates the external boundary with
 plugin-owned frozen configuration and factory, structural JAX/host components,

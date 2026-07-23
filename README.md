@@ -302,9 +302,10 @@ sampling frequency and selected variables. An empty variable list selects all
 variables supplied by the component's output provider; an unknown name is an
 error. Providers sample the post-step state at the end-of-step model time.
 
-Bundled slab and data factories declare step-cadence period output by default.
-Pass a complete `OutputSpec` through a factory's keyword-only `output` argument
-to configure one component independently:
+Bundled slab and data factories default to `OutputSpec()`, so omitting
+`output` does not schedule period files or component snapshots. Pass a complete
+`OutputSpec` through a factory's keyword-only `output` argument to configure
+one component independently:
 
 ```python
 from vercor.output import OutputSpec, PeriodOutput
@@ -323,9 +324,12 @@ monthly_ocean = make_slab_ocean(
 
 The same argument is available on ERA5, ERA-Interim, and direct JCM land
 factories. `JCMLandAtmosphereConfig.land_output` configures land independently
-in the paired JCM setup. Passing `OutputSpec()` disables period and snapshot
-output for one bundled component while retaining any run-level final-field
-selection.
+in the paired JCM setup. To request the former step cadence explicitly, use
+`OutputSpec(period=PeriodOutput(frequency="step"))`.
+
+An omitted declaration still permits run-level final fields through
+`OutputTarget.write_final_fields`. JAXGCM, Veros, and CAMulator also default to
+no period policy, while retaining their model-specific native snapshot writers.
 
 The generic provider writes only fields declared in `ComponentSpec.outputs`.
 Custom and third-party components remain opt-in and must attach their own

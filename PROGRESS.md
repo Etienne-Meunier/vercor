@@ -7,24 +7,16 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`,
 
 ## Current Status
 
-- Bundled slab/data output configurability implemented locally (2026-07-23):
-  every slab, ERA5, ERA-Interim, and direct JCM land factory accepts a complete
-  keyword-only `OutputSpec`; paired JCM configuration owns land output
-  independently. Omission preserves step cadence, `OutputSpec()` disables
-  component period output, and a monthly slab regression verifies the mean of
-  coupler-step samples and exact variable selection. TDD RED was seven expected
-  data/JCM failures after the four expected slab failures; focused
-  configurability passed 23/23 and the broader bundled/output/setup fast set
-  passed 49/49. A stale strict paired-JCM fake exposed by the first fast run was
-  updated to implement and assert the additive keyword; its focused file and
-  mypy check passed before the complete fast rerun. Fast passed 664/664 with
-  four known Flax/JAX deprecation warnings; full and branch coverage passed
-  1,293/1,293 with those warnings plus one JCM/xarray future warning.
-  Coverage is 91.11% across 7,401 statements and 1,560 branches. Black left 236
-  files unchanged with its known Python 3.13/target-Python-3.15 safety-parse
-  advisory; strict flake8 reported 0, mypy passed 236 source files, compileall
-  passed, installed wheel/sdist/plugin probes passed in the full suite, and
-  whitespace checks passed.
+- Bundled output defaults aligned locally (2026-07-23): omitted slab, ERA5,
+  ERA-Interim, and direct/paired JCM-land declarations now resolve to
+  `OutputSpec()`, matching external configs with no period policy; explicit
+  step/month policies and final-field output remain independent. TDD RED was
+  14 expected failures; focused passed 57/57 and the applicable
+  output/setup/API/artifact fast set passed 51/51. Full verification is pending.
+- Bundled slab/data `OutputSpec` configurability completed locally
+  (2026-07-23; default superseded): keyword-only full declarations, paired-JCM
+  land ownership, monthly averaging, signatures, artifacts, 1,293 tests, and
+  91.11% coverage passed before omission was aligned to `OutputSpec()`.
 - Bundled slab/data step-period output completed locally (2026-07-22): one private setup declaration enables the existing generic output provider across all slab factories, shared time-interpolated data factories, and the direct JCM land data factory. Period files contain declared outputs only; custom components remain opt-in and `output=None` remains I/O-free. Focused tests passed 9/9 with no warnings; fast passed 662/662 with four Flax/JAX third-party deprecation warnings; full and branch-coverage runs exited 0 with those four warnings plus one JCM/xarray future warning, and fresh collection reported 1,280 tests. Branch coverage was 91.08% across 7,383 statements and 1,556 branches. Black left 236 files unchanged with its known Python 3.13/target-Python-3.15 safety-parse advisory; strict flake8 reported 0, mypy passed 236 source files, compileall passed, and whitespace checks passed. Independent final review found no Critical, Important, or Minor issues after exact declared-output test hardening.
 - Veros component-scoped linear-solver caching completed locally (2026-07-22): the setup-created solver is reused across copy-owned native states with exception-safe temporary cache binding, setup-key release, owner isolation, and validated Veros >=1.6.2,<1.7 cache ABI. TDD RED/GREEN, real-cache, external-component, fast, full, coverage, formatting, lint, typing, compile, and whitespace gates passed. Public APIs, native payloads, and numerics stay unchanged.
 - Final-review corrections completed locally (2026-07-21): lifecycle identity, CAMulator calendar rejection, and API review evidence are complete. Focused, fast, full, static, prior 91.01% coverage, and artifact gates passed. Deferred private cleanup remains runtime-schema and output-owner unification.

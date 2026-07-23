@@ -386,11 +386,11 @@ public manifest as an independent plugin workflow.
 
 Bundled slab, data, JCM, and Veros factories return ordinary structural
 components and use the same constructor and output contracts. Slab and data
-factories accept a complete keyword-only `OutputSpec`, defaulting to
-step-period output when omitted; paired JCM configuration owns land and
-atmosphere output independently. CI has installed base, JCM, and Veros lanes.
-CAMulator remains lazy and source-tested because a compatible external release
-is not yet pinned.
+factories accept a complete keyword-only `OutputSpec`; omission selects
+`OutputSpec()` with no period policy, matching external configuration defaults.
+Paired JCM configuration owns land and atmosphere output independently. CI has
+installed base, JCM, and Veros lanes. CAMulator remains lazy and source-tested
+because a compatible external release is not yet pinned.
 
 ## 7. Compatibility plan
 
