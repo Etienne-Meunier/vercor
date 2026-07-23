@@ -20,7 +20,19 @@ from vercor.regridding import bilinear
 from vercor.topology import SurfaceMaskPolicy
 
 if __name__ == "__main__":
-    atm = make_era5_atmosphere()
+    atm = make_era5_atmosphere(
+        output=OutputSpec(
+            period=PeriodOutput(
+                frequency="month",
+                variables=(
+                    "surface_pressure",
+                    "temperature",
+                    "net_shortwave_radiation_flux",
+                    "downward_longwave_radiation_flux",
+                ),
+            ),
+        )
+    )
     ocn = make_veros_gcm(
         config=VerosConfig(
             restore_to_climatology=True,
@@ -41,7 +53,14 @@ if __name__ == "__main__":
             ),
         ),
     )
-    lnd = make_era5_land()
+    lnd = make_era5_land(
+        output=OutputSpec(
+            period=PeriodOutput(
+                frequency="month",
+                variables=("land_surface_temperature",),
+            ),
+        )
+    )
 
     # Clock and sequence
     clock = Clock(
