@@ -1,5 +1,10 @@
 # Bundled Output Configurability Design
 
+> Revised by
+> `docs/superpowers/specs/2026-07-23-bundled-output-default-alignment-design.md`,
+> which changes the omitted slab/data declaration from step-period output to
+> `OutputSpec()` while preserving the configurable factory APIs described here.
+
 ## Goal
 
 Allow every bundled slab and data component factory to accept a complete
