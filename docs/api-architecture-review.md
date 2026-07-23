@@ -1,6 +1,6 @@
-# VerCOR 0.4.0a1 API architecture review
+# VerCOR 0.4.0 API architecture review
 
-This review records the shipped alpha architecture. Public compatibility is
+This review records the stable 0.4.0 architecture. Public compatibility is
 defined by canonical owner modules, their `__all__` manifests, live signatures,
 and behavior tests—not by the layout of private implementation modules.
 
@@ -22,7 +22,7 @@ The stable extension tier is the six-symbol root plus `vercor.components`,
 `vercor.coupler`, `vercor.exchanges`, `vercor.grids`, `vercor.output`,
 `vercor.physics`, `vercor.regridding`, `vercor.runtime`, `vercor.state`,
 `vercor.topology`, and `vercor.types`. The complete public manifest and
-signature JSON retain the rest of the alpha inventory without making every
+signature JSON retain the rest of the current inventory without making every
 helper an independent workflow-stability promise.
 
 The differentiable default is `Coupler.run(output=None)`. That path performs no
@@ -30,7 +30,7 @@ I/O and retains JVP and reverse-mode behavior. An `OutputTarget` opts into the
 single coordinator for provider sampling, selection, immutable accumulation,
 host transfer, period files, final fields, and snapshots. Optional JCM, Veros,
 and CAMulator dependencies remain lazy. CAMulator is source-tested but is not
-installed or pinned for this alpha.
+installed or pinned for this release.
 
 Component identity is immutable through every lifecycle callback: the declared
 name, grid, and specification remain author-owned configuration. External model
@@ -69,7 +69,7 @@ deferred internal cleanup.
 | Veros and CAMulator evolution lived on adapter closures. | Reusing or supplying a `RunState` was not reproducible, and output could sample a different run. | Seed native state in `SetupResult.payload`, return replacements in `StepResult`, and sample output contexts only. | **must change** |
 | CAMulator silently reindexed mismatched starts and accepted model-calendar clocks it cannot represent. | A run could use the wrong forcing index or fail later during host execution. | Require explicit `strict` or `forcing_start` policy and reject non-standard-library datetime clocks during lifecycle setup. | **must change** |
 | Static typing and runtime introspection used different regridder-factory definitions. | Built-ins and plugins could satisfy one checker while violating the other. | Define one runtime-checkable `RegridderFactory` protocol requiring the source and target grids. | **must change** |
-| Plugin metadata excluded the alpha it was intended to test, while installation bypassed dependency resolution. | The fixture did not prove a normally installable third-party extension. | Require `vercor>=0.4.0a1,<0.5` and install the fixture with ordinary resolution against built artifacts. | **must change** |
+| During alpha hardening, plugin metadata excluded `0.4.0a1`, the alpha it was intended to test, while installation bypassed dependency resolution. | The fixture had not proved a normally installable third-party extension. | The stable fixture now requires `vercor>=0.4.0,<0.5` and installs with ordinary resolution against built artifacts. | **must change** |
 | Component-specific output markers and native accumulators duplicated cadence. | Compiled execution could skip output, and native adapters disagreed about paths and means. | Keep provider sampling at components but give one private session cadence, accumulation, host transfer, and file ownership. | **must change** |
 | Custom backends could invoke arbitrary component steps. | Schedule order, cancellation, state checks, and output boundaries were unverifiable. | Give backends core-authored chunks and require exact consumption through `RuntimeDriver.run_step`. | **must change** |
 | Callable-derived exchange identity collided for repeated endpoints. | Topology patches and diagnostics could not address routes deterministically. | Give every exchange a stable explicit or deterministic `route_id` and reject collisions and ambiguous fan-in. | **must change** |
@@ -141,7 +141,7 @@ OutputTarget(directory, *, write_period=True, write_final_fields=True,
 
 The five signatures above are a readable representative sample. The complete,
 static executable inventory is
-[`tests/contracts/vercor-0.4.0a1-public-signatures.json`](../tests/contracts/vercor-0.4.0a1-public-signatures.json):
+[`tests/contracts/vercor-0.4.0-public-signatures.json`](../tests/contracts/vercor-0.4.0-public-signatures.json):
 it covers all 150 concrete callable exports in canonical non-root owner
 manifests and 55 public class/protocol-call methods. Every
 normalized value includes parameter order and kind, defaults, resolved public
@@ -159,7 +159,7 @@ prepared graph. Public annotations resolve without importing private symbols.
 ## 5. Private API redesign
 
 Private layout is free to change and is not a compatibility contract. The
-following inventory is complete for `0.4.0a1` and documents responsibility,
+following inventory is complete for `0.4.0` and documents responsibility,
 not import permission.
 
 ```text
@@ -380,9 +380,9 @@ The plugin wheel is installed next to built VerCOR artifacts in a clean target,
 its smoke runs outside the checkout, and its package plus external use site pass
 strict mypy. CI repeats native 0.4 plugin lanes on Python 3.12 and 3.13.
 The executable [plugin authoring guide](plugin-authoring.md) documents the same
-public-only contracts. This remains an alpha; the installed fixture protects
-the documented stable extension tier rather than promising every retained
-public manifest as an independent plugin workflow.
+public-only contracts. The installed fixture protects the documented stable
+extension tier rather than promising every retained public manifest as an
+independent plugin workflow.
 
 Bundled slab, data, JCM, and Veros factories return ordinary structural
 components and use the same constructor and output contracts. Slab and data
@@ -394,10 +394,10 @@ because a compatible external release is not yet pinned.
 
 ## 7. Compatibility plan
 
-VerCOR 0.4 is intentionally source-breaking and this alpha does not ship a 0.3
-adapter namespace. Task 9 was explicitly skipped. Applications migrate imports
-and construction directly using `docs/migration-0.3-to-0.4.md`; primary 0.4 modules
-remain alias-free.
+VerCOR 0.4 is intentionally source-breaking and version 0.4.0 does not ship a
+0.3 adapter namespace. Task 9 was explicitly skipped. Applications migrate
+imports and construction directly using `docs/migration-0.3-to-0.4.md`;
+primary 0.4 modules remain alias-free.
 
 No legacy adapter namespace or executable VerCOR 0.3 evidence ships. No earlier
 API is restored.
@@ -405,20 +405,20 @@ API is restored.
 Compatibility within the 0.4.x line is defined by canonical public owner
 manifests, signatures, public-only plugin behavior, output-free gradients, and
 installed wheel/sdist tests. The root and stable extension tier are the
-workflow-facing compatibility commitments; the remaining manifest is an alpha
+workflow-facing compatibility commitments; the remaining manifest is a current
 inventory retained without export removal. Public PyTree hooks are JAX
 integration details, not independent workflow promises. Private module names
 in section 5 are descriptive and may change without a deprecation cycle.
 
 ## 8. Final rewritten API
 
-### 8.1 Complete proposed public API
+### 8.1 Complete public API
 
-The complete proposed public module/class/function/protocol/configuration
-inventory is the executable manifest in section 4. It is the actual hardened
-`0.4.0a1` surface, not a future sketch. Exact signatures for every callable
-export and public behavioral method are in
-[`vercor-0.4.0a1-public-signatures.json`](../tests/contracts/vercor-0.4.0a1-public-signatures.json);
+The complete public module/class/function/protocol/configuration inventory is
+the executable manifest in section 4. It is the actual stable `0.4.0` surface,
+not a future sketch. Exact signatures for every callable export and public
+behavioral method are in
+[`vercor-0.4.0-public-signatures.json`](../tests/contracts/vercor-0.4.0-public-signatures.json);
 section 4 also gives the five central readable signatures.
 
 The stable workflow-facing subset is:
@@ -431,7 +431,7 @@ The stable workflow-facing subset is:
 | `vercor.runtime` | `Workflow`, plans, chunks, `ExecutionBackend`, contexts, and the validated `RuntimeDriver`. |
 | `vercor.output` | Providers, frames, variables, cadence/specification, targets, and snapshot contexts. |
 | `vercor.state`, `vercor.physics`, `vercor.grids`, `vercor.types` | Opaque immutable state, traced physical constants, canonical grids, and runtime array typing. |
-| `vercor.setups` | Frozen setup configurations and lazy built-in factories; retained alpha inventory rather than an additional plugin tier. |
+| `vercor.setups` | Frozen setup configurations and lazy built-in factories; retained public inventory rather than an additional plugin tier. |
 
 The built-in path remains a small constructor workflow:
 
@@ -461,11 +461,11 @@ output example is executable in
 dependency resolution, non-default configuration, immutable state replacement,
 period output, and snapshot output outside the checkout.
 
-### 8.2 Complete proposed private API
+### 8.2 Complete private API
 
-The complete proposed private module inventory is the code block in section 5;
+The complete private module inventory is the code block in section 5;
 the responsibility groups immediately below it define every internal owner's
-role. These names document `0.4.0a1` implementation relationships but are not
+role. These names document `0.4.0` implementation relationships but are not
 import or compatibility promises. Useful internal boundaries include:
 
 ```text
@@ -520,4 +520,4 @@ checkout.
 Deferred features stay deferred: no registry, entry-point discovery, Pydantic,
 fan-in reducer, public prepared graph, fractional subcycling, or CAMulator
 dependency pin. No tag, push, publication, or release upload is part of
-preparing this alpha.
+preparing the stable release.

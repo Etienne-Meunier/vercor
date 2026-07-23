@@ -108,7 +108,7 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     runtime_dependencies = tuple(project["dependencies"])
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "0.4.0a1"
+    assert project["version"] == "0.4.0"
     assert not any(
         dependency.lower().startswith("pytest") for dependency in runtime_dependencies
     )
@@ -198,7 +198,7 @@ def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> Non
     )
 
     assert project["version"] == "0.1.0"
-    assert project["dependencies"] == ["vercor>=0.4.0a1,<0.5"]
+    assert project["dependencies"] == ["vercor>=0.4.0,<0.5"]
     for owner in (
         "vercor.components",
         "vercor.coupler",
@@ -507,7 +507,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
         )
         plugin_metadata = plugin_archive.read(plugin_metadata_name).decode("utf-8")
     assert "Version: 0.1.0" in plugin_metadata
-    assert "Requires-Dist: vercor>=0.4.0a1,<0.5" in plugin_metadata
+    assert "Requires-Dist: vercor>=0.4.0,<0.5" in plugin_metadata
 
     with tarfile.open(distributions.sdist, "r:gz") as sdist:
         sdist_names = set(sdist.getnames())

@@ -12,8 +12,8 @@ computing library that supports compilation and automatic differentiation.
 Output-free JAX workflows can be differentiated end to end, making VerCOR
 suitable for sensitivity analysis and gradient-based experiments.
 
-> **Alpha release:** The current code is version `0.4.0a1`. Its public API may
-> still change. VerCOR 0.3 applications must use the
+> **Stable release:** Version `0.4.0` is the current release. VerCOR 0.3
+> applications must use the
 > [0.3-to-0.4 migration guide](docs/migration-0.3-to-0.4.md).
 
 ## Key features
@@ -31,7 +31,7 @@ suitable for sensitivity analysis and gradient-based experiments.
 
 ## Requirements
 
-- Python 3.12 or newer
+- Python 3.12 or 3.13
 - A JAX installation supported by your platform
 
 The core package also depends on NumPy, SciPy, h5py, h5netcdf, xarray,
@@ -44,15 +44,11 @@ release has not yet been confirmed or pinned.
 
 ## Installation
 
-Install the core package with pip:
+Install the current stable core package with pip:
 
 ```bash
-python -m pip install vercor
+python -m pip install "vercor==0.4.0"
 ```
-
-> **Package availability:** The repository records say the `0.4.0a1` release
-> candidate has not yet been uploaded. Until publication is confirmed, the
-> command above may install an older release or fail to find this alpha.
 
 Install the relevant optional extra before using a bundled JCM or Veros setup:
 
@@ -381,9 +377,12 @@ in their subject modules, including `vercor.components`, `vercor.output`,
 
 ### The installed package does not provide the 0.4 API
 
-Version `0.4.0a1` is recorded as an unpublished release candidate. Check the
-installed version before following this README. Publication and source-install
-instructions are currently missing from the user documentation.
+Version `0.4.0` is the current release. Check the installed version and upgrade
+to the stable release before following this README:
+
+```bash
+python -m pip install --upgrade "vercor==0.4.0"
+```
 
 ### An optional setup cannot be imported
 
@@ -404,7 +403,7 @@ disabled for traced runtime state.
 
 ### A VerCOR 0.3 import or workflow no longer works
 
-The alpha does not include a legacy compatibility namespace. Follow the
+Version 0.4.0 does not include a legacy compatibility namespace. Follow the
 [migration guide](docs/migration-0.3-to-0.4.md) to update imports and assembly.
 
 ## Additional resources

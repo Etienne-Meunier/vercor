@@ -7,6 +7,15 @@ preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`,
 
 ## Current Status
 
+- VerCOR 0.4.0 release verification completed locally from uncommitted local release changes (2026-07-23) on Python 3.13.13: metadata 4/4, documentation 12/12, fast 664/664, final full 1,311/1,311, earlier branch coverage 1,302/1,302 at 91.13%, and optional-model/gradient acceptance 12/12 passed.
+  Python 3.12 and hosted CI were not run locally; the GitHub connector returned 404 for configured origin `nutrik/vercor`, and remote configuration was not changed; artifacts built once with the prescribed `scipy` commands are not yet tied to an exact release commit.
+  `dist/vercor-0.4.0-py3-none-any.whl`: 213305 B, SHA-256 `a50773003b9d74cf1670f887b0951487bac87528c6ed3e4f7c4e54cfc16495d8`;
+  `dist/vercor-0.4.0.tar.gz`: 158745 B, SHA-256 `e2f3633991bb983b7144d6f7c631a274b4188013c962df6d28c8b6465c39250d`;
+  `dist/vercor_public_plugin-0.1.0-py3-none-any.whl`: 6087 B, SHA-256 `b463de7a8f0f12fc3ae443ab0ebc4afe73d8c072aabb230d293b15ba055181ef`.
+  Archive metadata/PEP 561 and main wheel/sdist 152+152-member forbidden-file inspection passed (plugin wheel: 7); supplied bundle boundary 16/16 and outside-checkout installation/import version 0.4.0 passed; artifacts are ignored.
+  Release safety TDD captured 4 structural RED failures and 5 exact-state validator RED failures, then passed 4/4 and 5/5: transcripts are fence/`bash -n` checked, all CI checkouts bind the triggering SHA, authenticated repository/release/PyPI and `main`-ancestry preflights repeat at mutation boundaries, and recovery rejects extra names while re-querying exact tag/package/asset state and freshly validating hosted bytes.
+  Preflight found branch `refactor` and no local or remotely advertised `v0.4.0` tag; Twine passed both VerCOR artifacts while the evidence-only plugin wheel had nonblocking missing-long-description warnings; other warnings were pip user-cache disabled, four Flax/JAX-effect instances, and one JCM/xarray instance.
+  No commit, tag, push, publication, upload, merge, or hosted release was performed.
 - Time-selected runtime output verification completed locally (2026-07-23): period accumulation had sampled raw climatology/forcing-record axes rather than the scalar time-selected field; shared transfer-policy selection now supplies the default provider's precomputed `RuntimeStepInfo`. Focused selector/output checks passed 3/3 and 95/95; fast 664/664; full and branch coverage 1,302/1,302 at 91.13% (7,404 statements; 1,562 branches); maintained output-free JVP/reverse gradients 3/3. The stale `tests/test_gradients.py` path does not exist. Black left 236 files unchanged; flake8 0; mypy 236 files; compileall, installed wheel/sdist/plugin artifact boundary (16 tests), optional-model nodes (9 parameterized tests), and whitespace passed. Warnings unchanged: four Flax/JAX `jax.core.Effect` deprecations and one JCM/xarray merge-default future warning.
 - Bundled output defaults aligned locally (2026-07-23): omitted slab, ERA5,
   ERA-Interim, and direct/paired JCM-land declarations now resolve to

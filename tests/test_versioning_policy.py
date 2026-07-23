@@ -10,7 +10,7 @@ import tomllib
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CURRENT_VERSION = "0.4.0a1"
+CURRENT_VERSION = "0.4.0"
 TEXT_SUFFIXES = {".json", ".md", ".py", ".toml", ".yaml", ".yml"}
 FORBIDDEN_RELEASE_LABELS = (
     ".".join(("1", "0", "0")),
@@ -213,7 +213,9 @@ def test_release_shorthand_matcher_allows_external_and_numeric_labels(
 
 
 @pytest.mark.fast_always
-def test_current_vercor_release_is_the_approved_alpha() -> None:
+def test_current_vercor_release_is_the_approved_stable_release() -> None:
+    """Require the repository's approved stable release version."""
+
     project = tomllib.loads(
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]

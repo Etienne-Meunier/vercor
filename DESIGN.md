@@ -1,7 +1,7 @@
 # VerCOR 0.4 Design Specification
 
 VerCOR is a JAX-first, fully differentiable coupler for composing Earth-system
-components. This document describes the implemented `0.4.0a1` architecture.
+components. This document describes the implemented stable `0.4.0` architecture.
 The exact API inventory and migration decisions are in
 `docs/api-architecture-review.md` and `docs/migration-0.3-to-0.4.md`.
 
@@ -18,9 +18,10 @@ The exact API inventory and migration decisions are in
   step.
 - Keep public contracts small while allowing third-party structural plugins.
 
-The alpha does not provide registries, entry-point discovery, Pydantic models,
-fan-in reducers, a public prepared graph, fractional subcycling, restart files,
-or a CAMulator dependency pin. Ambiguous target-field fan-in is rejected.
+The stable release does not provide registries, entry-point discovery, Pydantic
+models, fan-in reducers, a public prepared graph, fractional subcycling,
+restart files, or a CAMulator dependency pin. Ambiguous target-field fan-in is
+rejected.
 
 ## 2. Public boundary
 
@@ -33,7 +34,7 @@ The stable extension tier is the six-symbol root plus `vercor.components`,
 `vercor.coupler`, `vercor.exchanges`, `vercor.grids`, `vercor.output`,
 `vercor.physics`, `vercor.regridding`, `vercor.runtime`, `vercor.state`,
 `vercor.topology`, and `vercor.types`. Other existing public manifests remain
-available as the alpha inventory; they are protected by the complete
+available as the current inventory; they are protected by the complete
 manifest/signature JSON, but are not independent plugin-workflow promises.
 
 `Coupler(...)` is the only assembly path. It receives the complete clock,
@@ -233,8 +234,9 @@ an injected regridder, explicit route, non-empty topology patch, custom
 workflow/backend, immutable state replacement, period output, and snapshot
 output. It imports no private VerCOR module.
 
-No legacy adapter namespace or executable VerCOR 0.3 evidence ships with this
-alpha. VerCOR 0.3-only workflows must migrate directly to the current contracts.
+No legacy adapter namespace or executable VerCOR 0.3 evidence ships with
+version 0.4.0. VerCOR 0.3-only workflows must migrate directly to the current
+contracts.
 
 ## 10. Testing and release evidence
 

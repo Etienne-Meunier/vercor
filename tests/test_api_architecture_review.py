@@ -1,4 +1,4 @@
-"""Executable documentation and release contracts for VerCOR 0.4.0a1."""
+"""Executable documentation and release contracts for stable VerCOR 0.4.0."""
 
 from __future__ import annotations
 
@@ -10,10 +10,12 @@ import inspect
 import json
 from pathlib import Path
 import re
+import subprocess
 import tomllib
 from typing import Any, cast, get_type_hints
 
 import pytest
+import yaml
 
 from tests._signature_support import canonicalize_external_typing_aliases
 
@@ -23,10 +25,12 @@ README_PATH = PROJECT_ROOT / "README.md"
 DESIGN_PATH = PROJECT_ROOT / "DESIGN.md"
 MIGRATION_PATH = PROJECT_ROOT / "docs" / "migration-0.3-to-0.4.md"
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
+WORKFLOW_PATH = PROJECT_ROOT / ".github" / "workflows" / "python-package.yml"
+TASK6_REPORT_PATH = PROJECT_ROOT / ".superpowers" / "sdd" / "task-6-report.md"
 CHANGELOG_PATH = PROJECT_ROOT / "CHANGELOG.md"
 PROGRESS_PATH = PROJECT_ROOT / "PROGRESS.md"
 SIGNATURE_CONTRACT_PATH = (
-    PROJECT_ROOT / "tests" / "contracts" / "vercor-0.4.0a1-public-signatures.json"
+    PROJECT_ROOT / "tests" / "contracts" / "vercor-0.4.0-public-signatures.json"
 )
 DEPENDENCIES_PATH = PROJECT_ROOT / "DEPENDENCIES.md"
 PROGRESS_ARCHIVE_PATH = (
@@ -52,6 +56,44 @@ def _python_fences(markdown: str) -> tuple[str, ...]:
     """Return Python snippets from Markdown in source order."""
 
     return tuple(re.findall(r"```python\n(.*?)```", markdown, flags=re.DOTALL))
+
+
+def _markdown_fences(markdown: str, *, owner: str) -> tuple[tuple[str, str], ...]:
+    """Parse Markdown fences and reject ambiguous or unterminated transcripts."""
+
+    fences: list[tuple[str, str]] = []
+    opening: tuple[str, str] | None = None
+    body: list[str] = []
+    for line_number, line in enumerate(markdown.splitlines(), start=1):
+        marker = re.fullmatch(r"(`{3,})([^`]*)", line)
+        if opening is None:
+            if marker is not None:
+                opening = (marker.group(1), marker.group(2).strip())
+                body = []
+            continue
+        opening_marker, language = opening
+        if re.fullmatch(rf"`{{{len(opening_marker)},}}", line):
+            source = "\n".join(body)
+            assert not (
+                len(opening_marker) == 3 and "```" in source
+            ), f"{owner}:{line_number} has a literal triple fence inside a triple fence"
+            fences.append((language, source))
+            opening = None
+            body = []
+        else:
+            body.append(line)
+    assert opening is None, f"{owner} has an unterminated Markdown fence"
+    return tuple(fences)
+
+
+def _section(markdown: str, heading: str) -> str:
+    """Return one Markdown subsection, excluding the next same-level heading."""
+
+    level = len(heading) - len(heading.lstrip("#"))
+    pattern = rf"^{re.escape(heading)}\n(.*?)(?=^#{{1,{level}}} |\Z)"
+    match = re.search(pattern, markdown, flags=re.MULTILINE | re.DOTALL)
+    assert match is not None, f"missing release-guide section {heading!r}"
+    return match.group(1)
 
 
 def _assert_public_imports_only(source: str, *, owner: str) -> None:
@@ -261,7 +303,7 @@ def test_architecture_review_has_exact_v0_4_title_and_eight_sections() -> None:
     """Keep the approved review shape exact without asserting explanatory prose."""
 
     review = REVIEW_PATH.read_text(encoding="utf-8")
-    assert review.startswith("# VerCOR 0.4.0a1 API architecture review\n")
+    assert review.startswith("# VerCOR 0.4.0 API architecture review\n")
     assert tuple(re.findall(r"^## (.+)$", review, flags=re.MULTILINE)) == (
         REQUIRED_REVIEW_HEADINGS
     )
@@ -281,12 +323,12 @@ def test_architecture_review_has_prioritized_decisions_and_complete_final_api() 
     assert decisions.count("**nice to improve**") >= 2
 
     final_api = review.split("## 8. Final rewritten API", 1)[1]
-    assert "### 8.1 Complete proposed public API" in final_api
-    assert "### 8.2 Complete proposed private API" in final_api
+    assert "### 8.1 Complete public API" in final_api
+    assert "### 8.2 Complete private API" in final_api
     for reference in (
         "section 4",
         "section 5",
-        "vercor-0.4.0a1-public-signatures.json",
+        "vercor-0.4.0-public-signatures.json",
         "plugin-authoring.md",
     ):
         assert reference in final_api
@@ -398,18 +440,19 @@ def test_migration_v0_4_snippet_runs_without_private_or_compat_imports(
 
 
 @pytest.mark.fast_always
-def test_release_files_and_metadata_describe_the_built_alpha() -> None:
+def test_release_files_and_metadata_describe_the_stable_release() -> None:
     """Bind release documentation to installed project metadata and artifact names."""
 
     project = tomllib.loads(
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
-    assert project["version"] == "0.4.0a1"
-    assert "Development Status :: 3 - Alpha" in project["classifiers"]
+    assert project["version"] == "0.4.0"
+    assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
+    assert "Development Status :: 3 - Alpha" not in project["classifiers"]
     assert "Development Status :: 4 - Beta" not in project["classifiers"]
 
     changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
-    assert re.search(r"^## \[0\.4\.0a1\] - 2026-07-14$", changelog, re.MULTILINE)
+    assert re.search(r"^## \[0\.4\.0\] - 2026-07-23$", changelog, re.MULTILINE)
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
     commands = "\n".join(re.findall(r"```bash\n(.*?)```", releasing, re.DOTALL))
     for command in (
@@ -428,11 +471,185 @@ def test_release_files_and_metadata_describe_the_built_alpha() -> None:
     assert "twine upload" not in commands
 
     for artifact in (
-        "vercor-0.4.0a1-py3-none-any.whl",
-        "vercor-0.4.0a1.tar.gz",
+        "vercor-0.4.0-py3-none-any.whl",
+        "vercor-0.4.0.tar.gz",
         "vercor_public_plugin-0.1.0-py3-none-any.whl",
     ):
-        assert artifact in releasing
+        assert artifact in commands
+
+
+@pytest.mark.fast_always
+def test_release_transcripts_are_well_formed_and_shell_syntax_valid() -> None:
+    """Keep active release transcripts syntactically executable and unambiguous."""
+
+    with pytest.raises(AssertionError, match="unterminated Markdown fence"):
+        _markdown_fences("````bash\nprintf ok\n", owner="malformed.md")
+    with pytest.raises(AssertionError, match="literal triple fence"):
+        _markdown_fences(
+            "```bash\npython -c 'print(\"```text\")'\n```\n",
+            owner="malformed.md",
+        )
+
+    documents = [RELEASING_PATH]
+    if TASK6_REPORT_PATH.is_file():
+        documents.append(TASK6_REPORT_PATH)
+        report = TASK6_REPORT_PATH.read_text(encoding="utf-8")
+        for unsafe_command in (
+            "python -m twine upload dist/",
+            "git push --delete origin v0.4.0",
+            "DOWNLOADED_WHEEL_SHA",
+            "DOWNLOADED_SDIST_SHA",
+        ):
+            assert unsafe_command not in report
+        assert report.count("`docs/releasing.md`") >= 1
+        assert "tests/test_release_state_validator.py" in report
+        assert "binds all four checkouts" in report
+    for path in documents:
+        fences = _markdown_fences(path.read_text(encoding="utf-8"), owner=str(path))
+        transcripts = tuple(source for language, source in fences if language == "text")
+        assert transcripts, f"{path} has no executable text transcript"
+        for transcript_number, source in enumerate(transcripts, start=1):
+            completed = subprocess.run(
+                ["bash", "-n"],
+                input=source,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert completed.returncode == 0, (
+                f"{path} transcript {transcript_number} fails bash -n:\n"
+                f"{completed.stderr}"
+            )
+            assert source.startswith("set -euo pipefail\n")
+            assert 'test -n "${RELEASE_COMMIT:-}"' in source
+
+
+@pytest.mark.fast_always
+def test_release_workflow_checks_out_the_exact_triggering_commit() -> None:
+    """Prevent pull-request CI from silently testing GitHub's synthetic merge SHA."""
+
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    checkout_steps = tuple(
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses") == "actions/checkout@v4"
+    )
+    assert len(checkout_steps) == 4
+    for step in checkout_steps:
+        assert step.get("with", {}).get("ref") == (
+            "${{ github.event.pull_request.head.sha || github.sha }}"
+        )
+
+
+@pytest.mark.fast_always
+def test_release_publication_preflights_are_authenticated_and_fail_closed() -> None:
+    """Require identity, ancestry, and absence checks at every publication boundary."""
+
+    guide = RELEASING_PATH.read_text(encoding="utf-8")
+    prepare = _section(guide, "## 5. Prepare the required release pull request")
+    tag = _section(guide, "## 6. Create and verify the annotated tag")
+    publish = _section(guide, "## 7. Publish packages and create the hosted release")
+    repo_url = "https://api.github.com/repos/nutrik/vercor"
+    release_url = f"{repo_url}/releases/tags/v0.4.0"
+    pypi_url = "https://pypi.org/pypi/vercor/0.4.0/json"
+
+    for section in (prepare, tag):
+        assert "git fetch --no-tags origin main" in section
+        assert 'MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"' in section
+        assert (
+            'git merge-base --is-ancestor "$MAIN_COMMIT" "$RELEASE_COMMIT"' in section
+        )
+        assert repo_url in section
+        assert 'test "$REPO_STATUS" = "200"' in section
+        assert release_url in section
+        assert 'test "$RELEASE_STATUS" = "404"' in section
+        assert pypi_url in section
+        assert 'test "$PYPI_STATUS" = "404"' in section
+
+    assert prepare.index(repo_url) < guide.index("git tag -a")
+    assert re.search(
+        rf"PYPI_STATUS=.*?{re.escape(pypi_url)}.*?"
+        r'test "\$PYPI_STATUS" = "404".*?'
+        r"python -m twine upload --repository-url "
+        r"https://upload\.pypi\.org/legacy/",
+        publish,
+        flags=re.DOTALL,
+    )
+    assert re.search(
+        rf"REPO_STATUS=.*?{re.escape(repo_url)}.*?"
+        r'test "\$REPO_STATUS" = "200".*?'
+        rf"RELEASE_STATUS=.*?{re.escape(release_url)}.*?"
+        r'test "\$RELEASE_STATUS" = "404".*?gh release create',
+        publish,
+        flags=re.DOTALL,
+    )
+
+
+@pytest.mark.fast_always
+def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
+    """Make every narrowly scoped recovery alternative independently fail closed."""
+
+    guide = RELEASING_PATH.read_text(encoding="utf-8")
+    headings = (
+        "### Missing PyPI wheel only",
+        "### Missing PyPI sdist only",
+        "### Missing hosted release",
+        "### Missing hosted wheel asset only",
+        "### Missing hosted sdist asset only",
+        "### Hosted release metadata correction",
+        "### Replace differing hosted wheel asset",
+        "### Replace differing hosted sdist asset",
+    )
+    sections = {heading: _section(guide, heading) for heading in headings}
+    for heading, section in sections.items():
+        assert 'test -n "${RELEASE_COMMIT:-}"' in section
+        assert (
+            'REMOTE_TAG_COMMIT="$(git ls-remote origin '
+            "'refs/tags/v0.4.0^{}' | awk '{print $1}')\""
+        ) in section
+        assert 'test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"' in section
+        assert "IMMEDIATE_" in section, f"{heading} lacks an immediate state re-query"
+
+    for heading in ("### Missing PyPI wheel only", "### Missing PyPI sdist only"):
+        section = sections[heading]
+        assert "https://pypi.org/pypi/vercor/0.4.0/json" in section
+        assert section.count("tools/validate_release_state.py pypi") == 2
+        assert (
+            "python -m twine upload --repository-url " "https://upload.pypi.org/legacy/"
+        ) in section
+
+    hosted_release = sections["### Missing hosted release"]
+    assert 'test "$REPO_STATUS" = "200"' in hosted_release
+    assert 'test "$RELEASE_STATUS" = "404"' in hosted_release
+    assert 'test "$IMMEDIATE_RELEASE_STATUS" = "404"' in hosted_release
+
+    for heading in (
+        "### Missing hosted wheel asset only",
+        "### Missing hosted sdist asset only",
+    ):
+        section = sections[heading]
+        assert section.count("tools/validate_release_state.py assets") == 2
+        assert section.count("tools/validate_release_state.py files") == 2
+        assert section.count("gh release download") == 2
+        assert 'test "$IMMEDIATE_RELEASE_STATUS" = "200"' in section
+
+    metadata = sections["### Hosted release metadata correction"]
+    assert metadata.count("tools/validate_release_state.py assets") == 2
+    assert metadata.count("tools/validate_release_state.py files") == 2
+    assert metadata.count("gh release download") == 4
+    assert 'test "$IMMEDIATE_RELEASE_STATUS" = "200"' in metadata
+
+    for heading in (
+        "### Replace differing hosted wheel asset",
+        "### Replace differing hosted sdist asset",
+    ):
+        section = sections[heading]
+        assert section.count("tools/validate_release_state.py assets") == 2
+        assert section.count("tools/validate_release_state.py differs") == 2
+        assert section.count("tools/validate_release_state.py files") == 2
+        assert section.count("gh release download") == 4
+        assert 'test "$IMMEDIATE_RELEASE_STATUS" = "200"' in section
 
 
 @pytest.mark.fast_always
@@ -452,7 +669,7 @@ def test_active_memory_is_current_and_historical_detail_is_archived() -> None:
         hashlib.sha256(PROGRESS_ARCHIVE_PATH.read_bytes()).hexdigest()
         == PROGRESS_ARCHIVE_SHA256
     )
-    assert "0.4.0a1" in progress
+    assert "VerCOR 0.4.0 release verification" in progress
 
     design = DESIGN_PATH.read_text(encoding="utf-8")
     dependencies = DEPENDENCIES_PATH.read_text(encoding="utf-8")

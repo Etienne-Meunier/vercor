@@ -1,20 +1,20 @@
 # Authoring VerCOR 0.4 plugins
 
-VerCOR `0.4.0a1` is an alpha. The supported extension tier is the six-symbol
-package root plus the public owner modules used below. Plugins are ordinary
-Python packages: construct structural objects and inject them into `Coupler`.
-There is no registry or entry-point discovery.
+VerCOR `0.4.0` provides a stable extension tier: the six-symbol package root
+plus the public owner modules used below. Plugins are ordinary Python packages:
+construct structural objects and inject them into `Coupler`. There is no
+registry or entry-point discovery.
 
 The Python blocks form one executable example in source order. They import only
 the documented public extension tier.
 
 ## Package and configuration
 
-Declare the exact alpha floor while accepting compatible `0.4` releases:
+Declare the stable floor while accepting compatible `0.4` releases:
 
 ```toml
 [project]
-dependencies = ["vercor>=0.4.0a1,<0.5"]
+dependencies = ["vercor>=0.4.0,<0.5"]
 ```
 
 Keep plugin-owned construction policy immutable and separate from VerCOR's

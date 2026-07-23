@@ -1,6 +1,6 @@
 # Migrating from VerCOR 0.3 to VerCOR 0.4
 
-VerCOR 0.4.0a1 is intentionally source-breaking. This release does not include
+VerCOR 0.4.0 is intentionally source-breaking. This stable release does not include
 a legacy adapter namespace: migrate imports, component declarations, assembly,
 execution, state access, and output explicitly.
 

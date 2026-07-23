@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -70,6 +72,8 @@ jobs:
               tests/test_distribution_boundaries.py::test_built_sdist_installs_and_imports_outside_checkout
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -80,8 +84,8 @@ jobs:
       - name: Install selected artifact environment
         run: |
           python -m pip install --upgrade pip pytest "pytest-xdist>=3.7" mypy pyyaml build "flit_core<4"
-          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-0.4.0a1-py3-none-any.whl"
-          SDIST_PATH="${GITHUB_WORKSPACE}/dist/vercor-0.4.0a1.tar.gz"
+          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-0.4.0-py3-none-any.whl"
+          SDIST_PATH="${GITHUB_WORKSPACE}/dist/vercor-0.4.0.tar.gz"
           if [ "${{ matrix.artifact }}" = "sdist" ]; then
             ARTIFACT_PATH="${SDIST_PATH}"
           else
@@ -109,6 +113,8 @@ jobs:
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -119,7 +125,7 @@ jobs:
       - name: Run installed native v0.4 plugin
         run: |
           python -m pip install --upgrade pip mypy
-          python -m pip install "${GITHUB_WORKSPACE}/dist/vercor-0.4.0a1-py3-none-any.whl"
+          python -m pip install "${GITHUB_WORKSPACE}/dist/vercor-0.4.0-py3-none-any.whl"
           python -m pip install "${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
@@ -142,7 +148,7 @@ jobs:
           path: dist/
       - name: Run installed macOS public smoke
         run: |
-          python -m pip install "dist/vercor-0.4.0a1-py3-none-any.whl"
+          python -m pip install "dist/vercor-0.4.0-py3-none-any.whl"
           python -m pip install "dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
           cd "$RUNNER_TEMP"
           python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
@@ -155,6 +161,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
