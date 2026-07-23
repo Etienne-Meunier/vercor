@@ -53,15 +53,12 @@ def select_runtime_field(
     """Select one current, linearly interpolated, or daily runtime field."""
 ```
 
-- [ ] **Step 1: Import and test the not-yet-implemented shared selector**
+- [ ] **Step 1: Test the not-yet-implemented shared selector**
 
-Change the private import in `tests/test_runtime_state.py` to:
+Add a module import while retaining the existing `send_runtime_fields` import:
 
 ```python
-from vercor._runtime.field_transfer import (
-    select_runtime_field,
-    send_runtime_fields,
-)
+import vercor._runtime.field_transfer as field_transfer_module
 ```
 
 Add immediately before the existing monthly-send test:
@@ -74,22 +71,22 @@ def test_shared_runtime_field_selector_applies_every_transfer_policy() -> None:
     )
     forcing = jnp.arange(4 * 2 * 2, dtype=jnp.float64).reshape((4, 2, 2))
 
-    current = select_runtime_field(
+    current = field_transfer_module.select_runtime_field(
         forcing,
         TransferPolicy("current"),
         step_info,
     )
-    linear = select_runtime_field(
+    linear = field_transfer_module.select_runtime_field(
         forcing,
         TransferPolicy("linear"),
         step_info,
     )
-    daily = select_runtime_field(
+    daily = field_transfer_module.select_runtime_field(
         forcing,
         TransferPolicy("daily"),
         step_info,
     )
-    without_step_metadata = select_runtime_field(
+    without_step_metadata = field_transfer_module.select_runtime_field(
         forcing,
         TransferPolicy("linear"),
         None,
@@ -112,7 +109,8 @@ Run:
 /Users/romannuterman/miniforge3/envs/scipy/bin/python -m pytest tests/test_runtime_state.py::test_shared_runtime_field_selector_applies_every_transfer_policy -q --tb=short
 ```
 
-Expected: collection fails because `select_runtime_field` cannot be imported.
+Expected: the test is collected and fails inside the test with `AttributeError`
+because `select_runtime_field` does not exist yet.
 
 - [ ] **Step 3: Implement the pure selector and delegate exchange sending to it**
 
