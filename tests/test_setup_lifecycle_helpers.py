@@ -201,8 +201,15 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
         received_grid: object,
         *,
         name: str = "LND",
+        output: OutputSpec | None = None,
     ) -> Any:
-        calls["land_args"] = (received_coords, received_forcing, received_grid, name)
+        calls["land_args"] = (
+            received_coords,
+            received_forcing,
+            received_grid,
+            name,
+            output,
+        )
         return land
 
     def fake_transposed_host_array(mask: object) -> str:
@@ -243,7 +250,13 @@ def test_make_jcm_land_atmosphere_accepts_preloaded_inputs(
     assert result.forcing is forcing
     assert terrain.fmask == "patched-mask"
     assert calls["mask"] is land_mask
-    assert calls["land_args"] == (coords, forcing, ocean_grid, "LND")
+    assert calls["land_args"] == (
+        coords,
+        forcing,
+        ocean_grid,
+        "LND",
+        OutputSpec(period=PeriodOutput(frequency="step")),
+    )
     assert calls["atmosphere_args"] == (
         coords,
         terrain,
@@ -445,8 +458,15 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
         received_grid: object,
         *,
         name: str = "LND",
+        output: OutputSpec | None = None,
     ) -> Any:
-        calls["land_args"] = (received_coords, received_forcing, received_grid, name)
+        calls["land_args"] = (
+            received_coords,
+            received_forcing,
+            received_grid,
+            name,
+            output,
+        )
         return land
 
     def fake_transposed_host_array(mask: object) -> str:
@@ -489,7 +509,13 @@ def test_make_jcm_land_atmosphere_patches_mask_and_options(
     assert terrain.fmask == "patched-mask"
     assert calls["load_inputs"] is True
     assert calls["mask"] is land_mask
-    assert calls["land_args"] == (coords, forcing, ocean_grid, "CUSTOM_LND")
+    assert calls["land_args"] == (
+        coords,
+        forcing,
+        ocean_grid,
+        "CUSTOM_LND",
+        OutputSpec(period=PeriodOutput(frequency="step")),
+    )
     assert calls["atmosphere_args"] == (
         coords,
         terrain,
