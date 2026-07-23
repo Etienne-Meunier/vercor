@@ -34,6 +34,7 @@ from vercor.runtime import (
     StepPlan,
     WorkflowContext,
 )
+from vercor._runtime.time import build_runtime_step_info
 from vercor.state import ComponentState
 
 pytestmark = pytest.mark.fast_always
@@ -201,6 +202,7 @@ def test_prepared_binding_does_not_delegate_private_markers_and_uses_spec_output
         prepared.components,
         prepared.clock,
         OutputTarget(tmp_path),
+        step_infos=build_runtime_step_info(prepared.clock),
     )
     assert len(plan.schemas) == 1
     assert plan.schemas[0].provider is provider

@@ -15,9 +15,16 @@ import pytest
 
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
-from vercor.components import CallableComponent, ComponentSpec
+from vercor.components import (
+    CallableComponent,
+    ComponentSpec,
+    DataComponent,
+    TransferPolicy,
+)
 from vercor.coupler import Coupler
 from vercor.output import OutputSpec, OutputTarget, PeriodOutput
+from vercor.runtime import RuntimeOptions
+from vercor._runtime.time import build_runtime_step_info
 from vercor.setups import (
     make_era5_atmosphere,
     make_era5_land,
@@ -72,6 +79,7 @@ def test_slab_factory_accepts_keyword_only_output_spec(factory: Any) -> None:
     )
 
     assert component.spec.output is custom_output
+    assert component.spec.transfer == TransferPolicy("current")
 
 
 def test_bundled_output_rejects_invalid_override() -> None:
@@ -338,6 +346,132 @@ def test_data_period_file_contains_declared_outputs_only(tmp_path: Path) -> None
     with h5netcdf.File(tmp_path / "data.averages.2000-01-01.nc", "r") as dataset:
         np.testing.assert_allclose(dataset.variables["temperature"][0], 280.0)
         assert "forcing" not in dataset.variables
+
+
+@pytest.mark.parametrize("backend", ["host", "jax"])
+def test_linear_data_month_output_averages_exact_exported_slices(
+    backend: str,
+    tmp_path: Path,
+) -> None:
+    grid = make_test_grid(name=f"linear-output-{backend}")
+    forcing = jnp.arange(12.0, dtype=jnp.float64)[
+        :, jnp.newaxis, jnp.newaxis
+    ] * jnp.ones((12, *grid.shape), dtype=jnp.float64)
+    component = time_interpolated_data_component(
+        name="DATA",
+        grid=grid,
+        fields={"temperature": forcing},
+        outputs=("temperature",),
+        output=OutputSpec(
+            period=PeriodOutput(
+                frequency="month",
+                variables=("temperature",),
+            )
+        ),
+    )
+    clock = Clock(
+        datetime(2001, 1, 1),
+        dt_seconds=86_400.0,
+        steps=59,
+        calendar="noleap",
+    )
+    coupler = Coupler(
+        clock,
+        components=(component,),
+        run_order=(component.name,),
+        runtime=RuntimeOptions(backend=cast(Any, backend)),
+        log_level="WARNING",
+    )
+
+    coupler.run(
+        output=OutputTarget(
+            tmp_path,
+            write_final_fields=False,
+            write_snapshots=False,
+        )
+    )
+
+    metadata = build_runtime_step_info(clock)
+    record_values = np.arange(12.0)
+    selected = (
+        np.asarray(metadata.monthly_weight_left)
+        * record_values[np.asarray(metadata.monthly_index_left)]
+        + np.asarray(metadata.monthly_weight_right)
+        * record_values[np.asarray(metadata.monthly_index_right)]
+    )
+    expected = (float(np.mean(selected[:31])), float(np.mean(selected[31:])))
+    paths = sorted(tmp_path.glob("data.averages.*.nc"))
+    actual = []
+    for path in paths:
+        with h5netcdf.File(path, "r") as dataset:
+            values = np.asarray(dataset.variables["temperature"])
+            assert values.shape == (1, *grid.shape)
+            actual.append(float(np.mean(values)))
+
+    assert [path.name for path in paths] == [
+        "data.averages.2001-01.nc",
+        "data.averages.2001-02.nc",
+    ]
+    np.testing.assert_allclose(actual, expected)
+    assert not np.isclose(actual[0], actual[1])
+
+
+def test_daily_data_month_output_averages_exact_exported_slices(
+    tmp_path: Path,
+) -> None:
+    grid = make_test_grid(name="daily-output")
+    forcing = jnp.arange(365.0, dtype=jnp.float64)[
+        :, jnp.newaxis, jnp.newaxis
+    ] * jnp.ones((365, *grid.shape), dtype=jnp.float64)
+    component = DataComponent(
+        "DATA",
+        grid,
+        {"temperature": forcing},
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            transfer=TransferPolicy("daily"),
+            output=OutputSpec(
+                period=PeriodOutput(
+                    frequency="month",
+                    variables=("temperature",),
+                )
+            ),
+        ),
+    )
+    coupler = Coupler(
+        Clock(
+            datetime(2001, 1, 1),
+            dt_seconds=86_400.0,
+            steps=59,
+            calendar="noleap",
+        ),
+        components=(component,),
+        run_order=(component.name,),
+        runtime=RuntimeOptions(backend="jax"),
+        log_level="WARNING",
+    )
+
+    coupler.run(
+        output=OutputTarget(
+            tmp_path,
+            write_final_fields=False,
+            write_snapshots=False,
+        )
+    )
+
+    paths = sorted(tmp_path.glob("data.averages.*.nc"))
+    actual = []
+    for path in paths:
+        with h5netcdf.File(path, "r") as dataset:
+            values = np.asarray(dataset.variables["temperature"])
+            assert values.shape == (1, *grid.shape)
+            actual.append(float(np.mean(values)))
+
+    assert [path.name for path in paths] == [
+        "data.averages.2001-01.nc",
+        "data.averages.2001-02.nc",
+    ]
+    np.testing.assert_allclose(actual, (15.0, 44.5))
 
 
 def test_custom_components_remain_period_output_opt_in(tmp_path: Path) -> None:

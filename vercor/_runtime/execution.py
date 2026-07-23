@@ -134,6 +134,7 @@ def execute_plan(
             context.dispatch_context.components,
             context.clock,
             context.output,
+            step_infos=execution_data.step_infos,
             clock_steps=execution_data.clock_steps,
         )
         output_session = initial_output_session(output_plan)

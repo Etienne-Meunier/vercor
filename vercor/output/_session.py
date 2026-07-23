@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -30,6 +30,8 @@ from vercor.output._period import (
     period_mean_sample_to_output_variable,
     should_write_period_output,
 )
+from vercor._runtime.field_transfer import select_runtime_field
+from vercor._runtime.time import RuntimeStepInfo
 from vercor._pytree import PyTreeNodeMixin
 from vercor.state import ComponentState
 
@@ -292,24 +294,40 @@ def _value_dtype(value: Any) -> str:
 
 
 class _RuntimeFieldProvider:
-    """Default provider exposing only declared component output fields."""
+    """Default provider exposing time-selected declared component outputs."""
 
-    def __init__(self, component: "_ComponentBinding") -> None:
+    def __init__(
+        self,
+        component: "_ComponentBinding",
+        step_infos: RuntimeStepInfo,
+    ) -> None:
         self._component = component
+        self._step_infos = step_infos
 
     def sample(self, context: OutputContext) -> OutputFrame:
-        variables = {
-            name: OutputVariable(
+        step_info = cast(
+            RuntimeStepInfo,
+            jax.tree_util.tree_map(
+                lambda value: value[context.step],
+                self._step_infos,
+            ),
+        )
+        variables = {}
+        for name in self._component.spec.outputs:
+            values = select_runtime_field(
+                context.state.field(name, scope="state"),
+                self._component.spec.transfer,
+                step_info,
+            )
+            variables[name] = OutputVariable(
                 grid_field_dims(
                     name,
-                    tuple(context.state.field(name).shape),
+                    tuple(values.shape),
                     self._component.grid.shape,
                 ),
-                context.state.field(name),
+                values,
                 {"component": self._component.name, "field_name": name},
             )
-            for name in self._component.spec.outputs
-        }
         return OutputFrame(
             variables,
             coordinates={
@@ -426,6 +444,7 @@ def build_output_plan(
     clock: Clock,
     target: OutputTarget,
     *,
+    step_infos: RuntimeStepInfo,
     clock_steps: Sequence[_ClockStep] | None = None,
 ) -> _OutputPlan:
     """Normalize component providers and allocate all period filenames."""
@@ -435,7 +454,10 @@ def build_output_plan(
         period = component.spec.output.period
         if period is None:
             continue
-        provider = component.spec.output.provider or _RuntimeFieldProvider(component)
+        provider = component.spec.output.provider or _RuntimeFieldProvider(
+            component,
+            step_infos,
+        )
         schemas.append(_OutputSchema(component, provider, period))
     boundaries = _output_boundaries(
         tuple(schemas),
