@@ -25,6 +25,8 @@ versioning; alpha releases may still refine the new 0.4 contracts.
 - Runtime precision is owned only by `RuntimeOptions.dtype`.
 - Bundled slab, JCM, Veros, and CAMulator factories use the 0.4 component and
   output contracts.
+- Bundled slab and data factories accept per-component `OutputSpec` overrides
+  while retaining step-period output by default.
 
 ### Removed
 

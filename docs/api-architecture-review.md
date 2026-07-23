@@ -384,10 +384,13 @@ public-only contracts. This remains an alpha; the installed fixture protects
 the documented stable extension tier rather than promising every retained
 public manifest as an independent plugin workflow.
 
-Bundled slab, JCM, and Veros factories return ordinary structural components
-and use the same constructor and output contracts. CI has installed base, JCM,
-and Veros lanes. CAMulator remains lazy and source-tested because a compatible
-external release is not yet pinned.
+Bundled slab, data, JCM, and Veros factories return ordinary structural
+components and use the same constructor and output contracts. Slab and data
+factories accept a complete keyword-only `OutputSpec`, defaulting to
+step-period output when omitted; paired JCM configuration owns land and
+atmosphere output independently. CI has installed base, JCM, and Veros lanes.
+CAMulator remains lazy and source-tested because a compatible external release
+is not yet pinned.
 
 ## 7. Compatibility plan
 
