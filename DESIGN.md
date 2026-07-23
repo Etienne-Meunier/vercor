@@ -179,6 +179,12 @@ policy, matching bundled external configuration defaults. They accept a
 complete keyword-only `OutputSpec`, allowing cadence, variable selection,
 providers, and snapshots to be configured independently per component.
 
+The default runtime-field provider applies the component's `TransferPolicy`
+with the exact precomputed metadata for `OutputContext.step`. Period output
+therefore samples the same `current`, linearly interpolated monthly, or indexed
+daily field exported during that coupling step; internal forcing-record axes
+are never emitted as physical output dimensions.
+
 One private session owns:
 
 - provider schema validation and selection;
