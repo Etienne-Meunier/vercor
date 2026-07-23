@@ -7,7 +7,8 @@ import jax.numpy as jnp
 from vercor.components import CallableComponent, Component, ComponentSpec
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
-from vercor.setups._output import step_period_output
+from vercor.output import OutputSpec
+from vercor.setups._output import bundled_output
 
 _REFERENCE_SURFACE_TEMPERATURE = 273.15 + 15.0
 _ATMOSPHERE_INPUTS = (
@@ -71,7 +72,12 @@ def _surface_wind_10m(
     return u_velocity_10m, v_velocity_10m
 
 
-def make_slab_atmosphere(grid: RectilinearGrid, name: str = "ATM") -> Component:
+def make_slab_atmosphere(
+    grid: RectilinearGrid,
+    name: str = "ATM",
+    *,
+    output: OutputSpec | None = None,
+) -> Component:
     """Return a toy slab atmosphere component factory instance."""
 
     def step(fields: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -105,6 +111,6 @@ def make_slab_atmosphere(grid: RectilinearGrid, name: str = "ATM") -> Component:
             inputs=_ATMOSPHERE_INPUTS,
             outputs=_ATMOSPHERE_OUTPUTS,
             initial_fields=_ATMOSPHERE_DEFAULT_FIELDS,
-            output=step_period_output(),
+            output=bundled_output(output),
         ),
     )

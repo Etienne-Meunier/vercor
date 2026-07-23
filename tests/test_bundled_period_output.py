@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from inspect import Parameter, signature
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -27,6 +28,14 @@ from vercor.setups._data import jcm_land as jcm_land_module
 from vercor.setups._data._component_helpers import (
     time_interpolated_data_component,
 )
+from vercor.setups._output import bundled_output
+
+_SLAB_FACTORIES = (
+    make_slab_atmosphere,
+    make_slab_land,
+    make_slab_ocean,
+    make_slab_seaice,
+)
 
 
 def _assert_step_period_output(component: Any) -> None:
@@ -38,15 +47,30 @@ def _assert_step_period_output(component: Any) -> None:
 
 @pytest.mark.parametrize(
     "factory",
-    (
-        make_slab_atmosphere,
-        make_slab_land,
-        make_slab_ocean,
-        make_slab_seaice,
-    ),
+    _SLAB_FACTORIES,
 )
 def test_all_bundled_slab_factories_declare_step_period_output(factory: Any) -> None:
     _assert_step_period_output(factory(make_test_grid(name="slab-output")))
+
+
+@pytest.mark.parametrize("factory", _SLAB_FACTORIES)
+def test_slab_factory_accepts_keyword_only_output_spec(factory: Any) -> None:
+    output_parameter = signature(factory).parameters["output"]
+    assert output_parameter.kind is Parameter.KEYWORD_ONLY
+    assert output_parameter.default is None
+    custom_output = OutputSpec(period=PeriodOutput(frequency="month"))
+
+    component = factory(
+        make_test_grid(name="configured-slab"),
+        output=custom_output,
+    )
+
+    assert component.spec.output is custom_output
+
+
+def test_bundled_output_rejects_invalid_override() -> None:
+    with pytest.raises(TypeError, match="output must be OutputSpec or None"):
+        bundled_output(cast(Any, "month"))
 
 
 def test_shared_data_factory_declares_step_period_output() -> None:

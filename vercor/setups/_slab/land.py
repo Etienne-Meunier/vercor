@@ -12,7 +12,8 @@ from vercor.components import (
 )
 from vercor.dtypes import as_jax_real_array
 from vercor.grids import RectilinearGrid
-from vercor.setups._output import step_period_output
+from vercor.output import OutputSpec
+from vercor.setups._output import bundled_output
 
 _LAND_INPUTS = ("latent_heat_flux", "sensible_heat_flux")
 _LAND_OUTPUTS = ("soil_moisture", "land_surface_temperature")
@@ -36,7 +37,12 @@ def _update_soil_moisture(
     return jnp.clip(soil_moisture_array - evap * dt_seconds, 0.0, 1.0)
 
 
-def make_slab_land(grid: RectilinearGrid, name: str = "LND") -> Component:
+def make_slab_land(
+    grid: RectilinearGrid,
+    name: str = "LND",
+    *,
+    output: OutputSpec | None = None,
+) -> Component:
     """Return a toy bucket land component factory instance."""
 
     def step(
@@ -64,6 +70,6 @@ def make_slab_land(grid: RectilinearGrid, name: str = "LND") -> Component:
             inputs=_LAND_INPUTS,
             outputs=_LAND_OUTPUTS,
             initial_fields=_LAND_DEFAULT_FIELDS,
-            output=step_period_output(),
+            output=bundled_output(output),
         ),
     )
