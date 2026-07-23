@@ -1,5 +1,7 @@
 # VerCOR
 
+[![codecov](https://codecov.io/github/nutrik/vercor/graph/badge.svg?token=A960MY4GXH)](https://codecov.io/github/nutrik/vercor)
+
 Versatile Earth system COupleR (VerCOR) connects atmosphere, ocean, sea-ice,
 land, and forcing-data components in one simulation. It is designed for Earth
 system researchers who want to combine models, move fields between their grids,
