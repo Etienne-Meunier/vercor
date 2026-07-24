@@ -1,6 +1,6 @@
-"""Public-only VerCOR extension fixture."""
+"""Public-only VerCOR external extension test fixture."""
 
-from vercor_public_plugin.plugin import (
+from external_extension_test_fixture.plugin import (
     PluginConfig,
     PluginFactory,
     PluginRegridder,

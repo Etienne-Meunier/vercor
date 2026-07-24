@@ -201,7 +201,7 @@ def test_release_shorthand_matcher_rejects_repository_labels(line: str) -> None:
         "actions/checkout@v4",
         "schema version 1",
         "JCM 1.1.1 and Veros 1.6.2",
-        "vercor_public_plugin-0.1.0-py3-none-any.whl",
+        "external_extension_test_fixture-0.1.0-py3-none-any.whl",
         "dependency release 0.2.1",
         "v" + "3 = eastward_vector_component",
     ),

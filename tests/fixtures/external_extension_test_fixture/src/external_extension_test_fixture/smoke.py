@@ -1,4 +1,4 @@
-"""Command-line smoke runner for the independently packaged plugin."""
+"""Command-line smoke runner for the external extension test fixture."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from vercor_public_plugin.plugin import run_smoke
+from external_extension_test_fixture.plugin import run_smoke
 
 
 def main(arguments: Sequence[str] | None = None) -> None:

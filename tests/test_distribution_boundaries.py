@@ -20,10 +20,12 @@ import yaml
 import tests._distribution_support as distribution_support
 from tests._distribution_support import (
     BuiltDistributions,
+    EXPECTED_EXTENSION_FIXTURE_WHEEL_NAME,
     EXPECTED_SDIST_NAME,
     EXPECTED_VERSION,
     EXPECTED_WHEEL_NAME,
     build_distributions,
+    build_external_extension_fixture,
     install_local_target,
 )
 from tests._signature_support import EXTERNAL_TYPING_ALIAS_REPLACEMENTS
@@ -34,7 +36,9 @@ from tests.test_setup_boundaries import _run_setup_probe
 from tests.test_v0_4_public_api import PUBLIC_MODULE_EXPORTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "public_plugin"
+EXTERNAL_EXTENSION_FIXTURE_ROOT = (
+    PROJECT_ROOT / "tests" / "fixtures" / "external_extension_test_fixture"
+)
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
 EXPECTED_PLUGIN_WHEEL_NAME = "vercor_public_plugin-0.1.0-py3-none-any.whl"
 EXPECTED_INSTALLED_ROOT = (
@@ -99,6 +103,18 @@ def built_distributions(tmp_path_factory: pytest.TempPathFactory) -> BuiltDistri
     )
 
 
+@pytest.fixture(scope="module")
+def external_extension_fixture_wheel(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    """Build the independently installed extension fixture once per module."""
+
+    return build_external_extension_fixture(
+        PROJECT_ROOT,
+        tmp_path_factory.mktemp("external-extension-fixture-build"),
+    )
+
+
 @pytest.mark.fast_always
 def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     metadata = tomllib.loads(
@@ -145,23 +161,28 @@ def test_pytest_defaults_use_measured_parallel_policy() -> None:
 
 
 @pytest.mark.fast_always
-def test_pep561_markers_and_public_plugin_fixture_are_present() -> None:
+def test_external_extension_test_fixture_is_present() -> None:
     assert (PROJECT_ROOT / "vercor" / "py.typed").is_file()
-    required_plugin_files = (
+    required_files = (
         "pyproject.toml",
-        "src/vercor_public_plugin/__init__.py",
-        "src/vercor_public_plugin/plugin.py",
-        "src/vercor_public_plugin/smoke.py",
-        "src/vercor_public_plugin/py.typed",
+        "src/external_extension_test_fixture/__init__.py",
+        "src/external_extension_test_fixture/plugin.py",
+        "src/external_extension_test_fixture/smoke.py",
+        "src/external_extension_test_fixture/py.typed",
         "use_site.py",
     )
-    for relative_path in required_plugin_files:
-        assert (PLUGIN_ROOT / relative_path).is_file(), relative_path
+    for relative_path in required_files:
+        assert (
+            EXTERNAL_EXTENSION_FIXTURE_ROOT / relative_path
+        ).is_file(), relative_path
 
 
 @pytest.mark.fast_always
-def test_public_plugin_fixture_is_isolated_and_never_imports_private_modules() -> None:
-    python_paths = sorted(PLUGIN_ROOT.rglob("*.py"))
+def test_external_extension_fixture_is_isolated_and_never_imports_private_modules() -> (
+    None
+):
+    assert EXTERNAL_EXTENSION_FIXTURE_ROOT.is_dir()
+    python_paths = sorted(EXTERNAL_EXTENSION_FIXTURE_ROOT.rglob("*.py"))
     assert python_paths
 
     for path in python_paths:
@@ -189,13 +210,16 @@ def test_public_plugin_fixture_is_isolated_and_never_imports_private_modules() -
 
 
 @pytest.mark.fast_always
-def test_current_public_plugin_uses_canonical_owners_and_v0_4_workflows() -> None:
-    project = tomllib.loads(
-        (PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]
-    source = (PLUGIN_ROOT / "src/vercor_public_plugin/plugin.py").read_text(
-        encoding="utf-8"
-    )
+def test_current_external_extension_fixture_uses_canonical_owners_and_v0_4_workflows() -> (
+    None
+):
+    fixture_project = EXTERNAL_EXTENSION_FIXTURE_ROOT / "pyproject.toml"
+    assert fixture_project.is_file()
+    project = tomllib.loads(fixture_project.read_text(encoding="utf-8"))["project"]
+    source = (
+        EXTERNAL_EXTENSION_FIXTURE_ROOT
+        / "src/external_extension_test_fixture/plugin.py"
+    ).read_text(encoding="utf-8")
 
     assert project["version"] == "0.1.0"
     assert project["dependencies"] == ["vercor>=0.4.0,<0.5"]
@@ -402,14 +426,13 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert "plugin_wheel" not in BuiltDistributions.__dataclass_fields__
     artifact_dir = tmp_path / "downloaded-dist"
     artifact_dir.mkdir()
     wheel = artifact_dir / EXPECTED_WHEEL_NAME
     sdist = artifact_dir / EXPECTED_SDIST_NAME
-    plugin_wheel = artifact_dir / EXPECTED_PLUGIN_WHEEL_NAME
     wheel.touch()
     sdist.touch()
-    plugin_wheel.touch()
 
     def unexpected_build(*args: object, **kwargs: object) -> object:
         _ = args, kwargs
@@ -425,27 +448,20 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
 
     assert distributions.wheel == wheel
     assert distributions.sdist == sdist
-    assert distributions.plugin_wheel == plugin_wheel
     assert distributions.build_pythonpath == ""
+    assert set(artifact_dir.iterdir()) == {wheel, sdist}
 
 
 @pytest.mark.parametrize(
-    ("wheel_name", "sdist_name", "plugin_wheel_name"),
+    ("wheel_name", "sdist_name"),
     (
         (
             "vercor-0.4.0a0-py3-none-any.whl",
             EXPECTED_SDIST_NAME,
-            EXPECTED_PLUGIN_WHEEL_NAME,
         ),
         (
             EXPECTED_WHEEL_NAME,
             "vercor-0.4.0a0.tar.gz",
-            EXPECTED_PLUGIN_WHEEL_NAME,
-        ),
-        (
-            EXPECTED_WHEEL_NAME,
-            EXPECTED_SDIST_NAME,
-            "vercor_public_plugin-0.2.0-py3-none-any.whl",
         ),
     ),
 )
@@ -453,25 +469,24 @@ def test_distribution_helper_rejects_wrong_artifact_version(
     tmp_path: Path,
     wheel_name: str,
     sdist_name: str,
-    plugin_wheel_name: str,
 ) -> None:
+    assert "plugin_wheel" not in BuiltDistributions.__dataclass_fields__
     artifact_dir = tmp_path / "wrong-dist"
     artifact_dir.mkdir()
     (artifact_dir / wheel_name).touch()
     (artifact_dir / sdist_name).touch()
-    (artifact_dir / plugin_wheel_name).touch()
 
     with pytest.raises(ValueError, match=f"VerCOR {EXPECTED_VERSION}"):
         build_distributions(
             PROJECT_ROOT,
             tmp_path / "unused-build-output",
             artifact_dir=artifact_dir,
-            plugin_wheel_path=artifact_dir / plugin_wheel_name,
         )
 
 
-def test_built_distributions_run_public_plugin_outside_checkout(
+def test_built_distributions_run_external_extension_fixture_outside_checkout(
     built_distributions: BuiltDistributions,
+    external_extension_fixture_wheel: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -479,7 +494,10 @@ def test_built_distributions_run_public_plugin_outside_checkout(
 
     assert distributions.wheel.name == EXPECTED_WHEEL_NAME
     assert distributions.sdist.name == EXPECTED_SDIST_NAME
-    assert distributions.plugin_wheel.name == EXPECTED_PLUGIN_WHEEL_NAME
+    assert (
+        external_extension_fixture_wheel.name == EXPECTED_EXTENSION_FIXTURE_WHEEL_NAME
+    )
+    assert external_extension_fixture_wheel.is_file()
     with zipfile.ZipFile(distributions.wheel) as wheel:
         wheel_names = set(wheel.namelist())
         metadata_name = next(
@@ -499,7 +517,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     assert "Provides-Extra: test" in metadata
     assert "Provides-Extra: dev" in metadata
 
-    with zipfile.ZipFile(distributions.plugin_wheel) as plugin_archive:
+    with zipfile.ZipFile(external_extension_fixture_wheel) as plugin_archive:
         plugin_metadata_name = next(
             name
             for name in plugin_archive.namelist()
@@ -517,7 +535,7 @@ def test_built_distributions_run_public_plugin_outside_checkout(
     target = tmp_path / "installed-target"
     install_local_target(
         wheel=distributions.wheel,
-        plugin_wheel=distributions.plugin_wheel,
+        extension_fixture_wheel=external_extension_fixture_wheel,
         target=target,
     )
     environment = os.environ.copy()
@@ -693,12 +711,12 @@ print(json.dumps({{
     assert isinstance(setup_probe_path, str)
     assert Path(setup_probe_path).is_relative_to(target)
 
-    smoke_output = tmp_path / "plugin-output"
+    smoke_output = tmp_path / "external-extension-fixture-output"
     smoke = subprocess.run(
         [
             sys.executable,
             "-m",
-            "vercor_public_plugin.smoke",
+            "external_extension_test_fixture.smoke",
             "--output-dir",
             str(smoke_output),
         ],
@@ -734,14 +752,14 @@ print(json.dumps({{
 
     mypy_environment = environment.copy()
     mypy_environment["MYPYPATH"] = str(target)
-    external_use_site = tmp_path / "public_plugin_use_site.py"
-    shutil.copyfile(PLUGIN_ROOT / "use_site.py", external_use_site)
+    external_use_site = tmp_path / "external_extension_fixture_use_site.py"
+    shutil.copyfile(EXTERNAL_EXTENSION_FIXTURE_ROOT / "use_site.py", external_use_site)
     mypy = subprocess.run(
         [
             str(Path(sys.executable).with_name("mypy")),
             "--strict",
             "--verbose",
-            str(target / "vercor_public_plugin"),
+            str(target / "external_extension_test_fixture"),
             str(external_use_site),
         ],
         cwd=tmp_path,
@@ -758,14 +776,16 @@ print(json.dumps({{
 @pytest.mark.fast_always
 def test_installed_default_slab_factory_runs_v0_4_component(
     built_distributions: BuiltDistributions,
+    external_extension_fixture_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """Run the dependency-free slab default strictly from the installed wheel."""
 
+    assert external_extension_fixture_wheel.is_file()
     target = tmp_path / "installed-slab-target"
     install_local_target(
         wheel=built_distributions.wheel,
-        plugin_wheel=built_distributions.plugin_wheel,
+        extension_fixture_wheel=external_extension_fixture_wheel,
         target=target,
     )
     environment = os.environ.copy()
@@ -822,10 +842,12 @@ print(json.dumps({
 
 def test_built_sdist_installs_and_imports_outside_checkout(
     built_distributions: BuiltDistributions,
+    external_extension_fixture_wheel: Path,
     tmp_path: Path,
 ) -> None:
-    """Install the sdist and compose the public plugin outside the checkout."""
+    """Install the sdist and compose the external fixture outside the checkout."""
 
+    assert external_extension_fixture_wheel.is_file()
     target = tmp_path / "installed-sdist-target"
     install_environment = os.environ.copy()
     build_pythonpath = distribution_support._cached_build_pythonpath()
@@ -894,7 +916,7 @@ print(json.dumps({
             "--only-binary=:all:",
             "--target",
             str(target),
-            str(built_distributions.plugin_wheel),
+            str(external_extension_fixture_wheel),
         ],
         cwd=tmp_path,
         check=True,
@@ -905,9 +927,9 @@ print(json.dumps({
         [
             sys.executable,
             "-m",
-            "vercor_public_plugin.smoke",
+            "external_extension_test_fixture.smoke",
             "--output-dir",
-            str(tmp_path / "sdist-plugin-output"),
+            str(tmp_path / "sdist-external-extension-fixture-output"),
         ],
         cwd=tmp_path,
         env=environment,
@@ -922,15 +944,16 @@ print(json.dumps({
 
 def test_supplied_wheels_install_and_run_without_build_environment(
     built_distributions: BuiltDistributions,
+    external_extension_fixture_wheel: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert external_extension_fixture_wheel.is_file()
     artifact_dir = tmp_path / "supplied-artifacts"
     artifact_dir.mkdir()
     for artifact in (
         built_distributions.wheel,
         built_distributions.sdist,
-        built_distributions.plugin_wheel,
     ):
         shutil.copyfile(artifact, artifact_dir / artifact.name)
 
@@ -943,16 +966,12 @@ def test_supplied_wheels_install_and_run_without_build_environment(
         unavailable_build_environment,
     )
     monkeypatch.setenv("VERCOR_ARTIFACT_DIR", str(artifact_dir))
-    monkeypatch.setenv(
-        "VERCOR_PLUGIN_WHEEL_PATH",
-        str(artifact_dir / built_distributions.plugin_wheel.name),
-    )
 
     supplied = build_distributions(PROJECT_ROOT, tmp_path / "must-not-build")
     target = tmp_path / "clean-installed-target"
     install_local_target(
         wheel=supplied.wheel,
-        plugin_wheel=supplied.plugin_wheel,
+        extension_fixture_wheel=external_extension_fixture_wheel,
         target=target,
     )
 
@@ -962,9 +981,9 @@ def test_supplied_wheels_install_and_run_without_build_environment(
         [
             sys.executable,
             "-m",
-            "vercor_public_plugin.smoke",
+            "external_extension_test_fixture.smoke",
             "--output-dir",
-            str(tmp_path / "clean-plugin-output"),
+            str(tmp_path / "clean-external-extension-fixture-output"),
         ],
         cwd=tmp_path,
         env=environment,

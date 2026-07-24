@@ -864,12 +864,14 @@ def test_regridder_factory_is_one_runtime_protocol_with_public_hints(
         for node in tree.body
     )
 
-    monkeypatch.syspath_prepend(
-        str(PROJECT_ROOT / "tests" / "fixtures" / "public_plugin" / "src")
+    external_extension_source = (
+        PROJECT_ROOT / "tests" / "fixtures" / "external_extension_test_fixture" / "src"
     )
+    assert external_extension_source.is_dir()
+    monkeypatch.syspath_prepend(str(external_extension_source))
     from vercor.grids import RectilinearGrid
     from vercor.regridding import Regridder, RegridderFactory, bilinear, conservative
-    from vercor_public_plugin import PluginRegridderFactory
+    from external_extension_test_fixture import PluginRegridderFactory
 
     assert isinstance(PluginRegridderFactory("typed-route"), RegridderFactory)
     hints = get_type_hints(RegridderFactory.__call__)
@@ -903,10 +905,17 @@ def test_prepared_runtime_has_no_reflective_configuration_snapshot() -> None:
 
 
 def test_examples_and_current_plugin_use_direct_constructor_assembly() -> None:
+    extension_plugin = (
+        PROJECT_ROOT
+        / "tests"
+        / "fixtures"
+        / "external_extension_test_fixture"
+        / "src/external_extension_test_fixture/plugin.py"
+    )
+    assert extension_plugin.is_file()
     paths = (
         *sorted((PROJECT_ROOT / "examples").glob("*.py")),
-        PROJECT_ROOT
-        / "tests/fixtures/public_plugin/src/vercor_public_plugin/plugin.py",
+        extension_plugin,
     )
     forbidden = (
         ".add_component(",

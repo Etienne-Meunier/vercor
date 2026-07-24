@@ -1,14 +1,14 @@
-"""Mypy use site for the installed public plugin fixture."""
+"""Mypy use site for the external extension test fixture."""
 
 from pathlib import Path
 
 from vercor.exchanges import Exchange
 from vercor.regridding import RegridderFactory, bilinear, conservative
-from vercor_public_plugin import PluginRegridderFactory, run_smoke
+from external_extension_test_fixture import PluginRegridderFactory, run_smoke
 
 
 def accepts_factory(factory: RegridderFactory) -> RegridderFactory:
-    """Confirm a plugin factory satisfies the public factory protocol."""
+    """Confirm a fixture factory satisfies the public factory protocol."""
 
     return factory
 
@@ -22,7 +22,7 @@ typed_exchange_factory: RegridderFactory = Exchange(
 
 
 def exercise_plugin(output_dir: Path) -> dict[str, object]:
-    """Return typed smoke evidence from the public plugin."""
+    """Return typed smoke evidence from the external extension test fixture."""
 
     evidence: dict[str, object] = run_smoke(output_dir)
     return evidence
