@@ -261,7 +261,7 @@ jobs:
         with:
           name: vercor-release-manifest
           path: release-manifest/
-      - name: Authenticate the producer-issued release inventory
+      - name: Verify CI-produced release inventory
         run: |
           set -euo pipefail
           test "$GITHUB_REF_TYPE" = "tag"
