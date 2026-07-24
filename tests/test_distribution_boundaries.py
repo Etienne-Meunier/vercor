@@ -79,6 +79,37 @@ FORBIDDEN_ARCHIVE_PARTS = {
 }
 
 
+@pytest.mark.fast_always
+def test_active_sources_do_not_use_retired_public_plugin_fixture_name() -> None:
+    active_paths = (
+        PROJECT_ROOT / ".github" / "workflows" / "python-package.yml",
+        PROJECT_ROOT / "DESIGN.md",
+        PROJECT_ROOT / "DEPENDENCIES.md",
+        PROJECT_ROOT / "CHANGELOG.md",
+        PROJECT_ROOT / "docs" / "release-notes-0.4.0.md",
+        PROJECT_ROOT / "docs" / "plugin-authoring.md",
+        PROJECT_ROOT / "docs" / "api-architecture-review.md",
+        PROJECT_ROOT / "docs" / "releasing.md",
+        PROJECT_ROOT / "tests" / "_distribution_support.py",
+        PROJECT_ROOT / "tests" / "test_distribution_boundaries.py",
+        PROJECT_ROOT / "tests" / "test_api_architecture_review.py",
+        PROJECT_ROOT / "tests" / "test_v0_4_public_api.py",
+    )
+    retired_markers = (
+        "tests/fixtures/" + "public_plugin",
+        "vercor_" + "public_plugin",
+        "public-" + "plugin fixture",
+        "public " + "plugin fixture",
+    )
+    violations = {
+        str(path.relative_to(PROJECT_ROOT)): marker
+        for path in active_paths
+        for marker in retired_markers
+        if marker in path.read_text(encoding="utf-8")
+    }
+    assert violations == {}
+
+
 def _forbidden_archive_members(names: set[str]) -> tuple[str, ...]:
     """Return generated platform/cache members that must never ship."""
 

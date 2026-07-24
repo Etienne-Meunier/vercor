@@ -8,7 +8,8 @@ versioning; pre-releases may still refine new contracts.
 ### Added
 
 - Configurable period output for bundled slab and forcing-data models.
-- Executable public plugin-authoring guidance and installed-plugin evidence.
+- Executable plugin-authoring guidance and temporary installed external-extension
+  fixture verification.
 
 ### Changed
 
@@ -53,8 +54,8 @@ versioning; pre-releases may still refine new contracts.
   runtime driver.
 - Unified provider, period, target, and snapshot output contracts.
 - Frozen traced `PhysicalConstants` and setup-owned frozen configuration.
-- Installed wheel, source-distribution, public-plugin, optional-model, and
-  macOS release gates.
+- Installed wheel, source-distribution, temporary installed external-extension
+  fixture verification, optional-model, and macOS release gates.
 
 ### Changed
 

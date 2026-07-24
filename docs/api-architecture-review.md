@@ -364,9 +364,9 @@ writers; they do not own cadence, paths, period accumulation, or writes.
 ## 6. Setup-agnostic plugin architecture
 
 Plugins are ordinary Python packages that inject objects explicitly. There is
-no registry or entry-point discovery. The independently built fixture under
-`tests/fixtures/public_plugin` proves the complete boundary using only public
-imports:
+no registry or entry-point discovery. The temporarily built fixture under
+`tests/fixtures/external_extension_test_fixture` proves the complete boundary
+using only public imports:
 
 1. a plugin-owned frozen configuration and assembly factory;
 2. structural JAX and host components plus setup payload replacement;
@@ -376,9 +376,11 @@ imports:
 6. immutable `RunState.replace_fields` before driver execution; and
 7. per-step provider output and a final snapshot.
 
-The plugin wheel is installed next to built VerCOR artifacts in a clean target,
-its smoke runs outside the checkout, and its package plus external use site pass
-strict mypy. CI repeats native 0.4 plugin lanes on Python 3.12 and 3.13.
+Its wheel is built in a temporary directory for each contract job, then
+installed with the VerCOR wheel in a clean target; it is not installed beside or
+uploaded with the two VerCOR release artifacts. Its smoke runs outside the
+checkout, and its package plus external use site pass strict mypy. CI repeats
+the external-extension contract lanes on Python 3.12 and 3.13.
 The executable [plugin authoring guide](plugin-authoring.md) documents the same
 public-only contracts. The installed fixture protects the documented stable
 extension tier rather than promising every retained public manifest as an
@@ -456,10 +458,11 @@ final_state = coupler.run(output=None)
 
 The complete custom configuration/component/regridder/topology/workflow/backend/
 output example is executable in
-[`plugin-authoring.md`](plugin-authoring.md). The independently built fixture in
-`tests/fixtures/public_plugin` verifies the same imports, strict typing, normal
-dependency resolution, non-default configuration, immutable state replacement,
-period output, and snapshot output outside the checkout.
+[`plugin-authoring.md`](plugin-authoring.md). The temporary fixture in
+`tests/fixtures/external_extension_test_fixture` verifies the same imports,
+strict typing, normal dependency resolution, non-default configuration,
+immutable state replacement, period output, and snapshot output outside the
+checkout.
 
 ### 8.2 Complete private API
 

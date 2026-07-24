@@ -9,8 +9,8 @@ in 0.4.0a1.
   route IDs, validated workflows/backends, and unified output contracts.
 - Configurable period output for bundled slab and forcing-data components.
 - Correct time-selected output sampling and period-window file identity.
-- Installed wheel, source-distribution, public-plugin, optional-model, and
-  differentiation release gates.
+- Installed wheel, source-distribution, temporary installed external-extension
+  fixture verification, optional-model, and differentiation release gates.
 
 ## Upgrade
 

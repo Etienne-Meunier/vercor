@@ -251,8 +251,9 @@ assert bool(jnp.all(jnp.asarray(fake_result.fields["temperature"]) == 3.0))
 ## Installed example
 
 The final assembly uses only public contracts. The repository's independently
-built `tests/fixtures/public_plugin` wheel runs this same class of extension
-outside the checkout and protects the documented extension tier.
+built `tests/fixtures/external_extension_test_fixture` wheel runs this same
+class of extension outside the checkout and protects the documented extension
+tier.
 
 ```python
 from datetime import datetime

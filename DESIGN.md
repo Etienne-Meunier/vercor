@@ -228,7 +228,8 @@ land declaration independently as `JCMLandAtmosphereConfig.land_output`, which
 also defaults to `OutputSpec()`. The paired atmosphere retains its explicit
 historic monthly policy.
 
-The installed public-plugin fixture demonstrates the external boundary with
+The temporarily built external extension test fixture demonstrates the external
+boundary with
 plugin-owned frozen configuration and factory, structural JAX/host components,
 an injected regridder, explicit route, non-empty topology patch, custom
 workflow/backend, immutable state replacement, period output, and snapshot
@@ -247,11 +248,12 @@ development subset; the full suite runs before commit.
 
 Release gates are Black, strict flake8, mypy, compileall, fast/full pytest,
 90% branch coverage, build, installed wheel and source-distribution probes,
-public-plugin smoke and strict mypy, optional base/JCM/Veros lanes, a macOS
-smoke, and `git diff --check`.
+external-extension smoke and strict mypy, optional base/JCM/Veros lanes, a
+macOS smoke, and `git diff --check`.
 
 Built-artifact tests run outside the checkout and verify origin, metadata,
 `py.typed`, the six-symbol root, every canonical owner manifest, central
 constructor signatures, removed primary modules, the dependency-free slab, and
-the composed public plugin. CI builds once and shares the artifact bundle with
-all matrix cells.
+the composed external extension. CI builds and uploads only the two VerCOR
+distributions once, shares that artifact bundle with all matrix cells, and
+builds the fixture separately for each external-extension contract job.
