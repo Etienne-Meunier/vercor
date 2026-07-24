@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import os
 from pathlib import Path
@@ -300,6 +301,11 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         step.get("run", "") for step in build_steps if isinstance(step, dict)
     )
     assert "python -m build --outdir dist" in build_commands
+    assert "shopt -s nullglob dotglob" in build_commands
+    assert "DIST_ARTIFACTS=(dist/*)" in build_commands
+    assert 'test "${#DIST_ARTIFACTS[@]}" -eq 2' in build_commands
+    assert f"test -f dist/{EXPECTED_WHEEL_NAME}" in build_commands
+    assert f"test -f dist/{EXPECTED_SDIST_NAME}" in build_commands
     assert "tests/fixtures/external_extension_test_fixture" not in build_commands
     assert "external_extension_test_fixture" not in build_commands
     upload_step = next(
@@ -405,6 +411,23 @@ def test_release_bundle_contains_only_vercor_distributions() -> None:
         "shasum -a 256 vercor-0.4.0-py3-none-any.whl "
         "vercor-0.4.0.tar.gz > SHA256SUMS"
     )
+    assert "shopt -s nullglob dotglob" in releasing
+    assert "DIST_ARTIFACTS=(dist/*)" in releasing
+    assert 'test "${#DIST_ARTIFACTS[@]}" -eq 0' in releasing
+    assert 'test "${#DIST_ARTIFACTS[@]}" -eq 2' in releasing
+    assert f"test -f dist/{EXPECTED_WHEEL_NAME}" in releasing
+    assert f"test -f dist/{EXPECTED_SDIST_NAME}" in releasing
+    assert (
+        "python -m twine upload --repository-url "
+        "https://upload.pypi.org/legacy/ "
+        f"dist/{EXPECTED_WHEEL_NAME} dist/{EXPECTED_SDIST_NAME}"
+    ) in releasing
+    assert (
+        "gh release create v0.4.0 --repo nutrik/vercor "
+        '--title "VerCOR 0.4.0" '
+        "--notes-file docs/release-notes-0.4.0.md "
+        f"dist/{EXPECTED_WHEEL_NAME} dist/{EXPECTED_SDIST_NAME}"
+    ) in releasing
     assert "dist/external_extension_test_fixture" not in releasing
 
 
@@ -481,6 +504,23 @@ def test_distribution_helper_reuses_explicit_artifact_directory_without_building
     assert distributions.sdist == sdist
     assert distributions.build_pythonpath == ""
     assert set(artifact_dir.iterdir()) == {wheel, sdist}
+
+
+def test_distribution_helper_rejects_extra_artifact(
+    tmp_path: Path,
+) -> None:
+    artifact_dir = tmp_path / "stale-dist"
+    artifact_dir.mkdir()
+    (artifact_dir / EXPECTED_WHEEL_NAME).touch()
+    (artifact_dir / EXPECTED_SDIST_NAME).touch()
+    (artifact_dir / "vercor-0.4.0a0-py3-none-any.whl").touch()
+
+    with pytest.raises(ValueError, match="exactly"):
+        build_distributions(
+            PROJECT_ROOT,
+            tmp_path / "unused-build-output",
+            artifact_dir=artifact_dir,
+        )
 
 
 @pytest.mark.parametrize(
@@ -807,16 +847,13 @@ print(json.dumps({{
 @pytest.mark.fast_always
 def test_installed_default_slab_factory_runs_v0_4_component(
     built_distributions: BuiltDistributions,
-    external_extension_fixture_wheel: Path,
     tmp_path: Path,
 ) -> None:
     """Run the dependency-free slab default strictly from the installed wheel."""
 
-    assert external_extension_fixture_wheel.is_file()
     target = tmp_path / "installed-slab-target"
     install_local_target(
         wheel=built_distributions.wheel,
-        extension_fixture_wheel=external_extension_fixture_wheel,
         target=target,
     )
     environment = os.environ.copy()
@@ -869,6 +906,17 @@ print(json.dumps({
         "is_component": True,
         "shape": [2, 2],
     }
+
+
+@pytest.mark.fast_always
+def test_dependency_free_slab_contract_does_not_request_extension_fixture() -> None:
+    slab_parameters = inspect.signature(
+        test_installed_default_slab_factory_runs_v0_4_component
+    ).parameters
+    install_parameters = inspect.signature(install_local_target).parameters
+
+    assert "external_extension_fixture_wheel" not in slab_parameters
+    assert install_parameters["extension_fixture_wheel"].default is None
 
 
 def test_built_sdist_installs_and_imports_outside_checkout(

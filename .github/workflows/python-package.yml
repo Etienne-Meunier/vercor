@@ -20,6 +20,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           python -m build --outdir dist
+          shopt -s nullglob dotglob
+          DIST_ARTIFACTS=(dist/*)
+          test "${#DIST_ARTIFACTS[@]}" -eq 2
+          test -f dist/vercor-0.4.0-py3-none-any.whl
+          test -f dist/vercor-0.4.0.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: vercor-distributions

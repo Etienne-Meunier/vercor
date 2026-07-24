@@ -71,7 +71,8 @@ test -z "$(git status --porcelain --untracked-files=all)"
 ```
 
 The clean-tree checks protect the source/ref state. They intentionally do not
-inspect ignored `dist/` bytes; the checksum manifest below protects those.
+inspect ignored `dist/` bytes; the fresh-directory and exact-inventory gates
+below protect the build input, and the checksum manifest protects its bytes.
 
 ## 3. Build once and create the checksum manifest
 
@@ -83,7 +84,15 @@ set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
 test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 test -z "$(git status --porcelain --untracked-files=all)"
+test ! -e dist || test -d dist
+shopt -s nullglob dotglob
+DIST_ARTIFACTS=(dist/*)
+test "${#DIST_ARTIFACTS[@]}" -eq 0
 python -m build --outdir dist
+DIST_ARTIFACTS=(dist/*)
+test "${#DIST_ARTIFACTS[@]}" -eq 2
+test -f dist/vercor-0.4.0-py3-none-any.whl
+test -f dist/vercor-0.4.0.tar.gz
 unzip -p dist/vercor-0.4.0-py3-none-any.whl vercor-0.4.0.dist-info/METADATA
 tar -xOf dist/vercor-0.4.0.tar.gz vercor-0.4.0/PKG-INFO
 python -m twine check dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz

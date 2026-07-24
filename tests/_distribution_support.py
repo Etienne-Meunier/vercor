@@ -63,7 +63,12 @@ def _build_environment() -> tuple[dict[str, str], str]:
     return environment, build_pythonpath
 
 
-def _existing_distributions(wheel: Path, sdist: Path) -> BuiltDistributions:
+def _existing_distributions(
+    wheel: Path,
+    sdist: Path,
+    *,
+    artifact_dir: Path | None = None,
+) -> BuiltDistributions:
     """Validate and return externally supplied VerCOR artifacts."""
 
     if wheel.name != EXPECTED_WHEEL_NAME or sdist.name != EXPECTED_SDIST_NAME:
@@ -75,6 +80,15 @@ def _existing_distributions(wheel: Path, sdist: Path) -> BuiltDistributions:
         raise ValueError(
             f"VerCOR {EXPECTED_VERSION} artifacts are missing: {wheel}, {sdist}"
         )
+    if artifact_dir is not None:
+        expected_inventory = {wheel, sdist}
+        actual_inventory = set(artifact_dir.iterdir())
+        if actual_inventory != expected_inventory:
+            raise ValueError(
+                f"{artifact_dir} must contain exactly "
+                f"{EXPECTED_WHEEL_NAME!r} and {EXPECTED_SDIST_NAME!r}; found "
+                f"{sorted(path.name for path in actual_inventory)!r}"
+            )
     return BuiltDistributions(wheel, sdist, "")
 
 
@@ -120,6 +134,7 @@ def build_distributions(
         return _existing_distributions(
             configured_dir / EXPECTED_WHEEL_NAME,
             configured_dir / EXPECTED_SDIST_NAME,
+            artifact_dir=configured_dir,
         )
     if configured_wheel is not None or configured_sdist is not None:
         if configured_wheel is None or configured_sdist is None:
@@ -149,6 +164,7 @@ def build_distributions(
     validated = _existing_distributions(
         output_dir / EXPECTED_WHEEL_NAME,
         output_dir / EXPECTED_SDIST_NAME,
+        artifact_dir=output_dir,
     )
     return BuiltDistributions(
         wheel=validated.wheel,
@@ -195,14 +211,19 @@ def build_external_extension_fixture(
 def install_local_target(
     *,
     wheel: Path,
-    extension_fixture_wheel: Path,
     target: Path,
+    extension_fixture_wheel: Path | None = None,
 ) -> None:
-    """Install VerCOR and its external extension test fixture without dependencies."""
+    """Install VerCOR and an optional extension fixture without dependencies."""
 
     environment = os.environ.copy()
     target.mkdir(parents=True, exist_ok=True)
-    for source in (wheel, extension_fixture_wheel):
+    sources = (
+        (wheel, extension_fixture_wheel)
+        if extension_fixture_wheel is not None
+        else (wheel,)
+    )
+    for source in sources:
         subprocess.run(
             [
                 sys.executable,
