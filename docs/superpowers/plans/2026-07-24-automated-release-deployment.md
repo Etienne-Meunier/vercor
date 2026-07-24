@@ -579,7 +579,7 @@ warnings.
 Run:
 
 ```bash
-conda run -n scipy python -c 'import pathlib, yaml; workflow=yaml.safe_load(pathlib.Path(".github/workflows/python-package.yml").read_text()); publish=workflow["jobs"]["publish-release"]; assert publish["permissions"] == {"contents": "write"}; assert publish["steps"][4]["with"]["password"] == "${{ secrets.PYPI_API_TOKEN }}"; print("release workflow contract: OK")'
+conda run -n scipy python -c 'import pathlib, yaml; workflow=yaml.safe_load(pathlib.Path(".github/workflows/python-package.yml").read_text()); publish=workflow["jobs"]["publish-release"]; pypi=next(step for step in publish["steps"] if step.get("uses", "").startswith("pypa/gh-action-pypi-publish@")); assert publish["permissions"] == {"contents": "write"}; assert pypi["with"]["password"] == "${{ secrets.PYPI_API_TOKEN }}"; print("release workflow contract: OK")'
 rg -n "TEST_PYPI_API_TOKEN|id-token|skip-existing: true" .github/workflows/python-package.yml
 git diff --check
 git status --short
@@ -601,7 +601,7 @@ top of `PROGRESS.md` under `## Current Status`:
   artifact/public-namespace state, publishes with repository secret
   `PYPI_API_TOKEN`, and creates the GitHub Release from the same tested wheel
   and sdist. TDD RED was 3 expected failures; the release boundary passed
-  48/48 and fast passed 676/676. Black left 237 files unchanged, flake8
+  50/50 and fast passed 678/678. Black left 237 files unchanged, flake8
   reported 0, mypy passed 237 source files, compileall and workflow parsing
   passed, and `git diff --check` was clean. `TEST_PYPI_API_TOKEN`, OIDC,
   `skip-existing`, tag creation, pushing, publication, and hosted release
