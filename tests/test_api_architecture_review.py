@@ -26,6 +26,10 @@ DESIGN_PATH = PROJECT_ROOT / "DESIGN.md"
 MIGRATION_PATH = PROJECT_ROOT / "docs" / "migration-0.3-to-0.4.md"
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
 WORKFLOW_PATH = PROJECT_ROOT / ".github" / "workflows" / "python-package.yml"
+CHECKOUT_ACTION = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+PYPI_PUBLISH_ACTION = (
+    "pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247"
+)
 TASK6_REPORT_PATH = PROJECT_ROOT / ".superpowers" / "sdd" / "task-6-report.md"
 CHANGELOG_PATH = PROJECT_ROOT / "CHANGELOG.md"
 PROGRESS_PATH = PROJECT_ROOT / "PROGRESS.md"
@@ -532,13 +536,14 @@ def test_release_workflow_checks_out_the_exact_triggering_commit() -> None:
         step
         for job in workflow["jobs"].values()
         for step in job["steps"]
-        if step.get("uses") == "actions/checkout@v4"
+        if step.get("uses") == CHECKOUT_ACTION
     )
     assert len(checkout_steps) == 6
     for step in checkout_steps:
         assert step.get("with", {}).get("ref") == (
             "${{ github.event.pull_request.head.sha || github.sha }}"
         )
+        assert step.get("with", {}).get("persist-credentials") is False
 
 
 @pytest.mark.fast_always
@@ -575,23 +580,29 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
     publish_action_steps = tuple(
         (index, step)
         for index, step in enumerate(publish_steps)
-        if step.get("uses")
-        == ("pypa/gh-action-pypi-publish@" "ba38be9e461d3875417946c167d0b5f3d385a247")
+        if step.get("uses") == PYPI_PUBLISH_ACTION
     )
     assert len(publish_action_steps) == 1
     publish_action_index, _ = publish_action_steps[0]
     github_release_index = next(
         index
         for index, step in enumerate(publish_steps)
-        if "gh release create" in step.get("run", "")
+        if "gh release edit" in step.get("run", "")
     )
 
     assert "https://pypi.org/pypi/vercor/${VERSION}/json" in publish_commands
     assert 'test "$PYPI_STATUS" = "404"' in publish_commands
-    assert "https://api.github.com/repos/${GITHUB_REPOSITORY}" in publish_commands
-    assert 'test "$REPO_STATUS" = "200"' in publish_commands
-    assert "releases/tags/${GITHUB_REF_NAME}" in publish_commands
-    assert publish_commands.count('test "$RELEASE_STATUS" = "404"') == 2
+    assert 'gh api "repos/${GITHUB_REPOSITORY}"' in publish_commands
+    assert (
+        'gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100"'
+        in publish_commands
+    )
+    assert "tools/validate_release_state.py github-releases" in publish_commands
+    assert publish_commands.count("--allow-state absent") >= 2
+    assert "--allow-state absent draft" not in publish_commands
+    assert "--allow-state published" in publish_commands
+    assert "PYPI_UPLOAD_REQUIRED" not in publish_commands
+    assert "if" not in publish_action_steps[0][1]
     assert publish_action_index < github_release_index
 
     run_steps = tuple(
@@ -599,73 +610,28 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         for index, step in enumerate(publish_steps)
         if isinstance(step, dict) and "run" in step
     )
-    validation_index = next(
+    initial_validation_index = next(
         index
         for index, command in run_steps
-        if 'python -m twine check "$WHEEL" "$SDIST"' in command
+        if "tools/validate_release_state.py files" in command
     )
-    manifest_generation = 'sha256sum "$WHEEL" "$SDIST" > SHA256SUMS'
-    assert publish_commands.count(manifest_generation) == 1
-    initial_hash_index = next(
-        index for index, command in run_steps if manifest_generation in command
+    twine_install_index = next(
+        index
+        for index, command in run_steps
+        if "python -m pip install twine==6.2.0" in command
     )
-    release_validation_index = publish_action_index - 1
-    release_validation = publish_steps[release_validation_index]
-    release_validation_lines = tuple(
-        line.strip()
-        for line in release_validation["run"].splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
+    pre_publish_index = publish_action_index - 1
+    pre_publish = publish_steps[pre_publish_index]["run"]
+    post_publish_index = next(
+        index for index, command in run_steps if "for attempt in {1..12}" in command
     )
-    validation_command = release_validation["run"]
-    checksum_index = validation_command.index("sha256sum -c SHA256SUMS")
-    preflight_checks = (
-        (
-            "PyPI absence",
-            'PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json"',
-            "https://pypi.org/pypi/vercor/${VERSION}/json",
-            'test "$PYPI_STATUS" = "404"',
-            False,
-        ),
-        (
-            "authenticated repository availability",
-            'REPO_STATUS="$(curl -sS -L -o "$STATE_DIR/repository.json"',
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}",
-            'test "$REPO_STATUS" = "200"',
-            True,
-        ),
-        (
-            "authenticated release absence",
-            'RELEASE_STATUS="$(curl -sS -L -o "$STATE_DIR/release.json"',
-            "releases/tags/${GITHUB_REF_NAME}",
-            'test "$RELEASE_STATUS" = "404"',
-            True,
-        ),
-    )
-    for label, query, endpoint, assertion, authenticated in preflight_checks:
-        query_line = next(
-            (line for line in validation_command.splitlines() if query in line), None
-        )
-        assert query_line is not None, f"pre-PyPI validation step lacks {label} query"
-        assert (
-            endpoint in query_line
-        ), f"pre-PyPI validation step lacks {label} endpoint"
-        if authenticated:
-            assert (
-                "Authorization: Bearer $GH_TOKEN" in query_line
-            ), f"pre-PyPI validation step lacks authenticated {label} query"
-        assert (
-            assertion in validation_command
-        ), f"pre-PyPI validation step lacks {label} assertion"
-        assert (
-            validation_command.index(query_line)
-            < validation_command.index(assertion)
-            < checksum_index
-        ), f"pre-PyPI validation orders {label} after checksum"
-    assert release_validation_lines[-1] == "sha256sum -c SHA256SUMS"
-    assert manifest_generation not in release_validation["run"]
-    assert validation_index == release_validation_index
-    assert initial_hash_index < release_validation_index
-    assert release_validation_index + 1 == publish_action_index
+    assert initial_validation_index < twine_install_index < pre_publish_index
+    assert "tools/validate_release_state.py files" in pre_publish
+    assert pre_publish.rstrip().endswith('test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"')
+    assert publish_action_index < post_publish_index < github_release_index
+    assert "python -m build" not in publish_commands
+    assert "> SHA256SUMS" not in publish_commands
+    assert "pip install --upgrade pip twine" not in publish_commands
     assert "python -m build" not in publish_commands
 
 
@@ -695,68 +661,76 @@ def test_workflow_run_blocks_are_bash_syntax_valid() -> None:
 
 @pytest.mark.fast_always
 def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
-    """Make every narrowly scoped recovery alternative independently fail closed."""
+    """Bind every recovery mutation to one exact CI run and verified bytes."""
 
     guide = RELEASING_PATH.read_text(encoding="utf-8")
-    headings = (
-        "### Missing PyPI wheel only",
-        "### Missing PyPI sdist only",
-        "### Missing hosted release",
-        "### Missing hosted wheel asset only",
-        "### Missing hosted sdist asset only",
-        "### Hosted release metadata correction",
-        "### Replace differing hosted wheel asset",
-        "### Replace differing hosted sdist asset",
-    )
-    sections = {heading: _section(guide, heading) for heading in headings}
-    for heading, section in sections.items():
+    recovery = _section(guide, "## 10. Safe recovery")
+    for required in (
+        'test -n "${RELEASE_RUN_ID:-}"',
+        'gh run view "$RELEASE_RUN_ID"',
+        "--json headSha --jq .headSha)",
+        "--json event --jq .event)",
+        "--json headBranch --jq .headBranch)",
+        'gh run download "$RELEASE_RUN_ID"',
+        "--name vercor-distributions",
+        "--name vercor-release-manifest",
+        'CI_DIST_DIR="$CI_RECOVERY_ROOT/dist"',
+        'CI_MANIFEST="$CI_RECOVERY_ROOT/manifest/SHA256SUMS"',
+        "tools/validate_release_state.py files",
+        "vercor-0.4.0-py3-none-any.whl",
+        "vercor-0.4.0.tar.gz",
+    ):
+        assert required in recovery
+    assert "The local `dist/SHA256SUMS` is not authoritative" in guide
+
+    for heading in ("### Missing PyPI wheel only", "### Missing PyPI sdist only"):
+        section = _section(guide, heading)
         assert 'test -n "${RELEASE_COMMIT:-}"' in section
+        assert 'test -n "${RELEASE_RUN_ID:-}"' in section
+        assert "$CI_MANIFEST" in section
+        assert "$CI_DIST_DIR" in section
+        assert "https://pypi.org/pypi/vercor/0.4.0/json" in section
+        assert section.count("tools/validate_release_state.py pypi") == 2
         assert (
             'REMOTE_TAG_COMMIT="$(git ls-remote origin '
             "'refs/tags/v0.4.0^{}' | awk '{print $1}')\""
         ) in section
         assert 'test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"' in section
-        assert "IMMEDIATE_" in section, f"{heading} lacks an immediate state re-query"
-
-    for heading in ("### Missing PyPI wheel only", "### Missing PyPI sdist only"):
-        section = sections[heading]
-        assert "https://pypi.org/pypi/vercor/0.4.0/json" in section
-        assert section.count("tools/validate_release_state.py pypi") == 2
         assert (
             "python -m twine upload --repository-url " "https://upload.pypi.org/legacy/"
         ) in section
 
-    hosted_release = sections["### Missing hosted release"]
-    assert 'test "$REPO_STATUS" = "200"' in hosted_release
-    assert 'test "$RELEASE_STATUS" = "404"' in hosted_release
-    assert 'test "$IMMEDIATE_RELEASE_STATUS" = "404"' in hosted_release
-
-    for heading in (
-        "### Missing hosted wheel asset only",
-        "### Missing hosted sdist asset only",
+    github = _section(guide, "### Resume an exact GitHub draft")
+    for required in (
+        'test -n "${RELEASE_COMMIT:-}"',
+        'test -n "${RELEASE_RUN_ID:-}"',
+        "$CI_MANIFEST",
+        "$CI_DIST_DIR",
+        'gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100"',
+        "tools/validate_release_state.py github-releases",
+        "--allow-state absent draft",
+        "--allow-state draft",
+        "--allow-state published",
+        "gh release create v0.4.0",
+        "--draft",
+        "--hostname uploads.github.com",
+        "gh release edit v0.4.0",
+        "--draft=false",
     ):
-        section = sections[heading]
-        assert section.count("tools/validate_release_state.py assets") == 2
-        assert section.count("tools/validate_release_state.py files") == 2
-        assert section.count("gh release download") == 2
-        assert 'test "$IMMEDIATE_RELEASE_STATUS" = "200"' in section
+        assert required in github
+    assert github.count("--hostname uploads.github.com") == 2
+    assert github.count("tools/validate_release_state.py github-releases") >= 4
+    assert 'test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"' in github
+    assert github.count("check_tag_binding") >= 5
 
-    metadata = sections["### Hosted release metadata correction"]
-    assert metadata.count("tools/validate_release_state.py assets") == 2
-    assert metadata.count("tools/validate_release_state.py files") == 2
-    assert metadata.count("gh release download") == 4
-    assert 'test "$IMMEDIATE_RELEASE_STATUS" = "200"' in metadata
-
-    for heading in (
-        "### Replace differing hosted wheel asset",
-        "### Replace differing hosted sdist asset",
+    for forbidden in (
+        "--clobber",
+        "gh release delete",
+        "git push --delete",
+        "git tag --delete",
+        "DESTRUCTIVE_ASSET_CLOBBER_APPROVED",
     ):
-        section = sections[heading]
-        assert section.count("tools/validate_release_state.py assets") == 2
-        assert section.count("tools/validate_release_state.py differs") == 2
-        assert section.count("tools/validate_release_state.py files") == 2
-        assert section.count("gh release download") == 4
-        assert 'test "$IMMEDIATE_RELEASE_STATUS" = "200"' in section
+        assert forbidden not in recovery
 
 
 @pytest.mark.fast_always

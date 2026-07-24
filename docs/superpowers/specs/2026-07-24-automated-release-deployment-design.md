@@ -1,6 +1,19 @@
 # Automated Release Deployment Design
 
 **Date:** 2026-07-24
+**Status:** Final-review corrected
+
+## Final-review correction
+
+The initial design treated a publisher-generated checksum file as sufficient
+and modeled GitHub publication as one `gh release create` mutation. Final
+review corrected both assumptions. The builder now creates the authoritative
+manifest beside the exact two-file inventory and uploads it as a separate
+workflow artifact. GitHub publication is an explicit same-run state machine:
+create an empty draft, upload and revalidate each asset, then publish the
+verified draft. Separately authorized recovery can resume a valid interrupted
+draft with zero, one, or two expected assets only from the exact run's
+distribution and manifest artifacts.
 
 ## Purpose
 
@@ -19,7 +32,9 @@ hosted release, or change the package version.
 The repository administrator must separately configure a protected GitHub
 Actions environment named `release`. The existing repository secret
 `PYPI_API_TOKEN` will authenticate the production upload. The distinct
-`TEST_PYPI_API_TOKEN` secret will not be used.
+`TEST_PYPI_API_TOKEN` secret will not be used. Administrators must also
+configure a protected `v*.*.*` tag ruleset; workflow code does not manage
+repository settings.
 
 ## Trigger and authorization
 
@@ -35,19 +50,25 @@ A tag push authorizes the workflow to attempt deployment only when:
 - the checked-out commit is the triggering commit;
 - the release environment's protection rules permit the job to start;
 - PyPI does not already contain that version; and
-- GitHub does not already contain a release for that tag.
+- authenticated enumeration finds no draft or published release for that tag.
 
 Branch pushes and pull requests continue to run CI but never run deployment.
-Tag protection and release-environment reviewers remain repository settings,
-not workflow-controlled policy.
+Per-tag deployment concurrency does not cancel an in-progress publisher. Tag
+protection and release-environment reviewers remain repository settings, not
+workflow-controlled policy.
 
 ## Workflow architecture
 
-`build-artifacts` remains the sole distribution builder. It will continue to
-create and upload exactly:
+`build-artifacts` remains the sole distribution builder. It creates exactly:
 
 - `dist/vercor-0.4.0-py3-none-any.whl`; and
 - `dist/vercor-0.4.0.tar.gz`.
+
+After establishing that inventory, the builder generates
+`release-manifest/SHA256SUMS`. The two distributions are uploaded as
+`vercor-distributions`; the manifest is uploaded separately as
+`vercor-release-manifest`, so the distribution artifact remains exactly two
+files.
 
 A new `publish-release` job will depend on all validation jobs rather than
 rebuilding either distribution. It will have job-scoped `contents: write`
@@ -56,35 +77,48 @@ publication permissions or a reference to the PyPI credential.
 
 The job will:
 
-1. Check out the exact triggering commit.
-2. Download the `vercor-distributions` artifact into `dist/`.
+1. Check out the exact triggering commit without persisted credentials.
+2. Download both named workflow artifacts.
 3. Derive the project version from `pyproject.toml`.
-4. Verify the tag/version relationship and exact two-file inventory.
-5. Run distribution metadata checks.
-6. Fail closed unless both the PyPI version and GitHub Release are absent.
-7. Publish both distributions through the PyPA publish action pinned at commit
+4. Verify the tag/version relationship, exact two-file inventory, and
+   producer-issued SHA-256 manifest before installing mutable tooling.
+5. Authenticated-enumerate releases (including drafts), require exact-tag
+   absence, and require PyPI HTTP 404.
+6. Install exactly Twine 6.2.0, run metadata checks, and reverify the manifest.
+7. Compare the peeled remote tag commit with checked-out `HEAD` and
+   `GITHUB_SHA` immediately before mutation.
+8. Publish both distributions through the PyPA publish action pinned at commit
    `ba38be9e461d3875417946c167d0b5f3d385a247`, authenticating as `__token__`
    with `secrets.PYPI_API_TOKEN`.
-8. Revalidate the local artifact inventory.
-9. Create the GitHub Release with `gh release create`, the version-specific
-   tracked release notes, and the same two distributions.
+9. Poll PyPI for a bounded time and require the exact two manifest digests.
+10. Reconfirm exact-tag release absence and the peeled tag, then create an
+    empty draft with exact title, notes, and prerelease state.
+11. Upload the wheel and sdist separately by release ID, checking the tag
+    before each mutation and immediately validating the draft asset inventory
+    and GitHub-reported SHA-256 digests.
+12. Publish only the exact two-asset draft with
+    `gh release edit --draft=false`, then enumerate and validate the published
+    release.
 
 PyPI publication precedes GitHub Release creation, preserving the existing
-release order. If PyPI succeeds but GitHub Release creation fails, the workflow
-will not silently skip or overwrite either public state on rerun. The existing
-fail-closed recovery procedure in `docs/releasing.md` remains the authorized
-way to complete a partial release after exact hash and namespace validation.
+release order. If PyPI or draft publication succeeds only partially, an
+ordinary rerun fails on the existing public state. The fail-closed recovery
+procedure in `docs/releasing.md` is separately authorized and binds recovery to
+the exact `RELEASE_RUN_ID`, tag, commit, distributions, and manifest.
 
 ## Artifact and data flow
 
 ```text
 tag push
   -> build wheel and sdist once
+  -> generate authoritative SHA256SUMS from those exact bytes
+  -> upload distributions and manifest as separate named artifacts
   -> run all CI gates against the uploaded artifact bundle
-  -> protected publish-release job downloads that bundle
-  -> verify tag, version, metadata, inventory, and public namespace absence
+  -> protected publish-release job downloads and authenticates both artifacts
+  -> verify tag, version, metadata, inventory, and exact namespace absence
   -> publish bundle to PyPI with the repository's production token
-  -> attach the same bundle to a new GitHub Release
+  -> poll PyPI until exact filenames and digests are visible
+  -> create empty GitHub draft, upload/verify both assets, publish draft
 ```
 
 The temporary external-extension fixture distribution remains outside
@@ -96,13 +130,16 @@ published.
 The deployment job fails before publication when the tag is malformed, the
 tag and package version differ, a required release-notes file is missing, the
 artifact inventory differs from the exact wheel and sdist, metadata checks
-fail, a public version or release already exists, a remote API returns an
-unexpected status, or a required CI job fails.
+fail, the authoritative manifest differs, a public version or draft/published
+release already exists, the peeled tag changes, PyPI verification times out, a
+remote API returns an unexpected status, or a required CI job fails.
 
 The job will not use PyPI's `skip-existing` behavior. Treating an existing file
 as success without verifying its digest could hide a conflicting publication.
 GitHub Release creation likewise will not overwrite an existing release or
-asset.
+asset. Duplicate releases, wrong draft metadata, unexpected assets, and digest
+mismatches stop both ordinary publication and recovery. No repair path deletes
+or moves a tag, deletes a release, edits bad metadata, or clobbers an asset.
 
 ## Testing and verification
 
@@ -114,14 +151,22 @@ require:
 - dependencies on every validation job;
 - the protected `release` environment;
 - job-scoped GitHub contents permission and no OIDC permission;
-- exact triggering-commit checkout and artifact download;
+- exact triggering-commit checkout, immutable action pins, and credential-free
+  checkout;
+- separate producer-issued manifest upload/download and verification before
+  and after locked Twine installation;
 - tag-to-project-version validation;
 - exact wheel/sdist inventory and metadata checks;
-- authenticated, fail-closed PyPI and GitHub preflights;
+- per-tag concurrency and peeled remote-tag checks at mutation boundaries;
+- authenticated, fail-closed PyPI and draft-aware GitHub preflights;
+- bounded post-publisher PyPI filename/digest polling;
 - production publication through `secrets.PYPI_API_TOKEN`, without exposing
   the token to any other step or job; and
-- GitHub Release creation with the exact two tested artifacts and tracked
-  release notes.
+- draft state-machine fixtures for 0/1/2 assets, duplicates, bad/unexpected
+  assets, metadata, and published/draft distinction;
+- explicit draft creation, per-asset upload/revalidation, and final publication
+  with the exact two tested artifacts and tracked release notes; and
+- exact-run recovery documentation that never uses local-build hashes.
 
 Documentation contracts will require the administrator setup instructions and
 replace the ordinary manual publication path with the automated tag workflow,

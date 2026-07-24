@@ -42,6 +42,18 @@ EXTERNAL_EXTENSION_FIXTURE_ROOT = (
     PROJECT_ROOT / "tests" / "fixtures" / "external_extension_test_fixture"
 )
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
+CHECKOUT_ACTION = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+SETUP_PYTHON_ACTION = "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065"
+UPLOAD_ARTIFACT_ACTION = (
+    "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+)
+DOWNLOAD_ARTIFACT_ACTION = (
+    "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+)
+PYPI_PUBLISH_ACTION = (
+    "pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247"
+)
+CODECOV_ACTION = "codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac"
 EXPECTED_INSTALLED_ROOT = (
     "Clock",
     "Coupler",
@@ -309,10 +321,27 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert f"test -f dist/{EXPECTED_SDIST_NAME}" in build_commands
     assert "tests/fixtures/external_extension_test_fixture" not in build_commands
     assert "external_extension_test_fixture" not in build_commands
-    upload_step = next(
-        step for step in build_steps if step.get("uses") == "actions/upload-artifact@v4"
+    upload_steps = {
+        step["with"]["name"]: step
+        for step in build_steps
+        if step.get("uses") == UPLOAD_ARTIFACT_ACTION
+    }
+    assert set(upload_steps) == {
+        "vercor-distributions",
+        "vercor-release-manifest",
+    }
+    assert set(upload_steps["vercor-distributions"]["with"]["path"].splitlines()) == {
+        f"dist/{EXPECTED_WHEEL_NAME}",
+        f"dist/{EXPECTED_SDIST_NAME}",
+    }
+    assert (
+        upload_steps["vercor-release-manifest"]["with"]["path"]
+        == "release-manifest/SHA256SUMS"
     )
-    assert upload_step["with"]["path"] == "dist/"
+    assert (
+        f"sha256sum {EXPECTED_WHEEL_NAME} {EXPECTED_SDIST_NAME} "
+        "> ../release-manifest/SHA256SUMS"
+    ) in build_commands
 
     matrix = installed_job["strategy"]["matrix"]
     assert matrix["python-version"] == ["3.12", "3.13"]
@@ -340,9 +369,7 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         step.get("run", "") for step in installed_steps if isinstance(step, dict)
     )
     download_step = next(
-        step
-        for step in installed_steps
-        if step.get("uses") == "actions/download-artifact@v4"
+        step for step in installed_steps if step.get("uses") == DOWNLOAD_ARTIFACT_ACTION
     )
     assert download_step["with"]["path"] == "dist/"
     assert "python -m build" not in installed_commands
@@ -391,7 +418,7 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "external_extension_test_fixture.smoke" in macos_commands
     assert "tests/fixtures/external_extension_test_fixture" in macos_commands
     macos_checkout = next(
-        step for step in macos_job["steps"] if step.get("uses") == "actions/checkout@v4"
+        step for step in macos_job["steps"] if step.get("uses") == CHECKOUT_ACTION
     )
     assert (
         macos_checkout["with"]["ref"]
@@ -426,6 +453,10 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         "name": "release",
         "url": "https://pypi.org/p/vercor",
     }
+    assert publish["concurrency"] == {
+        "group": "release-${{ github.ref_name }}",
+        "cancel-in-progress": False,
+    }
     assert workflow["permissions"] == {"contents": "read"}
     assert publish["permissions"] == {"contents": "write"}
     permission_owners = (
@@ -441,25 +472,28 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
             assert permission_map.get("contents") != "write", owner
 
     checkout = next(
-        step for step in publish["steps"] if step.get("uses") == "actions/checkout@v4"
+        step for step in publish["steps"] if step.get("uses") == CHECKOUT_ACTION
     )
     setup = next(
-        step
-        for step in publish["steps"]
-        if step.get("uses") == "actions/setup-python@v5"
+        step for step in publish["steps"] if step.get("uses") == SETUP_PYTHON_ACTION
     )
-    download = next(
-        step
+    downloads = {
+        step["with"]["name"]: step
         for step in publish["steps"]
-        if step.get("uses") == "actions/download-artifact@v4"
-    )
+        if step.get("uses") == DOWNLOAD_ARTIFACT_ACTION
+    }
     assert checkout["with"]["ref"] == (
         "${{ github.event.pull_request.head.sha || github.sha }}"
     )
+    assert checkout["with"]["persist-credentials"] is False
     assert setup["with"]["python-version"] == "3.12"
-    assert download["with"] == {
+    assert downloads["vercor-distributions"]["with"] == {
         "name": "vercor-distributions",
         "path": "dist/",
+    }
+    assert downloads["vercor-release-manifest"]["with"] == {
+        "name": "vercor-release-manifest",
+        "path": "release-manifest/",
     }
 
     run_steps = tuple(
@@ -477,17 +511,28 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         'WHEEL="dist/vercor-${VERSION}-py3-none-any.whl"',
         'SDIST="dist/vercor-${VERSION}.tar.gz"',
         'python -m twine check "$WHEEL" "$SDIST"',
+        "release-manifest/SHA256SUMS",
+        "tools/validate_release_state.py files",
         "https://pypi.org/pypi/vercor/${VERSION}/json",
-        'test "$PYPI_STATUS" = "404"',
-        "https://api.github.com/repos/${GITHUB_REPOSITORY}",
-        'test "$REPO_STATUS" = "200"',
-        "releases/tags/${GITHUB_REF_NAME}",
-        'test "$RELEASE_STATUS" = "404"',
-        'sha256sum "$WHEEL" "$SDIST"',
-        "sha256sum -c",
+        "tools/validate_release_state.py pypi",
+        "for attempt in {1..12}",
+        'case "$PYPI_STATUS" in',
+        "sleep 10",
+        'REMOTE_TAG_COMMIT="$(git ls-remote origin '
+        '"refs/tags/${GITHUB_REF_NAME}^{}"',
+        'test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"',
+        'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+        'gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100"',
+        "tools/validate_release_state.py github-releases",
         'gh release create "$GITHUB_REF_NAME"',
+        "--draft",
         '--notes-file "docs/release-notes-${RELEASE_VERSION}.md"',
-        '"$RELEASE_WHEEL" "$RELEASE_SDIST"',
+        "uploads.github.com",
+        '--input "$RELEASE_WHEEL"',
+        '--input "$RELEASE_SDIST"',
+        'gh release edit "$GITHUB_REF_NAME"',
+        "--draft=false",
+        "--allow-state published",
     ):
         assert required in commands
 
@@ -505,27 +550,38 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     )
     assert version_step_index <= tag_check_index
 
-    twine_check_index = next(
+    twine_install_index = next(
         index
         for index, command in run_steps
-        if 'python -m twine check "$WHEEL" "$SDIST"' in command
+        if "python -m pip install twine==" in command
     )
-    manifest_generation = 'sha256sum "$WHEEL" "$SDIST" > SHA256SUMS'
-    assert commands.count(manifest_generation) == 1
-    initial_hash_index = next(
-        index for index, command in run_steps if manifest_generation in command
+    assert "python -m pip install twine==6.2.0" in commands
+    assert "pip install --upgrade pip twine" not in commands
+    manifest_verification_indices = tuple(
+        index
+        for index, command in run_steps
+        if "tools/validate_release_state.py files" in command
     )
+    assert any(index < twine_install_index for index in manifest_verification_indices)
+    assert any(index > twine_install_index for index in manifest_verification_indices)
+    producer_manifest = (
+        f"sha256sum {EXPECTED_WHEEL_NAME} {EXPECTED_SDIST_NAME} "
+        "> ../release-manifest/SHA256SUMS"
+    )
+    assert workflow_source.count(producer_manifest) == 1
+    assert producer_manifest not in commands
+    assert "> SHA256SUMS" not in commands
     assert "python -m build" not in commands
 
     pypi_publish_steps = tuple(
         (index, step)
         for index, step in enumerate(publish["steps"])
-        if step.get("uses")
-        == ("pypa/gh-action-pypi-publish@" "ba38be9e461d3875417946c167d0b5f3d385a247")
+        if step.get("uses") == PYPI_PUBLISH_ACTION
     )
     assert len(pypi_publish_steps) == 1
     pypi_publish = pypi_publish_steps[0]
     pypi_publish_index, pypi_publish_step = pypi_publish
+    assert "if" not in pypi_publish_step
     assert pypi_publish_step["with"] == {
         "user": "__token__",
         "password": "${{ secrets.PYPI_API_TOKEN }}",
@@ -533,71 +589,34 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         "skip-existing": False,
         "attestations": False,
     }
-    release_validation_index = pypi_publish_index - 1
-    release_validation = publish["steps"][release_validation_index]
-    release_validation_lines = tuple(
-        line.strip()
-        for line in release_validation["run"].splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
+    pre_publish_index = pypi_publish_index - 1
+    pre_publish = publish["steps"][pre_publish_index]["run"]
+    assert "tools/validate_release_state.py files" in pre_publish
+    assert 'test "$PYPI_STATUS" = "404"' in pre_publish
+    assert pre_publish.rstrip().endswith('test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"')
+
+    post_pypi_index = next(
+        index for index, command in run_steps if "for attempt in {1..12}" in command
     )
-    validation_command = release_validation["run"]
-    checksum_index = validation_command.index("sha256sum -c SHA256SUMS")
-    preflight_checks = (
-        (
-            "PyPI absence",
-            'PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json"',
-            "https://pypi.org/pypi/vercor/${VERSION}/json",
-            'test "$PYPI_STATUS" = "404"',
-            False,
-        ),
-        (
-            "authenticated repository availability",
-            'REPO_STATUS="$(curl -sS -L -o "$STATE_DIR/repository.json"',
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}",
-            'test "$REPO_STATUS" = "200"',
-            True,
-        ),
-        (
-            "authenticated release absence",
-            'RELEASE_STATUS="$(curl -sS -L -o "$STATE_DIR/release.json"',
-            "releases/tags/${GITHUB_REF_NAME}",
-            'test "$RELEASE_STATUS" = "404"',
-            True,
-        ),
+    github_release_index = next(
+        index
+        for index, command in run_steps
+        if 'gh release edit "$GITHUB_REF_NAME"' in command
     )
-    for label, query, endpoint, assertion, authenticated in preflight_checks:
-        query_line = next(
-            (line for line in validation_command.splitlines() if query in line), None
-        )
-        assert query_line is not None, f"pre-PyPI validation step lacks {label} query"
-        assert (
-            endpoint in query_line
-        ), f"pre-PyPI validation step lacks {label} endpoint"
-        if authenticated:
-            assert (
-                "Authorization: Bearer $GH_TOKEN" in query_line
-            ), f"pre-PyPI validation step lacks authenticated {label} query"
-        assert (
-            assertion in validation_command
-        ), f"pre-PyPI validation step lacks {label} assertion"
-        assert (
-            validation_command.index(query_line)
-            < validation_command.index(assertion)
-            < checksum_index
-        ), f"pre-PyPI validation orders {label} after checksum"
-    assert release_validation_lines[-1] == "sha256sum -c SHA256SUMS"
-    assert manifest_generation not in release_validation["run"]
-    assert twine_check_index == release_validation_index
-    assert initial_hash_index < release_validation_index
-    assert release_validation_index + 1 == pypi_publish_index
+    assert pypi_publish_index < post_pypi_index < github_release_index
+    assert commands.count("tools/validate_release_state.py github-releases") >= 4
+    assert commands.count('test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"') >= 4
+    assert commands.count('gh release edit "$GITHUB_REF_NAME"') == 1
+    assert "--allow-state absent draft" not in commands
+    assert "PYPI_UPLOAD_REQUIRED" not in commands
+    assert commands.count('test "$PYPI_STATUS" = "404"') >= 2
     for forbidden in (
         "--clobber",
         "gh release delete",
-        "gh release edit",
         "gh api -x delete",
         "gh api --method delete",
-        "gh api -x patch",
-        "gh api --method patch",
+        "git push --delete",
+        "git tag --delete",
         "twine upload",
         "--skip-existing",
         "skip-existing: true",
@@ -606,6 +625,99 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     assert workflow_source.count("pypa/gh-action-pypi-publish@") == 1
     assert "TEST_PYPI_API_TOKEN" not in workflow_source
     assert workflow_source.count("secrets.PYPI_API_TOKEN") == 1
+
+
+@pytest.mark.fast_always
+def test_release_provenance_actions_are_immutable_and_checkouts_drop_credentials() -> (
+    None
+):
+    """Pin every provenance action and keep release-path checkouts credential-free."""
+
+    workflow_source = (PROJECT_ROOT / ".github/workflows/python-package.yml").read_text(
+        encoding="utf-8"
+    )
+    workflow = yaml.safe_load(workflow_source)
+    required_actions = {
+        CHECKOUT_ACTION,
+        SETUP_PYTHON_ACTION,
+        UPLOAD_ARTIFACT_ACTION,
+        DOWNLOAD_ARTIFACT_ACTION,
+        PYPI_PUBLISH_ACTION,
+        CODECOV_ACTION,
+    }
+    used_actions = {
+        step["uses"]
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if "uses" in step
+    }
+    assert required_actions.issubset(used_actions)
+    assert all(
+        len(reference.rsplit("@", maxsplit=1)[1]) == 40
+        and all(character in "0123456789abcdef" for character in reference[-40:])
+        for reference in used_actions
+    )
+    for mutable_reference in (
+        "actions/checkout@v",
+        "actions/setup-python@v",
+        "actions/upload-artifact@v",
+        "actions/download-artifact@v",
+    ):
+        assert mutable_reference not in workflow_source
+    checkout_steps = tuple(
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses") == CHECKOUT_ACTION
+    )
+    assert len(checkout_steps) == 6
+    assert all(
+        step.get("with", {}).get("persist-credentials") is False
+        for step in checkout_steps
+    )
+
+
+@pytest.mark.fast_always
+def test_release_design_and_plan_describe_the_final_review_state_machine() -> None:
+    """Keep release architecture documents aligned with executable provenance."""
+
+    design = (
+        PROJECT_ROOT
+        / "docs"
+        / "superpowers"
+        / "specs"
+        / "2026-07-24-automated-release-deployment-design.md"
+    ).read_text(encoding="utf-8")
+    plan = (
+        PROJECT_ROOT
+        / "docs"
+        / "superpowers"
+        / "plans"
+        / "2026-07-24-automated-release-deployment.md"
+    ).read_text(encoding="utf-8")
+    for document in (design, plan):
+        for required in (
+            "Final-review corrected",
+            "`vercor-release-manifest`",
+            "producer-issued manifest",
+            "Twine 6.2.0",
+            "per-tag",
+            "peeled remote tag",
+            "zero, one, or two",
+            "`gh release edit",
+            "--draft=false",
+            "ordinary",
+            "rerun",
+        ):
+            assert required in document
+        for stale in (
+            "actions/checkout@v4",
+            "actions/setup-python@v5",
+            "actions/upload-artifact@v4",
+            "actions/download-artifact@v4",
+            "pip install --upgrade pip twine",
+        ):
+            assert stale not in document
 
 
 @pytest.mark.fast_always
@@ -660,7 +772,12 @@ def test_release_guide_binds_tag_authority_workflow_selection_and_hosted_state()
     tag_text = " ".join(tag.split())
     publish_text = " ".join(publish.split())
 
-    for required in ("`PYPI_API_TOKEN`", "`TEST_PYPI_API_TOKEN`", "`release`"):
+    for required in (
+        "`PYPI_API_TOKEN`",
+        "`TEST_PYPI_API_TOKEN`",
+        "`release`",
+        "protected `v*.*.*` tag ruleset",
+    ):
         assert required in deployment
     for required in (
         "pushes to `main`",
@@ -688,8 +805,12 @@ def test_release_guide_binds_tag_authority_workflow_selection_and_hosted_state()
         "--json headBranch --jq .headBranch)",
         "--json conclusion --jq .conclusion)",
         "If PyPI publication succeeds but GitHub Release creation fails",
-        "rerunning the ordinary deployment must fail on the existing PyPI version",
-        "rather than silently skipping it.",
+        "vercor-distributions",
+        "vercor-release-manifest",
+        "authoritative manifest",
+        "exact run",
+        "rerunning the ordinary deployment must fail",
+        "separately authorized recovery",
     ):
         assert required in publish_text
 
@@ -719,7 +840,7 @@ def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
     download = next(
         step
         for step in quality["steps"]
-        if step.get("uses") == "actions/download-artifact@v4"
+        if step.get("uses") == DOWNLOAD_ARTIFACT_ACTION
     )
     assert download["with"] == {
         "name": "vercor-distributions",
@@ -727,12 +848,10 @@ def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
     }
     assert quality["env"]["VERCOR_ARTIFACT_DIR"] == ("${{ github.workspace }}/dist")
     checkout = next(
-        step for step in quality["steps"] if step.get("uses") == "actions/checkout@v4"
+        step for step in quality["steps"] if step.get("uses") == CHECKOUT_ACTION
     )
     setup = next(
-        step
-        for step in quality["steps"]
-        if step.get("uses") == "actions/setup-python@v5"
+        step for step in quality["steps"] if step.get("uses") == SETUP_PYTHON_ACTION
     )
     commands = "\n".join(
         step.get("run", "") for step in quality["steps"] if isinstance(step, dict)

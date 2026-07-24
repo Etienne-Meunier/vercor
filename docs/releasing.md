@@ -10,8 +10,10 @@ Tagged deployment uses the existing production repository secret
 `PYPI_API_TOKEN`. Keep `TEST_PYPI_API_TOKEN` reserved for TestPyPI; the release
 workflow never references it. Configure a GitHub Actions environment named
 `release` and add the required reviewers or other deployment protection rules
-before pushing a version tag. The workflow grants `contents: write` and exposes
-the production token only in the tag-only `publish-release` job.
+before pushing a version tag. Repository administrators must also configure a
+protected `v*.*.*` tag ruleset; the workflow does not change repository
+settings. The workflow grants `contents: write` and exposes the production
+token only in the tag-only `publish-release` job.
 
 ## 1. Confirm and review the candidate
 
@@ -116,9 +118,12 @@ test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 test -z "$(git status --porcelain --untracked-files=all)"
 ```
 
-`dist/SHA256SUMS` is ignored release evidence, not a source-cleanliness signal.
-Record it against `RELEASE_COMMIT` and retain it through hosted CI, package
-publication, hosted asset upload, and recovery.
+`dist/SHA256SUMS` is ignored local release evidence, not a
+source-cleanliness signal. The local `dist/SHA256SUMS` is not authoritative for
+hosted publication because CI performs an independent build. The
+`build-artifacts` job creates the authoritative manifest from its exact wheel
+and sdist, then uploads it separately as `vercor-release-manifest`; only that
+manifest can identify bytes published by the tag run.
 
 ## 4. Run local installed-artifact acceptance
 
@@ -295,7 +300,9 @@ overwrite or repoint a published release tag.
 Pushing the annotated `v0.4.0` tag starts the automated deployment. Do not run
 a second local Twine upload or create the GitHub Release locally during the
 ordinary release path. The repository secret `PYPI_API_TOKEN` is supplied only
-to the production publish action in `python-package.yml`.
+to the production publish action in `python-package.yml`. The exact run carries
+two named artifacts: `vercor-distributions` contains only the wheel and sdist,
+while `vercor-release-manifest` contains their authoritative manifest.
 
 ```text
 set -euo pipefail
@@ -309,20 +316,38 @@ test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headSha --jq .
 test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json event --jq .event)" = "push"
 test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headBranch --jq .headBranch)" = "v0.4.0"
 test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json conclusion --jq .conclusion)" = "success"
+CI_VERIFY_ROOT="$(mktemp -d)"
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-distributions --dir "$CI_VERIFY_ROOT/dist"
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-release-manifest --dir "$CI_VERIFY_ROOT/manifest"
+python tools/validate_release_state.py files --directory "$CI_VERIFY_ROOT/dist" --manifest "$CI_VERIFY_ROOT/manifest/SHA256SUMS" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 ```
 
 If the tag run has not appeared, is waiting for approval in the protected
 `release` environment, or has not completed, stop and inspect that exact run.
 Do not select a branch-push or pull-request run. If PyPI publication succeeds
 but GitHub Release creation fails, use the exact-state recovery procedure
-below; rerunning the ordinary deployment must fail on the existing PyPI version
-rather than silently skipping it.
+below; rerunning the ordinary deployment must fail when PyPI or an exact-tag
+draft/published release already exists; it never silently repairs a partial
+release. Resume only through the separately authorized recovery procedure with
+the exact run's two artifacts.
 
 ## 8. Verify the published package and hosted release
 
 ```bash
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
+test -n "${RELEASE_RUN_ID:-}"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headSha --jq .headSha)" = "$RELEASE_COMMIT"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json event --jq .event)" = "push"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headBranch --jq .headBranch)" = "v0.4.0"
+CI_VERIFY_ROOT="$(mktemp -d)"
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-distributions --dir "$CI_VERIFY_ROOT/dist"
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-release-manifest --dir "$CI_VERIFY_ROOT/manifest"
+python tools/validate_release_state.py files --directory "$CI_VERIFY_ROOT/dist" --manifest "$CI_VERIFY_ROOT/manifest/SHA256SUMS" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
+PYPI_VERIFY_JSON="$CI_VERIFY_ROOT/pypi.json"
+PYPI_VERIFY_STATUS="$(curl -sS -L -o "$PYPI_VERIFY_JSON" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
+test "$PYPI_VERIFY_STATUS" = "200"
+python tools/validate_release_state.py pypi --json "$PYPI_VERIFY_JSON" --manifest "$CI_VERIFY_ROOT/manifest/SHA256SUMS" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 published_check_dir="$(mktemp -d)"
 python -m venv "$published_check_dir/venv"
 "$published_check_dir/venv/bin/python" -m pip install --upgrade pip
@@ -351,99 +376,68 @@ PY
 python tools/validate_release_state.py assets --json "$RELEASE_VIEW_JSON" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 release_verify_dir="$(mktemp -d)"
 gh release download v0.4.0 --repo nutrik/vercor --dir "$release_verify_dir"
-test "$(shasum -a 256 "$release_verify_dir/vercor-0.4.0-py3-none-any.whl" | awk '{print $1}')" = "$(awk '$2 == "vercor-0.4.0-py3-none-any.whl" {print $1}' dist/SHA256SUMS)"
-test "$(shasum -a 256 "$release_verify_dir/vercor-0.4.0.tar.gz" | awk '{print $1}')" = "$(awk '$2 == "vercor-0.4.0.tar.gz" {print $1}' dist/SHA256SUMS)"
+python tools/validate_release_state.py files --directory "$release_verify_dir" --manifest "$CI_VERIFY_ROOT/manifest/SHA256SUMS" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 ```
 
-## 9. Query public state before recovery
+## 9. Query exact public state before recovery
 
-Before any destructive tag action, query PyPI and the hosted-release API,
-accept only HTTP 200 or 404, and compare every published PyPI file digest with
-`dist/SHA256SUMS`:
+Recovery begins by selecting one run by `RELEASE_RUN_ID`, then proving its
+event, tag, commit, remote peeled tag, artifacts, and authoritative manifest.
+Never substitute a local build or a similarly named artifact from another run.
 
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
-RECOVERY_STATE_DIR="$(mktemp -d)"
-export RECOVERY_STATE_DIR
-PYPI_JSON="$RECOVERY_STATE_DIR/pypi.json"
-export PYPI_JSON
-PYPI_STATUS="$(curl -sS -L -o "$PYPI_JSON" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
-export PYPI_STATUS
+test -n "${RELEASE_RUN_ID:-}"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headSha --jq .headSha)" = "$RELEASE_COMMIT"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json event --jq .event)" = "push"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headBranch --jq .headBranch)" = "v0.4.0"
+REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
+test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
+CI_RECOVERY_ROOT="$(mktemp -d)"
+export CI_RECOVERY_ROOT
+CI_DIST_DIR="$CI_RECOVERY_ROOT/dist"
+CI_MANIFEST="$CI_RECOVERY_ROOT/manifest/SHA256SUMS"
+export CI_DIST_DIR CI_MANIFEST
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-distributions --dir "$CI_DIST_DIR"
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-release-manifest --dir "$CI_RECOVERY_ROOT/manifest"
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
+RECOVERY_STATE_DIR="$CI_RECOVERY_ROOT/state"
+mkdir -p "$RECOVERY_STATE_DIR"
+PYPI_STATUS="$(curl -sS -L -o "$RECOVERY_STATE_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 case "$PYPI_STATUS" in 200|404) ;; *) printf 'Unexpected PyPI HTTP status: %s\n' "$PYPI_STATUS" >&2; exit 1 ;; esac
-if [ "$PYPI_STATUS" = 200 ]; then
-  python - "$PYPI_JSON" dist/SHA256SUMS <<'PY'
-import json
-import pathlib
-import sys
-
-payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-manifest = {}
-for line in pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines():
-    digest, name = line.split(maxsplit=1)
-    manifest[name.lstrip("*")] = digest
-expected = {"vercor-0.4.0-py3-none-any.whl", "vercor-0.4.0.tar.gz"}
-urls = payload.get("urls", [])
-if not urls:
-    raise SystemExit("PyPI returned 200 without release files")
-for item in urls:
-    name = item["filename"]
-    if name not in expected or name not in manifest:
-        raise SystemExit(f"unexpected PyPI file: {name}")
-    if item["digests"]["sha256"] != manifest[name]:
-        raise SystemExit(f"PyPI digest mismatch: {name}")
-    print(name, item["digests"]["sha256"])
-PY
-fi
 GITHUB_TOKEN="$(gh auth token)"
 export GITHUB_TOKEN
 test -n "${GITHUB_TOKEN:-}"
-REPOSITORY_JSON="$RECOVERY_STATE_DIR/repository.json"
-export REPOSITORY_JSON
-REPO_STATUS="$(curl -sS -L -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" -o "$REPOSITORY_JSON" -w '%{http_code}' https://api.github.com/repos/nutrik/vercor)"
-export REPO_STATUS
-test "$REPO_STATUS" = "200"
-HOSTED_JSON="$RECOVERY_STATE_DIR/hosted-release.json"
-export HOSTED_JSON
-HOSTED_STATUS="$(curl -sS -L -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" -o "$HOSTED_JSON" -w '%{http_code}' https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-export HOSTED_STATUS
-case "$HOSTED_STATUS" in 200|404) ;; *) printf 'Unexpected GitHub HTTP status: %s\n' "$HOSTED_STATUS" >&2; exit 1 ;; esac
-printf 'PyPI status: %s; hosted release status: %s\n' "$PYPI_STATUS" "$HOSTED_STATUS"
+gh api repos/nutrik/vercor > "$RECOVERY_STATE_DIR/repository.json"
+gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$RECOVERY_STATE_DIR/releases.json"
+python tools/validate_release_state.py github-releases --json "$RECOVERY_STATE_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state absent draft published --state-output "$RECOVERY_STATE_DIR/release-state.json"
+printf 'PyPI status: %s\n' "$PYPI_STATUS"
 ```
 
 ## 10. Safe recovery
 
-If both public-state queries returned 404, no package file was accepted, no
-hosted release exists, and an incorrect remote tag is the only external
-mutation, deletion still requires explicit destructive approval:
+Recovery is a separately authorized path; an ordinary workflow rerun must
+remain stopped. Rebind the exact tag run and download its two named artifacts
+again immediately before choosing one alternative:
 
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
-test "${DESTRUCTIVE_TAG_DELETE_APPROVED:-}" = "yes"
-test -n "${WRONG_TAG_COMMIT:-}"
-GITHUB_TOKEN="$(gh auth token)"
-test -n "${GITHUB_TOKEN:-}"
-DELETE_STATE_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$DELETE_STATE_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$DELETE_STATE_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "404"
-PYPI_STATUS="$(curl -sS -L -o "$DELETE_STATE_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
-test "$PYPI_STATUS" = "404"
+test -n "${RELEASE_RUN_ID:-}"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headSha --jq .headSha)" = "$RELEASE_COMMIT"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json event --jq .event)" = "push"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headBranch --jq .headBranch)" = "v0.4.0"
 REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$WRONG_TAG_COMMIT"
-test "$REMOTE_TAG_COMMIT" != "$RELEASE_COMMIT"
-test "$(git rev-parse 'v0.4.0^{commit}')" = "$WRONG_TAG_COMMIT"
-IMMEDIATE_REPO_STATUS="$(curl -sS -L -o "$DELETE_STATE_DIR/immediate-repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$IMMEDIATE_REPO_STATUS" = "200"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$DELETE_STATE_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "404"
-IMMEDIATE_PYPI_STATUS="$(curl -sS -L -o "$DELETE_STATE_DIR/immediate-pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
-test "$IMMEDIATE_PYPI_STATUS" = "404"
-git push --delete origin v0.4.0
-git tag --delete v0.4.0
+test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
+CI_RECOVERY_ROOT="$(mktemp -d)"
+export CI_RECOVERY_ROOT
+CI_DIST_DIR="$CI_RECOVERY_ROOT/dist"
+CI_MANIFEST="$CI_RECOVERY_ROOT/manifest/SHA256SUMS"
+export CI_DIST_DIR CI_MANIFEST
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-distributions --dir "$CI_DIST_DIR"
+gh run download "$RELEASE_RUN_ID" --repo nutrik/vercor --name vercor-release-manifest --dir "$CI_RECOVERY_ROOT/manifest"
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 ```
 
 If PyPI returned 200 with only one verified file, run exactly one separately
@@ -454,17 +448,20 @@ labeled missing-file alternative after confirming which filename is absent.
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
+test -n "${RELEASE_RUN_ID:-}"
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
+python -m pip install twine==6.2.0
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 PYPI_RECOVERY_DIR="$(mktemp -d)"
 PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 test "$PYPI_STATUS" = "200"
-python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/pypi.json" --manifest dist/SHA256SUMS --expect vercor-0.4.0.tar.gz
+python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0.tar.gz
 REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
 test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
 IMMEDIATE_PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/immediate-pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 test "$IMMEDIATE_PYPI_STATUS" = "200"
-python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/immediate-pypi.json" --manifest dist/SHA256SUMS --expect vercor-0.4.0.tar.gz
-python -m twine upload --repository-url https://upload.pypi.org/legacy/ dist/vercor-0.4.0-py3-none-any.whl
+python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/immediate-pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0.tar.gz
+python -m twine upload --repository-url https://upload.pypi.org/legacy/ "$CI_DIST_DIR/vercor-0.4.0-py3-none-any.whl"
 ```
 
 ### Missing PyPI sdist only
@@ -472,17 +469,20 @@ python -m twine upload --repository-url https://upload.pypi.org/legacy/ dist/ver
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
+test -n "${RELEASE_RUN_ID:-}"
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
+python -m pip install twine==6.2.0
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 PYPI_RECOVERY_DIR="$(mktemp -d)"
 PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 test "$PYPI_STATUS" = "200"
-python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/pypi.json" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl
+python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl
 REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
 test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
 IMMEDIATE_PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/immediate-pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 test "$IMMEDIATE_PYPI_STATUS" = "200"
-python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/immediate-pypi.json" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl
-python -m twine upload --repository-url https://upload.pypi.org/legacy/ dist/vercor-0.4.0.tar.gz
+python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/immediate-pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl
+python -m twine upload --repository-url https://upload.pypi.org/legacy/ "$CI_DIST_DIR/vercor-0.4.0.tar.gz"
 ```
 
 If an incorrect package file was accepted, yank 0.4.0 through package-index
@@ -490,191 +490,66 @@ administration, preserve the tag and evidence, and prepare a new patch release.
 Published files cannot be replaced and a released version must not be reused
 for different bytes.
 
-### Missing hosted release
+### Resume an exact GitHub draft
 
-Use only when the hosted-release API query proved no release exists:
-
-```text
-set -euo pipefail
-test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
-GITHUB_TOKEN="$(gh auth token)"
-test -n "${GITHUB_TOKEN:-}"
-HOSTED_RECOVERY_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "404"
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-IMMEDIATE_REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$IMMEDIATE_REPO_STATUS" = "200"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "404"
-gh release create v0.4.0 --repo nutrik/vercor --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz
-```
-
-### Missing hosted wheel asset only
+Use only after PyPI contains the exact two CI-produced files. Authenticated
+release enumeration includes drafts; a duplicate exact tag, a published
+release, wrong metadata, an unexpected asset, or any digest mismatch is a stop
+condition. A valid draft may contain zero, one, or both expected assets.
 
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
+test -n "${RELEASE_RUN_ID:-}"
+python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 GITHUB_TOKEN="$(gh auth token)"
+export GITHUB_TOKEN
 test -n "${GITHUB_TOKEN:-}"
-HOSTED_RECOVERY_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/release.json" --expect vercor-0.4.0.tar.gz
-UNAFFECTED_ASSET_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$UNAFFECTED_ASSET_DIR"
-python tools/validate_release_state.py files --directory "$UNAFFECTED_ASSET_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0.tar.gz
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/immediate-release.json" --expect vercor-0.4.0.tar.gz
-IMMEDIATE_UNAFFECTED_ASSET_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$IMMEDIATE_UNAFFECTED_ASSET_DIR"
-python tools/validate_release_state.py files --directory "$IMMEDIATE_UNAFFECTED_ASSET_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0.tar.gz
-gh release upload v0.4.0 --repo nutrik/vercor dist/vercor-0.4.0-py3-none-any.whl
+GITHUB_RECOVERY_DIR="$(mktemp -d)"
+PYPI_STATUS="$(curl -sS -L -o "$GITHUB_RECOVERY_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
+test "$PYPI_STATUS" = "200"
+python tools/validate_release_state.py pypi --json "$GITHUB_RECOVERY_DIR/pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
+check_tag_binding() {
+  test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headSha --jq .headSha)" = "$RELEASE_COMMIT"
+  test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json event --jq .event)" = "push"
+  test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headBranch --jq .headBranch)" = "v0.4.0"
+  REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
+  test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
+}
+gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
+python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state absent draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+RELEASE_STATE="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["state"])' "$GITHUB_RECOVERY_DIR/release-state.json")"
+if [ "$RELEASE_STATE" = "absent" ]; then
+  check_tag_binding
+  gh release create v0.4.0 --repo nutrik/vercor --verify-tag --draft --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md
+  gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
+  python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+fi
+WHEEL_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$GITHUB_RECOVERY_DIR/release-state.json" vercor-0.4.0-py3-none-any.whl)"
+if [ "$WHEEL_MISSING" = "True" ]; then
+  RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$GITHUB_RECOVERY_DIR/release-state.json")"
+  check_tag_binding
+  gh api --method POST --hostname uploads.github.com -H "Content-Type: application/octet-stream" "repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.0-py3-none-any.whl" --input "$CI_DIST_DIR/vercor-0.4.0-py3-none-any.whl" > "$GITHUB_RECOVERY_DIR/upload-wheel.json"
+  gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
+  python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+fi
+SDIST_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$GITHUB_RECOVERY_DIR/release-state.json" vercor-0.4.0.tar.gz)"
+if [ "$SDIST_MISSING" = "True" ]; then
+  RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$GITHUB_RECOVERY_DIR/release-state.json")"
+  check_tag_binding
+  gh api --method POST --hostname uploads.github.com -H "Content-Type: application/octet-stream" "repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.0.tar.gz" --input "$CI_DIST_DIR/vercor-0.4.0.tar.gz" > "$GITHUB_RECOVERY_DIR/upload-sdist.json"
+  gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
+  python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+fi
+gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
+python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+test "$(python -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))["missing"]))' "$GITHUB_RECOVERY_DIR/release-state.json")" -eq 0
+check_tag_binding
+gh release edit v0.4.0 --repo nutrik/vercor --draft=false
+gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
+python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state published --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
 ```
 
-### Missing hosted sdist asset only
-
-```text
-set -euo pipefail
-test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
-GITHUB_TOKEN="$(gh auth token)"
-test -n "${GITHUB_TOKEN:-}"
-HOSTED_RECOVERY_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/release.json" --expect vercor-0.4.0-py3-none-any.whl
-UNAFFECTED_ASSET_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$UNAFFECTED_ASSET_DIR"
-python tools/validate_release_state.py files --directory "$UNAFFECTED_ASSET_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/immediate-release.json" --expect vercor-0.4.0-py3-none-any.whl
-IMMEDIATE_UNAFFECTED_ASSET_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$IMMEDIATE_UNAFFECTED_ASSET_DIR"
-python tools/validate_release_state.py files --directory "$IMMEDIATE_UNAFFECTED_ASSET_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl
-gh release upload v0.4.0 --repo nutrik/vercor dist/vercor-0.4.0.tar.gz
-```
-
-### Hosted release metadata correction
-
-Use only when the tag and assets are correct and only title or notes differ:
-
-```text
-set -euo pipefail
-test -n "${RELEASE_COMMIT:-}"
-(cd dist && shasum -a 256 -c SHA256SUMS)
-GITHUB_TOKEN="$(gh auth token)"
-test -n "${GITHUB_TOKEN:-}"
-HOSTED_RECOVERY_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/release.json" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-VERIFIED_ASSET_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$VERIFIED_ASSET_DIR"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$VERIFIED_ASSET_DIR"
-python tools/validate_release_state.py files --directory "$VERIFIED_ASSET_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/immediate-release.json" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-IMMEDIATE_VERIFIED_ASSET_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$IMMEDIATE_VERIFIED_ASSET_DIR"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$IMMEDIATE_VERIFIED_ASSET_DIR"
-python tools/validate_release_state.py files --directory "$IMMEDIATE_VERIFIED_ASSET_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-gh release edit v0.4.0 --repo nutrik/vercor --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md
-```
-
-For an incorrect hosted asset, verify the local replacement bundle first,
-download only the selected remote asset, prove its digest differs from the
-manifest-verified local replacement, and clobber only that selected asset.
-
-### Replace differing hosted wheel asset
-
-```text
-set -euo pipefail
-test -n "${RELEASE_COMMIT:-}"
-test "${DESTRUCTIVE_ASSET_CLOBBER_APPROVED:-}" = "yes"
-(cd dist && shasum -a 256 -c SHA256SUMS)
-GITHUB_TOKEN="$(gh auth token)"
-test -n "${GITHUB_TOKEN:-}"
-HOSTED_RECOVERY_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/release.json" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-DOWNLOADED_SELECTED_DIR="$(mktemp -d)"
-DOWNLOADED_UNAFFECTED_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$DOWNLOADED_SELECTED_DIR"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$DOWNLOADED_UNAFFECTED_DIR"
-python tools/validate_release_state.py differs --file "$DOWNLOADED_SELECTED_DIR/vercor-0.4.0-py3-none-any.whl" --manifest dist/SHA256SUMS --name vercor-0.4.0-py3-none-any.whl
-python tools/validate_release_state.py files --directory "$DOWNLOADED_UNAFFECTED_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0.tar.gz
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/immediate-release.json" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-IMMEDIATE_SELECTED_DIR="$(mktemp -d)"
-IMMEDIATE_UNAFFECTED_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$IMMEDIATE_SELECTED_DIR"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$IMMEDIATE_UNAFFECTED_DIR"
-python tools/validate_release_state.py differs --file "$IMMEDIATE_SELECTED_DIR/vercor-0.4.0-py3-none-any.whl" --manifest dist/SHA256SUMS --name vercor-0.4.0-py3-none-any.whl
-python tools/validate_release_state.py files --directory "$IMMEDIATE_UNAFFECTED_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0.tar.gz
-gh release upload v0.4.0 --repo nutrik/vercor --clobber dist/vercor-0.4.0-py3-none-any.whl
-```
-
-### Replace differing hosted sdist asset
-
-```text
-set -euo pipefail
-test -n "${RELEASE_COMMIT:-}"
-test "${DESTRUCTIVE_ASSET_CLOBBER_APPROVED:-}" = "yes"
-(cd dist && shasum -a 256 -c SHA256SUMS)
-GITHUB_TOKEN="$(gh auth token)"
-test -n "${GITHUB_TOKEN:-}"
-HOSTED_RECOVERY_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/release.json" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-DOWNLOADED_SELECTED_DIR="$(mktemp -d)"
-DOWNLOADED_UNAFFECTED_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$DOWNLOADED_SELECTED_DIR"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$DOWNLOADED_UNAFFECTED_DIR"
-python tools/validate_release_state.py differs --file "$DOWNLOADED_SELECTED_DIR/vercor-0.4.0.tar.gz" --manifest dist/SHA256SUMS --name vercor-0.4.0.tar.gz
-python tools/validate_release_state.py files --directory "$DOWNLOADED_UNAFFECTED_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-IMMEDIATE_RELEASE_STATUS="$(curl -sS -L -o "$HOSTED_RECOVERY_DIR/immediate-release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-test "$IMMEDIATE_RELEASE_STATUS" = "200"
-python tools/validate_release_state.py assets --json "$HOSTED_RECOVERY_DIR/immediate-release.json" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
-IMMEDIATE_SELECTED_DIR="$(mktemp -d)"
-IMMEDIATE_UNAFFECTED_DIR="$(mktemp -d)"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0.tar.gz --dir "$IMMEDIATE_SELECTED_DIR"
-gh release download v0.4.0 --repo nutrik/vercor --pattern vercor-0.4.0-py3-none-any.whl --dir "$IMMEDIATE_UNAFFECTED_DIR"
-python tools/validate_release_state.py differs --file "$IMMEDIATE_SELECTED_DIR/vercor-0.4.0.tar.gz" --manifest dist/SHA256SUMS --name vercor-0.4.0.tar.gz
-python tools/validate_release_state.py files --directory "$IMMEDIATE_UNAFFECTED_DIR" --manifest dist/SHA256SUMS --expect vercor-0.4.0-py3-none-any.whl
-gh release upload v0.4.0 --repo nutrik/vercor --clobber dist/vercor-0.4.0.tar.gz
-```
-
-Once any 0.4.0 package artifact is public, preserve the published tag and
-evidence. Correct substantive mistakes in a new patch release.
+Do not edit metadata, overwrite assets, delete the tag, or delete a release to
+make recovery pass. Preserve unexpected state as evidence and prepare a new
+patch release when the exact-state validator rejects it.

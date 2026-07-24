@@ -105,6 +105,97 @@ def _validate_assets(arguments: argparse.Namespace) -> None:
     _require_exact_names(names, arguments.expect, description="asset set")
 
 
+def _release_list(path: Path) -> list[dict[str, Any]]:
+    """Read a flat REST release list or ``gh api --paginate --slurp`` pages."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError(f"{path}: expected a GitHub releases list")
+    if payload and all(isinstance(page, list) for page in payload):
+        releases = [item for page in payload for item in page]
+    else:
+        releases = payload
+    if not all(isinstance(item, dict) for item in releases):
+        raise ValueError(f"{path}: expected GitHub release objects")
+    return releases
+
+
+def _validate_github_releases(arguments: argparse.Namespace) -> None:
+    """Validate the unique exact-tag GitHub Release recovery state."""
+
+    releases = _release_list(arguments.json)
+    matching = [
+        release for release in releases if release.get("tag_name") == arguments.tag
+    ]
+    if len(matching) > 1:
+        raise ValueError(f"{arguments.tag}: duplicate exact-tag releases")
+
+    manifest = _read_manifest(arguments.manifest)
+    _require_exact_names(
+        list(manifest),
+        arguments.expect,
+        description="manifest entry set",
+    )
+    if not matching:
+        state = "absent"
+        release_id = None
+        present: list[str] = []
+    else:
+        release = matching[0]
+        if release.get("name") != arguments.title:
+            raise ValueError(f"{arguments.tag}: unexpected release title")
+        expected_notes = arguments.notes_file.read_text(encoding="utf-8")
+        if release.get("body") != expected_notes:
+            raise ValueError(f"{arguments.tag}: unexpected release notes")
+        if release.get("prerelease") is not False:
+            raise ValueError(f"{arguments.tag}: release must not be a prerelease")
+        draft = release.get("draft")
+        if not isinstance(draft, bool):
+            raise ValueError(f"{arguments.tag}: release draft state is not boolean")
+        state = "draft" if draft else "published"
+        release_id = release.get("id")
+        if (
+            not isinstance(release_id, int)
+            or isinstance(release_id, bool)
+            or release_id <= 0
+        ):
+            raise ValueError(f"{arguments.tag}: invalid release id")
+        assets = release.get("assets")
+        if not isinstance(assets, list) or not all(
+            isinstance(asset, dict) for asset in assets
+        ):
+            raise ValueError(f"{arguments.tag}: expected a release assets list")
+        names = [str(asset.get("name")) for asset in assets]
+        if len(names) != len(set(names)):
+            raise ValueError(f"{arguments.tag}: duplicate asset names")
+        unexpected = sorted(set(names).difference(arguments.expect))
+        if unexpected:
+            raise ValueError(
+                f"{arguments.tag}: unexpected draft asset: {unexpected[0]}"
+            )
+        for asset in assets:
+            name = str(asset["name"])
+            if asset.get("state") != "uploaded":
+                raise ValueError(f"{name}: GitHub asset is not uploaded")
+            expected_digest = manifest[name]
+            if asset.get("digest") != f"sha256:{expected_digest}":
+                raise ValueError(f"{name}: GitHub SHA-256 does not match manifest")
+        present = [name for name in arguments.expect if name in names]
+
+    if state not in arguments.allow_state:
+        raise ValueError(f"{state} release state is not allowed")
+    output = {
+        "state": state,
+        "release_id": release_id,
+        "present": present,
+        "missing": [name for name in arguments.expect if name not in present],
+    }
+    arguments.state_output.write_text(
+        json.dumps(output, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _validate_files(arguments: argparse.Namespace) -> None:
     """Validate exact downloaded filenames and their manifest digests."""
 
@@ -113,6 +204,11 @@ def _validate_files(arguments: argparse.Namespace) -> None:
     )
     _require_exact_names(actual_names, arguments.expect, description="file set")
     manifest = _read_manifest(arguments.manifest)
+    _require_exact_names(
+        list(manifest),
+        arguments.expect,
+        description="manifest entry set",
+    )
     for name in arguments.expect:
         expected_digest = manifest.get(name)
         if expected_digest is None:
@@ -154,6 +250,22 @@ def _parser() -> argparse.ArgumentParser:
     assets.add_argument("--json", type=Path, required=True)
     assets.add_argument("--expect", nargs="+", required=True)
     assets.set_defaults(run=_validate_assets)
+
+    github_releases = subparsers.add_parser("github-releases")
+    github_releases.add_argument("--json", type=Path, required=True)
+    github_releases.add_argument("--manifest", type=Path, required=True)
+    github_releases.add_argument("--tag", required=True)
+    github_releases.add_argument("--title", required=True)
+    github_releases.add_argument("--notes-file", type=Path, required=True)
+    github_releases.add_argument("--expect", nargs="+", required=True)
+    github_releases.add_argument(
+        "--allow-state",
+        nargs="+",
+        choices=("absent", "draft", "published"),
+        required=True,
+    )
+    github_releases.add_argument("--state-output", type=Path, required=True)
+    github_releases.set_defaults(run=_validate_github_releases)
 
     files = subparsers.add_parser("files")
     files.add_argument("--directory", type=Path, required=True)
