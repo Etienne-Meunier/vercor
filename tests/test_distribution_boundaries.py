@@ -574,6 +574,36 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     assert "> SHA256SUMS" not in commands
     assert "python -m build" not in commands
 
+    repository_query = (
+        'gh api "repos/${GITHUB_REPOSITORY}" > "$STATE_DIR/repository.json"'
+    )
+    repository_push_check = (
+        "python tools/validate_release_state.py github-repository-push"
+    )
+    repository_json_argument = '--json "$STATE_DIR/repository.json"'
+    release_enumeration = (
+        "gh api --paginate --slurp "
+        '"repos/${GITHUB_REPOSITORY}/releases?per_page=100"'
+    )
+    draft_visibility_preflights = tuple(
+        step["run"]
+        for step in publish["steps"]
+        if step.get("name")
+        in {
+            "Classify exact public release state",
+            "Revalidate immediately before PyPI mutation",
+        }
+    )
+    assert len(draft_visibility_preflights) == 2
+    for preflight in draft_visibility_preflights:
+        assert repository_push_check in preflight
+        assert (
+            preflight.index(repository_query)
+            < preflight.index(repository_push_check)
+            < preflight.index(repository_json_argument)
+            < preflight.index(release_enumeration)
+        )
+
     pypi_publish_steps = tuple(
         (index, step)
         for index, step in enumerate(publish["steps"])
