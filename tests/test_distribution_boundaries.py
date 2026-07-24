@@ -540,6 +540,51 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         for line in release_validation["run"].splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     )
+    validation_command = release_validation["run"]
+    checksum_index = validation_command.index("sha256sum -c SHA256SUMS")
+    preflight_checks = (
+        (
+            "PyPI absence",
+            'PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json"',
+            "https://pypi.org/pypi/vercor/${VERSION}/json",
+            'test "$PYPI_STATUS" = "404"',
+            False,
+        ),
+        (
+            "authenticated repository availability",
+            'REPO_STATUS="$(curl -sS -L -o "$STATE_DIR/repository.json"',
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}",
+            'test "$REPO_STATUS" = "200"',
+            True,
+        ),
+        (
+            "authenticated release absence",
+            'RELEASE_STATUS="$(curl -sS -L -o "$STATE_DIR/release.json"',
+            "releases/tags/${GITHUB_REF_NAME}",
+            'test "$RELEASE_STATUS" = "404"',
+            True,
+        ),
+    )
+    for label, query, endpoint, assertion, authenticated in preflight_checks:
+        query_line = next(
+            (line for line in validation_command.splitlines() if query in line), None
+        )
+        assert query_line is not None, f"pre-PyPI validation step lacks {label} query"
+        assert (
+            endpoint in query_line
+        ), f"pre-PyPI validation step lacks {label} endpoint"
+        if authenticated:
+            assert (
+                "Authorization: Bearer $GH_TOKEN" in query_line
+            ), f"pre-PyPI validation step lacks authenticated {label} query"
+        assert (
+            assertion in validation_command
+        ), f"pre-PyPI validation step lacks {label} assertion"
+        assert (
+            validation_command.index(query_line)
+            < validation_command.index(assertion)
+            < checksum_index
+        ), f"pre-PyPI validation orders {label} after checksum"
     assert release_validation_lines[-1] == "sha256sum -c SHA256SUMS"
     assert manifest_generation not in release_validation["run"]
     assert twine_check_index == release_validation_index

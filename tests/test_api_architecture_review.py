@@ -616,12 +616,81 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         for line in release_validation["run"].splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     )
+    validation_command = release_validation["run"]
+    checksum_index = validation_command.index("sha256sum -c SHA256SUMS")
+    preflight_checks = (
+        (
+            "PyPI absence",
+            'PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json"',
+            "https://pypi.org/pypi/vercor/${VERSION}/json",
+            'test "$PYPI_STATUS" = "404"',
+            False,
+        ),
+        (
+            "authenticated repository availability",
+            'REPO_STATUS="$(curl -sS -L -o "$STATE_DIR/repository.json"',
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}",
+            'test "$REPO_STATUS" = "200"',
+            True,
+        ),
+        (
+            "authenticated release absence",
+            'RELEASE_STATUS="$(curl -sS -L -o "$STATE_DIR/release.json"',
+            "releases/tags/${GITHUB_REF_NAME}",
+            'test "$RELEASE_STATUS" = "404"',
+            True,
+        ),
+    )
+    for label, query, endpoint, assertion, authenticated in preflight_checks:
+        query_line = next(
+            (line for line in validation_command.splitlines() if query in line), None
+        )
+        assert query_line is not None, f"pre-PyPI validation step lacks {label} query"
+        assert (
+            endpoint in query_line
+        ), f"pre-PyPI validation step lacks {label} endpoint"
+        if authenticated:
+            assert (
+                "Authorization: Bearer $GH_TOKEN" in query_line
+            ), f"pre-PyPI validation step lacks authenticated {label} query"
+        assert (
+            assertion in validation_command
+        ), f"pre-PyPI validation step lacks {label} assertion"
+        assert (
+            validation_command.index(query_line)
+            < validation_command.index(assertion)
+            < checksum_index
+        ), f"pre-PyPI validation orders {label} after checksum"
     assert release_validation_lines[-1] == "sha256sum -c SHA256SUMS"
     assert manifest_generation not in release_validation["run"]
     assert validation_index == release_validation_index
     assert initial_hash_index < release_validation_index
     assert release_validation_index + 1 == publish_action_index
     assert "python -m build" not in publish_commands
+
+
+@pytest.mark.fast_always
+def test_workflow_run_blocks_are_bash_syntax_valid() -> None:
+    """Parse every workflow shell script before GitHub Actions can execute it."""
+
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    for job_name, job in workflow["jobs"].items():
+        for step_index, step in enumerate(job["steps"]):
+            command = step.get("run")
+            if not isinstance(command, str):
+                continue
+            completed = subprocess.run(
+                ["bash", "-n"],
+                input=command,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            step_name = step.get("name", "unnamed run step")
+            assert completed.returncode == 0, (
+                f"workflow job {job_name!r}, step {step_index} ({step_name!r}) "
+                f"fails bash -n:\n{completed.stderr}"
+            )
 
 
 @pytest.mark.fast_always
