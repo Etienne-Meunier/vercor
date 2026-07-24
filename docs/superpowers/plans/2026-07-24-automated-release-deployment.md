@@ -29,6 +29,8 @@ must fail when PyPI or any exact-tag draft/published release already exists.
 The release re-review adds draft-aware pre-tag enumeration and a canonical `https://uploads.github.com` request target
 generated with a safely encoded asset name; bounded missing-file recovery polling
 requires PyPI's final exact two-file producer-manifest state.
+Both pre-tag transcripts accept release absence only after repository `permissions.push` is true,
+proving authenticated enumeration can see drafts.
 
 ## Non-negotiable boundaries
 
@@ -212,8 +214,11 @@ Before the cohesive commit:
 5. Run `pytest tests/ -q --fast --tb=short`.
 6. Run `git diff --check` and inspect the complete diff.
 7. Keep `PROGRESS.md` at or below its 180-line active-memory limit.
-8. Append `.superpowers/sdd/final-review-fix-report.md` with exact RED/GREEN
+8. Exercise installed `gh` with a synthetic token through a closed loopback
+   proxy, proving the production URL targets `uploads.github.com` while the
+   old hostname form targets `api.uploads.github.com`.
+9. Append `.superpowers/sdd/final-review-fix-report.md` with exact RED/GREEN
    commands and counts, action-ref sources, changed files, commit SHA, remaining
    concerns, and a statement that no external mutation ran.
-9. Commit the complete correction once, without pushing or creating/moving a
+10. Commit the complete correction once, without pushing or creating/moving a
    tag.

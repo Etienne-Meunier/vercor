@@ -19,6 +19,9 @@ The release re-review additionally requires draft-aware pre-tag enumeration, a
 canonical `https://uploads.github.com` request target for every raw asset
 upload, and bounded missing-file recovery polling that proves PyPI eventually
 contains the exact two producer-manifest digests.
+Pre-tag absence is trustworthy only after authenticated repository JSON proves
+repository `permissions.push` is true, because that permission makes draft
+releases visible to enumeration.
 
 ## Purpose
 
@@ -169,6 +172,9 @@ require:
 - authenticated, fail-closed PyPI and draft-aware GitHub preflights;
 - authenticated paginated pre-tag release enumeration that rejects draft as
   well as published exact-tag state;
+- an installed-`gh` request-construction regression using a synthetic token and
+  closed loopback proxy, proving the canonical uploads host without contacting
+  GitHub;
 - bounded post-publisher PyPI filename/digest polling;
 - production publication through `secrets.PYPI_API_TOKEN`, without exposing
   the token to any other step or job; and

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import socket
 from pathlib import Path
 import subprocess
 import sys
@@ -124,6 +126,94 @@ def _run_github_tag_absent_validator(
     )
 
 
+def _run_github_repository_push_validator(
+    tmp_path: Path,
+    repository: object,
+) -> subprocess.CompletedProcess[str]:
+    """Run the explicit repository push-permission validator."""
+
+    payload = tmp_path / "repository.json"
+    payload.write_text(json.dumps(repository), encoding="utf-8")
+    return _run_validator(
+        "github-repository-push",
+        "--json",
+        str(payload),
+    )
+
+
+def _run_isolated_gh_request(
+    tmp_path: Path,
+    *arguments: str,
+) -> subprocess.CompletedProcess[str]:
+    """Run gh through a closed loopback proxy with only a synthetic token."""
+
+    gh = shutil.which("gh")
+    if gh is None:
+        pytest.skip("gh is not installed")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        proxy_port = int(probe.getsockname()[1])
+    proxy_url = f"http://127.0.0.1:{proxy_port}"
+    config_dir = tmp_path / "gh-config"
+    state_dir = tmp_path / "gh-state"
+    config_dir.mkdir(exist_ok=True)
+    state_dir.mkdir(exist_ok=True)
+    return subprocess.run(
+        [gh, "api", *arguments],
+        cwd=PROJECT_ROOT,
+        env={
+            "GH_CONFIG_DIR": str(config_dir),
+            "GH_DEBUG": "api",
+            "GH_TOKEN": "synthetic-request-target-token",
+            "HTTPS_PROXY": proxy_url,
+            "https_proxy": proxy_url,
+            "NO_PROXY": "",
+            "XDG_STATE_HOME": str(state_dir),
+            "no_proxy": "",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+
+
+@pytest.mark.fast_always
+def test_github_repository_push_permission_accepts_explicit_true(
+    tmp_path: Path,
+) -> None:
+    """Accept only repository JSON proving the caller can see draft releases."""
+
+    completed = _run_github_repository_push_validator(
+        tmp_path,
+        {"permissions": {"push": True}},
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "repository",
+    [
+        {"permissions": {"push": False}},
+        {},
+        {"permissions": []},
+        {"permissions": {"push": "true"}},
+    ],
+)
+def test_github_repository_push_permission_rejects_unproven_state(
+    tmp_path: Path,
+    repository: object,
+) -> None:
+    """Reject false, missing, and malformed repository permission state."""
+
+    completed = _run_github_repository_push_validator(tmp_path, repository)
+
+    assert completed.returncode != 0
+    assert "repository permissions.push must be true" in completed.stderr
+
+
 @pytest.mark.fast_always
 @pytest.mark.parametrize(
     "filename",
@@ -172,6 +262,52 @@ def test_github_upload_url_rejects_path_like_asset_name() -> None:
 
     assert completed.returncode != 0
     assert "asset name must be a plain filename" in completed.stderr
+
+
+@pytest.mark.fast_always
+def test_installed_gh_uses_canonical_upload_request_target(
+    tmp_path: Path,
+) -> None:
+    """Exercise gh's actual request construction without contacting GitHub."""
+
+    old_construction = _run_isolated_gh_request(
+        tmp_path,
+        "--hostname",
+        "uploads.github.com",
+        f"repos/nutrik/vercor/releases/42/assets?name={WHEEL}",
+        "--method",
+        "GET",
+    )
+    assert old_construction.returncode != 0
+    assert "synthetic-request-target-token" not in old_construction.stderr
+    assert "Request to https://api.uploads.github.com/" in old_construction.stderr
+    assert "Host: api.uploads.github.com" in old_construction.stderr
+    assert "127.0.0.1" in old_construction.stderr
+
+    target = _run_validator(
+        "github-upload-url",
+        "--repository",
+        "nutrik/vercor",
+        "--release-id",
+        "42",
+        "--name",
+        WHEEL,
+    )
+    assert target.returncode == 0, target.stderr
+    completed = _run_isolated_gh_request(
+        tmp_path,
+        target.stdout.strip(),
+        "--method",
+        "GET",
+    )
+    assert completed.returncode != 0
+    assert "synthetic-request-target-token" not in completed.stderr
+    assert "Request to https://uploads.github.com/" in completed.stderr
+    assert "Host: uploads.github.com" in completed.stderr
+    assert "api.uploads.github.com" not in completed.stderr
+    assert "127.0.0.1" in completed.stderr
+    assert (tmp_path / "gh-state" / "gh" / "device-id").is_file()
+    assert not (PROJECT_ROOT / ".local" / "state" / "gh" / "device-id").exists()
 
 
 @pytest.mark.fast_always

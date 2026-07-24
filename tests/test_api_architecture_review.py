@@ -568,6 +568,7 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         )
         assert 'GH_TOKEN="$(gh auth token)"' in section
         assert "gh api repos/nutrik/vercor" in section
+        assert "tools/validate_release_state.py github-repository-push" in section
         assert release_enumeration in section
         assert "tools/validate_release_state.py github-tag-absent" in section
         assert "--tag v0.4.0" in section
@@ -575,6 +576,15 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         assert "RELEASE_STATUS" not in section
         assert pypi_url in section
         assert 'test "$PYPI_STATUS" = "404"' in section
+        repository_index = section.index("gh api repos/nutrik/vercor")
+        permission_index = section.index(
+            "tools/validate_release_state.py github-repository-push"
+        )
+        enumeration_index = section.index(release_enumeration)
+        absence_index = section.index(
+            "tools/validate_release_state.py github-tag-absent"
+        )
+        assert repository_index < permission_index < enumeration_index < absence_index
 
     assert prepare.index(release_enumeration) < guide.index("git tag -a")
 

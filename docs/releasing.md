@@ -165,9 +165,10 @@ The workflow file runs validation on pushes to `main`, pull requests targeting
 `main`, and version tags. Only a version tag can satisfy the deployment job's
 condition. A push to `refactor` alone does not run it. Before CI or a push,
 fetch the current protected branch, prove it is an ancestor of the reviewed
-release commit, prove authenticated repository access, and enumerate every
-release page so an exact-tag draft cannot be mistaken for absence. PyPI 0.4.0
-must also be absent:
+release commit, prove the authenticated identity has repository push
+permission (and therefore receives drafts from release enumeration), and
+enumerate every release page so an exact-tag draft cannot be mistaken for
+absence. PyPI 0.4.0 must also be absent:
 
 ```text
 set -euo pipefail
@@ -183,6 +184,7 @@ export GH_TOKEN
 test -n "${GH_TOKEN:-}"
 PREFLIGHT_DIR="$(mktemp -d)"
 gh api repos/nutrik/vercor > "$PREFLIGHT_DIR/repository.json"
+python tools/validate_release_state.py github-repository-push --json "$PREFLIGHT_DIR/repository.json"
 gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$PREFLIGHT_DIR/releases.json"
 python tools/validate_release_state.py github-tag-absent --json "$PREFLIGHT_DIR/releases.json" --tag v0.4.0
 PYPI_STATUS="$(curl -sS -L -o "$PREFLIGHT_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
@@ -238,8 +240,9 @@ Do not select a `push` run, a run for another workflow, or a run at another SHA.
 
 Immediately before tagging, fetch `main` again, repeat the ancestry and
 authenticated public-namespace preflights, and confirm the local and remote tag
-are absent. The manifest-free exact-tag validator requires a well-formed
-authenticated release listing with zero exact-tag draft or published matches:
+are absent. The repository permission check must prove push access before the
+manifest-free exact-tag validator accepts a well-formed authenticated release
+listing with zero exact-tag draft or published matches:
 
 Run the following transcript only with explicit tag-push and package-publication
 authority. Pushing the annotated tag starts the automated publication after its
@@ -260,6 +263,7 @@ export GH_TOKEN
 test -n "${GH_TOKEN:-}"
 TAG_PREFLIGHT_DIR="$(mktemp -d)"
 gh api repos/nutrik/vercor > "$TAG_PREFLIGHT_DIR/repository.json"
+python tools/validate_release_state.py github-repository-push --json "$TAG_PREFLIGHT_DIR/repository.json"
 gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$TAG_PREFLIGHT_DIR/releases.json"
 python tools/validate_release_state.py github-tag-absent --json "$TAG_PREFLIGHT_DIR/releases.json" --tag v0.4.0
 PYPI_STATUS="$(curl -sS -L -o "$TAG_PREFLIGHT_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
