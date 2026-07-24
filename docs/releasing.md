@@ -238,6 +238,10 @@ authenticated public-namespace preflights, and confirm the local and remote tag
 are absent. A repository HTTP 404 is never accepted as evidence that the
 release is absent:
 
+Run the following transcript only with explicit tag-push and package-publication
+authority. Pushing the annotated tag starts the automated publication after its
+protected workflow gates pass.
+
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
@@ -277,9 +281,6 @@ export REMOTE_TAG_COMMIT
 test -n "${REMOTE_TAG_COMMIT:-}"
 test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
 ```
-
-An existing local or remote tag is a stop condition. Never overwrite or repoint
-a published release tag.
 
 Pushing the annotated `v0.4.0` tag starts `python-package.yml`. That tag push
 is the publication authorization: after every CI lane passes, the protected
@@ -328,7 +329,26 @@ python -m venv "$published_check_dir/venv"
 "$published_check_dir/venv/bin/python" -m pip install --no-cache-dir "vercor==0.4.0"
 "$published_check_dir/venv/bin/python" -c 'import importlib.metadata as m; assert m.version("vercor") == "0.4.0"; print(m.version("vercor"))'
 "$published_check_dir/venv/bin/python" -c 'from vercor import Clock, Coupler, Exchange, RectilinearGrid, RunState, RuntimeOptions'
-gh release view v0.4.0 --repo nutrik/vercor --json tagName,name,isDraft,isPrerelease,assets
+RELEASE_VIEW_DIR="$(mktemp -d)"
+RELEASE_VIEW_JSON="$RELEASE_VIEW_DIR/release.json"
+export RELEASE_VIEW_JSON
+gh release view v0.4.0 --repo nutrik/vercor --json tagName,name,isDraft,isPrerelease,assets > "$RELEASE_VIEW_JSON"
+python - "$RELEASE_VIEW_JSON" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+expected = {
+    "tagName": "v0.4.0",
+    "name": "VerCOR 0.4.0",
+    "isDraft": False,
+    "isPrerelease": False,
+}
+for key, value in expected.items():
+    if payload.get(key) != value:
+        raise SystemExit(f"unexpected GitHub Release {key}: {payload.get(key)!r}")
+PY
+python tools/validate_release_state.py assets --json "$RELEASE_VIEW_JSON" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz
 release_verify_dir="$(mktemp -d)"
 gh release download v0.4.0 --repo nutrik/vercor --dir "$release_verify_dir"
 test "$(shasum -a 256 "$release_verify_dir/vercor-0.4.0-py3-none-any.whl" | awk '{print $1}')" = "$(awk '$2 == "vercor-0.4.0-py3-none-any.whl" {print $1}' dist/SHA256SUMS)"

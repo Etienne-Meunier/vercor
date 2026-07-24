@@ -641,6 +641,73 @@ def test_release_bundle_contains_only_vercor_distributions() -> None:
 
 
 @pytest.mark.fast_always
+def test_release_guide_binds_tag_authority_workflow_selection_and_hosted_state() -> (
+    None
+):
+    """Require the ordinary tagged-release handoff to remain fail-closed."""
+
+    releasing = RELEASING_PATH.read_text(encoding="utf-8")
+    deployment = _section(releasing, "## Repository deployment configuration")
+    prepare = _section(releasing, "## 5. Prepare the required release pull request")
+    tag = _section(releasing, "## 6. Create and verify the annotated tag")
+    publish = _section(
+        releasing, "## 7. Publish packages and create the hosted release"
+    )
+    verify = _section(
+        releasing, "## 8. Verify the published package and hosted release"
+    )
+    prepare_text = " ".join(prepare.split())
+    tag_text = " ".join(tag.split())
+    publish_text = " ".join(publish.split())
+
+    for required in ("`PYPI_API_TOKEN`", "`TEST_PYPI_API_TOKEN`", "`release`"):
+        assert required in deployment
+    for required in (
+        "pushes to `main`",
+        "pull requests targeting `main`",
+        "version tags",
+        "Only a version tag can satisfy the deployment job's condition.",
+    ):
+        assert required in prepare_text
+
+    authority = "explicit tag-push and package-publication authority"
+    tag_push = "git push origin refs/tags/v0.4.0"
+    assert authority in tag_text
+    assert tag_text.index(authority) < tag_text.index(tag_push)
+    assert "Pushing the annotated `v0.4.0` tag starts `python-package.yml`." in tag_text
+    assert tag_text.count("Never overwrite or repoint a published release tag.") == 1
+
+    for required in (
+        '--event push --commit "$RELEASE_COMMIT"',
+        '.event == "push"',
+        '.headBranch == "v0.4.0"',
+        ".headSha == env.RELEASE_COMMIT",
+        'gh run watch "$RELEASE_RUN_ID" --repo nutrik/vercor --exit-status',
+        "--json headSha --jq .headSha)",
+        "--json event --jq .event)",
+        "--json headBranch --jq .headBranch)",
+        "--json conclusion --jq .conclusion)",
+        "If PyPI publication succeeds but GitHub Release creation fails",
+        "rerunning the ordinary deployment must fail on the existing PyPI version",
+        "rather than silently skipping it.",
+    ):
+        assert required in publish_text
+
+    for required in (
+        "tagName",
+        "name",
+        "isDraft",
+        "isPrerelease",
+        '"v0.4.0"',
+        '"VerCOR 0.4.0"',
+        "tools/validate_release_state.py assets",
+        "vercor-0.4.0-py3-none-any.whl",
+        "vercor-0.4.0.tar.gz",
+    ):
+        assert required in verify
+
+
+@pytest.mark.fast_always
 def test_ci_quality_job_enforces_static_full_and_coverage_gates() -> None:
     workflow = yaml.safe_load(
         (PROJECT_ROOT / ".github/workflows/python-package.yml").read_text(
