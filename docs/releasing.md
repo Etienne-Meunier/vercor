@@ -4,6 +4,15 @@ This is the verification procedure for a release candidate. Preparing a
 candidate does not authorize a commit, pull request, tag, push, upload,
 publication, merge, or hosted release.
 
+## Repository deployment configuration
+
+Tagged deployment uses the existing production repository secret
+`PYPI_API_TOKEN`. Keep `TEST_PYPI_API_TOKEN` reserved for TestPyPI; the release
+workflow never references it. Configure a GitHub Actions environment named
+`release` and add the required reviewers or other deployment protection rules
+before pushing a version tag. The workflow grants `contents: write` and exposes
+the production token only in the tag-only `publish-release` job.
+
 ## 1. Confirm and review the candidate
 
 - Work from the intended `refactor` branch with complete history.
@@ -140,15 +149,19 @@ python -m pytest tests/test_v0_4_workflow_execution.py::test_output_free_workflo
 ```
 
 The hosted workflow repeats base, JCM, Veros, wheel/sdist, external-extension,
-mypy, and macOS lanes on its configured Python matrix.
+mypy, and macOS lanes on its configured Python matrix. Pull requests and
+`main` pushes run validation only. A pushed version tag matching `v*.*.*` runs
+the same gates and, after all pass, the protected `publish-release` job
+publishes the tested artifact bundle.
 
 ## 5. Prepare the required release pull request
 
-The workflow file triggers only on pushes to `main` and pull requests targeting
-`main`. A push to `refactor` alone does not run it. Before CI or a push, fetch
-the current protected branch, prove it is an ancestor of the reviewed release
-commit, and distinguish repository access (HTTP 200) from release absence
-(HTTP 404). PyPI 0.4.0 must also be absent:
+The workflow file runs validation on pushes to `main`, pull requests targeting
+`main`, and version tags. Only a version tag can satisfy the deployment job's
+condition. A push to `refactor` alone does not run it. Before CI or a push,
+fetch the current protected branch, prove it is an ancestor of the reviewed
+release commit, and distinguish repository access (HTTP 200) from release
+absence (HTTP 404). PyPI 0.4.0 must also be absent:
 
 ```text
 set -euo pipefail
@@ -268,40 +281,41 @@ test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
 An existing local or remote tag is a stop condition. Never overwrite or repoint
 a published release tag.
 
+Pushing the annotated `v0.4.0` tag starts `python-package.yml`. That tag push
+is the publication authorization: after every CI lane passes, the protected
+deployment job validates the tag against `pyproject.toml`, downloads the exact
+two-file `vercor-distributions` artifact, checks both public namespaces, uses
+`PYPI_API_TOKEN` to publish to PyPI, and creates the GitHub Release with the
+same files. An existing local or remote tag is a stop condition. Never
+overwrite or repoint a published release tag.
+
 ## 7. Publish packages and create the hosted release
 
-Run only with explicit package-publication and hosted-release authority. The
-checksum manifest is verified immediately before each external artifact upload:
+Pushing the annotated `v0.4.0` tag starts the automated deployment. Do not run
+a second local Twine upload or create the GitHub Release locally during the
+ordinary release path. The repository secret `PYPI_API_TOKEN` is supplied only
+to the production publish action in `python-package.yml`.
 
 ```text
 set -euo pipefail
 test -n "${RELEASE_COMMIT:-}"
 test "$(git rev-parse 'v0.4.0^{commit}')" = "$RELEASE_COMMIT"
-REMOTE_TAG_COMMIT="$(git ls-remote origin 'refs/tags/v0.4.0^{}' | awk '{print $1}')"
-export REMOTE_TAG_COMMIT
-test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"
-python -m twine check dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz
-(cd dist && shasum -a 256 -c SHA256SUMS)
-PUBLISH_STATE_DIR="$(mktemp -d)"
-PYPI_STATUS="$(curl -sS -L -o "$PUBLISH_STATE_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
-export PYPI_STATUS
-test "$PYPI_STATUS" = "404"
-python -m twine upload --repository-url https://upload.pypi.org/legacy/ dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz
-(cd dist && shasum -a 256 -c SHA256SUMS)
-GITHUB_TOKEN="$(gh auth token)"
-export GITHUB_TOKEN
-test -n "${GITHUB_TOKEN:-}"
-REPO_STATUS="$(curl -sS -L -o "$PUBLISH_STATE_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-export REPO_STATUS
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$PUBLISH_STATE_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-export RELEASE_STATUS
-test "$RELEASE_STATUS" = "404"
-gh release create v0.4.0 --repo nutrik/vercor --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz
+RELEASE_RUN_ID="$(gh run list --repo nutrik/vercor --workflow python-package.yml --event push --commit "$RELEASE_COMMIT" --limit 20 --json databaseId,event,headBranch,headSha --jq 'map(select(.event == "push" and .headBranch == "v0.4.0" and .headSha == env.RELEASE_COMMIT)) | sort_by(.databaseId) | last | .databaseId // empty')"
+export RELEASE_RUN_ID
+test -n "${RELEASE_RUN_ID:-}"
+gh run watch "$RELEASE_RUN_ID" --repo nutrik/vercor --exit-status
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headSha --jq .headSha)" = "$RELEASE_COMMIT"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json event --jq .event)" = "push"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json headBranch --jq .headBranch)" = "v0.4.0"
+test "$(gh run view "$RELEASE_RUN_ID" --repo nutrik/vercor --json conclusion --jq .conclusion)" = "success"
 ```
 
-The temporary external-extension fixture wheel is neither checksummed nor
-published to the VerCOR package index or hosted release.
+If the tag run has not appeared, is waiting for approval in the protected
+`release` environment, or has not completed, stop and inspect that exact run.
+Do not select a branch-push or pull-request run. If PyPI publication succeeds
+but GitHub Release creation fails, use the exact-state recovery procedure
+below; rerunning the ordinary deployment must fail on the existing PyPI version
+rather than silently skipping it.
 
 ## 8. Verify the published package and hosted release
 
