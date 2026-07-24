@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -104,6 +105,142 @@ def _run_github_release_validator(
         str(state),
     )
     return completed, state
+
+
+def _run_github_tag_absent_validator(
+    tmp_path: Path,
+    releases: object,
+) -> subprocess.CompletedProcess[str]:
+    """Run the manifest-free exact-tag absence validator."""
+
+    payload = tmp_path / "releases.json"
+    payload.write_text(json.dumps(releases), encoding="utf-8")
+    return _run_validator(
+        "github-tag-absent",
+        "--json",
+        str(payload),
+        "--tag",
+        "v0.4.0",
+    )
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "filename",
+    [
+        WHEEL,
+        SDIST,
+        "release notes+evidence.txt",
+    ],
+)
+def test_github_upload_url_uses_canonical_host_and_safe_filename_query(
+    filename: str,
+) -> None:
+    """Construct the exact uploads host target and encode its filename query."""
+
+    completed = _run_validator(
+        "github-upload-url",
+        "--repository",
+        "nutrik/vercor",
+        "--release-id",
+        "42",
+        "--name",
+        filename,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    target = urlsplit(completed.stdout.strip())
+    assert target.scheme == "https"
+    assert target.netloc == "uploads.github.com"
+    assert target.path == "/repos/nutrik/vercor/releases/42/assets"
+    assert parse_qs(target.query, strict_parsing=True) == {"name": [filename]}
+
+
+@pytest.mark.fast_always
+def test_github_upload_url_rejects_path_like_asset_name() -> None:
+    """Keep the upload query bound to one filename rather than a path."""
+
+    completed = _run_validator(
+        "github-upload-url",
+        "--repository",
+        "nutrik/vercor",
+        "--release-id",
+        "42",
+        "--name",
+        "../unexpected.whl",
+    )
+
+    assert completed.returncode != 0
+    assert "asset name must be a plain filename" in completed.stderr
+
+
+@pytest.mark.fast_always
+def test_github_tag_absence_accepts_paginated_unrelated_releases(
+    tmp_path: Path,
+) -> None:
+    """Accept a well-formed authenticated listing with no exact-tag release."""
+
+    completed = _run_github_tag_absent_validator(
+        tmp_path,
+        [[{"id": 7, "tag_name": "v0.3.0", "draft": False}], []],
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize("draft", [True, False])
+def test_github_tag_absence_rejects_draft_or_published_exact_tag(
+    tmp_path: Path,
+    draft: bool,
+) -> None:
+    """Treat both draft and published exact-tag releases as occupied state."""
+
+    completed = _run_github_tag_absent_validator(
+        tmp_path,
+        [[{"id": 42, "tag_name": "v0.4.0", "draft": draft}]],
+    )
+
+    assert completed.returncode != 0
+    assert "exact-tag release already exists" in completed.stderr
+
+
+@pytest.mark.fast_always
+def test_github_tag_absence_rejects_duplicate_exact_tag_releases(
+    tmp_path: Path,
+) -> None:
+    """Reject an ambiguous listing with duplicate exact-tag releases."""
+
+    completed = _run_github_tag_absent_validator(
+        tmp_path,
+        [
+            {"id": 42, "tag_name": "v0.4.0", "draft": True},
+            {"id": 43, "tag_name": "v0.4.0", "draft": False},
+        ],
+    )
+
+    assert completed.returncode != 0
+    assert "duplicate exact-tag releases" in completed.stderr
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    "releases",
+    [
+        {"not": "a release list"},
+        [{"id": 42, "draft": True}],
+    ],
+)
+def test_github_tag_absence_rejects_malformed_release_listing(
+    tmp_path: Path,
+    releases: object,
+) -> None:
+    """Reject malformed enumeration data instead of treating it as absence."""
+
+    completed = _run_github_tag_absent_validator(tmp_path, releases)
+
+    assert completed.returncode != 0
+    assert "expected GitHub release" in completed.stderr
 
 
 @pytest.mark.fast_always

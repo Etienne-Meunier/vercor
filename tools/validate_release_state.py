@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import sys
 from typing import Any
+from urllib.parse import quote, urlencode
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -110,7 +111,7 @@ def _release_list(path: Path) -> list[dict[str, Any]]:
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
-        raise ValueError(f"{path}: expected a GitHub releases list")
+        raise ValueError(f"{path}: expected GitHub releases list")
     if payload and all(isinstance(page, list) for page in payload):
         releases = [item for page in payload for item in page]
     else:
@@ -118,6 +119,56 @@ def _release_list(path: Path) -> list[dict[str, Any]]:
     if not all(isinstance(item, dict) for item in releases):
         raise ValueError(f"{path}: expected GitHub release objects")
     return releases
+
+
+def _validate_github_tag_absent(arguments: argparse.Namespace) -> None:
+    """Require an authenticated release listing to contain no exact tag."""
+
+    releases = _release_list(arguments.json)
+    matching: list[dict[str, Any]] = []
+    for index, release in enumerate(releases):
+        tag_name = release.get("tag_name")
+        if not isinstance(tag_name, str) or not tag_name:
+            raise ValueError(
+                f"{arguments.json}: expected GitHub release {index} "
+                "to have a non-empty tag_name"
+            )
+        if tag_name == arguments.tag:
+            matching.append(release)
+    if len(matching) > 1:
+        raise ValueError(f"{arguments.tag}: duplicate exact-tag releases")
+    if matching:
+        raise ValueError(f"{arguments.tag}: exact-tag release already exists")
+
+
+def _github_upload_url(arguments: argparse.Namespace) -> None:
+    """Print one canonical, safely encoded GitHub release-asset upload URL."""
+
+    repository_parts = arguments.repository.split("/")
+    if (
+        len(repository_parts) != 2
+        or any(not part for part in repository_parts)
+        or any(
+            not all(character.isalnum() or character in "._-" for character in part)
+            for part in repository_parts
+        )
+    ):
+        raise ValueError("repository must be OWNER/REPOSITORY")
+    if arguments.release_id <= 0:
+        raise ValueError("release id must be positive")
+    if (
+        not arguments.name
+        or arguments.name in {".", ".."}
+        or "/" in arguments.name
+        or "\\" in arguments.name
+        or "\x00" in arguments.name
+    ):
+        raise ValueError("asset name must be a plain filename")
+    query = urlencode({"name": arguments.name}, quote_via=quote)
+    print(
+        f"https://uploads.github.com/repos/{arguments.repository}"
+        f"/releases/{arguments.release_id}/assets?{query}"
+    )
 
 
 def _validate_github_releases(arguments: argparse.Namespace) -> None:
@@ -250,6 +301,17 @@ def _parser() -> argparse.ArgumentParser:
     assets.add_argument("--json", type=Path, required=True)
     assets.add_argument("--expect", nargs="+", required=True)
     assets.set_defaults(run=_validate_assets)
+
+    github_tag_absent = subparsers.add_parser("github-tag-absent")
+    github_tag_absent.add_argument("--json", type=Path, required=True)
+    github_tag_absent.add_argument("--tag", required=True)
+    github_tag_absent.set_defaults(run=_validate_github_tag_absent)
+
+    github_upload_url = subparsers.add_parser("github-upload-url")
+    github_upload_url.add_argument("--repository", required=True)
+    github_upload_url.add_argument("--release-id", type=int, required=True)
+    github_upload_url.add_argument("--name", required=True)
+    github_upload_url.set_defaults(run=_github_upload_url)
 
     github_releases = subparsers.add_parser("github-releases")
     github_releases.add_argument("--json", type=Path, required=True)

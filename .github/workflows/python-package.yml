@@ -445,10 +445,14 @@ jobs:
             REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
             test -n "${REMOTE_TAG_COMMIT:-}"
             test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+            WHEEL_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url \
+              --repository "$GITHUB_REPOSITORY" \
+              --release-id "$RELEASE_ID" \
+              --name "$RELEASE_WHEEL_NAME")"
+            test "$WHEEL_UPLOAD_URL" = "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${RELEASE_WHEEL_NAME}"
             gh api --method POST \
-              --hostname uploads.github.com \
               -H "Content-Type: application/octet-stream" \
-              "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${RELEASE_WHEEL_NAME}" \
+              "$WHEEL_UPLOAD_URL" \
               --input "$RELEASE_WHEEL" > "$STATE_DIR/upload-wheel.json"
             gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
             python tools/validate_release_state.py github-releases \
@@ -469,10 +473,14 @@ jobs:
             REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
             test -n "${REMOTE_TAG_COMMIT:-}"
             test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+            SDIST_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url \
+              --repository "$GITHUB_REPOSITORY" \
+              --release-id "$RELEASE_ID" \
+              --name "$RELEASE_SDIST_NAME")"
+            test "$SDIST_UPLOAD_URL" = "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${RELEASE_SDIST_NAME}"
             gh api --method POST \
-              --hostname uploads.github.com \
               -H "Content-Type: application/octet-stream" \
-              "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${RELEASE_SDIST_NAME}" \
+              "$SDIST_UPLOAD_URL" \
               --input "$RELEASE_SDIST" > "$STATE_DIR/upload-sdist.json"
             gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
             python tools/validate_release_state.py github-releases \

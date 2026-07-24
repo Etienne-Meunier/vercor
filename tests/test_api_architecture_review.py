@@ -554,7 +554,10 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
     prepare = _section(guide, "## 5. Prepare the required release pull request")
     tag = _section(guide, "## 6. Create and verify the annotated tag")
     repo_url = "https://api.github.com/repos/nutrik/vercor"
-    release_url = f"{repo_url}/releases/tags/v0.4.0"
+    published_only_release_url = f"{repo_url}/releases/tags/v0.4.0"
+    release_enumeration = (
+        'gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100"'
+    )
     pypi_url = "https://pypi.org/pypi/vercor/0.4.0/json"
 
     for section in (prepare, tag):
@@ -563,14 +566,17 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         assert (
             'git merge-base --is-ancestor "$MAIN_COMMIT" "$RELEASE_COMMIT"' in section
         )
-        assert repo_url in section
-        assert 'test "$REPO_STATUS" = "200"' in section
-        assert release_url in section
-        assert 'test "$RELEASE_STATUS" = "404"' in section
+        assert 'GH_TOKEN="$(gh auth token)"' in section
+        assert "gh api repos/nutrik/vercor" in section
+        assert release_enumeration in section
+        assert "tools/validate_release_state.py github-tag-absent" in section
+        assert "--tag v0.4.0" in section
+        assert published_only_release_url not in section
+        assert "RELEASE_STATUS" not in section
         assert pypi_url in section
         assert 'test "$PYPI_STATUS" = "404"' in section
 
-    assert prepare.index(repo_url) < guide.index("git tag -a")
+    assert prepare.index(release_enumeration) < guide.index("git tag -a")
 
     workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
     publish_steps = workflow["jobs"]["publish-release"]["steps"]
@@ -690,7 +696,11 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         assert "$CI_MANIFEST" in section
         assert "$CI_DIST_DIR" in section
         assert "https://pypi.org/pypi/vercor/0.4.0/json" in section
-        assert section.count("tools/validate_release_state.py pypi") == 2
+        assert section.count("tools/validate_release_state.py pypi") == 3
+        assert "for attempt in {1..12}" in section
+        assert 'case "$FINAL_PYPI_STATUS" in' in section
+        assert "sleep 10" in section
+        assert 'test "$PYPI_RECOVERY_VERIFIED" = "true"' in section
         assert (
             'REMOTE_TAG_COMMIT="$(git ls-remote origin '
             "'refs/tags/v0.4.0^{}' | awk '{print $1}')\""
@@ -699,6 +709,9 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         assert (
             "python -m twine upload --repository-url " "https://upload.pypi.org/legacy/"
         ) in section
+        assert section.index("python -m twine upload") < section.index(
+            "for attempt in {1..12}"
+        )
 
     github = _section(guide, "### Resume an exact GitHub draft")
     for required in (
@@ -713,12 +726,15 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         "--allow-state published",
         "gh release create v0.4.0",
         "--draft",
-        "--hostname uploads.github.com",
+        "tools/validate_release_state.py github-upload-url",
+        "https://uploads.github.com/repos/nutrik/vercor/releases/",
         "gh release edit v0.4.0",
         "--draft=false",
     ):
         assert required in github
-    assert github.count("--hostname uploads.github.com") == 2
+    assert github.count("tools/validate_release_state.py github-upload-url") == 2
+    assert github.count("https://uploads.github.com/repos/nutrik/vercor/releases/") == 2
+    assert "--hostname uploads.github.com" not in github
     assert github.count("tools/validate_release_state.py github-releases") >= 4
     assert 'test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"' in github
     assert github.count("check_tag_binding") >= 5

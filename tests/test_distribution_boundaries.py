@@ -527,7 +527,8 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         'gh release create "$GITHUB_REF_NAME"',
         "--draft",
         '--notes-file "docs/release-notes-${RELEASE_VERSION}.md"',
-        "uploads.github.com",
+        "tools/validate_release_state.py github-upload-url",
+        "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/",
         '--input "$RELEASE_WHEEL"',
         '--input "$RELEASE_SDIST"',
         'gh release edit "$GITHUB_REF_NAME"',
@@ -605,6 +606,13 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     )
     assert pypi_publish_index < post_pypi_index < github_release_index
     assert commands.count("tools/validate_release_state.py github-releases") >= 4
+    assert commands.count("tools/validate_release_state.py github-upload-url") == 2
+    assert (
+        commands.count(
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/"
+        )
+        == 2
+    )
     assert commands.count('test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"') >= 4
     assert commands.count('gh release edit "$GITHUB_REF_NAME"') == 1
     assert "--allow-state absent draft" not in commands
@@ -615,6 +623,7 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         "gh release delete",
         "gh api -x delete",
         "gh api --method delete",
+        "--hostname uploads.github.com",
         "git push --delete",
         "git tag --delete",
         "twine upload",
@@ -708,6 +717,9 @@ def test_release_design_and_plan_describe_the_final_review_state_machine() -> No
             "--draft=false",
             "ordinary",
             "rerun",
+            "canonical `https://uploads.github.com` request target",
+            "draft-aware pre-tag",
+            "bounded missing-file recovery polling",
         ):
             assert required in document
         for stale in (

@@ -165,8 +165,9 @@ The workflow file runs validation on pushes to `main`, pull requests targeting
 `main`, and version tags. Only a version tag can satisfy the deployment job's
 condition. A push to `refactor` alone does not run it. Before CI or a push,
 fetch the current protected branch, prove it is an ancestor of the reviewed
-release commit, and distinguish repository access (HTTP 200) from release
-absence (HTTP 404). PyPI 0.4.0 must also be absent:
+release commit, prove authenticated repository access, and enumerate every
+release page so an exact-tag draft cannot be mistaken for absence. PyPI 0.4.0
+must also be absent:
 
 ```text
 set -euo pipefail
@@ -177,16 +178,13 @@ MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"
 export MAIN_COMMIT
 test -n "${MAIN_COMMIT:-}"
 git merge-base --is-ancestor "$MAIN_COMMIT" "$RELEASE_COMMIT"
-GITHUB_TOKEN="$(gh auth token)"
-export GITHUB_TOKEN
-test -n "${GITHUB_TOKEN:-}"
+GH_TOKEN="$(gh auth token)"
+export GH_TOKEN
+test -n "${GH_TOKEN:-}"
 PREFLIGHT_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$PREFLIGHT_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-export REPO_STATUS
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$PREFLIGHT_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-export RELEASE_STATUS
-test "$RELEASE_STATUS" = "404"
+gh api repos/nutrik/vercor > "$PREFLIGHT_DIR/repository.json"
+gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$PREFLIGHT_DIR/releases.json"
+python tools/validate_release_state.py github-tag-absent --json "$PREFLIGHT_DIR/releases.json" --tag v0.4.0
 PYPI_STATUS="$(curl -sS -L -o "$PREFLIGHT_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 export PYPI_STATUS
 test "$PYPI_STATUS" = "404"
@@ -240,8 +238,8 @@ Do not select a `push` run, a run for another workflow, or a run at another SHA.
 
 Immediately before tagging, fetch `main` again, repeat the ancestry and
 authenticated public-namespace preflights, and confirm the local and remote tag
-are absent. A repository HTTP 404 is never accepted as evidence that the
-release is absent:
+are absent. The manifest-free exact-tag validator requires a well-formed
+authenticated release listing with zero exact-tag draft or published matches:
 
 Run the following transcript only with explicit tag-push and package-publication
 authority. Pushing the annotated tag starts the automated publication after its
@@ -257,16 +255,13 @@ MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"
 export MAIN_COMMIT
 test -n "${MAIN_COMMIT:-}"
 git merge-base --is-ancestor "$MAIN_COMMIT" "$RELEASE_COMMIT"
-GITHUB_TOKEN="$(gh auth token)"
-export GITHUB_TOKEN
-test -n "${GITHUB_TOKEN:-}"
+GH_TOKEN="$(gh auth token)"
+export GH_TOKEN
+test -n "${GH_TOKEN:-}"
 TAG_PREFLIGHT_DIR="$(mktemp -d)"
-REPO_STATUS="$(curl -sS -L -o "$TAG_PREFLIGHT_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor)"
-export REPO_STATUS
-test "$REPO_STATUS" = "200"
-RELEASE_STATUS="$(curl -sS -L -o "$TAG_PREFLIGHT_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/nutrik/vercor/releases/tags/v0.4.0)"
-export RELEASE_STATUS
-test "$RELEASE_STATUS" = "404"
+gh api repos/nutrik/vercor > "$TAG_PREFLIGHT_DIR/repository.json"
+gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$TAG_PREFLIGHT_DIR/releases.json"
+python tools/validate_release_state.py github-tag-absent --json "$TAG_PREFLIGHT_DIR/releases.json" --tag v0.4.0
 PYPI_STATUS="$(curl -sS -L -o "$TAG_PREFLIGHT_DIR/pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
 export PYPI_STATUS
 test "$PYPI_STATUS" = "404"
@@ -442,6 +437,8 @@ python tools/validate_release_state.py files --directory "$CI_DIST_DIR" --manife
 
 If PyPI returned 200 with only one verified file, run exactly one separately
 labeled missing-file alternative after confirming which filename is absent.
+Each alternative polls for a bounded time after upload and completes only when
+PyPI reports the exact wheel and sdist digests from the CI manifest.
 
 ### Missing PyPI wheel only
 
@@ -462,6 +459,24 @@ IMMEDIATE_PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/immediate-pypi.json"
 test "$IMMEDIATE_PYPI_STATUS" = "200"
 python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/immediate-pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0.tar.gz
 python -m twine upload --repository-url https://upload.pypi.org/legacy/ "$CI_DIST_DIR/vercor-0.4.0-py3-none-any.whl"
+PYPI_RECOVERY_VERIFIED=false
+for attempt in {1..12}; do
+  FINAL_PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/final-pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
+  case "$FINAL_PYPI_STATUS" in
+    200)
+      if python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/final-pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz; then
+        PYPI_RECOVERY_VERIFIED=true
+        break
+      fi
+      ;;
+    404) ;;
+    *) printf 'Unexpected PyPI HTTP status: %s\n' "$FINAL_PYPI_STATUS" >&2; exit 1 ;;
+  esac
+  if [ "$attempt" -lt 12 ]; then
+    sleep 10
+  fi
+done
+test "$PYPI_RECOVERY_VERIFIED" = "true"
 ```
 
 ### Missing PyPI sdist only
@@ -483,6 +498,24 @@ IMMEDIATE_PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/immediate-pypi.json"
 test "$IMMEDIATE_PYPI_STATUS" = "200"
 python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/immediate-pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl
 python -m twine upload --repository-url https://upload.pypi.org/legacy/ "$CI_DIST_DIR/vercor-0.4.0.tar.gz"
+PYPI_RECOVERY_VERIFIED=false
+for attempt in {1..12}; do
+  FINAL_PYPI_STATUS="$(curl -sS -L -o "$PYPI_RECOVERY_DIR/final-pypi.json" -w '%{http_code}' https://pypi.org/pypi/vercor/0.4.0/json)"
+  case "$FINAL_PYPI_STATUS" in
+    200)
+      if python tools/validate_release_state.py pypi --json "$PYPI_RECOVERY_DIR/final-pypi.json" --manifest "$CI_MANIFEST" --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz; then
+        PYPI_RECOVERY_VERIFIED=true
+        break
+      fi
+      ;;
+    404) ;;
+    *) printf 'Unexpected PyPI HTTP status: %s\n' "$FINAL_PYPI_STATUS" >&2; exit 1 ;;
+  esac
+  if [ "$attempt" -lt 12 ]; then
+    sleep 10
+  fi
+done
+test "$PYPI_RECOVERY_VERIFIED" = "true"
 ```
 
 If an incorrect package file was accepted, yank 0.4.0 through package-index
@@ -496,6 +529,9 @@ Use only after PyPI contains the exact two CI-produced files. Authenticated
 release enumeration includes drafts; a duplicate exact tag, a published
 release, wrong metadata, an unexpected asset, or any digest mismatch is a stop
 condition. A valid draft may contain zero, one, or both expected assets.
+The URL helper safely encodes the fixed filename and emits the canonical
+`https://uploads.github.com` request target; `gh api --hostname
+uploads.github.com` is invalid because it addresses `api.uploads.github.com`.
 
 ```text
 set -euo pipefail
@@ -529,7 +565,9 @@ WHEEL_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open
 if [ "$WHEEL_MISSING" = "True" ]; then
   RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$GITHUB_RECOVERY_DIR/release-state.json")"
   check_tag_binding
-  gh api --method POST --hostname uploads.github.com -H "Content-Type: application/octet-stream" "repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.0-py3-none-any.whl" --input "$CI_DIST_DIR/vercor-0.4.0-py3-none-any.whl" > "$GITHUB_RECOVERY_DIR/upload-wheel.json"
+  WHEEL_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url --repository nutrik/vercor --release-id "$RELEASE_ID" --name vercor-0.4.0-py3-none-any.whl)"
+  test "$WHEEL_UPLOAD_URL" = "https://uploads.github.com/repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.0-py3-none-any.whl"
+  gh api --method POST -H "Content-Type: application/octet-stream" "$WHEEL_UPLOAD_URL" --input "$CI_DIST_DIR/vercor-0.4.0-py3-none-any.whl" > "$GITHUB_RECOVERY_DIR/upload-wheel.json"
   gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
   python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
 fi
@@ -537,7 +575,9 @@ SDIST_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open
 if [ "$SDIST_MISSING" = "True" ]; then
   RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$GITHUB_RECOVERY_DIR/release-state.json")"
   check_tag_binding
-  gh api --method POST --hostname uploads.github.com -H "Content-Type: application/octet-stream" "repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.0.tar.gz" --input "$CI_DIST_DIR/vercor-0.4.0.tar.gz" > "$GITHUB_RECOVERY_DIR/upload-sdist.json"
+  SDIST_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url --repository nutrik/vercor --release-id "$RELEASE_ID" --name vercor-0.4.0.tar.gz)"
+  test "$SDIST_UPLOAD_URL" = "https://uploads.github.com/repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.0.tar.gz"
+  gh api --method POST -H "Content-Type: application/octet-stream" "$SDIST_UPLOAD_URL" --input "$CI_DIST_DIR/vercor-0.4.0.tar.gz" > "$GITHUB_RECOVERY_DIR/upload-sdist.json"
   gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100" > "$GITHUB_RECOVERY_DIR/releases.json"
   python tools/validate_release_state.py github-releases --json "$GITHUB_RECOVERY_DIR/releases.json" --manifest "$CI_MANIFEST" --tag v0.4.0 --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md --expect vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz --allow-state draft --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
 fi

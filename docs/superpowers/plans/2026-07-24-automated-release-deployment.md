@@ -26,6 +26,10 @@ same-run draft/upload/publish transitions, post-PyPI verification, and a
 separately authorized exact-run recovery procedure. An ordinary workflow rerun
 must fail when PyPI or any exact-tag draft/published release already exists.
 
+The release re-review adds draft-aware pre-tag enumeration and a canonical `https://uploads.github.com` request target
+generated with a safely encoded asset name; bounded missing-file recovery polling
+requires PyPI's final exact two-file producer-manifest state.
+
 ## Non-negotiable boundaries
 
 - A tag matching `v*.*.*` is the only deployment trigger.
@@ -156,9 +160,11 @@ Still in the uninterrupted ordinary run:
 3. Create an empty exact-tag draft with exact title, notes, and prerelease
    state.
 4. Enumerate and validate the zero-asset draft.
-5. Recheck the tag, upload the wheel by release ID, and revalidate its digest.
-6. Recheck the tag, upload the sdist by release ID, and revalidate both
-   digests.
+5. Recheck the tag, generate the canonical uploads-host URL with a safely
+   encoded fixed filename, upload the wheel by release ID, and revalidate its
+   digest.
+6. Recheck the tag, generate the corresponding sdist URL, upload the sdist by
+   release ID, and revalidate both digests.
 7. Authenticate the local bytes again.
 8. Recheck the tag and publish with
    `gh release edit "$GITHUB_REF_NAME" --draft=false`.
@@ -184,6 +190,12 @@ Update `docs/releasing.md` so recovery:
 9. uploads only missing verified assets, revalidating immediately; and
 10. publishes only an exact two-asset draft with `gh release edit
     --draft=false`.
+
+Before either tag-creation transcript, authenticated paginated enumeration
+must pass the manifest-free exact-tag absence validator so drafts cannot be
+misclassified as absence. After either separately authorized one-file PyPI
+upload, bounded polling must verify the final exact two-file producer-manifest
+state.
 
 Duplicate releases, a published release, wrong metadata, unexpected assets, or
 bad digests stop recovery. Recovery never edits metadata, clobbers an asset,

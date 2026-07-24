@@ -15,6 +15,11 @@ verified draft. Separately authorized recovery can resume a valid interrupted
 draft with zero, one, or two expected assets only from the exact run's
 distribution and manifest artifacts.
 
+The release re-review additionally requires draft-aware pre-tag enumeration, a
+canonical `https://uploads.github.com` request target for every raw asset
+upload, and bounded missing-file recovery polling that proves PyPI eventually
+contains the exact two producer-manifest digests.
+
 ## Purpose
 
 Publish VerCOR package distributions to PyPI and create the corresponding
@@ -93,9 +98,10 @@ The job will:
 9. Poll PyPI for a bounded time and require the exact two manifest digests.
 10. Reconfirm exact-tag release absence and the peeled tag, then create an
     empty draft with exact title, notes, and prerelease state.
-11. Upload the wheel and sdist separately by release ID, checking the tag
-    before each mutation and immediately validating the draft asset inventory
-    and GitHub-reported SHA-256 digests.
+11. Generate the canonical uploads-host URL with a safely encoded fixed
+    filename, then upload the wheel and sdist separately by release ID,
+    checking the tag before each mutation and immediately validating the draft
+    asset inventory and GitHub-reported SHA-256 digests.
 12. Publish only the exact two-asset draft with
     `gh release edit --draft=false`, then enumerate and validate the published
     release.
@@ -105,6 +111,8 @@ release order. If PyPI or draft publication succeeds only partially, an
 ordinary rerun fails on the existing public state. The fail-closed recovery
 procedure in `docs/releasing.md` is separately authorized and binds recovery to
 the exact `RELEASE_RUN_ID`, tag, commit, distributions, and manifest.
+Manual one-file PyPI recovery polls for a bounded time after Twine returns and
+requires the final exact wheel/sdist filename and digest set.
 
 ## Artifact and data flow
 
@@ -159,6 +167,8 @@ require:
 - exact wheel/sdist inventory and metadata checks;
 - per-tag concurrency and peeled remote-tag checks at mutation boundaries;
 - authenticated, fail-closed PyPI and draft-aware GitHub preflights;
+- authenticated paginated pre-tag release enumeration that rejects draft as
+  well as published exact-tag state;
 - bounded post-publisher PyPI filename/digest polling;
 - production publication through `secrets.PYPI_API_TOKEN`, without exposing
   the token to any other step or job; and
