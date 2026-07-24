@@ -534,7 +534,7 @@ def test_release_workflow_checks_out_the_exact_triggering_commit() -> None:
         for step in job["steps"]
         if step.get("uses") == "actions/checkout@v4"
     )
-    assert len(checkout_steps) == 5
+    assert len(checkout_steps) == 6
     for step in checkout_steps:
         assert step.get("with", {}).get("ref") == (
             "${{ github.event.pull_request.head.sha || github.sha }}"
@@ -548,7 +548,6 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
     guide = RELEASING_PATH.read_text(encoding="utf-8")
     prepare = _section(guide, "## 5. Prepare the required release pull request")
     tag = _section(guide, "## 6. Create and verify the annotated tag")
-    publish = _section(guide, "## 7. Publish packages and create the hosted release")
     repo_url = "https://api.github.com/repos/nutrik/vercor"
     release_url = f"{repo_url}/releases/tags/v0.4.0"
     pypi_url = "https://pypi.org/pypi/vercor/0.4.0/json"
@@ -567,22 +566,62 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         assert 'test "$PYPI_STATUS" = "404"' in section
 
     assert prepare.index(repo_url) < guide.index("git tag -a")
-    assert re.search(
-        rf"PYPI_STATUS=.*?{re.escape(pypi_url)}.*?"
-        r'test "\$PYPI_STATUS" = "404".*?'
-        r"python -m twine upload --repository-url "
-        r"https://upload\.pypi\.org/legacy/",
-        publish,
-        flags=re.DOTALL,
+
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    publish_steps = workflow["jobs"]["publish-release"]["steps"]
+    publish_commands = "\n".join(
+        step.get("run", "") for step in publish_steps if isinstance(step, dict)
     )
-    assert re.search(
-        rf"REPO_STATUS=.*?{re.escape(repo_url)}.*?"
-        r'test "\$REPO_STATUS" = "200".*?'
-        rf"RELEASE_STATUS=.*?{re.escape(release_url)}.*?"
-        r'test "\$RELEASE_STATUS" = "404".*?gh release create',
-        publish,
-        flags=re.DOTALL,
+    publish_action_steps = tuple(
+        (index, step)
+        for index, step in enumerate(publish_steps)
+        if step.get("uses")
+        == ("pypa/gh-action-pypi-publish@" "ba38be9e461d3875417946c167d0b5f3d385a247")
     )
+    assert len(publish_action_steps) == 1
+    publish_action_index, _ = publish_action_steps[0]
+    github_release_index = next(
+        index
+        for index, step in enumerate(publish_steps)
+        if "gh release create" in step.get("run", "")
+    )
+
+    assert "https://pypi.org/pypi/vercor/${VERSION}/json" in publish_commands
+    assert 'test "$PYPI_STATUS" = "404"' in publish_commands
+    assert "https://api.github.com/repos/${GITHUB_REPOSITORY}" in publish_commands
+    assert 'test "$REPO_STATUS" = "200"' in publish_commands
+    assert "releases/tags/${GITHUB_REF_NAME}" in publish_commands
+    assert publish_commands.count('test "$RELEASE_STATUS" = "404"') == 2
+    assert publish_action_index < github_release_index
+
+    run_steps = tuple(
+        (index, step["run"])
+        for index, step in enumerate(publish_steps)
+        if isinstance(step, dict) and "run" in step
+    )
+    validation_index = next(
+        index
+        for index, command in run_steps
+        if 'python -m twine check "$WHEEL" "$SDIST"' in command
+    )
+    manifest_generation = 'sha256sum "$WHEEL" "$SDIST" > SHA256SUMS'
+    assert publish_commands.count(manifest_generation) == 1
+    initial_hash_index = next(
+        index for index, command in run_steps if manifest_generation in command
+    )
+    release_validation_index = publish_action_index - 1
+    release_validation = publish_steps[release_validation_index]
+    release_validation_lines = tuple(
+        line.strip()
+        for line in release_validation["run"].splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert release_validation_lines[-1] == "sha256sum -c SHA256SUMS"
+    assert manifest_generation not in release_validation["run"]
+    assert validation_index == release_validation_index
+    assert initial_hash_index < release_validation_index
+    assert release_validation_index + 1 == publish_action_index
+    assert "python -m build" not in publish_commands
 
 
 @pytest.mark.fast_always

@@ -3,8 +3,12 @@ name: vercor
 on:
   push:
     branches: ["main"]
+    tags: ["v*.*.*"]
   pull_request:
     branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
   build-artifacts:
@@ -204,3 +208,98 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  publish-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-artifacts
+      - installed-artifact-tests
+      - external-extension-contract-tests
+      - macos-smoke
+      - quality
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/p/vercor
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Prepare exact release inventory
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "tag"
+          VERSION="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          test "$GITHUB_REF_NAME" = "v${VERSION}"
+          test -f "docs/release-notes-${VERSION}.md"
+          WHEEL="dist/vercor-${VERSION}-py3-none-any.whl"
+          SDIST="dist/vercor-${VERSION}.tar.gz"
+          shopt -s nullglob dotglob
+          DIST_ARTIFACTS=(dist/*)
+          test "${#DIST_ARTIFACTS[@]}" -eq 2
+          test -f "$WHEEL"
+          test -f "$SDIST"
+          python -m pip install --upgrade pip twine
+          sha256sum "$WHEEL" "$SDIST" > SHA256SUMS
+          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_WHEEL=${WHEEL}" >> "$GITHUB_ENV"
+          echo "RELEASE_SDIST=${SDIST}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "WHEEL=${WHEEL}" >> "$GITHUB_ENV"
+          echo "SDIST=${SDIST}" >> "$GITHUB_ENV"
+      - name: Validate public release preconditions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -f "$RELEASE_WHEEL"
+          test -f "$RELEASE_SDIST"
+          python -m twine check "$WHEEL" "$SDIST"
+          STATE_DIR="$(mktemp -d)"
+          PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json" -w '%{http_code}' "https://pypi.org/pypi/vercor/${VERSION}/json")"
+          test "$PYPI_STATUS" = "404"
+          REPO_STATUS="$(curl -sS -L -o "$STATE_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}")"
+          test "$REPO_STATUS" = "200"
+          RELEASE_STATUS="$(curl -sS -L -o "$STATE_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}")"
+          test "$RELEASE_STATUS" = "404"
+          sha256sum -c SHA256SUMS
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist/
+          skip-existing: false
+          attestations: false
+      - name: Create GitHub Release from published distributions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob dotglob
+          DIST_ARTIFACTS=(dist/*)
+          test "${#DIST_ARTIFACTS[@]}" -eq 2
+          test -f "$RELEASE_WHEEL"
+          test -f "$RELEASE_SDIST"
+          python -m twine check "$RELEASE_WHEEL" "$RELEASE_SDIST"
+          sha256sum -c SHA256SUMS
+          STATE_DIR="$(mktemp -d)"
+          REPO_STATUS="$(curl -sS -L -o "$STATE_DIR/repository.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}")"
+          test "$REPO_STATUS" = "200"
+          RELEASE_STATUS="$(curl -sS -L -o "$STATE_DIR/release.json" -w '%{http_code}' -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}")"
+          test "$RELEASE_STATUS" = "404"
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            "$RELEASE_WHEEL" "$RELEASE_SDIST"

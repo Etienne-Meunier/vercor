@@ -32,6 +32,7 @@ from tests._distribution_support import (
 from tests._signature_support import EXTERNAL_TYPING_ALIAS_REPLACEMENTS
 from tests.test_api_architecture_review import (
     _public_signature_contract,
+    _section,
 )
 from tests.test_setup_boundaries import _run_setup_probe
 from tests.test_v0_4_public_api import PUBLIC_MODULE_EXPORTS
@@ -399,6 +400,170 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
 
 
 @pytest.mark.fast_always
+def test_version_tag_deploys_exact_tested_distributions() -> None:
+    workflow_path = PROJECT_ROOT / ".github/workflows/python-package.yml"
+    workflow_source = workflow_path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_source)
+    triggers = workflow[True]
+    publish = workflow["jobs"]["publish-release"]
+
+    assert triggers["push"] == {
+        "branches": ["main"],
+        "tags": ["v*.*.*"],
+    }
+    assert publish["if"] == (
+        "github.event_name == 'push' && " "startsWith(github.ref, 'refs/tags/v')"
+    )
+    assert publish["needs"] == [
+        "build-artifacts",
+        "installed-artifact-tests",
+        "external-extension-contract-tests",
+        "macos-smoke",
+        "quality",
+    ]
+    assert publish["runs-on"] == "ubuntu-latest"
+    assert publish["environment"] == {
+        "name": "release",
+        "url": "https://pypi.org/p/vercor",
+    }
+    assert workflow["permissions"] == {"contents": "read"}
+    assert publish["permissions"] == {"contents": "write"}
+    permission_owners = (
+        ("workflow", workflow.get("permissions", {})),
+        *workflow["jobs"].items(),
+    )
+    for owner, permissions in permission_owners:
+        permission_map = (
+            permissions if owner == "workflow" else permissions.get("permissions", {})
+        )
+        assert "id-token" not in permission_map, owner
+        if owner != "publish-release":
+            assert permission_map.get("contents") != "write", owner
+
+    checkout = next(
+        step for step in publish["steps"] if step.get("uses") == "actions/checkout@v4"
+    )
+    setup = next(
+        step
+        for step in publish["steps"]
+        if step.get("uses") == "actions/setup-python@v5"
+    )
+    download = next(
+        step
+        for step in publish["steps"]
+        if step.get("uses") == "actions/download-artifact@v4"
+    )
+    assert checkout["with"]["ref"] == (
+        "${{ github.event.pull_request.head.sha || github.sha }}"
+    )
+    assert setup["with"]["python-version"] == "3.12"
+    assert download["with"] == {
+        "name": "vercor-distributions",
+        "path": "dist/",
+    }
+
+    run_steps = tuple(
+        (index, step["run"])
+        for index, step in enumerate(publish["steps"])
+        if isinstance(step, dict) and "run" in step
+    )
+    commands = "\n".join(command for _, command in run_steps)
+    for required in (
+        'test "$GITHUB_REF_TYPE" = "tag"',
+        'test "$GITHUB_REF_NAME" = "v${VERSION}"',
+        'test -f "docs/release-notes-${VERSION}.md"',
+        "DIST_ARTIFACTS=(dist/*)",
+        'test "${#DIST_ARTIFACTS[@]}" -eq 2',
+        'WHEEL="dist/vercor-${VERSION}-py3-none-any.whl"',
+        'SDIST="dist/vercor-${VERSION}.tar.gz"',
+        'python -m twine check "$WHEEL" "$SDIST"',
+        "https://pypi.org/pypi/vercor/${VERSION}/json",
+        'test "$PYPI_STATUS" = "404"',
+        "https://api.github.com/repos/${GITHUB_REPOSITORY}",
+        'test "$REPO_STATUS" = "200"',
+        "releases/tags/${GITHUB_REF_NAME}",
+        'test "$RELEASE_STATUS" = "404"',
+        'sha256sum "$WHEEL" "$SDIST"',
+        "sha256sum -c",
+        'gh release create "$GITHUB_REF_NAME"',
+        '--notes-file "docs/release-notes-${RELEASE_VERSION}.md"',
+        '"$RELEASE_WHEEL" "$RELEASE_SDIST"',
+    ):
+        assert required in commands
+
+    version_step_index, version_command = next(
+        (index, command)
+        for index, command in run_steps
+        if "VERSION=" in command and "pyproject.toml" in command
+    )
+    assert "tomllib" in version_command
+    assert '"project"]["version"]' in version_command
+    tag_check_index = next(
+        index
+        for index, command in run_steps
+        if 'test "$GITHUB_REF_NAME" = "v${VERSION}"' in command
+    )
+    assert version_step_index <= tag_check_index
+
+    twine_check_index = next(
+        index
+        for index, command in run_steps
+        if 'python -m twine check "$WHEEL" "$SDIST"' in command
+    )
+    manifest_generation = 'sha256sum "$WHEEL" "$SDIST" > SHA256SUMS'
+    assert commands.count(manifest_generation) == 1
+    initial_hash_index = next(
+        index for index, command in run_steps if manifest_generation in command
+    )
+    assert "python -m build" not in commands
+
+    pypi_publish_steps = tuple(
+        (index, step)
+        for index, step in enumerate(publish["steps"])
+        if step.get("uses")
+        == ("pypa/gh-action-pypi-publish@" "ba38be9e461d3875417946c167d0b5f3d385a247")
+    )
+    assert len(pypi_publish_steps) == 1
+    pypi_publish = pypi_publish_steps[0]
+    pypi_publish_index, pypi_publish_step = pypi_publish
+    assert pypi_publish_step["with"] == {
+        "user": "__token__",
+        "password": "${{ secrets.PYPI_API_TOKEN }}",
+        "packages-dir": "dist/",
+        "skip-existing": False,
+        "attestations": False,
+    }
+    release_validation_index = pypi_publish_index - 1
+    release_validation = publish["steps"][release_validation_index]
+    release_validation_lines = tuple(
+        line.strip()
+        for line in release_validation["run"].splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert release_validation_lines[-1] == "sha256sum -c SHA256SUMS"
+    assert manifest_generation not in release_validation["run"]
+    assert twine_check_index == release_validation_index
+    assert initial_hash_index < release_validation_index
+    assert release_validation_index + 1 == pypi_publish_index
+    for forbidden in (
+        "--clobber",
+        "gh release delete",
+        "gh release edit",
+        "gh api -x delete",
+        "gh api --method delete",
+        "gh api -x patch",
+        "gh api --method patch",
+        "twine upload",
+        "--skip-existing",
+        "skip-existing: true",
+    ):
+        assert forbidden not in workflow_source.lower()
+    assert workflow_source.count("pypa/gh-action-pypi-publish@") == 1
+    assert "TEST_PYPI_API_TOKEN" not in workflow_source
+    assert workflow_source.count("secrets.PYPI_API_TOKEN") == 1
+
+
+@pytest.mark.fast_always
 def test_release_bundle_contains_only_vercor_distributions() -> None:
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
     checksum_line = next(
@@ -417,17 +582,16 @@ def test_release_bundle_contains_only_vercor_distributions() -> None:
     assert 'test "${#DIST_ARTIFACTS[@]}" -eq 2' in releasing
     assert f"test -f dist/{EXPECTED_WHEEL_NAME}" in releasing
     assert f"test -f dist/{EXPECTED_SDIST_NAME}" in releasing
-    assert (
-        "python -m twine upload --repository-url "
-        "https://upload.pypi.org/legacy/ "
-        f"dist/{EXPECTED_WHEEL_NAME} dist/{EXPECTED_SDIST_NAME}"
-    ) in releasing
-    assert (
-        "gh release create v0.4.0 --repo nutrik/vercor "
-        '--title "VerCOR 0.4.0" '
-        "--notes-file docs/release-notes-0.4.0.md "
-        f"dist/{EXPECTED_WHEEL_NAME} dist/{EXPECTED_SDIST_NAME}"
-    ) in releasing
+    publish = _section(
+        releasing,
+        "## 7. Publish packages and create the hosted release",
+    )
+    assert "Pushing the annotated `v0.4.0` tag" in publish
+    assert "`PYPI_API_TOKEN`" in publish
+    assert "python-package.yml" in publish
+    assert "gh run watch" in publish
+    assert "python -m twine upload" not in publish
+    assert "gh release create" not in publish
     assert "dist/external_extension_test_fixture" not in releasing
 
 
