@@ -1,52 +1,44 @@
+"""Private callable-signature normalization for component adapters."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Mapping, cast
+from typing import Any
 
 from vercor.components.contracts import (
-    AuthorStepCallable,
-    ComponentStepCallable,
-    ComponentStepReturn,
-    FieldSpec,
+    _AuthorStepCallable,
+    _ComponentStepCallable,
+    _ComponentStepReturn,
 )
-from vercor.components._lifecycle import ComponentLifecycleHooks
-from vercor.components._runtime_fields import apply_step_result
+from vercor.components.contexts import StepContext
 from vercor.exceptions import ComponentError
 from vercor.types import RuntimeArray
 
-if TYPE_CHECKING:
-    from vercor.components.base import Component
-    from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
-
 
 def normalize_component_step_callable(
-    step: AuthorStepCallable,
-) -> ComponentStepCallable:
-    """Adapt supported author step signatures to the runtime wrapper shape."""
+    step: _AuthorStepCallable,
+) -> _ComponentStepCallable:
+    """Adapt a one-, two-, or three-argument author step to the protocol."""
 
+    if not callable(step):
+        raise TypeError("step must be callable")
     try:
         step_signature = signature(step)
     except (TypeError, ValueError) as exc:
-        raise ComponentError(
-            "Component step callable must expose an inspectable signature that "
-            "accepts 1, 2, or 3 positional arguments: fields, optional context, "
-            "and optional payload."
-        ) from exc
+        raise _component_step_signature_error() from exc
 
     parameters = tuple(step_signature.parameters.values())
-    positional_parameters = tuple(
+    positional = tuple(
         parameter
         for parameter in parameters
         if parameter.kind
         in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
     )
-    required_positional_parameters = tuple(
-        parameter
-        for parameter in positional_parameters
-        if parameter.default is Parameter.empty
+    required = tuple(
+        parameter for parameter in positional if parameter.default is Parameter.empty
     )
-    required_keyword_only_parameters = tuple(
+    required_keyword_only = tuple(
         parameter
         for parameter in parameters
         if parameter.kind == Parameter.KEYWORD_ONLY
@@ -55,65 +47,57 @@ def normalize_component_step_callable(
     has_varargs = any(
         parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters
     )
-
-    if required_keyword_only_parameters:
-        required_names = ", ".join(
-            parameter.name for parameter in required_keyword_only_parameters
-        )
+    if required_keyword_only:
+        names = ", ".join(parameter.name for parameter in required_keyword_only)
         raise ComponentError(
             "Component step callable has required keyword-only argument(s) "
-            f"{required_names}; use 1, 2, or 3 positional arguments instead."
+            f"{names}; use 1, 2, or 3 positional arguments instead."
         )
-
     if has_varargs:
-        if len(required_positional_parameters) > 3:
+        if len(required) > 3:
             raise _component_step_signature_error()
         arity = 3
     else:
-        if (
-            len(positional_parameters) < 1
-            or len(positional_parameters) > 3
-            or len(required_positional_parameters) > 3
-        ):
+        if len(positional) not in (1, 2, 3) or len(required) > 3:
             raise _component_step_signature_error()
-        arity = len(positional_parameters)
+        arity = len(positional)
 
     if arity == 1:
 
-        def step_fields_only(
+        def fields_only(
             fields: Mapping[str, RuntimeArray],
             context: StepContext,
             payload: Any | None,
-        ) -> ComponentStepReturn:
+        ) -> _ComponentStepReturn:
             _ = context, payload
             return step(fields)
 
-        return step_fields_only
+        return fields_only
 
     if arity == 2:
 
-        def step_fields_and_context(
+        def fields_and_context(
             fields: Mapping[str, RuntimeArray],
             context: StepContext,
             payload: Any | None,
-        ) -> ComponentStepReturn:
+        ) -> _ComponentStepReturn:
             _ = payload
             return step(fields, context)
 
-        return step_fields_and_context
+        return fields_and_context
 
-    def step_fields_context_and_payload(
+    def fields_context_and_payload(
         fields: Mapping[str, RuntimeArray],
         context: StepContext,
         payload: Any | None,
-    ) -> ComponentStepReturn:
+    ) -> _ComponentStepReturn:
         return step(fields, context, payload)
 
-    return step_fields_context_and_payload
+    return fields_context_and_payload
 
 
 def _component_step_signature_error() -> ComponentError:
-    """Return a consistent author-facing error for unsupported step signatures."""
+    """Return a focused unsupported-step-signature error."""
 
     return ComponentError(
         "Component step callable must accept 1, 2, or 3 positional arguments: "
@@ -121,45 +105,4 @@ def _component_step_signature_error() -> ComponentError:
     )
 
 
-class _CallableRuntimeMixin:
-    """Shared metadata hooks for callable-backed component wrappers."""
-
-    _step: ComponentStepCallable
-    _payload: Any | None
-
-    def _initialize_callable_runtime(
-        self,
-        *,
-        step: AuthorStepCallable,
-        payload: Any | None,
-        field_spec: FieldSpec,
-        lifecycle_hooks: ComponentLifecycleHooks,
-    ) -> None:
-        component = cast("Component", self)
-        self._step = normalize_component_step_callable(step)
-        self._payload = payload
-        component.declare_fields(field_spec)
-        component._lifecycle_hooks = lifecycle_hooks
-
-    def _default_runtime_payload(self) -> Any | None:
-        """Return the payload supplied to the callable component factory."""
-
-        return self._payload
-
-    def _step_callable_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
-        context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Advance callable-backed runtime state using the normalized step."""
-
-        component = cast("Component", self)
-        return apply_step_result(
-            component,
-            component_state,
-            self._step(
-                component.runtime_fields(component_state),
-                context,
-                component_state.runtime_payload,
-            ),
-        )
+__all__: list[str] = []

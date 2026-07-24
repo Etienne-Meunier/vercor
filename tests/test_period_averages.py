@@ -1,145 +1,178 @@
+"""Focused tests for the sole immutable output accumulator and layout helper."""
+
 from __future__ import annotations
 
-import numpy as np
-import pytest
+from typing import cast
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+import pytest
 
-import vercor.output.period_averages as period_averages_module
 from tests.assertions import assert_allclose_compact
-from vercor.output.variables import OutputVariable
-from vercor.output.period_averages import (
-    PeriodAverageAccumulator,
-    period_mean_output_variables,
-    period_mean_sample_to_output_variable,
+from vercor.output import OutputFrame, OutputVariable
+from vercor.output._dataset import grid_field_dims
+from vercor.output._period import period_mean_sample_to_output_variable
+from vercor.output._session import _OutputAccumulator
+
+
+def _frame(
+    values: object,
+    *,
+    dims: tuple[str, ...] = ("x",),
+    sample_dimension: str | None = None,
+) -> OutputFrame:
+    return OutputFrame(
+        {"temp": OutputVariable(dims, values, {"units": "K"})},
+        sample_dimension=sample_dimension,
+    )
+
+
+@pytest.mark.parametrize(
+    ("shape", "grid_shape", "expected"),
+    [
+        ((2, 3), (2, 3), ("nlat", "nlon")),
+        ((4, 2, 3), (2, 3), ("temperature_dim_0", "nlat", "nlon")),
+        ((4,), (2, 3), ("temperature_dim_0",)),
+        ((2, 3), None, ("temperature_dim_0", "temperature_dim_1")),
+    ],
 )
+def test_grid_field_dims_is_the_single_output_layout_rule(
+    shape: tuple[int, ...],
+    grid_shape: tuple[int, int] | None,
+    expected: tuple[str, ...],
+) -> None:
+    assert grid_field_dims("temperature", shape, grid_shape) == expected
 
 
-def test_period_average_public_api_uses_output_variable_directly() -> None:
-    removed_names = {
-        "PeriodAverageSample",
-        "mean_samples_or_raise",
-        "samples_from_output_variables",
-    }
+def test_output_accumulator_replace_preserves_pytree_structure() -> None:
+    empty = _OutputAccumulator.zeros_from_frame(_frame(jnp.asarray([0.0, 0.0])))
+    updated = jax.jit(
+        lambda accumulator: accumulator.add_frame(_frame(jnp.asarray([1.0, 3.0])))
+    )(empty)
+    reset = jax.jit(lambda accumulator: accumulator.reset())(updated)
 
-    assert removed_names.isdisjoint(set(period_averages_module.__all__))
-    for name in removed_names:
-        assert not hasattr(period_averages_module, name)
-
-
-def test_period_average_accumulator_preserves_nanmean_counts() -> None:
-    accumulator = PeriodAverageAccumulator()
-
-    accumulator.add_samples(
-        {"temp": OutputVariable(("x",), np.asarray([1.0, np.nan, np.nan]))}
+    assert cast(object, jax.tree_util.tree_structure(empty)) == cast(
+        object, jax.tree_util.tree_structure(updated)
     )
-    accumulator.add_samples(
-        {"temp": OutputVariable(("x",), np.asarray([3.0, 5.0, np.nan]))}
+    assert cast(object, jax.tree_util.tree_structure(updated)) == cast(
+        object, jax.tree_util.tree_structure(reset)
     )
-
-    accumulated = accumulator.variables["temp"]
-    mean_sample = accumulator.mean_samples()["temp"]
-
-    assert mean_sample.dims == ("x",)
-    assert isinstance(accumulated.sum_values, jax.Array)
-    assert isinstance(accumulated.counts, jax.Array)
-    assert isinstance(mean_sample.values, jax.Array)
-    assert accumulated.counts.dtype == jnp.int32
-    assert_allclose_compact(accumulated.counts, np.asarray([2, 1, 0]))
-    assert_allclose_compact(mean_sample.values, np.asarray([2.0, 5.0, np.nan]))
+    assert_allclose_compact(reset.counts[0], [0, 0])
 
 
-def test_period_average_accumulator_reduces_named_summation_dimension() -> None:
-    accumulator = PeriodAverageAccumulator()
-
-    accumulator.add_samples(
-        {
-            "temp": OutputVariable(
-                ("time", "x"),
-                np.asarray([[1.0, np.nan], [3.0, 5.0]]),
-            )
-        },
-        summation_dim="time",
+def test_output_accumulator_is_an_immutable_jax_pytree() -> None:
+    accumulator = _OutputAccumulator.zeros_from_frame(_frame(jnp.asarray([0.0, 0.0])))
+    updated = jax.jit(lambda value: value.add_frame(_frame(jnp.asarray([1.0, 3.0]))))(
+        accumulator
     )
 
-    mean_sample = accumulator.mean_samples()["temp"]
+    assert all(
+        isinstance(leaf, jax.Array) for leaf in jax.tree_util.tree_leaves(updated)
+    )
+    assert_allclose_compact(updated.mean_frame().variables["temp"].values, [1.0, 3.0])
+    with pytest.raises(AttributeError):
+        updated.names = ("changed",)  # type: ignore[misc]
 
-    assert mean_sample.dims == ("x",)
+
+def test_output_accumulator_tracks_coordinate_values_as_dynamic_pytree_leaves() -> None:
+    def coordinated_frame(coordinates: jax.Array) -> OutputFrame:
+        return OutputFrame(
+            {"temp": OutputVariable(("x",), jnp.asarray([1.0, 2.0]))},
+            coordinates={"x": OutputVariable(("x",), coordinates)},
+        )
+
+    first = _OutputAccumulator.zeros_from_frame(
+        coordinated_frame(jnp.asarray([0.0, 1.0]))
+    )
+    second = _OutputAccumulator.zeros_from_frame(
+        coordinated_frame(jnp.asarray([2.0, 3.0]))
+    )
+    compiled_identity = jax.jit(lambda accumulator: accumulator)
+
+    first_result = compiled_identity(first)
+    second_result = compiled_identity(second)
+
+    assert_allclose_compact(first_result.mean_frame().coordinates["x"].values, [0, 1])
+    assert_allclose_compact(second_result.mean_frame().coordinates["x"].values, [2, 3])
+    assert any(
+        np.array_equal(np.asarray(leaf), np.asarray([2.0, 3.0]))
+        for leaf in jax.tree_util.tree_leaves(second_result)
+    )
+
+
+def test_output_accumulator_canonicalizes_array_metadata_for_jit_reuse() -> None:
+    def metadata_frame(value: float) -> OutputFrame:
+        return OutputFrame(
+            {
+                "temp": OutputVariable(
+                    ("x",),
+                    jnp.asarray([1.0, 2.0]),
+                    {"valid_range": np.asarray([0.0, value])},
+                )
+            },
+            coordinates={
+                "x": OutputVariable(
+                    ("x",),
+                    jnp.asarray([0.0, 1.0]),
+                    {"bounds": np.asarray([0.0, value])},
+                )
+            },
+            metadata={"coefficients": np.asarray([1.0, value])},
+        )
+
+    first = _OutputAccumulator.zeros_from_frame(metadata_frame(2.0))
+    second = _OutputAccumulator.zeros_from_frame(metadata_frame(3.0))
+    compiled_identity = jax.jit(lambda accumulator: accumulator)
+
+    first_result = compiled_identity(first)
+    second_result = compiled_identity(second)
+
+    assert first_result.mean_frame().metadata["coefficients"] == (1.0, 2.0)
+    assert second_result.mean_frame().metadata["coefficients"] == (1.0, 3.0)
+
+
+def test_output_accumulator_preserves_nanmean_counts_without_mutation() -> None:
+    empty = _OutputAccumulator.zeros_from_frame(_frame(np.asarray([0.0, 0.0, 0.0])))
+    first = empty.add_frame(_frame(np.asarray([1.0, np.nan, np.nan])))
+    second = first.add_frame(_frame(np.asarray([3.0, 5.0, np.nan])))
+
+    assert_allclose_compact(empty.counts[0], np.asarray([0, 0, 0]))
+    assert_allclose_compact(first.counts[0], np.asarray([1, 0, 0]))
+    assert second.counts[0].dtype == jnp.int32
+    assert_allclose_compact(second.counts[0], np.asarray([2, 1, 0]))
     assert_allclose_compact(
-        accumulator.variables["temp"].counts,
-        np.asarray([2, 1]),
+        second.mean_frame().variables["temp"].values,
+        np.asarray([2.0, 5.0, np.nan]),
     )
-    assert_allclose_compact(mean_sample.values, np.asarray([2.0, 5.0]))
 
 
-def test_period_average_accumulator_rejects_changed_variables() -> None:
-    accumulator = PeriodAverageAccumulator()
-    accumulator.add_samples({"temp": OutputVariable(("x",), np.asarray([1.0, 2.0]))})
+def test_output_accumulator_reduces_named_sample_dimension() -> None:
+    frame = _frame(
+        np.asarray([[1.0, np.nan], [3.0, 5.0]]),
+        dims=("time", "x"),
+        sample_dimension="time",
+    )
+    accumulator = _OutputAccumulator.zeros_from_frame(frame).add_frame(frame)
 
-    with pytest.raises(ValueError, match="variables changed"):
-        accumulator.add_samples(
-            {"salt": OutputVariable(("x",), np.asarray([1.0, 2.0]))}
+    assert accumulator.dims == (("x",),)
+    assert_allclose_compact(accumulator.counts[0], np.asarray([2, 1]))
+    assert_allclose_compact(
+        accumulator.mean_frame().variables["temp"].values,
+        np.asarray([2.0, 5.0]),
+    )
+
+
+def test_output_accumulator_rejects_changed_variables_dimensions_and_shape() -> None:
+    base = _OutputAccumulator.zeros_from_frame(_frame(np.asarray([1.0, 2.0])))
+    with pytest.raises((KeyError, ValueError), match="variables changed|unknown"):
+        base.add_frame(
+            OutputFrame({"salt": OutputVariable(("x",), np.asarray([1.0, 2.0]))})
         )
-
-
-def test_period_average_accumulator_rejects_changed_dimensions_or_shape() -> None:
-    accumulator = PeriodAverageAccumulator()
-    accumulator.add_samples({"temp": OutputVariable(("x",), np.asarray([1.0, 2.0]))})
-
     with pytest.raises(ValueError, match="dimensions changed"):
-        accumulator.add_samples(
-            {"temp": OutputVariable(("y",), np.asarray([1.0, 2.0]))}
-        )
+        base.add_frame(_frame(np.asarray([1.0, 2.0]), dims=("y",)))
     with pytest.raises(ValueError, match="shape changed"):
-        accumulator.add_samples(
-            {"temp": OutputVariable(("x",), np.asarray([1.0, 2.0, 3.0]))}
-        )
-
-
-def test_period_average_accumulator_reports_empty_and_clears() -> None:
-    accumulator = PeriodAverageAccumulator()
-
-    with pytest.raises(ValueError, match="requires at least one sample"):
-        accumulator.mean_samples()
-
-    accumulator.add_samples({"temp": OutputVariable(("x",), np.asarray([1.0, 2.0]))})
-    assert not accumulator.empty
-
-    accumulator.clear()
-
-    assert accumulator.empty
-
-
-def test_period_average_accumulator_preserves_attrs_and_reduces_dimension() -> None:
-    accumulator = PeriodAverageAccumulator()
-
-    accumulator.add_samples(
-        {
-            "temp": OutputVariable(
-                ("time", "x"),
-                np.asarray([[1.0, np.nan], [3.0, 5.0]]),
-                {"units": "K"},
-            )
-        },
-        summation_dim="time",
-    )
-
-    mean_sample = accumulator.mean_samples()["temp"]
-
-    assert mean_sample.dims == ("x",)
-    assert mean_sample.attrs == {"units": "K"}
-    assert_allclose_compact(mean_sample.values, np.asarray([2.0, 5.0]))
-
-
-def test_period_mean_output_variables_uses_adapter_error_message() -> None:
-    accumulator = PeriodAverageAccumulator()
-
-    with pytest.raises(ValueError, match="custom adapter message"):
-        period_mean_output_variables(
-            accumulator,
-            empty_error_message="custom adapter message",
-        )
+        base.add_frame(_frame(np.asarray([1.0, 2.0, 3.0])))
 
 
 def test_period_mean_sample_to_output_variable_orders_explicit_dimensions() -> None:
@@ -165,61 +198,3 @@ def test_period_mean_sample_to_output_variable_accepts_output_value_dims() -> No
 
     assert variable.dims == ("time", "zt", "yt", "xt")
     assert_allclose_compact(variable.values[0], np.transpose(values, axes=(2, 1, 0)))
-
-
-def test_period_mean_output_variables_applies_jcm_dimension_order() -> None:
-    accumulator = PeriodAverageAccumulator()
-    values = np.arange(2 * 3 * 4, dtype=float).reshape((2, 3, 4))
-    accumulator.add_samples(
-        {
-            "temp": OutputVariable(
-                ("lat", "lon", "level"),
-                values,
-                {"units": "K"},
-            )
-        }
-    )
-
-    variables = period_mean_output_variables(
-        accumulator,
-        empty_error_message="missing samples",
-        time_dim="time",
-        dimension_order=("time", "level", "lat", "lon"),
-    )
-
-    assert variables["temp"].dims == ("time", "level", "lat", "lon")
-    assert variables["temp"].attrs == {"units": "K"}
-    assert_allclose_compact(
-        variables["temp"].values[0],
-        np.transpose(values, axes=(2, 0, 1)),
-    )
-
-
-def test_period_mean_output_variables_applies_variable_specific_value_dims() -> None:
-    accumulator = PeriodAverageAccumulator()
-    temp_values = np.arange(2 * 3 * 4, dtype=float).reshape((2, 3, 4))
-    psi_values = np.arange(2 * 3, dtype=float).reshape((2, 3))
-    accumulator.add_samples(
-        {
-            "temp": OutputVariable(("xt", "yt", "zt"), temp_values),
-            "psi": OutputVariable(("xu", "yu"), psi_values),
-        }
-    )
-
-    variables = period_mean_output_variables(
-        accumulator,
-        empty_error_message="missing samples",
-        time_dim="time",
-        value_dims_for_sample=lambda sample: tuple(reversed(sample.dims)),
-    )
-
-    assert variables["temp"].dims == ("time", "zt", "yt", "xt")
-    assert_allclose_compact(
-        variables["temp"].values[0],
-        np.transpose(temp_values, axes=(2, 1, 0)),
-    )
-    assert variables["psi"].dims == ("time", "yu", "xu")
-    assert_allclose_compact(
-        variables["psi"].values[0],
-        np.transpose(psi_values, axes=(1, 0)),
-    )

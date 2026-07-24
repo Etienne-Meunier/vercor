@@ -1,440 +1,329 @@
+"""Canonical public constructor-only coupler assembly and run facade."""
+
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from collections.abc import Iterable, Mapping, Sequence
+from types import MappingProxyType
+from typing import Any
 
-from vercor._deprecation import warn_deprecated_name
-from vercor.clock import Clock
-from vercor.components.setup_validation import validate_component_setup
-from vercor.exceptions import CouplerError
-from vercor.exchange import Exchange
+from vercor.clock import Clock as _Clock
+import vercor.components as _components
+from vercor.components._adapter import normalize_component as _normalize_component
+from vercor.exceptions import CouplerError as _CouplerError
+from vercor.exchanges import Exchange as _Exchange
 from vercor.jax_logging import (
-    JaxCallbackLogger,
-    LoggerLike,
-    configure_python_logger,
+    JaxCallbackLogger as _JaxCallbackLogger,
+    LoggerLike as _LoggerLike,
+    configure_python_logger as _configure_python_logger,
+    normalize_log_level as _normalize_log_level,
     setup_logger as _setup_logger,
 )
-from vercor._run_order import normalize_run_sequence
-import vercor.runtime.facade as _runtime_facade
-from vercor.runtime.resources import CouplerRuntimeResources
-from vercor.settings import VercorSettings
-from vercor.types import RuntimeArray
+from vercor.physics import PhysicalConstants as _PhysicalConstants
+from vercor.output import OutputTarget as _OutputTarget
+from vercor._run_order import normalize_run_order as _normalize_run_order
+from vercor._runtime.contracts import (
+    validate_exchange_fan_in as _validate_exchange_fan_in,
+)
+import vercor._runtime.facade as _runtime_facade
+from vercor._runtime.prepared import PreparedCoupling as _PreparedCoupling
+from vercor.runtime import RuntimeOptions as _RuntimeOptions
+from vercor.state import RunState as _RunState
 
-if TYPE_CHECKING:
-    from vercor.components.base import Component
-    import vercor.runtime.state as _runtime_state_module
-    import vercor.runtime.views as _runtime_views_module
+__all__ = ["Coupler"]
 
 
-@dataclass
+def _materialize_configuration(values: object, *, label: str) -> tuple[Any, ...]:
+    """Return one constructor collection as an owned immutable tuple."""
+
+    if values is None or isinstance(values, (str, bytes)):
+        raise _CouplerError(
+            f"{label} must be an iterable, not {type(values).__name__}."
+        )
+    try:
+        return tuple(values)  # type: ignore[arg-type]
+    except TypeError as exc:
+        raise _CouplerError(f"{label} must be an iterable.") from exc
+
+
 class Coupler:
-    """Public orchestration facade for configured component integrations.
+    """Public constructor-only facade for one configured coupled integration.
 
-    The coupler owns registration, exchange declarations, run sequence,
-    regridder/mask setup, runtime-state creation, execution, and final output.
-    The differentiable integration itself operates on immutable runtime state;
-    component objects remain setup/configuration adapters rather than the
-    traced integration state.
-
-    Attributes:
-        clock: Clock instance for managing simulation time
-        log_level: logging threshold for coupler logs (e.g., "INFO", "DEBUG", etc.)
-        logger: Logger instance for coupler logging
-        run_sequence: sequence of component names defining the call (step) order
-        components: mapping of component name to component instance
-        exchanges: list of all Exchange instances
-        settings: VercorSettings instance for coupler settings
-        lnd_bmask_on_atm_grid: binary land mask regridded onto atmosphere grid
-        ocn_fmask_on_atm_grid: fractional ocean mask regridded onto atmosphere grid
-        lnd_fmask_on_atm_grid: fractional land mask regridded onto atmosphere grid
-        _runtime_resources: runtime-owned holder for topology maps, runtime
-            contracts, and interrupt controller.
+    All components, exchanges, and the active run order are supplied together.
+    Their collections are copied into immutable views; component author objects
+    are retained and treated as immutable configuration. Runtime preparation is
+    lazy and executes at most once for this fixed configuration.
     """
 
-    clock: Clock
-    log_level: int | str = "INFO"
-    logger: LoggerLike = field(default_factory=_setup_logger)
-    run_sequence: Sequence[str] = field(default_factory=tuple)
-    components: dict[str, Component] = field(default_factory=dict)
-    exchanges: list[Exchange] = field(default_factory=list)
-    settings: VercorSettings = field(default_factory=VercorSettings)
-    lnd_bmask_on_atm_grid: RuntimeArray = field(init=False)
-    ocn_fmask_on_atm_grid: RuntimeArray = field(init=False)
-    lnd_fmask_on_atm_grid: RuntimeArray = field(init=False)
-    _runtime_resources: CouplerRuntimeResources = field(
-        default_factory=CouplerRuntimeResources,
-        init=False,
-        repr=False,
-    )
-
-    def __post_init__(self) -> None:
-        """Apply the configured logging threshold at construction time."""
-
-        self.run_sequence = normalize_run_sequence(self.run_sequence)
-
-        if isinstance(self.logger, logging.Logger):
-            self.logger = JaxCallbackLogger(
-                configure_python_logger(self.logger, self.log_level)
-            )
-        elif isinstance(self.logger, JaxCallbackLogger):
-            configure_python_logger(self.logger.logger, self.log_level)
-
-        set_level = getattr(self.logger, "setLevel", None)
-        if callable(set_level):
-            set_level(self.log_level)
-
-    @classmethod
-    def from_components(
-        cls,
+    def __init__(
+        self,
+        clock: _Clock,
         *,
-        clock: Clock,
-        components: Iterable["Component"],
-        exchanges: Iterable[Exchange] = (),
+        components: Iterable[_components.Component] = (),
+        exchanges: Iterable[_Exchange] = (),
         run_order: Sequence[str] = (),
-        settings: VercorSettings | None = None,
+        runtime: _RuntimeOptions | None = None,
+        constants: _PhysicalConstants | None = None,
+        logger: _LoggerLike | None = None,
         log_level: int | str = "INFO",
-        logger: LoggerLike | None = None,
-    ) -> "Coupler":
-        """Create a coupler with components, exchanges, and run order configured."""
+    ) -> None:
+        """Create a complete immutable coupling declaration."""
+
+        if not isinstance(clock, _Clock):
+            raise TypeError("clock must be Clock")
+        if runtime is not None and not isinstance(runtime, _RuntimeOptions):
+            raise TypeError("runtime must be RuntimeOptions or None")
+        if constants is not None and not isinstance(constants, _PhysicalConstants):
+            raise TypeError("constants must be PhysicalConstants or None")
+        normalized_log_level = _normalize_log_level(log_level)
+        if logger is not None and not isinstance(
+            logger,
+            (logging.Logger, _JaxCallbackLogger, _LoggerLike),
+        ):
+            raise TypeError("logger must satisfy LoggerLike or be None")
 
         if logger is None:
-            coupler = cls(
-                clock=clock,
-                log_level=log_level,
-                settings=settings or VercorSettings(),
+            configured_logger: _LoggerLike = _setup_logger(normalized_log_level)
+        elif isinstance(logger, logging.Logger):
+            configured_logger = _JaxCallbackLogger(
+                _configure_python_logger(logger, normalized_log_level)
             )
+        elif isinstance(logger, _JaxCallbackLogger):
+            _configure_python_logger(logger.logger, normalized_log_level)
+            configured_logger = logger
         else:
-            coupler = cls(
-                clock=clock,
-                log_level=log_level,
-                settings=settings or VercorSettings(),
-                logger=logger,
+            logger.setLevel(normalized_log_level)
+            configured_logger = logger
+        configured_runtime = _RuntimeOptions() if runtime is None else runtime
+        configured_constants = _PhysicalConstants() if constants is None else constants
+        self._clock = clock
+        self._log_level = log_level
+        self._logger = configured_logger
+        self._runtime = configured_runtime
+        self._constants = configured_constants
+
+        component_values = _materialize_configuration(
+            components,
+            label="components",
+        )
+        declarations: dict[str, Any] = {}
+        public_components: dict[str, _components.Component] = {}
+        for index, component in enumerate(component_values):
+            try:
+                declaration = _normalize_component(component)
+            except _CouplerError as exc:
+                raise _CouplerError(
+                    f"components contains invalid component at index {index}: {exc}"
+                ) from exc
+            if declaration.name in declarations:
+                raise _CouplerError(
+                    f"Duplicate component name '{declaration.name}' in components."
+                )
+            declarations[declaration.name] = declaration
+            public_components[declaration.name] = declaration.component
+            self.logger.info(f"Registered component {declaration.name}")
+
+        exchange_values = _materialize_configuration(exchanges, label="exchanges")
+        normalized_exchanges: list[_Exchange] = []
+        route_ids: set[str] = set()
+        for index, exchange in enumerate(exchange_values):
+            if not isinstance(exchange, _Exchange):
+                raise _CouplerError(
+                    "exchanges contains invalid exchange at index "
+                    f"{index}: expected Exchange, got {type(exchange).__name__}."
+                )
+            if exchange.route_id in route_ids:
+                raise _CouplerError(
+                    f"Exchange route ID '{exchange.route_id}' must be unique; "
+                    "provide explicit distinct route_id values for routes with "
+                    "the same endpoints."
+                )
+            route_ids.add(exchange.route_id)
+            if exchange.source not in declarations:
+                raise _CouplerError(
+                    f"Exchange '{exchange.route_id}' has unknown source component "
+                    f"'{exchange.source}'."
+                )
+            if exchange.target not in declarations:
+                raise _CouplerError(
+                    f"Exchange '{exchange.route_id}' has unknown target component "
+                    f"'{exchange.target}'."
+                )
+            normalized_exchanges.append(exchange)
+            self.logger.info(f"Added exchange {exchange.route_id}")
+        _validate_exchange_fan_in(normalized_exchanges)
+
+        try:
+            configured_run_order = _normalize_run_order(run_order)
+        except TypeError as exc:
+            raise _CouplerError(str(exc)) from exc
+        duplicate_run_name = next(
+            (
+                name
+                for name in configured_run_order
+                if configured_run_order.count(name) > 1
+            ),
+            None,
+        )
+        if duplicate_run_name is not None:
+            raise _CouplerError(
+                f"Duplicate run-order component '{duplicate_run_name}'."
             )
-        for component in components:
-            coupler.add_component(component)
-        for exchange in exchanges:
-            coupler.add_exchange(exchange)
-        if run_order:
-            coupler.set_run_order(run_order)
-        return coupler
+        unknown_run_name = next(
+            (name for name in configured_run_order if name not in declarations),
+            None,
+        )
+        if unknown_run_name is not None:
+            raise _CouplerError(f"Unknown run-order component '{unknown_run_name}'.")
+
+        self._declarations = MappingProxyType(declarations)
+        self._components_view = MappingProxyType(public_components)
+        self._exchanges = tuple(normalized_exchanges)
+        self._run_order = configured_run_order
+        self._prepared: _PreparedCoupling | None = None
+        if configured_run_order:
+            self.logger.info(
+                f"Set coupler components run order: {', '.join(configured_run_order)}"
+            )
+
+    @property
+    def clock(self) -> _Clock:
+        """Return the immutable clock configuration reference."""
+
+        return self._clock
+
+    @property
+    def runtime(self) -> _RuntimeOptions:
+        """Return the immutable runtime policy."""
+
+        return self._runtime
+
+    @property
+    def constants(self) -> _PhysicalConstants:
+        """Return the immutable physical constants."""
+
+        return self._constants
+
+    @property
+    def logger(self) -> _LoggerLike:
+        """Return the configured runtime logger."""
+
+        return self._logger
+
+    @property
+    def log_level(self) -> int | str:
+        """Return the configured logging threshold."""
+
+        return self._log_level
+
+    @property
+    def components(self) -> Mapping[str, _components.Component]:
+        """Return original public components in a stable immutable mapping."""
+
+        return self._components_view
+
+    @property
+    def _runtime_components(self) -> Mapping[str, Any]:
+        """Return normalized declarations for private runtime preparation."""
+
+        return self._declarations
+
+    @property
+    def exchanges(self) -> tuple[_Exchange, ...]:
+        """Return immutable exchange declarations."""
+
+        return self._exchanges
 
     @property
     def run_order(self) -> tuple[str, ...]:
-        """Return component names in runtime execution order."""
+        """Return the immutable active component sequence."""
 
-        return tuple(self.run_sequence)
+        return self._run_order
 
-    @run_order.setter
-    def run_order(self, run_order: Sequence[str]) -> None:
-        """Set component names in runtime execution order."""
+    def _ensure_prepared(self) -> _PreparedCoupling:
+        """Return the one lazily prepared runtime boundary."""
 
-        self.run_sequence = normalize_run_sequence(run_order)
+        if self._prepared is None:
+            self._prepared = _runtime_facade.prepare_coupling(
+                components=self._runtime_components,
+                exchanges=self.exchanges,
+                run_order=self.run_order,
+                clock=self.clock,
+                constants=self.constants,
+                runtime=self.runtime,
+                logger=self.logger,
+            )
+        return self._prepared
 
-    def add_component(
-        self,
-        component: "Component",
-    ) -> None:
-        """Register a component with the coupler."""
+    def _initialize_runtime(self) -> None:
+        """Prepare components, topology, contracts, and runtime dispatch once."""
 
-        self._register_component(component)
+        self._ensure_prepared()
 
-    def register(
-        self,
-        component: "Component",
-    ) -> None:
-        """
-        Register a component with the coupler.
-
-        Arguments:
-            component: component instance to register
-        """
-
-        warn_deprecated_name(
-            "Coupler.register()",
-            "Coupler.add_component()",
-            remove_in="0.2.0",
-        )
-        self._register_component(component)
-
-    def _register_component(
-        self,
-        component: "Component",
-    ) -> None:
-        """Register a component with the coupler without compatibility warnings."""
-
-        validate_component_setup(component)
-        if component.name in self.components:
-            raise CouplerError(f"Component {component.name} already registered")
-
-        self.components[component.name] = component
-        self.logger.info(f" Registered component {component.name}")
-
-    def add_exchange(self, exchange: Exchange) -> None:
-        """
-        Add an exchange definition to the coupler.
-
-        Arguments:
-            exchange: Exchange instance defining the exchange between components to add
-        """
-
-        self.exchanges.append(exchange)
-        formatted_field_names = ", ".join(
-            ", ".join(item) if isinstance(item, tuple) else item
-            for item in exchange.fields
-        )
-        self.logger.info(
-            f" Added exchange {exchange.label}: Fields ({formatted_field_names})"
-        )
-
-    def add_exchanges(self, exchanges: Iterable[Exchange]) -> None:
-        """Add multiple exchange definitions to the coupler."""
-
-        for exchange in exchanges:
-            self.add_exchange(exchange)
-
-    def set_run_order(
-        self,
-        run_order: Sequence[str],
-    ) -> None:
-        """Set the run order for coupler components."""
-
-        normalized_run_sequence = normalize_run_sequence(run_order)
-        for cname in normalized_run_sequence:
-            if cname not in self.components.keys():
-                raise CouplerError(f"Component {cname} not registered in coupler")
-        self.run_sequence = normalized_run_sequence
-        self.logger.info(
-            f" Set coupler components run sequence: {', '.join(self.run_sequence)}"
-        )
-
-    def set_components_run_sequence(
-        self,
-        run_sequence: Sequence[str],
-    ) -> None:
-        """
-        Set the run sequence for the coupler components.
-
-        Arguments:
-            run_sequence: component names defining the order of components execution
-        """
-
-        warn_deprecated_name(
-            "Coupler.set_components_run_sequence()",
-            "Coupler.set_run_order()",
-            remove_in="0.2.0",
-        )
-        self.set_run_order(run_sequence)
-
-    def _runtime_inputs(self) -> _runtime_facade.RuntimeFacadeInputs:
-        """Return the repeated runtime facade input bundle for this coupler."""
-
-        self.run_sequence = normalize_run_sequence(self.run_sequence)
-        return _runtime_facade.RuntimeFacadeInputs(
-            self.components,
-            self.exchanges,
-            self._runtime_resources,
-            self.run_sequence,
-            self.clock,
-            self.settings,
-        )
-
-    def initialize(self, enable_x64_computations: Optional[bool] = None) -> None:
-        """
-        Initialize the coupler and all registered components.
-        """
-
-        initialized = _runtime_facade.initialize_coupler_runtime(
-            inputs=self._runtime_inputs(),
-            logger=self.logger,
-            enable_x64_computations=enable_x64_computations,
-        )
-
-        topology = initialized.topology
-        surface_masks = topology.surface_masks
-        self.ocn_fmask_on_atm_grid = surface_masks.ocn_fmask_on_atm_grid
-        self.lnd_fmask_on_atm_grid = surface_masks.lnd_fmask_on_atm_grid
-        self.lnd_bmask_on_atm_grid = surface_masks.lnd_bmask_on_atm_grid
-
-    def create_runtime_state(
-        self, *, prefill_missing: bool = True
-    ) -> _runtime_state_module.RuntimeCouplerState:
-        """Create and validate the immutable state used by the unified runtime."""
-
-        warn_deprecated_name(
-            "Coupler.create_runtime_state()",
-            "Coupler.state()",
-            remove_in="0.2.0",
-        )
-        return self._create_runtime_state(prefill_missing=prefill_missing)
-
-    def _create_runtime_state(
-        self, *, prefill_missing: bool = True
-    ) -> _runtime_state_module.RuntimeCouplerState:
-        """Create and validate the immutable state used by the unified runtime."""
+    def initial_state(self, *, prefill_missing: bool = True) -> _RunState:
+        """Create and validate the coupled runtime state."""
 
         return _runtime_facade.create_runtime_state(
-            inputs=self._runtime_inputs(),
+            prepared=self._ensure_prepared(),
             prefill_missing=prefill_missing,
         )
 
-    def state(self, *, prefill: bool = True) -> _runtime_state_module.CouplerState:
-        """Create and validate the coupled runtime state."""
-
-        return self._create_runtime_state(prefill_missing=prefill)
-
-    def runtime_component_view(
+    def run(
         self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        name: str,
-    ) -> _runtime_views_module.RuntimeComponentView:
-        """Return a single object containing component metadata and runtime fields."""
-
-        warn_deprecated_name(
-            "Coupler.runtime_component_view()",
-            "Coupler.view()",
-            remove_in="0.2.0",
-        )
-        return self._runtime_component_view(runtime_state, name)
-
-    def _runtime_component_view(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        name: str,
-    ) -> _runtime_views_module.RuntimeComponentView:
-        """Return a single object containing component metadata and runtime fields."""
-
-        return _runtime_facade.runtime_component_view(
-            components=self.components,
-            runtime_state=runtime_state,
-            name=name,
-        )
-
-    def view(
-        self,
-        state: _runtime_state_module.CouplerState,
-        name: str,
-    ) -> _runtime_views_module.ComponentView:
-        """Return a component view for diagnostics and output."""
-
-        return self._runtime_component_view(state, name)
-
-    def runtime_component_views(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        names: Sequence[str] | None = None,
-    ) -> dict[str, _runtime_views_module.RuntimeComponentView]:
-        """Return named runtime component views in component or requested order."""
-
-        warn_deprecated_name(
-            "Coupler.runtime_component_views()",
-            "Coupler.views()",
-            remove_in="0.2.0",
-        )
-        return self._runtime_component_views(runtime_state, names=names)
-
-    def _runtime_component_views(
-        self,
-        runtime_state: _runtime_state_module.RuntimeCouplerState,
-        names: Sequence[str] | None = None,
-    ) -> dict[str, _runtime_views_module.RuntimeComponentView]:
-        """Return named runtime component views in component or requested order."""
-
-        return _runtime_facade.runtime_component_views(
-            components=self.components,
-            runtime_state=runtime_state,
-            names=names,
-        )
-
-    def views(
-        self,
-        state: _runtime_state_module.CouplerState,
-        names: Sequence[str] | None = None,
-    ) -> dict[str, _runtime_views_module.ComponentView]:
-        """Return component views for diagnostics and output."""
-
-        return self._runtime_component_views(state, names=names)
-
-    def finalize(
-        self,
-        final_state: _runtime_state_module.RuntimeCouplerState,
-        output_file_mask: Optional[Path] = None,
+        state: _RunState | None = None,
         *,
-        output: Optional[Path] = None,
-    ) -> None:
-        """
-        Write final runtime component state to component output files.
+        output: _OutputTarget | None = None,
+    ) -> _RunState:
+        """Run the configured workflow and optionally write selected outputs.
 
-        Arguments:
-            final_state: runtime state returned by ``run()`` or ``state()``
-            output: optional path mask for output files
+        ``output=None`` performs no I/O. A bare :class:`OutputTarget` enables
+        period means, final fields, and registered snapshots; its flags disable
+        each kind independently. Enabled I/O rejects traced state leaves, while
+        output-free and all-disabled runs remain JIT- and gradient-compatible.
         """
 
-        if output is not None:
-            if output_file_mask is not None:
-                raise TypeError("Use either output or output_file_mask, not both")
-            output_file_mask = output
-        elif output_file_mask is not None:
-            warn_deprecated_name(
-                "Coupler.finalize(output_file_mask=...)",
-                "Coupler.finalize(output=...)",
-                remove_in="0.2.0",
-            )
-        self.logger.info(" ------------ Finalizing coupler and components ------------")
-        _runtime_facade.finalize(
-            final_state=final_state,
-            inputs=self._runtime_inputs(),
-            output_file_mask=output_file_mask,
+        if output is not None and not isinstance(output, _OutputTarget):
+            raise TypeError("output must be OutputTarget or None")
+
+        prepared = self._ensure_prepared()
+        runtime_state = _runtime_facade.prepare_runtime_state(
+            state,
+            prepared=prepared,
+        )
+        return _runtime_facade.run(
+            runtime_state,
+            prepared=prepared,
             logger=self.logger,
+            output=output,
         )
 
     def __str__(self) -> str:
         return (
             f"{self.__class__.__name__}:\n"
             f"├── Run start: {self.clock.start}\n"
-            f"├── Components: "
+            "├── Components: "
             + ", ".join(
                 f"<{component.__class__.__name__}>({name})"
                 for name, component in self.components.items()
             )
             + "\n"
-            f"├── Exchanges: {', '.join(exchange.label for exchange in self.exchanges)}\n"
-            f"└── Run sequence: {', '.join(self.run_sequence)}"
+            f"├── Exchanges: {', '.join(exchange.route_id for exchange in self.exchanges)}\n"
+            f"└── Run order: {', '.join(self.run_order)}"
         )
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(runstart={self.clock.start}, run_sequence={' -> '.join(self.run_sequence)})"
-
-    def run(
-        self,
-        state: _runtime_state_module.RuntimeCouplerState | None = None,
-        *,
-        initial_state: _runtime_state_module.RuntimeCouplerState | None = None,
-    ) -> _runtime_state_module.RuntimeCouplerState:
-        """
-        Run all registered components through the unified runtime entrypoint.
-
-        Pure differentiable components run through the JIT-scanned runtime.
-        Host-backed components run through the Python host bridge.
-        """
-
-        if state is not None and initial_state is not None:
-            raise TypeError("Use either state or initial_state, not both")
-        if initial_state is not None:
-            warn_deprecated_name(
-                "Coupler.run(initial_state=...)",
-                "Coupler.run(state=...)",
-                remove_in="0.2.0",
-            )
-        inputs = self._runtime_inputs()
-        runtime_state = _runtime_facade.prepare_runtime_state(
-            state if state is not None else initial_state,
-            inputs=inputs,
+        return (
+            f"{self.__class__.__name__}(runstart={self.clock.start}, "
+            f"run_order={' -> '.join(self.run_order)})"
         )
-        return _runtime_facade.run(
-            runtime_state,
-            inputs=inputs,
-            logger=self.logger,
-        )
+
+
+# Postponed annotations retain private import aliases in ``inspect.signature``.
+# Publish the canonical runtime objects for the stable run contract.
+Coupler.run.__annotations__.update(
+    {
+        "state": _RunState | None,
+        "output": _OutputTarget | None,
+        "return": _RunState,
+    }
+)

@@ -2,7 +2,13 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Component, Coupler, Exchange
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RuntimeOptions,
+)
+from vercor.components import Component
 from vercor.diagnostics import (
     ComponentMetric,
     component_vector_speed,
@@ -10,11 +16,13 @@ from vercor.diagnostics import (
     print_component_field_means_table,
     total_surface_temperature,
 )
+from vercor.output import OutputTarget
 from vercor.regridding import bilinear, conservative
+from vercor.topology import SurfaceMaskPolicy
 from vercor.setups import make_era5_atmosphere
 from vercor.setups import make_era5_land
 from vercor.setups import make_erainterim_ocean
-from vercor.exchanges import (
+from vercor.recipes import (
     ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
     ATMOSPHERE_TO_LAND_STATE_FIELDS,
     ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
@@ -31,64 +39,64 @@ if __name__ == "__main__":
 
     # Clock and sequence
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=3600, steps=10)
-    run_sequence = ["OCN", "ATM", "LND"]
-
-    # Coupler
-    components: list[Component] = [atm, ocn, lnd]
-    cpl = Coupler.from_components(
-        clock=clock,
-        components=components,
-        run_order=run_sequence,
-    )
+    run_order = ["OCN", "ATM", "LND"]
 
     # Exchanges
     # scalar fields (vector field))
     # ["qbot", "zbot", ("ubot", "vbot")]
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_LAND_STATE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
+            route_id="atmosphere-ocean-state",
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
+            route_id="atmosphere-ocean-radiation",
+            regridder_factory=conservative,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_STATE_FIELDS,
+            route_id="atmosphere-land-state",
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
+            route_id="atmosphere-land-radiation",
+            regridder_factory=conservative,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regridder_factory=bilinear,
         ),
     )
+    components: list[Component] = [atm, ocn, lnd]
+    cpl = Coupler(
+        clock=clock,
+        components=components,
+        exchanges=exchanges,
+        run_order=run_order,
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
+    )
 
-    cpl.initialize()
-    final_state = cpl.run()
-    cpl.finalize(final_state)
-    views = cpl.views(final_state, names=("ATM", "OCN"))
+    final_state = cpl.run(output=OutputTarget("."))
+    views = final_state.components(("ATM", "OCN"))
 
     variables: list[tuple[ComponentMetric, str]] = [
         ("sea_surface_temperature", "sst"),

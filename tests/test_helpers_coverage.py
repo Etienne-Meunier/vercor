@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import partial
 from typing import Any, cast
 
@@ -11,41 +10,36 @@ import pytest
 
 from tests.assertions import assert_allclose_compact
 from vercor.exceptions import GridError
-from vercor.exchange import Exchange
-from vercor.grid import Grid, RectilinearGrid
+from vercor.exchanges import Exchange
+from vercor.fields import vector
+from vercor.grids import RectilinearGrid
 from vercor.grid_geometry import centers_to_edges
 from vercor.grid_masks import compute_land_mask
-from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
-from vercor.regridders.bilinear import bilinear
-
-
-@dataclass(frozen=True)
-class ExampleGrid(Grid):
-    longitude_size: int = 3
-    latitude_size: int = 2
-
-    @property
-    def shape(self) -> tuple[int, int]:
-        return (self.latitude_size, self.longitude_size)
+from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor._regridders.bilinear import bilinear
 
 
 @pytest.mark.fast_always
-def test_grid_and_rectilinear_grid_validations_and_reprs() -> None:
-    grid = ExampleGrid(name="example", binary_mask=np.ones((2, 3)))
-    assert "Grid name:  example" in str(grid)
-    assert "longitude_size=3" in repr(grid)
+def test_rectilinear_grid_owns_grid_behavior_without_private_base() -> None:
+    import vercor.grids as grids
 
-    with pytest.raises(GridError, match="Mask must be a 2D array"):
-        ExampleGrid(name="bad-mask", binary_mask=np.ones((2, 3, 1)))
-
-    rectilinear = RectilinearGrid(
+    grid = RectilinearGrid(
         name="rect",
         longitude=np.asarray([0.0, 120.0, 240.0]),
         latitude=np.asarray([-45.0, 45.0]),
+        binary_mask=np.ones((2, 3)),
     )
-    assert rectilinear.shape == (2, 3)
-    assert "RectilinearGrid" in str(rectilinear)
-    assert "shape=(2, 3)" in repr(rectilinear)
+
+    assert not hasattr(grids, "_Grid")
+    assert "Grid name:  rect" in str(grid)
+    assert "shape=(2, 3)" in repr(grid)
+    with pytest.raises(GridError, match="Mask must be a 2D array"):
+        RectilinearGrid(
+            name="bad-mask",
+            longitude=np.asarray([0.0, 120.0, 240.0]),
+            latitude=np.asarray([-45.0, 45.0]),
+            binary_mask=np.ones((2, 3, 1)),
+        )
 
     with pytest.raises(GridError, match="1D arrays"):
         RectilinearGrid(
@@ -155,18 +149,21 @@ def test_exchange_stores_factory_and_formatting_without_create_wrapper() -> None
     exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=["temperature", ("u_velocity", "v_velocity")],
-        regrid=cast(Any, dummy_factory),
+        fields=["temperature", vector("u_velocity", "v_velocity")],
+        regridder_factory=cast(Any, dummy_factory),
     )
 
-    created = exchange.regrid(source_grid, destination_grid)
+    created = exchange.regridder_factory(source_grid, destination_grid)
 
     assert not hasattr(exchange, "create")
-    assert exchange.name is None
-    assert exchange.label == "OCN --(dummy_factory)--> ATM"
-    assert exchange.interpolation_type == "dummy_factory"
+    assert not hasattr(exchange, "name")
+    assert exchange.route_id == "OCN->ATM"
+    assert not hasattr(exchange, "interpolation_type")
     assert "Source component: OCN" in str(exchange)
-    assert "fields=('temperature', ('u_velocity', 'v_velocity'))" in repr(exchange)
+    assert (
+        "fields=('temperature', VectorField(u='u_velocity', v='v_velocity'))"
+        in repr(exchange)
+    )
     assert created == {"source": "src", "destination": "dst"}
     assert calls == [(source_grid, destination_grid)]
 
@@ -193,17 +190,18 @@ def test_exchange_uses_wrapped_factory_name_and_keeps_partial_options() -> None:
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=regridder_factory,
+        regridder_factory=regridder_factory,
     )
-    created = exchange.regrid(source_grid, destination_grid)
+    created = exchange.regridder_factory(source_grid, destination_grid)
+    private_created = cast(Any, created)
 
     assert not hasattr(exchange, "create")
-    assert exchange.name is None
-    assert exchange.label == "OCN --(bilinear)--> ATM"
-    assert exchange.interpolation_type == "bilinear"
+    assert not hasattr(exchange, "name")
+    assert exchange.route_id == "OCN->ATM"
+    assert not hasattr(exchange, "interpolation_type")
     assert created.source_grid is source_grid
-    assert created.destination_grid is destination_grid
-    assert isinstance(created.interpolator, BilinearRectilinearInterpolator)
-    assert created.interpolator.periodic is False
-    assert created.interpolator.extrapolation_mode == "nearest"
-    assert created.interpolator.idw_k == 4
+    assert created.target_grid is destination_grid
+    assert isinstance(private_created.interpolator, BilinearRectilinearInterpolator)
+    assert private_created.interpolator.periodic is False
+    assert private_created.interpolator.extrapolation_mode == "nearest"
+    assert private_created.interpolator.idw_k == 4

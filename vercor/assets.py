@@ -8,7 +8,9 @@ from pathlib import Path
 import shutil
 from urllib.request import urlopen
 
-from vercor.exceptions import AssetError
+from vercor.exceptions import AssetError as _AssetError
+
+__all__ = ["VERCOR_ASSETS_BASE_URL", "ensure_registered_asset"]
 
 VERCOR_ASSETS_BASE_URL = (
     os.environ.get("VERCOR_ASSETS_BASE_URL")
@@ -73,7 +75,7 @@ def _verified_cached_asset_path(asset: _RegisteredAsset) -> Path | None:
 def _download_registered_asset(asset: _RegisteredAsset, cached_path: Path) -> None:
     base_url = _asset_base_url()
     if base_url is None:
-        raise AssetError(
+        raise _AssetError(
             "Asset not found in cache and no remote base URL configured. "
             "Set VERCOR_ASSETS_BASE_URL to a server hosting VerCOR assets. "
             f"Missing asset: '{asset.filename}'"
@@ -83,7 +85,7 @@ def _download_registered_asset(asset: _RegisteredAsset, cached_path: Path) -> No
     try:
         _download_asset(url, cached_path)
     except Exception as e:
-        raise AssetError(
+        raise _AssetError(
             f"Failed to download asset '{asset.filename}' from '{url}': {e}"
         ) from e
 
@@ -109,7 +111,7 @@ def ensure_registered_asset(
     if actual_md5 != asset.md5:
         if cached_path.exists():
             cached_path.unlink()
-        raise AssetError(
+        raise _AssetError(
             f"MD5 mismatch for asset '{asset.filename}': expected {asset.md5}, got {actual_md5}"
         )
 

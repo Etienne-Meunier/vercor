@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import os
 import signal
@@ -10,55 +11,66 @@ from jax.errors import JaxRuntimeError
 import numpy as np
 import pytest
 
+import vercor
 from tests._coverage_support import make_test_grid
 from vercor.clock import Clock
-from vercor.components.base import Component
-from vercor.components.host import HostComponent
+from vercor.components import ComponentSpec
 from vercor.coupler import Coupler
 from vercor.components.contexts import StepContext
-from vercor.runtime.interrupts import (
+from vercor.runtime import ExecutionContext, RuntimeDriver
+from vercor._runtime.interrupts import (
     RuntimeInterruptController,
     RuntimeInterrupted,
     default_runtime_interrupt_signals,
 )
 
 
-class _NoopRuntimeComponent(Component):
+class _NoopRuntimeComponent:
     def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.data["temperature"] = np.ones((2, 2), dtype=float)
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+        )
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
-        _ = context
-        return component_state
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, context, payload
+        return {}
 
 
-class _InterruptingHostComponent(HostComponent):
+class _InterruptingHostComponent:
     def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.data["temperature"] = np.ones((2, 2), dtype=float)
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+            execution="host",
+        )
 
-    def step_host_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
-        _ = context
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, context, payload
         signal.raise_signal(signal.SIGINT)
-        return component_state
+        return {}
 
 
 def _make_pure_coupler(steps: int = 2) -> Coupler:
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=steps)
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=steps),
+        components=(cast(Any, _NoopRuntimeComponent("ATM")),),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": cast(Any, _NoopRuntimeComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
-    return coupler
 
 
 def _block_until_ready(value: Any) -> Any:
@@ -166,9 +178,40 @@ def test_unrelated_jax_runtime_errors_are_preserved() -> None:
 
 
 def test_host_runtime_signal_aborts_through_shared_controller() -> None:
-    coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
-    coupler.components = {"ATM": cast(Any, _InterruptingHostComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _InterruptingHostComponent("ATM")),),
+        run_order=("ATM",),
+    )
+
+    with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
+        coupler.run()
+
+    assert excinfo.value.signum == int(signal.SIGINT)
+
+
+@pytest.mark.fast_always
+def test_custom_backend_signal_aborts_through_shared_controller() -> None:
+    class InterruptingBackend:
+        def execute(
+            self,
+            state: vercor.RunState,
+            *,
+            context: ExecutionContext,
+            chunk: object,
+            driver: RuntimeDriver,
+        ) -> vercor.RunState:
+            _ = context, chunk, driver
+            signal.raise_signal(signal.SIGINT)
+            return state
+
+    component = _NoopRuntimeComponent("ATM")
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, component),),
+        run_order=("ATM",),
+        runtime=vercor.RuntimeOptions(backend=InterruptingBackend()),
+    )
 
     with pytest.raises(RuntimeInterrupted, match="SIGINT") as excinfo:
         coupler.run()
@@ -180,20 +223,23 @@ def test_compiled_scanned_runtime_translates_interrupt_callback_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = _make_pure_coupler()
-    interrupts = coupler._runtime_resources.interrupt_controller
-    original_checkpoint = interrupts.checkpoint
+    interrupts = coupler._ensure_prepared().interrupts
+    original_scanned_checkpoint = interrupts.scanned_checkpoint
     requested = False
 
-    def request_once_then_checkpoint(label: str = "runtime") -> None:
+    def request_once_then_checkpoint(
+        label: str = "scanned runtime",
+        token: object | None = None,
+    ) -> None:
         nonlocal requested
-        if not requested:
+        if not requested and label == "scanned runtime step":
             requested = True
             interrupts.request(signal.SIGINT)
-        original_checkpoint(label)
+        original_scanned_checkpoint(label, token)
 
     monkeypatch.setattr(
         interrupts,
-        "checkpoint",
+        "scanned_checkpoint",
         request_once_then_checkpoint,
     )
 
@@ -207,20 +253,23 @@ def test_compiled_scanned_runtime_observes_wakeup_fd_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = _make_pure_coupler()
-    interrupts = coupler._runtime_resources.interrupt_controller
-    original_checkpoint = interrupts.checkpoint
+    interrupts = coupler._ensure_prepared().interrupts
+    original_scanned_checkpoint = interrupts.scanned_checkpoint
     injected = False
 
-    def write_wakeup_once_then_checkpoint(label: str = "runtime") -> None:
+    def write_wakeup_once_then_checkpoint(
+        label: str = "scanned runtime",
+        token: object | None = None,
+    ) -> None:
         nonlocal injected
-        if not injected:
+        if not injected and label == "scanned runtime step":
             injected = True
             _write_wakeup_signal(interrupts, signal.SIGTSTP)
-        original_checkpoint(label)
+        original_scanned_checkpoint(label, token)
 
     monkeypatch.setattr(
         interrupts,
-        "checkpoint",
+        "scanned_checkpoint",
         write_wakeup_once_then_checkpoint,
     )
 
@@ -236,5 +285,5 @@ def test_interrupt_checkpoints_preserve_repeated_scanned_runs() -> None:
     first = _block_until_ready(coupler.run())
     second = _block_until_ready(coupler.run())
 
-    assert first.component_names == ("ATM",)
-    assert second.component_names == ("ATM",)
+    assert tuple(first.components()) == ("ATM",)
+    assert tuple(second.components()) == ("ATM",)

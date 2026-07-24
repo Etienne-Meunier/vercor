@@ -1,6 +1,7 @@
+"""Shared NetCDF writer boundary tests used by output coordination."""
+
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime
 import logging
 from pathlib import Path
@@ -11,63 +12,38 @@ import pytest
 
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
-from vercor.output.datasets import time_coordinate_variable
-from vercor.output.period_averages import (
-    PeriodAverageAccumulator,
-    period_mean_output_variables,
-)
-from vercor.output.period_files import write_period_average_netcdf
-from vercor.output.variables import OutputVariable
+from vercor.output import OutputVariable
+from vercor.output._dataset import time_coordinate_variable
+from vercor.output._netcdf import write_netcdf_dataset
 
 
-def _accumulator_with_temperature() -> PeriodAverageAccumulator:
-    accumulator = PeriodAverageAccumulator()
-    accumulator.add_samples(
-        {
-            "temperature": OutputVariable(
-                ("x",),
-                np.asarray([1.0, 3.0]),
-                {"units": "K"},
-            )
-        }
-    )
-    return accumulator
+def _mean_variables() -> dict[str, OutputVariable]:
+    return {
+        "temperature": OutputVariable(
+            ("time", "x"),
+            np.asarray([[1.0, 3.0]]),
+            {"units": "K"},
+        )
+    }
 
 
-def _mean_variables(
-    accumulator: PeriodAverageAccumulator,
-) -> dict[str, OutputVariable]:
-    return period_mean_output_variables(
-        accumulator,
-        empty_error_message="missing period samples",
-        time_dim="time",
-    )
-
-
-def _coordinate_variables(
-    variables: Mapping[str, OutputVariable],
-) -> dict[str, OutputVariable]:
-    _ = variables
+def _coordinate_variables() -> dict[str, OutputVariable]:
     return {
         "time": time_coordinate_variable(datetime(2000, 1, 2)),
         "x": OutputVariable(("x",), np.asarray([10.0, 20.0])),
     }
 
 
-def test_write_period_average_netcdf_logs_writes_and_clears(
-    tmp_path: Path,
-) -> None:
-    accumulator = _accumulator_with_temperature()
+def test_write_netcdf_dataset_logs_one_coordinator_write(tmp_path: Path) -> None:
     output = tmp_path / "period-average.nc"
     logger_name = "VerCOR.test.period-files"
     logger = logging.getLogger(logger_name)
 
     with capture_logger_output(logger_name) as stream:
-        write_period_average_netcdf(
-            accumulator,
-            str(output),
-            build_mean_variables=_mean_variables,
-            build_coordinate_variables=_coordinate_variables,
+        write_netcdf_dataset(
+            output=str(output),
+            coordinate_variables=_coordinate_variables(),
+            data_variables=_mean_variables(),
             logger=logger,
         )
 
@@ -77,68 +53,41 @@ def test_write_period_average_netcdf_logs_writes_and_clears(
         assert temperature.attrs["units"] == "K"
         assert_allclose_compact(np.asarray(temperature), np.asarray([[1.0, 3.0]]))
         assert_allclose_compact(np.asarray(actual.variables["x"]), [10.0, 20.0])
-        assert actual.variables["time"].attrs["calendar"] == "proleptic_gregorian"
-    assert accumulator.empty
     assert stream.getvalue().count(f"Writing output file:  {output}") == 1
 
 
-def test_write_period_average_netcdf_applies_data_variable_builder(
-    tmp_path: Path,
-) -> None:
-    accumulator = _accumulator_with_temperature()
-    output = tmp_path / "period-average-with-metadata.nc"
+def test_write_netcdf_dataset_persists_coordinator_metadata(tmp_path: Path) -> None:
+    output = tmp_path / "decorated.nc"
+    variables = {
+        name: OutputVariable(
+            variable.dims,
+            variable.values,
+            {**dict(variable.attrs), "long_name": "Air temperature"},
+        )
+        for name, variable in _mean_variables().items()
+    }
 
-    def build_data_variables(
-        variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        return {
-            name: OutputVariable(
-                variable.dims,
-                variable.values,
-                {**dict(variable.attrs), "long_name": "Air temperature"},
-            )
-            for name, variable in variables.items()
-        }
-
-    write_period_average_netcdf(
-        accumulator,
-        str(output),
-        build_mean_variables=_mean_variables,
-        build_coordinate_variables=_coordinate_variables,
-        build_data_variables=build_data_variables,
+    write_netcdf_dataset(
+        output=str(output),
+        coordinate_variables=_coordinate_variables(),
+        data_variables=variables,
     )
 
     with h5netcdf.File(output, "r") as actual:
-        temperature = actual.variables["temperature"]
-        assert temperature.attrs["units"] == "K"
-        assert temperature.attrs["long_name"] == "Air temperature"
+        assert actual.variables["temperature"].attrs["long_name"] == "Air temperature"
 
 
-def test_write_period_average_netcdf_keeps_accumulator_when_write_fails(
-    tmp_path: Path,
-) -> None:
-    accumulator = _accumulator_with_temperature()
-    output = tmp_path / "conflicting-dimensions.nc"
-
-    def conflicting_data_variables(
-        variables: Mapping[str, OutputVariable],
-    ) -> dict[str, OutputVariable]:
-        _ = variables
-        return {
-            "temperature": OutputVariable(
-                ("time", "x"),
-                np.asarray([[1.0, 2.0, 3.0]]),
-                {"units": "K"},
-            )
-        }
+def test_write_netcdf_dataset_surfaces_dimension_conflicts(tmp_path: Path) -> None:
+    conflicting = {
+        "temperature": OutputVariable(
+            ("time", "x"),
+            np.asarray([[1.0, 2.0, 3.0]]),
+        )
+    }
 
     with pytest.raises(ValueError, match="dimension 'x'.*existing size 2.*new size 3"):
-        write_period_average_netcdf(
-            accumulator,
-            str(output),
-            build_mean_variables=_mean_variables,
-            build_coordinate_variables=_coordinate_variables,
-            build_data_variables=conflicting_data_variables,
+        write_netcdf_dataset(
+            output=str(tmp_path / "conflict.nc"),
+            coordinate_variables=_coordinate_variables(),
+            data_variables=conflicting,
         )
-
-    assert not accumulator.empty

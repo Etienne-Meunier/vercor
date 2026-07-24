@@ -1,6 +1,9 @@
 
 ## Bilinear interpolation on a unit sphere
 
+For the package's setup-agnostic extension contracts, see the
+[VerCOR 0.4 plugin authoring guide](plugin-authoring.md).
+
 ### 0) Spherical Coordinates vs. Geographical Spherical Coordinates
 
 #### There are two very common angle conventions:

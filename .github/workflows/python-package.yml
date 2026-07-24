@@ -1,62 +1,534 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
-name: Python package
+name: vercor
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+    tags: ["v*.*.*"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  build-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # checkout major 4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # setup-python major 5
+        with:
+          python-version: "3.12"
+      - name: Build VerCOR distributions once
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --outdir dist
+          shopt -s nullglob dotglob
+          DIST_ARTIFACTS=(dist/*)
+          test "${#DIST_ARTIFACTS[@]}" -eq 2
+          test -f dist/vercor-0.4.0-py3-none-any.whl
+          test -f dist/vercor-0.4.0.tar.gz
+          mkdir -p release-manifest
+          (
+            cd dist
+            sha256sum vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz > ../release-manifest/SHA256SUMS
+            sha256sum -c ../release-manifest/SHA256SUMS
+          )
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # upload-artifact major 4
+        with:
+          name: vercor-distributions
+          path: |
+            dist/vercor-0.4.0-py3-none-any.whl
+            dist/vercor-0.4.0.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # upload-artifact major 4
+        with:
+          name: vercor-release-manifest
+          path: release-manifest/SHA256SUMS
+          if-no-files-found: error
 
+  installed-artifact-tests:
+    needs: build-artifacts
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13",]
-
+        python-version: ["3.12", "3.13"]
+        environment: [base, jcm, veros]
+        artifact: [wheel]
+        include:
+          - environment: base
+            extra: ""
+            pytest-target: >-
+              tests/test_setup_boundaries.py::test_public_import_and_config_access_are_optional_dependency_free
+              tests/test_setup_boundaries.py::test_lazy_factory_attribute_access_loads_only_lightweight_factory_module
+              tests/test_setup_boundaries.py::test_vercor_setups_is_the_only_setup_lazy_export_registry
+              tests/test_setup_boundaries.py::test_missing_optional_dependencies_fail_at_factory_invocation
+              tests/test_setup_boundaries.py::test_camulator_enabled_spinup_fails_before_runtime_configuration
+              tests/test_setup_boundaries.py::test_setup_subprocess_helpers_honor_installed_package_root
+              tests/test_distribution_boundaries.py
+          - environment: jcm
+            extra: "[jcm,veros]"
+            pytest-target: >-
+              tests/test_setup_lifecycle_helpers.py::test_make_jcm_land_atmosphere_replaces_only_missing_forcing
+              tests/test_external_components_coverage.py::test_jax_gcm_initialize_uses_provided_forcing_and_can_spin_up
+              tests/test_external_components_coverage.py::test_jax_gcm_initialize_builds_default_forcing_when_missing
+          - environment: veros
+            extra: "[jcm,veros]"
+            pytest-target: >-
+              tests/test_setup_boundaries.py::test_veros_implementation_import_does_not_configure_runtime
+              tests/test_setup_boundaries.py::test_veros_factory_configures_once_before_implementation_import
+              tests/test_external_components_coverage.py::test_veros_initialize_spinup_follows_enabled_only
+          - python-version: "3.12"
+            environment: base
+            artifact: sdist
+            extra: ""
+            pytest-target: >-
+              tests/test_distribution_boundaries.py::test_built_sdist_installs_and_imports_outside_checkout
+          - python-version: "3.13"
+            environment: base
+            artifact: sdist
+            extra: ""
+            pytest-target: >-
+              tests/test_distribution_boundaries.py::test_built_sdist_installs_and_imports_outside_checkout
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Get jax-gcm
-      uses: actions/checkout@v4
-      with:
-        repository: climate-analytics-lab/jax-gcm
-        path: vendor/jax-gcm
-        ref: v1.1.1 
-    - name: Get Veros
-      uses: actions/checkout@v4
-      with:
-        repository: team-ocean/veros
-        path: vendor/veros
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install flake8 pytest
-        python -m pip install torch torchvision
-        python -m pip install dinosaur==1.3.5
-        pip install vendor/jax-gcm -r vendor/jax-gcm/requirements.txt
-        pip install vendor/veros -r vendor/veros/requirements.txt
-        pip install .
-        export PYTHONPATH=./vendor/jax-gcm:./vendor/veros:$PYTHONPATH
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # checkout major 4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # setup-python major 5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # download-artifact major 4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Install selected artifact environment
+        run: |
+          python -m pip install --upgrade pip pytest "pytest-xdist>=3.7" mypy pyyaml build "flit_core<4"
+          WHEEL_PATH="${GITHUB_WORKSPACE}/dist/vercor-0.4.0-py3-none-any.whl"
+          SDIST_PATH="${GITHUB_WORKSPACE}/dist/vercor-0.4.0.tar.gz"
+          if [ "${{ matrix.artifact }}" = "sdist" ]; then
+            ARTIFACT_PATH="${SDIST_PATH}"
+          else
+            ARTIFACT_PATH="${WHEEL_PATH}"
+          fi
+          python -m pip install "${ARTIFACT_PATH}${{ matrix.extra }}"
+          PACKAGE_ROOT=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          echo "VERCOR_ARTIFACT_DIR=${GITHUB_WORKSPACE}/dist" >> "$GITHUB_ENV"
+          echo "VERCOR_TEST_PACKAGE_ROOT=${PACKAGE_ROOT}" >> "$GITHUB_ENV"
+      - name: Verify imports resolve from the installed artifact
+        run: |
+          cd "$RUNNER_TEMP"
+          python -c "import pathlib, vercor; assert pathlib.Path(vercor.__file__).is_relative_to(pathlib.Path('${VERCOR_TEST_PACKAGE_ROOT}'))"
+      - name: Run relevant installed-artifact suite
+        env:
+          PYTHONSAFEPATH: "1"
+        run: python -P -m pytest --import-mode=importlib ${{ matrix.pytest-target }} -q --tb=short
 
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 120 chars wide
-        flake8 . --count --exit-zero --max-line-length=120 --statistics
-    - name: Type checking with mypy
-      run: |
-        pip install mypy
-        pip install types-PyYAML
-        mypy vercor tests examples
-    - name: Test with pytest
-      run: |
-        pytest tests -q --ignore=vendor
+  external-extension-contract-tests:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # checkout major 4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # setup-python major 5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # download-artifact major 4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Run installed external extension contract
+        run: |
+          python -m pip install --upgrade pip build mypy
+          python -m build --wheel --outdir "$RUNNER_TEMP/external-extension-fixture-dist" tests/fixtures/external_extension_test_fixture
+          python -m pip install "${GITHUB_WORKSPACE}/dist/vercor-0.4.0-py3-none-any.whl"
+          python -m pip install "$RUNNER_TEMP/external-extension-fixture-dist/external_extension_test_fixture-0.1.0-py3-none-any.whl"
+          cd "$RUNNER_TEMP"
+          python -m external_extension_test_fixture.smoke --output-dir "$RUNNER_TEMP/extension-output"
+          cp "$GITHUB_WORKSPACE/tests/fixtures/external_extension_test_fixture/use_site.py" external_extension_use_site.py
+          EXTENSION_PACKAGE_DIR=$(python -c 'import pathlib, external_extension_test_fixture; print(pathlib.Path(external_extension_test_fixture.__file__).parent)')
+          mkdir -p "$RUNNER_TEMP/extension-typecheck"
+          cp -R "$EXTENSION_PACKAGE_DIR" "$RUNNER_TEMP/extension-typecheck/external_extension_test_fixture"
+          python -P -m mypy --strict "$RUNNER_TEMP/extension-typecheck/external_extension_test_fixture" external_extension_use_site.py
+
+  macos-smoke:
+    needs: build-artifacts
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # checkout major 4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # setup-python major 5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # download-artifact major 4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Run installed macOS external extension smoke
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir "$RUNNER_TEMP/external-extension-fixture-dist" tests/fixtures/external_extension_test_fixture
+          python -m pip install "dist/vercor-0.4.0-py3-none-any.whl"
+          python -m pip install "$RUNNER_TEMP/external-extension-fixture-dist/external_extension_test_fixture-0.1.0-py3-none-any.whl"
+          cd "$RUNNER_TEMP"
+          python -m external_extension_test_fixture.smoke --output-dir "$RUNNER_TEMP/extension-output"
+
+  quality:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    env:
+      VERCOR_ARTIFACT_DIR: ${{ github.workspace }}/dist
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # checkout major 4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # setup-python major 5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # download-artifact major 4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - name: Install quality and optional-model dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev,jcm,veros]"
+          python -m pip install flit_core==3.12.0
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - name: Check formatting
+        run: python -m black --check vercor examples tests
+      - name: Run strict lint
+        run: python -m flake8 . --count --max-line-length=120 --statistics
+      - name: Run static type checks
+        run: python -m mypy vercor examples tests
+      - name: Compile Python sources
+        run: python -m compileall -q vercor examples tests
+      - name: Run full test suite
+        run: python -m pytest tests/ -q --tb=short
+      - name: Enforce branch coverage
+        run: >-
+          python -m pytest tests/ -q --tb=short --cov=vercor --cov-branch
+          --cov-report=xml --cov-fail-under=90
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # codecov major 5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  publish-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-artifacts
+      - installed-artifact-tests
+      - external-extension-contract-tests
+      - macos-smoke
+      - quality
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/p/vercor
+    concurrency:
+      group: release-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # checkout major 4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # setup-python major 5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # download-artifact major 4
+        with:
+          name: vercor-distributions
+          path: dist/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # download-artifact major 4
+        with:
+          name: vercor-release-manifest
+          path: release-manifest/
+      - name: Verify CI-produced release inventory
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "tag"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          VERSION="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          test "$GITHUB_REF_NAME" = "v${VERSION}"
+          test -f "docs/release-notes-${VERSION}.md"
+          WHEEL="dist/vercor-${VERSION}-py3-none-any.whl"
+          SDIST="dist/vercor-${VERSION}.tar.gz"
+          WHEEL_NAME="vercor-${VERSION}-py3-none-any.whl"
+          SDIST_NAME="vercor-${VERSION}.tar.gz"
+          MANIFEST="release-manifest/SHA256SUMS"
+          shopt -s nullglob dotglob
+          DIST_ARTIFACTS=(dist/*)
+          test "${#DIST_ARTIFACTS[@]}" -eq 2
+          test -f "$WHEEL"
+          test -f "$SDIST"
+          test -f "$MANIFEST"
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$MANIFEST" \
+            --expect "$WHEEL_NAME" "$SDIST_NAME"
+          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_WHEEL=${WHEEL}" >> "$GITHUB_ENV"
+          echo "RELEASE_SDIST=${SDIST}" >> "$GITHUB_ENV"
+          echo "RELEASE_WHEEL_NAME=${WHEEL_NAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_SDIST_NAME=${SDIST_NAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_MANIFEST=${MANIFEST}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "WHEEL=${WHEEL}" >> "$GITHUB_ENV"
+          echo "SDIST=${SDIST}" >> "$GITHUB_ENV"
+      - name: Classify exact public release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STATE_DIR="$(mktemp -d)"
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$RELEASE_MANIFEST" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+          gh api "repos/${GITHUB_REPOSITORY}" > "$STATE_DIR/repository.json"
+          python tools/validate_release_state.py github-repository-push \
+            --json "$STATE_DIR/repository.json"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+          python tools/validate_release_state.py github-releases \
+            --json "$STATE_DIR/releases.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --tag "$GITHUB_REF_NAME" \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --allow-state absent \
+            --state-output "$STATE_DIR/release-state.json"
+          PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json" -w '%{http_code}' "https://pypi.org/pypi/vercor/${VERSION}/json")"
+          test "$PYPI_STATUS" = "404"
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$RELEASE_MANIFEST" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+      - name: Install the locked metadata checker
+        run: |
+          set -euo pipefail
+          python -m pip install twine==6.2.0
+          python -m twine check "$WHEEL" "$SDIST"
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$RELEASE_MANIFEST" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+      - name: Revalidate immediately before PyPI mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STATE_DIR="$(mktemp -d)"
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$RELEASE_MANIFEST" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+          PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json" -w '%{http_code}' "https://pypi.org/pypi/vercor/${VERSION}/json")"
+          test "$PYPI_STATUS" = "404"
+          gh api "repos/${GITHUB_REPOSITORY}" > "$STATE_DIR/repository.json"
+          python tools/validate_release_state.py github-repository-push \
+            --json "$STATE_DIR/repository.json"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+          python tools/validate_release_state.py github-releases \
+            --json "$STATE_DIR/releases.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --tag "$GITHUB_REF_NAME" \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --allow-state absent \
+            --state-output "$STATE_DIR/release-state.json"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
+          test -n "${REMOTE_TAG_COMMIT:-}"
+          test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist/
+          skip-existing: false
+          attestations: false
+      - name: Verify exact PyPI publication
+        run: |
+          set -euo pipefail
+          STATE_DIR="$(mktemp -d)"
+          PYPI_VERIFIED=false
+          for attempt in {1..12}; do
+            PYPI_STATUS="$(curl -sS -L -o "$STATE_DIR/pypi.json" -w '%{http_code}' "https://pypi.org/pypi/vercor/${VERSION}/json")"
+            case "$PYPI_STATUS" in
+              200)
+                if python tools/validate_release_state.py pypi \
+                  --json "$STATE_DIR/pypi.json" \
+                  --manifest "$RELEASE_MANIFEST" \
+                  --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+                then
+                  PYPI_VERIFIED=true
+                  break
+                fi
+                printf 'PyPI returned unexpected filenames or digests\n' >&2
+                exit 1
+                ;;
+              404)
+                if [ "$attempt" -lt 12 ]; then
+                  sleep 10
+                fi
+                ;;
+              *)
+                printf 'Unexpected PyPI HTTP status: %s\n' "$PYPI_STATUS" >&2
+                exit 1
+                ;;
+            esac
+          done
+          test "$PYPI_VERIFIED" = "true"
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$RELEASE_MANIFEST" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+      - name: Create and publish the exact GitHub Release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STATE_DIR="$(mktemp -d)"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+          python tools/validate_release_state.py github-releases \
+            --json "$STATE_DIR/releases.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --tag "$GITHUB_REF_NAME" \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --allow-state absent \
+            --state-output "$STATE_DIR/release-state.json"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
+          test -n "${REMOTE_TAG_COMMIT:-}"
+          test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md"
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+          python tools/validate_release_state.py github-releases \
+            --json "$STATE_DIR/releases.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --tag "$GITHUB_REF_NAME" \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --allow-state draft \
+            --state-output "$STATE_DIR/release-state.json"
+          PRESENT_COUNT="$(python -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))["present"]))' "$STATE_DIR/release-state.json")"
+          test "$PRESENT_COUNT" -eq 0
+
+          WHEEL_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$STATE_DIR/release-state.json" "$RELEASE_WHEEL_NAME")"
+          if [ "$WHEEL_MISSING" = "True" ]; then
+            RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$STATE_DIR/release-state.json")"
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
+            test -n "${REMOTE_TAG_COMMIT:-}"
+            test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+            WHEEL_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url \
+              --repository "$GITHUB_REPOSITORY" \
+              --release-id "$RELEASE_ID" \
+              --name "$RELEASE_WHEEL_NAME")"
+            test "$WHEEL_UPLOAD_URL" = "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${RELEASE_WHEEL_NAME}"
+            gh api --method POST \
+              -H "Content-Type: application/octet-stream" \
+              "$WHEEL_UPLOAD_URL" \
+              --input "$RELEASE_WHEEL" > "$STATE_DIR/upload-wheel.json"
+            gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+            python tools/validate_release_state.py github-releases \
+              --json "$STATE_DIR/releases.json" \
+              --manifest "$RELEASE_MANIFEST" \
+              --tag "$GITHUB_REF_NAME" \
+              --title "VerCOR ${RELEASE_VERSION}" \
+              --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+              --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+              --allow-state draft \
+              --state-output "$STATE_DIR/release-state.json"
+          fi
+
+          SDIST_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$STATE_DIR/release-state.json" "$RELEASE_SDIST_NAME")"
+          if [ "$SDIST_MISSING" = "True" ]; then
+            RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$STATE_DIR/release-state.json")"
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
+            test -n "${REMOTE_TAG_COMMIT:-}"
+            test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+            SDIST_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url \
+              --repository "$GITHUB_REPOSITORY" \
+              --release-id "$RELEASE_ID" \
+              --name "$RELEASE_SDIST_NAME")"
+            test "$SDIST_UPLOAD_URL" = "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${RELEASE_SDIST_NAME}"
+            gh api --method POST \
+              -H "Content-Type: application/octet-stream" \
+              "$SDIST_UPLOAD_URL" \
+              --input "$RELEASE_SDIST" > "$STATE_DIR/upload-sdist.json"
+            gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+            python tools/validate_release_state.py github-releases \
+              --json "$STATE_DIR/releases.json" \
+              --manifest "$RELEASE_MANIFEST" \
+              --tag "$GITHUB_REF_NAME" \
+              --title "VerCOR ${RELEASE_VERSION}" \
+              --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+              --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+              --allow-state draft \
+              --state-output "$STATE_DIR/release-state.json"
+          fi
+
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+          python tools/validate_release_state.py github-releases \
+            --json "$STATE_DIR/releases.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --tag "$GITHUB_REF_NAME" \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --allow-state draft \
+            --state-output "$STATE_DIR/release-state.json"
+          MISSING_COUNT="$(python -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))["missing"]))' "$STATE_DIR/release-state.json")"
+          test "$MISSING_COUNT" -eq 0
+          python tools/validate_release_state.py files \
+            --directory dist \
+            --manifest "$RELEASE_MANIFEST" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
+          test -n "${REMOTE_TAG_COMMIT:-}"
+          test "$REMOTE_TAG_COMMIT" = "$GITHUB_SHA"
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
+          python tools/validate_release_state.py github-releases \
+            --json "$STATE_DIR/releases.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --tag "$GITHUB_REF_NAME" \
+            --title "VerCOR ${RELEASE_VERSION}" \
+            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
+            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --allow-state published \
+            --state-output "$STATE_DIR/release-state.json"

@@ -13,12 +13,12 @@ from vercor.dtypes import jax_index_dtype
 
 
 @pytest.mark.fast_always
-def test_bilinear_public_module_delegates_private_implementation_owners() -> None:
-    source = source_for("vercor/interpolators/bilinear_rectilinear.py")
+def test_bilinear_module_delegates_private_implementation_owners() -> None:
+    source = source_for("vercor/_interpolators/bilinear_rectilinear.py")
 
-    assert "import vercor.interpolators._bilinear_geometry as" in source
-    assert "import vercor.interpolators._bilinear_weights as" in source
-    assert "import vercor.interpolators._bilinear_extrapolation as" in source
+    assert "import vercor._interpolators._bilinear_geometry as" in source
+    assert "import vercor._interpolators._bilinear_weights as" in source
+    assert "import vercor._interpolators._bilinear_extrapolation as" in source
     assert "jnp.searchsorted" not in source
     assert "lax.top_k" not in source
     assert "def _great_circle_distance_rad(" not in source
@@ -28,24 +28,24 @@ def test_bilinear_public_module_delegates_private_implementation_owners() -> Non
 @pytest.mark.fast_always
 def test_private_bilinear_helpers_stay_inside_interpolators_package() -> None:
     for path in Path("vercor").rglob("*.py"):
-        if path.parts[:2] == ("vercor", "interpolators"):
+        if path.parts[:2] == ("vercor", "_interpolators"):
             continue
 
         source = path.read_text(encoding="utf-8")
-        assert "vercor.interpolators._bilinear_" not in source, path
+        assert "vercor._interpolators._bilinear_" not in source, path
 
 
 @pytest.mark.fast_always
 def test_interpolators_package_has_no_top_level_import_cycles() -> None:
-    assert package_import_cycles("vercor/interpolators", "vercor.interpolators") == []
+    assert package_import_cycles("vercor/_interpolators", "vercor._interpolators") == []
 
 
 @pytest.mark.fast_always
 def test_private_bilinear_weight_helper_reproduces_periodic_dateline_indices() -> None:
-    helper_path = Path("vercor/interpolators/_bilinear_weights.py")
+    helper_path = Path("vercor/_interpolators/_bilinear_weights.py")
     assert helper_path.exists(), "private bilinear weight helper must exist"
 
-    weights_module = importlib.import_module("vercor.interpolators._bilinear_weights")
+    weights_module = importlib.import_module("vercor._interpolators._bilinear_weights")
     lon_tgt_deg, lat_tgt_deg = jnp.meshgrid(
         jnp.asarray([359.0]),
         jnp.asarray([5.0]),
@@ -78,11 +78,11 @@ def test_private_bilinear_weight_helper_reproduces_periodic_dateline_indices() -
 def test_private_bilinear_extrapolation_helper_fills_when_no_sources_are_valid() -> (
     None
 ):
-    helper_path = Path("vercor/interpolators/_bilinear_extrapolation.py")
+    helper_path = Path("vercor/_interpolators/_bilinear_extrapolation.py")
     assert helper_path.exists(), "private bilinear extrapolation helper must exist"
 
     extrapolation_module = importlib.import_module(
-        "vercor.interpolators._bilinear_extrapolation"
+        "vercor._interpolators._bilinear_extrapolation"
     )
     out = extrapolation_module.extrapolate_scalar_field(
         source_values=jnp.asarray([[1.0, 2.0], [3.0, 4.0]]),

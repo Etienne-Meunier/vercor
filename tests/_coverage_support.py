@@ -11,10 +11,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from vercor.clock import Clock
-from vercor.components import DataComponent
-from vercor.grid import RectilinearGrid
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.settings import VercorSettings
+from vercor.grids import RectilinearGrid
 from vercor.types import RuntimeArray
 
 
@@ -73,18 +71,16 @@ class CoverageCouplerStub:
             steps=1,
         )
     )
-    settings: VercorSettings = field(default_factory=VercorSettings)
     logger: logging.Logger = field(
         default_factory=lambda: logging.getLogger("coverage-tests")
     )
-    run_sequence: Sequence[str] = field(default_factory=tuple)
+    run_order: Sequence[str] = field(default_factory=tuple)
 
     def init_context(self) -> SetupContext:
         return SetupContext(
             start=self.clock.start,
             dt_seconds=self.clock.dt_seconds,
-            run_sequence=self.run_sequence,
-            settings=self.settings,
+            run_order=self.run_order,
             logger=self.logger,
         )
 
@@ -93,16 +89,9 @@ class CoverageCouplerStub:
     ) -> StepContext:
         return StepContext(
             dt_seconds=self.clock.dt_seconds,
-            settings=self.settings,
             time=time,
             logger=self.logger if with_logger else None,
         )
-
-
-class DummyComponent(DataComponent):
-    def initialize(self, context: SetupContext) -> None:
-        _ = context
-        self.data.setdefault("temperature", np.zeros(self.grid.shape, dtype=float))
 
 
 class RecordingRegridder:
@@ -111,20 +100,26 @@ class RecordingRegridder:
         *,
         scalar_result: RuntimeArray | None = None,
         vector_result: tuple[RuntimeArray, RuntimeArray] | None = None,
+        source_grid: RectilinearGrid | None = None,
+        target_grid: RectilinearGrid | None = None,
     ) -> None:
         self.scalar_result = scalar_result
         self.vector_result = vector_result
+        self.source_grid = source_grid
+        self.target_grid = target_grid
+        self.has_identical_grids = source_grid is target_grid
         self.calls: list[tuple[NDArray, ...]] = []
 
-    def __call__(
-        self, *args: RuntimeArray
-    ) -> RuntimeArray | tuple[RuntimeArray, RuntimeArray]:
-        self.calls.append(tuple(np.asarray(arg) for arg in args))
-        if len(args) == 1:
-            if self.scalar_result is not None:
-                return self.scalar_result
-            return np.asarray(args[0])
+    def regrid(self, field: RuntimeArray) -> RuntimeArray:
+        self.calls.append((np.asarray(field),))
+        if self.scalar_result is not None:
+            return self.scalar_result
+        return np.asarray(field)
 
+    def regrid_vector(
+        self, u: RuntimeArray, v: RuntimeArray
+    ) -> tuple[RuntimeArray, RuntimeArray]:
+        self.calls.append((np.asarray(u), np.asarray(v)))
         if self.vector_result is not None:
             return self.vector_result
-        return np.asarray(args[0]), np.asarray(args[1])
+        return np.asarray(u), np.asarray(v)

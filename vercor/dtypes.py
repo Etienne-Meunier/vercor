@@ -2,21 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeAlias
+from typing import Any, TypeAlias
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-
-
-class SupportsEnableX64(Protocol):
-    """Settings-like object exposing VerCOR's real-precision switch."""
-
-    @property
-    def enable_x64(self) -> bool:
-        """Return whether 64-bit real arrays are enabled."""
-        ...
-
 
 ShapeLike: TypeAlias = int | Sequence[int]
 
@@ -30,19 +20,13 @@ class DTypePolicy:
     metadata compact across both real-precision modes.
     """
 
-    enable_x64: bool
+    enable_x64: bool = False
 
     @classmethod
     def from_jax_config(cls) -> "DTypePolicy":
         """Return a policy matching the active JAX global precision setting."""
 
         return cls(enable_x64=bool(jax.config.read("jax_enable_x64")))
-
-    @classmethod
-    def from_settings(cls, settings: SupportsEnableX64) -> "DTypePolicy":
-        """Return a policy from a settings-like object."""
-
-        return cls(enable_x64=bool(settings.enable_x64))
 
     @property
     def jax_real(self) -> Any:
@@ -69,17 +53,34 @@ class DTypePolicy:
         return np.dtype(np.int32)
 
 
-PrecisionPolicy: TypeAlias = DTypePolicy | SupportsEnableX64 | None
+PrecisionPolicy: TypeAlias = DTypePolicy | None
+
+
+__all__ = [
+    "DTypePolicy",
+    "PrecisionPolicy",
+    "ShapeLike",
+    "as_jax_index_array",
+    "as_jax_real_array",
+    "dtype_policy",
+    "jax_arange",
+    "jax_full",
+    "jax_index_dtype",
+    "jax_linspace",
+    "jax_ones",
+    "jax_real_dtype",
+    "jax_zeros",
+]
 
 
 def dtype_policy(policy: PrecisionPolicy = None) -> DTypePolicy:
-    """Normalize optional settings/policy input into a ``DTypePolicy``."""
+    """Normalize an optional runtime-owned ``DTypePolicy`` value."""
 
     if policy is None:
         return DTypePolicy.from_jax_config()
     if isinstance(policy, DTypePolicy):
         return policy
-    return DTypePolicy.from_settings(policy)
+    raise TypeError("precision policy must be a DTypePolicy or None")
 
 
 def jax_real_dtype(policy: PrecisionPolicy = None) -> Any:

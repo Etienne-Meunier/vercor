@@ -1,3 +1,13 @@
+__all__ = [
+    "AssetError",
+    "ComponentError",
+    "CouplerError",
+    "ExchangeError",
+    "GridError",
+    "RegridderError",
+]
+
+
 class AssetError(Exception):
     """Base class for exceptions related to assets."""
 
@@ -28,7 +38,7 @@ class RegridderError(CouplerError):
     pass
 
 
-class ExchangerError(CouplerError):
+class ExchangeError(CouplerError):
     """Base class for exceptions during data exchange between components."""
 
     pass

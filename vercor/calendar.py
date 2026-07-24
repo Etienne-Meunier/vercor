@@ -2,8 +2,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+from enum import StrEnum
 import time as _time
 from typing import ClassVar, Literal, Protocol, Self
+
+__all__ = [
+    "CalendarDate",
+    "DAYS_PER_MONTH_360",
+    "DAYS_PER_MONTH_GREGORIAN_LEAP",
+    "DAYS_PER_MONTH_GREGORIAN_NO_LEAP",
+    "DateTime360",
+    "DateTime365",
+    "ModelDateTime",
+    "YearType",
+    "day_of_year_from_month_day",
+    "is_leap_year",
+    "model_year_seconds",
+    "month_day_from_day_of_year",
+    "year_type_for_calendar",
+]
 
 DAYS_PER_MONTH_GREGORIAN_LEAP = (31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 DAYS_PER_MONTH_GREGORIAN_NO_LEAP = (
@@ -308,10 +325,44 @@ class DateTime360(_ModelDateTimeBase):
 ModelDateTime = DateTime365 | DateTime360
 
 
+class YearType(StrEnum):
+    """Identify the year structure used by one simulated timestamp."""
+
+    GREGORIAN_LEAP = "leap"
+    GREGORIAN_NO_LEAP = "noleap"
+    DAY_360 = "360"
+
+
 def is_leap_year(year: int) -> bool:
     """Return whether ``year`` is a Gregorian leap year."""
 
     return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+
+
+def model_year_seconds(year_type: YearType) -> float:
+    """Return the canonical duration in seconds for ``year_type``."""
+
+    if not isinstance(year_type, YearType):
+        raise TypeError("year_type must be a YearType")
+    if year_type is YearType.GREGORIAN_LEAP:
+        return 366 * 86_400.0
+    if year_type is YearType.GREGORIAN_NO_LEAP:
+        return 365 * 86_400.0
+    return 360 * 86_400.0
+
+
+def year_type_for_calendar(calendar: str, year: int) -> YearType:
+    """Resolve one timestamp's year structure from a clock calendar."""
+
+    if calendar == "gregorian":
+        if is_leap_year(year):
+            return YearType.GREGORIAN_LEAP
+        return YearType.GREGORIAN_NO_LEAP
+    if calendar == "noleap":
+        return YearType.GREGORIAN_NO_LEAP
+    if calendar == "360_day":
+        return YearType.DAY_360
+    raise ValueError("calendar must be one of: 'gregorian', 'noleap', '360_day'")
 
 
 def day_of_year_from_month_day(

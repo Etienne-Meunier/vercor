@@ -119,5 +119,14 @@ ENV/
 # Static type checking cache
 .mypy_cache/
 
+# Superpowers task execution ledger
+.superpowers/
+
 # linting cache
 .ruff_cache/
+
+# graphifyy output
+graphify-out
+
+# CODEX
+.codex/

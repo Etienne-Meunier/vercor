@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from inspect import signature
+from inspect import Parameter, signature
 from pathlib import Path
+from typing import Any, cast, get_type_hints
 import ast
 import importlib
 import subprocess
@@ -12,837 +13,842 @@ import jax.numpy as jnp
 import pytest
 
 import vercor
+import vercor.exceptions as exceptions_module
 import vercor.components as components_module
 import vercor.components.base as base_module
 import vercor.components.contexts as component_contexts_module
 import vercor.components.contracts as component_contracts_module
 import vercor.components.data as data_module
-import vercor.components.host as host_module
 import vercor.components.setup_validation as setup_validation_module
 from tests._architecture_support import package_import_cycles
 from tests._coverage_support import make_test_grid
-from vercor.components.base import Component
-from vercor.components.data import DataComponent
-from vercor.components.host import HostComponent
+from vercor.components import (
+    CallableComponent,
+    Component,
+    ComponentSpec,
+    DataComponent,
+    StepResult,
+)
+from vercor.calendar import DateTime360
 from vercor.clock import Clock
 from vercor.coupler import Coupler
-from vercor.exchange import Exchange
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.regridders import bilinear
-from vercor.regridders.bilinear import BilinearRectilinearRegridder
-from vercor.regridders.conservative import ConservativeRectilinearRegridder
+from vercor.exceptions import (
+    AssetError,
+    ComponentError,
+    CouplerError,
+    ExchangeError,
+    GridError,
+    RegridderError,
+)
+from vercor.exchanges import Exchange
+from vercor.fields import (
+    COMMON_FIELD_NAMES,
+    VectorField,
+    _flatten_field_items,
+    vector,
+)
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
+from vercor.output import OutputTarget
+from vercor.regridding import bilinear
+from vercor.state import ComponentState, RunState
 
 
 @pytest.mark.fast_always
-def test_v2_public_api_facade_exports_new_names_and_compatibility_aliases() -> None:
-    from vercor import (
-        ComponentView,
-        CouplerState,
-        FieldSpec,
-        HostComponent,
-        KEEP_PAYLOAD,
-        Settings,
-        SetupContext,
-        StepContext,
-        StepResult,
+def test_public_api_exports_state_view_fields_and_regridders() -> None:
+    from vercor import RectilinearGrid
+    from vercor.regridding import (
+        Regridder,
+        RegridderFactory,
+        bilinear as public_bilinear,
+        conservative as public_conservative,
     )
 
-    assert vercor.Settings is Settings
-    assert KEEP_PAYLOAD is vercor.KEEP_PAYLOAD
-    assert ComponentView.__name__ == "ComponentView"
-    assert CouplerState.__name__ == "CouplerState"
-    assert {
-        "ComponentFieldSpec",
-        "ComponentSetupContext",
-        "ComponentStepContext",
-        "ComponentStepResult",
-        "HostRuntimeComponent",
-    }.isdisjoint(vercor.__all__)
+    assert not hasattr(vercor, "VectorField")
+    assert not hasattr(vercor, "vector")
+    assert not hasattr(vercor, "CouplerSpec")
+    assert RectilinearGrid is vercor.grids.RectilinearGrid
+    assert public_bilinear is bilinear
+    assert callable(public_conservative)
+    assert RunState.__name__ == "RunState"
+    assert ComponentState.__name__ == "ComponentState"
+    assert getattr(Regridder, "_is_protocol", False)
+    assert cast(Any, RegridderFactory).__name__ == "RegridderFactory"
+    assert {"RunState", "RectilinearGrid"}.issubset(vercor.__all__)
+    assert {"ComponentState", "VectorField", "vector"}.isdisjoint(vercor.__all__)
+    assert "Regridder" not in vercor.__all__
+    assert "RegridderFactory" not in vercor.__all__
+    assert "grid_from_coordinates" not in vercor.__all__
+    assert "uniform_rectilinear_grid" not in vercor.__all__
 
-    spec = FieldSpec(
+
+@pytest.mark.fast_always
+def test_root_api_is_core_only_after_boundary_redesign() -> None:
+    allowed_root_exports = {
+        "Clock",
+        "Coupler",
+        "Exchange",
+        "RectilinearGrid",
+        "RuntimeOptions",
+        "RunState",
+    }
+
+    assert set(vercor.__all__) == allowed_root_exports
+    for name in (
+        "bilinear",
+        "conservative",
+        "Regridder",
+        "RegridderFactory",
+        "CAMulatorConfig",
+        "fluxes",
+        "JAXGCMConfig",
+        "recipes",
+        "setups",
+        "Spinup",
+        "SurfaceMaskPolicy",
+        "VerosConfig",
+    ):
+        assert name not in vercor.__all__
+    for name in ("bilinear", "conservative", "Regridder", "RegridderFactory"):
+        assert not hasattr(vercor, name)
+
+
+@pytest.mark.fast_always
+def test_setup_implementation_modules_are_private_after_boundary_redesign() -> None:
+    import vercor.setups as setup_facade
+
+    public_factory_names = {
+        "CAMulatorConfig",
+        "JAXGCMConfig",
+        "JCMLandAtmosphereConfig",
+        "JCMLandAtmosphereSetup",
+        "load_jcm_inputs",
+        "make_camulator_gcm",
+        "make_camulator_land",
+        "make_era5_atmosphere",
+        "make_era5_land",
+        "make_era5_ocean",
+        "make_erainterim_ocean",
+        "make_jax_gcm",
+        "make_jcm_land",
+        "make_jcm_land_atmosphere",
+        "make_slab_atmosphere",
+        "make_slab_land",
+        "make_slab_ocean",
+        "make_slab_seaice",
+        "make_veros_gcm",
+        "Spinup",
+        "VerosConfig",
+    }
+
+    assert public_factory_names.issubset(set(setup_facade.__all__))
+    with pytest.raises(ModuleNotFoundError, match="vercor.setup_config"):
+        importlib.import_module("vercor.setup_config")
+    for module_name in (
+        "vercor.setups.data",
+        "vercor.setups.data.era5_land",
+        "vercor.setups.external",
+        "vercor.setups.external.jax_gcm_state",
+        "vercor.setups.slab",
+        "vercor.setups.jcm_setup_helpers",
+    ):
+        missing_root = ".".join(module_name.split(".")[:3])
+        with pytest.raises(ModuleNotFoundError, match=missing_root):
+            importlib.import_module(module_name)
+
+
+@pytest.mark.fast_always
+def test_boundary_redesign_removes_remaining_duplicate_public_helpers() -> None:
+    import vercor.fields as fields_module
+    import vercor.grids as grids_module
+    from vercor.state import ComponentState
+
+    with pytest.raises(ModuleNotFoundError, match="vercor.config"):
+        importlib.import_module("vercor.config")
+    assert hasattr(fields_module, "COMMON_FIELD_NAMES")
+    assert "sea_surface_temperature" in fields_module.COMMON_FIELD_NAMES
+    assert not hasattr(fields_module, "VALID_FIELD_NAMES")
+    assert fields_module.__all__ == [
+        "COMMON_FIELD_NAMES",
+        "ExchangeField",
+        "VectorField",
+        "vector",
+    ]
+    assert not hasattr(grids_module, "Grid")
+    assert not hasattr(ComponentState, "field_candidates")
+
+
+@pytest.mark.fast_always
+def test_public_api_uses_current_owners_and_facades() -> None:
+    import vercor.exchanges as exchanges_module
+    import vercor.fields as fields_module
+    import vercor.grids as grids_module
+    import vercor.recipes as recipes_module
+
+    assert vercor.RectilinearGrid.__module__ == "vercor.grids"
+    assert VectorField.__module__ == "vercor.fields"
+    assert vercor.Exchange.__module__ == "vercor.exchanges"
+    assert vercor.RunState.__module__ == "vercor.state"
+    assert ComponentState.__module__ == "vercor.state"
+    assert vercor.RectilinearGrid is grids_module.RectilinearGrid
+    assert "grid_from_coordinates" not in vercor.__all__
+
+    grid = grids_module.RectilinearGrid.from_coordinates(
+        "explicit-grid",
+        longitude=jnp.asarray([0.0, 90.0]),
+        latitude=jnp.asarray([-45.0, 45.0]),
+    )
+    assert isinstance(grid, grids_module.RectilinearGrid)
+    assert grid.shape == (2, 2)
+
+    assert fields_module.__all__ == [
+        "COMMON_FIELD_NAMES",
+        "ExchangeField",
+        "VectorField",
+        "vector",
+    ]
+    assert recipes_module.OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS == (
+        "sea_surface_temperature",
+    )
+    assert "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS" in recipes_module.__all__
+    assert "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS" not in exchanges_module.__all__
+    state_source = Path("vercor/state.py").read_text(encoding="utf-8")
+    assert "__module__" not in state_source
+
+
+@pytest.mark.fast_always
+def test_public_facades_hide_private_implementation_modules() -> None:
+    import vercor.output as output_module
+    import vercor.regridding as regridding_module
+    import vercor.state as state_module
+    from vercor.output import (
+        OutputSpec,
+        OutputVariable,
+        PeriodOutput,
+    )
+
+    coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
+    exchange_signature = str(signature(Exchange))
+    exchange_parameters = signature(Exchange).parameters
+    public_bilinear_signature = str(signature(regridding_module.bilinear))
+    public_conservative_signature = str(signature(regridding_module.conservative))
+
+    assert "from vercor.exchanges import Exchange" in coupler_source
+    assert Exchange.__module__ == "vercor.exchanges"
+    assert "_exchange" not in exchange_signature
+    assert "_regridders" not in exchange_signature
+    assert "RegridderFactory" in exchange_signature
+    assert exchange_parameters["route_id"].kind is Parameter.KEYWORD_ONLY
+    assert exchange_parameters["regridder_factory"].kind is Parameter.KEYWORD_ONLY
+    assert regridding_module.bilinear.__module__ == "vercor.regridding"
+    assert regridding_module.conservative.__module__ == "vercor.regridding"
+    assert not hasattr(vercor, "bilinear")
+    assert not hasattr(vercor, "conservative")
+    assert "_regridders" not in public_bilinear_signature
+    assert "_regridders" not in public_conservative_signature
+    assert "Regridder" in public_bilinear_signature
+    assert "Regridder" in public_conservative_signature
+    assert regridding_module.__all__ == [
+        "Regridder",
+        "RegridderFactory",
+        "VectorRegridder",
+        "bilinear",
+        "conservative",
+    ]
+    assert state_module.__all__ == [
+        "ComponentState",
+        "FieldLookupScope",
+        "FieldScope",
+        "RunState",
+    ]
+    assert output_module.__all__ == [
+        "OutputContext",
+        "OutputFrame",
+        "OutputProvider",
+        "OutputSpec",
+        "OutputTarget",
+        "OutputVariable",
+        "PeriodOutput",
+        "SnapshotContext",
+        "SnapshotWriter",
+    ]
+    assert OutputSpec is output_module.OutputSpec
+    assert OutputVariable is output_module.OutputVariable
+    assert PeriodOutput is output_module.PeriodOutput
+    assert OutputSpec.__module__ == "vercor.output"
+    assert PeriodOutput.__module__ == "vercor.output"
+
+
+@pytest.mark.fast_always
+def test_fields_facade_owns_vector_field_contract() -> None:
+    field = vector("u_velocity", "v_velocity")
+
+    assert field == VectorField("u_velocity", "v_velocity")
+    assert _flatten_field_items(("temperature", field)) == [
+        "temperature",
+        "u_velocity",
+        "v_velocity",
+    ]
+
+    with pytest.raises(
+        TypeError, match="Tuple vector field declarations are unsupported"
+    ):
+        Exchange("ATM", "OCN", (("u_velocity", "v_velocity"),))  # type: ignore[arg-type]
+
+
+@pytest.mark.fast_always
+def test_state_constructors_do_not_expose_runtime_stores() -> None:
+    run_state_signature = str(signature(vercor.RunState))
+    component_state_signature = signature(ComponentState)
+
+    assert "ComponentRuntimeState" not in run_state_signature
+    assert "FieldStore" not in run_state_signature
+    assert "components" not in component_state_signature.parameters
+    assert "data" not in component_state_signature.parameters
+    assert "FieldStore" not in str(component_state_signature)
+    assert "fields" in component_state_signature.parameters
+
+    with pytest.raises(TypeError, match="Coupler"):
+        vercor.RunState()
+
+
+@pytest.mark.fast_always
+def test_private_regridder_base_does_not_shadow_public_protocol() -> None:
+    base_module = importlib.import_module("vercor._regridders.base")
+
+    assert hasattr(base_module, "_BaseRegridder")
+    assert not hasattr(base_module, "Regridder")
+    assert "class _BaseRegridder" in Path("vercor/_regridders/base.py").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.fast_always
+def test_runtime_internals_live_under_private_runtime_package() -> None:
+    with pytest.raises(ModuleNotFoundError, match="vercor.runtime.state"):
+        importlib.import_module("vercor.runtime.state")
+
+    runtime_state = importlib.import_module("vercor._runtime.state")
+    runtime_stores = importlib.import_module("vercor._runtime.stores")
+    runtime_contracts = importlib.import_module("vercor._runtime.contracts")
+    runtime_facade = importlib.import_module("vercor._runtime.facade")
+
+    assert hasattr(runtime_state, "ComponentRuntimeState")
+    assert not hasattr(runtime_state, "RuntimeComponentState")
+    assert hasattr(runtime_stores, "FieldStore")
+    assert not hasattr(runtime_stores, "RuntimeFieldStore")
+    assert hasattr(runtime_contracts, "ExchangeContract")
+    assert not hasattr(runtime_contracts, "RuntimeComponentContract")
+    runtime_prepared = importlib.import_module("vercor._runtime.prepared")
+    assert hasattr(runtime_prepared, "PreparedCoupling")
+    assert not hasattr(runtime_facade, "RuntimeInputs")
+
+
+@pytest.mark.fast_always
+def test_runtime_private_state_uses_public_domain_vocabulary() -> None:
+    state_parameters = signature(ComponentRuntimeState).parameters
+    contract_parameters = signature(
+        importlib.import_module("vercor._runtime.contracts").ExchangeContract
+    ).parameters
+    component_state_parameters = signature(ComponentState).parameters
+
+    assert tuple(state_parameters) == ("fields", "received", "sent", "payload")
+    assert tuple(contract_parameters) == ("receives", "sends")
+    assert "received" in component_state_parameters
+    assert "sent" in component_state_parameters
+    assert "incoming" not in component_state_parameters
+    assert "outgoing" not in component_state_parameters
+    assert not hasattr(vercor.state, "runtime_field")
+    assert not hasattr(vercor.state, "runtime_field_candidates")
+
+
+@pytest.mark.fast_always
+def test_field_name_deduplication_has_one_private_owner() -> None:
+    assert not Path("vercor/components/_field_names.py").exists()
+    assert Path("vercor/_field_names.py").exists()
+    assert "def unique_field_names(" not in Path("vercor/fields.py").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.fast_always
+def test_coupler_public_methods_return_stable_state_and_views(
+    tmp_path: Path,
+) -> None:
+    component = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="coupler-validated"),
+        fields={"temperature": 280.0},
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+
+    assert not hasattr(coupler, "add_exchanges")
+    assert not hasattr(Coupler, "initialize")
+    assert not hasattr(Coupler, "state")
+    assert not hasattr(Coupler, "view")
+    assert not hasattr(Coupler, "views")
+    assert get_type_hints(Coupler.initial_state)["return"] is RunState
+    assert get_type_hints(Coupler.run)["return"] is RunState
+
+    state = coupler.initial_state()
+    assert isinstance(state, RunState)
+    view = state.component("ATM")
+    assert isinstance(view, ComponentState)
+
+    output_state = coupler.run(
+        state,
+        output=OutputTarget(
+            tmp_path,
+            write_period=False,
+            write_final_fields=False,
+            write_snapshots=False,
+        ),
+    )
+    assert isinstance(output_state, RunState)
+    assert not hasattr(Coupler, "write_outputs")
+    with pytest.raises(TypeError, match="snapshots"):
+        coupler.run(state, snapshots=False)  # type: ignore[call-arg]
+
+
+@pytest.mark.fast_always
+def test_data_component_and_grid_constructors_use_keyword_vocabulary() -> None:
+    grid = vercor.RectilinearGrid.uniform(
+        "custom-grid",
+        nlon=2,
+        nlat=2,
+        longitude=(0.0, 90.0),
+        latitude=(-45.0, 45.0),
+        binary_mask=jnp.ones((2, 2)),
+    )
+
+    component = DataComponent(
+        "ATM",
+        grid,
+        fields={"temperature": 280.0},
+    )
+
+    assert grid.binary_mask is not None
+    assert component.spec.outputs == ("temperature",)
+    with pytest.raises(TypeError, match="lon"):
+        vercor.RectilinearGrid.uniform(
+            "old-grid",
+            nlon=2,
+            nlat=2,
+            lon=(0.0, 90.0),  # type: ignore[call-arg]
+            lat=(-45.0, 45.0),  # type: ignore[call-arg]
+        )
+    positional = DataComponent("ATM", grid, {"humidity": 0.5})
+    assert positional.spec.outputs == ("humidity",)
+
+
+@pytest.mark.fast_always
+def test_component_constructor_hides_raw_setup_internals() -> None:
+    for component_type in (Component, CallableComponent, DataComponent):
+        parameters = signature(component_type).parameters
+        assert "data" not in parameters
+        assert "setup_metadata" not in parameters
+        assert "payload" not in parameters
+
+
+@pytest.mark.fast_always
+def test_regridders_expose_explicit_scalar_and_vector_methods() -> None:
+    from vercor.regridding import Regridder, VectorRegridder
+
+    grid = vercor.RectilinearGrid.from_coordinates(
+        "regrid-methods",
+        longitude=jnp.asarray([0.0, 90.0]),
+        latitude=jnp.asarray([-45.0, 45.0]),
+    )
+    regridder = bilinear(grid, grid)
+    scalar = jnp.ones(grid.shape)
+    u = jnp.ones(grid.shape)
+    v = -jnp.ones(grid.shape)
+
+    assert isinstance(regridder, Regridder)
+    assert isinstance(regridder, VectorRegridder)
+    assert regridder.target_grid is grid
+    assert regridder.regrid(scalar) is scalar
+    assert regridder.regrid_vector(u, v) == (u, v)
+
+
+@pytest.mark.fast_always
+def test_top_level_exports_public_exceptions() -> None:
+    assert issubclass(ComponentError, CouplerError)
+    assert issubclass(GridError, CouplerError)
+    assert issubclass(RegridderError, CouplerError)
+    assert issubclass(ExchangeError, CouplerError)
+    assert issubclass(AssetError, Exception)
+    assert "ExchangeError" not in vercor.__all__
+    assert not hasattr(vercor, "ExchangeError")
+    assert not hasattr(vercor, "ExchangerError")
+    assert exceptions_module.ExchangeError is ExchangeError
+    assert not hasattr(exceptions_module, "ExchangerError")
+
+
+@pytest.mark.fast_always
+def test_breaking_api_cleanup_removes_transitional_public_surfaces() -> None:
+    import vercor.grids as grids_module
+    import vercor.output as output_module
+
+    assert not hasattr(grids_module, "rectilinear")
+    assert not hasattr(Coupler, "from_components")
+    assert not hasattr(Coupler, "run_sequence")
+    assert not hasattr(Coupler, "finalize")
+
+    assert "rectilinear" not in grids_module.__all__
+
+    for helper_name in (
+        "output_masks_for_component",
+        "write_coupler_component_snapshots",
+        "write_coupler_runtime_outputs",
+        "write_runtime_component_view_to_netcdf",
+    ):
+        assert helper_name not in output_module.__all__
+        assert not hasattr(output_module, helper_name)
+
+    with pytest.raises(TypeError, match="year_type"):
+        cast(Any, Clock)(
+            start=datetime(2000, 1, 1),
+            dt_seconds=86400.0,
+            steps=1,
+            year_type="noleap",
+        )
+    assert not hasattr(Clock(datetime(2000, 1, 1), 60.0, 1), "year_type")
+
+    with pytest.raises(TypeError, match="run_sequence"):
+        cast(Any, Coupler)(
+            clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+            run_sequence=("ATM",),
+        )
+
+
+@pytest.mark.fast_always
+def test_public_api_uses_canonical_breaking_names(
+    tmp_path: Path,
+) -> None:
+    import vercor.grids as grids_module
+
+    assert not hasattr(vercor, "SettingSpec")
+
+    clock = Clock(
+        start=datetime(2000, 1, 1),
+        dt_seconds=86400.0,
+        steps=1,
+        calendar="360_day",
+    )
+    _, model_time, _ = next(clock.iter())
+    assert isinstance(model_time, DateTime360)
+    assert model_time.day_of_year == 1
+
+    renamed_grid = grids_module.RectilinearGrid.uniform(
+        "new-grid",
+        nlon=2,
+        nlat=2,
+        longitude=(0.0, 90.0),
+        latitude=(-45.0, 45.0),
+    )
+
+    component = DataComponent(
+        "ATM",
+        renamed_grid,
+        fields={"temperature": 280.0},
+        spec=ComponentSpec(outputs=("temperature", "humidity")),
+    )
+    assert component.spec.outputs == ("temperature", "humidity")
+
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+    assert coupler.run_order == ("ATM",)
+    with pytest.raises(TypeError):
+        coupler.components["NEW"] = component  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        coupler.exchanges.append(Exchange("ATM", "ATM", ("temperature",)))  # type: ignore[attr-defined]
+
+    state = coupler.initial_state()
+    output_state = coupler.run(
+        state,
+        output=OutputTarget(
+            tmp_path,
+            write_period=False,
+            write_final_fields=False,
+            write_snapshots=False,
+        ),
+    )
+    assert isinstance(output_state, RunState)
+    assert not hasattr(Coupler, "write_outputs")
+
+
+@pytest.mark.fast_always
+def test_public_api_facade_exports_supported_names_only() -> None:
+    assert tuple(vercor.__all__) == (
+        "Clock",
+        "Coupler",
+        "Exchange",
+        "RectilinearGrid",
+        "RunState",
+        "RuntimeOptions",
+    )
+
+    spec = ComponentSpec(
         inputs=("temperature", "temperature"),
         outputs=("sea_surface_temperature",),
-        defaults={"sea_surface_temperature": 280.0},
+        initial_fields={"sea_surface_temperature": 280.0},
     )
     assert spec.inputs == ("temperature",)
     assert spec.outputs == ("sea_surface_temperature",)
-    assert spec.defaults == {"sea_surface_temperature": 280.0}
-    assert spec.default_fields == spec.defaults
+    assert spec.initial_fields == {"sea_surface_temperature": 280.0}
 
     result = StepResult(fields={"temperature": jnp.asarray(281.0)})
-    assert result.payload is KEEP_PAYLOAD
-
-    deprecated_aliases = (
-        (vercor, "ComponentFieldSpec", FieldSpec, "vercor.FieldSpec"),
-        (vercor, "ComponentSetupContext", SetupContext, "vercor.SetupContext"),
-        (vercor, "ComponentStepContext", StepContext, "vercor.StepContext"),
-        (vercor, "ComponentStepResult", StepResult, "vercor.StepResult"),
-        (vercor, "HostRuntimeComponent", HostComponent, "vercor.HostComponent"),
-        (
-            components_module,
-            "ComponentFieldSpec",
-            FieldSpec,
-            "vercor.components.FieldSpec",
-        ),
-        (
-            components_module,
-            "ComponentSetupContext",
-            SetupContext,
-            "vercor.components.SetupContext",
-        ),
-        (
-            components_module,
-            "ComponentStepContext",
-            StepContext,
-            "vercor.components.StepContext",
-        ),
-        (
-            components_module,
-            "ComponentStepResult",
-            StepResult,
-            "vercor.components.StepResult",
-        ),
-        (
-            components_module,
-            "HostRuntimeComponent",
-            HostComponent,
-            "vercor.components.HostComponent",
-        ),
-    )
-    for module, legacy_name, target, replacement in deprecated_aliases:
-        with pytest.warns(DeprecationWarning, match=f"use {replacement}"):
-            assert getattr(module, legacy_name) is target
-
-    with pytest.warns(DeprecationWarning, match="use defaults"):
-        legacy_spec = FieldSpec(default_fields={"temperature": 280.0})
-    assert legacy_spec.defaults == {"temperature": 280.0}
+    assert tuple(result.fields) == ("temperature",)
 
 
 @pytest.mark.fast_always
-def test_v2_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> None:
-    component = DataComponent.from_fields(
+def test_step_result_payload_sentinel_preserves_runtime_payload_by_default() -> None:
+    from vercor.components._runtime_fields import apply_step_result
+
+    component = DataComponent(
         name="ATM",
         grid=make_test_grid(name="payload-sentinel"),
         fields={"temperature": 280.0},
     )
     payload = {"model": "state"}
-    runtime_state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping({"temperature": jnp.asarray(280.0)}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
-        runtime_payload=payload,
+    runtime_state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping({"temperature": jnp.asarray(280.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+        payload=payload,
     )
 
-    preserved = component.apply_step_result(
+    preserved = apply_step_result(
+        component,
         runtime_state,
-        vercor.StepResult(fields={"temperature": jnp.asarray(281.0)}),
+        StepResult(fields={"temperature": jnp.asarray(281.0)}),
     )
-    cleared = component.apply_step_result(
+    cleared = apply_step_result(
+        component,
         runtime_state,
-        vercor.StepResult(fields={"temperature": jnp.asarray(282.0)}, payload=None),
+        StepResult(fields={"temperature": jnp.asarray(282.0)}, payload=None),
     )
 
-    assert preserved.runtime_payload is payload
-    assert cleared.runtime_payload is None
+    assert preserved.payload is payload
+    assert cleared.payload is None
 
 
 @pytest.mark.fast_always
-def test_v2_exchange_accepts_new_names_and_keeps_legacy_aliases() -> None:
+def test_exchange_accepts_supported_names_only() -> None:
     exchange = Exchange(
         "ATM",
         "OCN",
-        ("temperature", ("u_velocity", "v_velocity")),
-        regrid=bilinear,
+        ("temperature", vector("u_velocity", "v_velocity")),
+        regridder_factory=bilinear,
     )
 
     assert exchange.source == "ATM"
     assert exchange.target == "OCN"
-    assert exchange.fields == ("temperature", ("u_velocity", "v_velocity"))
-    assert exchange.regrid is bilinear
-    assert exchange.name is None
-    assert exchange.label == "ATM --(bilinear)--> OCN"
-    assert exchange.interpolation_type == "bilinear"
-
-    with pytest.warns(DeprecationWarning, match="use Exchange.target"):
-        assert exchange.destination == exchange.target
-    with pytest.warns(DeprecationWarning, match="use Exchange.fields"):
-        assert exchange.field_names == exchange.fields
-    with pytest.warns(DeprecationWarning, match="use Exchange.regrid"):
-        assert exchange.regridder_factory is exchange.regrid
-
-    with pytest.warns(DeprecationWarning) as warning_records:
-        legacy_exchange = Exchange(
-            source="ATM",
-            destination="OCN",
-            field_names=("temperature",),
-            regridder_factory=bilinear,
-        )
-    warning_messages = [str(record.message) for record in warning_records]
-    assert any("use target" in message for message in warning_messages)
-    assert any("use fields" in message for message in warning_messages)
-    assert any("use regrid" in message for message in warning_messages)
-    assert legacy_exchange.target == "OCN"
-    assert legacy_exchange.fields == ("temperature",)
-    assert legacy_exchange.regrid is bilinear
+    assert exchange.fields == ("temperature", vector("u_velocity", "v_velocity"))
+    assert exchange.regridder_factory is bilinear
+    assert exchange.route_id == "ATM->OCN"
 
 
 @pytest.mark.fast_always
-def test_v2_coupler_facade_wraps_runtime_state_and_views() -> None:
-    component = DataComponent.from_fields(
+def test_coupler_facade_wraps_runtime_state_and_views() -> None:
+    component = DataComponent(
         name="ATM",
-        grid=make_test_grid(name="coupler-v2"),
+        grid=make_test_grid(name="coupler-reconfigured"),
         fields={"temperature": 280.0},
     )
-    coupler = Coupler.from_components(
+    coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
         components=(component,),
         run_order=("ATM",),
     )
 
     assert coupler.run_order == ("ATM",)
-    assert coupler.run_sequence == coupler.run_order
+    assert coupler.run_order == coupler.run_order
 
-    coupler.set_run_order(("ATM",))
-    state = coupler.state()
-    view = coupler.view(state, "ATM")
-    views = coupler.views(state)
+    state = coupler.initial_state()
+    view = state.component("ATM")
+    views = state.components()
 
-    assert isinstance(state, vercor.CouplerState)
-    assert isinstance(view, vercor.ComponentView)
     assert views["ATM"] is view or views["ATM"].name == view.name
     assert view.field("temperature").shape == component.grid.shape
 
 
 @pytest.mark.fast_always
-def test_v2_shallow_setup_regridding_grid_and_exchange_imports() -> None:
-    from vercor.exchanges import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
+def test_shallow_setup_regridding_grid_and_exchange_imports() -> None:
     from vercor.grids import RectilinearGrid as PublicRectilinearGrid
-    from vercor.grids import rectilinear
+    from vercor.recipes import OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS
     from vercor.regridding import (
-        BilinearRectilinearRegridder as PublicBilinearRectilinearRegridder,
-        ConservativeRectilinearRegridder as PublicConservativeRectilinearRegridder,
         bilinear as public_bilinear,
         conservative as public_conservative,
     )
     from vercor.setups import make_slab_ocean
 
-    grid = rectilinear(
+    grid = PublicRectilinearGrid.uniform(
         "public-grid",
         nlon=4,
         nlat=3,
-        longitude_start=0.0,
-        longitude_end=360.0,
-        latitude_start=-90.0,
-        latitude_end=90.0,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
 
     assert isinstance(grid, PublicRectilinearGrid)
     assert public_bilinear is bilinear
-    assert PublicBilinearRectilinearRegridder is BilinearRectilinearRegridder
-    assert PublicConservativeRectilinearRegridder is ConservativeRectilinearRegridder
     assert callable(public_conservative)
     assert OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS == ("sea_surface_temperature",)
-    with pytest.warns(DeprecationWarning, match="OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS"):
-        from vercor.exchanges import OCEAN_TO_ATMOSPHERE_SURFACE
 
-        assert OCEAN_TO_ATMOSPHERE_SURFACE == ("sea_surface_temperature",)
+    import vercor.exchanges as exchanges_module
+    import vercor._regridders as regridders_module
+    import vercor._regridders.bilinear as bilinear_module
+    import vercor._regridders.conservative as conservative_module
+    import vercor.regridding as regridding_module
+
+    assert not hasattr(exchanges_module, "OCEAN_TO_ATMOSPHERE_SURFACE")
+    for module, name in (
+        (regridders_module, "BilinearRegridder"),
+        (regridders_module, "BilinearRectilinearRegridder"),
+        (regridders_module, "ConservativeRegridder"),
+        (regridders_module, "ConservativeRectilinearRegridder"),
+        (bilinear_module, "BilinearRegridder"),
+        (conservative_module, "ConservativeRegridder"),
+        (regridding_module, "BilinearRegridder"),
+        (regridding_module, "BilinearRectilinearRegridder"),
+        (regridding_module, "ConservativeRegridder"),
+        (regridding_module, "ConservativeRectilinearRegridder"),
+    ):
+        assert not hasattr(module, name)
+    assert hasattr(regridding_module, "Regridder")
+    assert hasattr(regridding_module, "RegridderFactory")
     assert make_slab_ocean(grid).name == "OCN"
+    assert make_slab_ocean(grid, mixed_layer_depth=30.0).name == "OCN"
+    with pytest.raises(TypeError):
+        make_slab_ocean(grid, H=30.0)  # type: ignore[call-arg]
 
 
 @pytest.mark.fast_always
 def test_top_level_exports_public_orchestration_and_component_author_api() -> None:
-    expected_public_names = {
-        "Clock",
+    expected_component_exports = (
+        "CallableComponent",
         "Component",
-        "ComponentCreatePayloadHook",
-        "ComponentInitializeHook",
-        "ComponentPrefillHook",
-        "ComponentValidateHook",
-        "Coupler",
+        "ComponentSpec",
         "DataComponent",
-        "Exchange",
-        "FieldSpec",
-        "HostComponent",
-        "RectilinearGrid",
+        "LifecycleHooks",
+        "PrefillContext",
+        "PrefillResult",
         "SetupContext",
+        "SetupResult",
         "StepContext",
         "StepResult",
-    }
-    runtime_internal_names = {
-        "ComponentInitContext",
-        "RuntimeComponentContract",
-        "RuntimeComponentState",
-        "RuntimeComponentView",
-        "RuntimeCouplerState",
-        "RuntimeDispatchContext",
-        "RuntimeFieldStore",
-        "RuntimeStepContext",
-        "RuntimeStepInfo",
-    }
-    removed_compatibility_names = {
-        "CustomDateTime",
-        "RunSequence",
-        "data_component",
-        "differentiable_component",
-        "host_component",
-        "make_data_component",
-        "make_differentiable_component",
-        "make_host_component",
-    }
+        "TransferPolicy",
+        "ValidationContext",
+    )
 
-    assert expected_public_names.issubset(set(vercor.__all__))
-    assert runtime_internal_names.isdisjoint(set(vercor.__all__))
-    assert removed_compatibility_names.isdisjoint(set(vercor.__all__))
+    assert tuple(components_module.__all__) == expected_component_exports
+    assert tuple(vercor.__all__) == (
+        "Clock",
+        "Coupler",
+        "Exchange",
+        "RectilinearGrid",
+        "RunState",
+        "RuntimeOptions",
+    )
 
-    assert vercor.Component is Component
-    assert (
-        vercor.ComponentCreatePayloadHook
-        is component_contracts_module.ComponentCreatePayloadHook
-    )
-    assert (
-        vercor.ComponentInitializeHook
-        is component_contracts_module.ComponentInitializeHook
-    )
-    assert (
-        vercor.ComponentPrefillHook is component_contracts_module.ComponentPrefillHook
-    )
-    assert vercor.FieldSpec is component_contracts_module.FieldSpec
-    assert vercor.SetupContext is component_contexts_module.SetupContext
-    assert vercor.StepContext is component_contexts_module.StepContext
-    assert vercor.StepResult is component_contracts_module.StepResult
-    assert (
-        vercor.ComponentValidateHook is component_contracts_module.ComponentValidateHook
-    )
+    assert components_module.Component is Component
+    assert components_module.ComponentSpec is component_contracts_module.ComponentSpec
+    assert components_module.SetupContext is component_contexts_module.SetupContext
+    assert components_module.StepContext is component_contexts_module.StepContext
+    assert components_module.StepResult is component_contracts_module.StepResult
+    assert components_module.SetupResult is component_contracts_module.SetupResult
+    assert components_module.TransferPolicy is component_contracts_module.TransferPolicy
     data_component_type = getattr(components_module, "DataComponent", None)
     assert data_component_type is not None
-    assert getattr(vercor, "DataComponent", None) is data_component_type
-    assert vercor.HostComponent is host_module.HostComponent
-    for name in (*runtime_internal_names, *removed_compatibility_names):
-        assert not hasattr(vercor, name)
+    assert components_module.DataComponent is data_component_type
+    assert components_module.CallableComponent is base_module.CallableComponent
 
 
 @pytest.mark.fast_always
-def test_removed_compatibility_modules_are_not_importable() -> None:
-    removed_modules = (
-        "vercor.components.factories",
-        "vercor.run_sequence",
-    )
+def test_model_setup_factories_use_the_public_setup_owner() -> None:
+    from vercor.setups._data.jcm_land import make_jcm_land
+    from vercor.setups._external.camulator import make_camulator_gcm
+    from vercor.setups._external.camulator_land import make_camulator_land
+    from vercor.setups._external.jax_gcm import make_jax_gcm
+    from vercor.setups._external.veros_gcm import make_veros_gcm
+    from vercor.setups._jcm import make_jcm_land_atmosphere
 
-    for module_name in removed_modules:
-        with pytest.raises(ModuleNotFoundError, match=module_name):
-            importlib.import_module(module_name)
+    expected_factories = {
+        "make_camulator_gcm": make_camulator_gcm,
+        "make_camulator_land": make_camulator_land,
+        "make_jax_gcm": make_jax_gcm,
+        "make_jcm_land": make_jcm_land,
+        "make_jcm_land_atmosphere": make_jcm_land_atmosphere,
+        "make_veros_gcm": make_veros_gcm,
+    }
+
+    for name, factory in expected_factories.items():
+        assert name in vercor.setups.__all__
+        assert getattr(vercor.setups, name) is factory
 
 
 @pytest.mark.fast_always
 def test_components_package_exports_only_component_author_contracts() -> None:
     contracts_module = importlib.import_module("vercor.components.contracts")
-    private_contracts_module = importlib.import_module("vercor.components._contracts")
     imported_data_module = importlib.import_module("vercor.components.data")
-    imported_host_module = importlib.import_module("vercor.components.host")
 
-    assert base_module.__all__ == ["Component"]
-    assert not hasattr(base_module, "ComponentFieldSpec")
-    assert not hasattr(base_module, "ComponentSetupContext")
-    assert not hasattr(base_module, "ComponentStepContext")
-    assert not hasattr(base_module, "ComponentStepResult")
-    assert not hasattr(base_module, "DataComponent")
-    assert not hasattr(base_module, "HostRuntimeComponent")
+    assert base_module.__all__ == ["CallableComponent"]
 
     assert components_module.__all__ == [
+        "CallableComponent",
         "Component",
-        "ComponentCreatePayloadHook",
-        "ComponentHooks",
-        "ComponentInitializeHook",
-        "ComponentPrefillHook",
-        "ComponentValidateHook",
+        "ComponentSpec",
         "DataComponent",
-        "FieldSpec",
-        "HostComponent",
-        "KEEP_PAYLOAD",
+        "LifecycleHooks",
+        "PrefillContext",
+        "PrefillResult",
         "SetupContext",
+        "SetupResult",
         "StepContext",
         "StepResult",
+        "TransferPolicy",
+        "ValidationContext",
     ]
     assert components_module.Component is Component
-    assert (
-        components_module.ComponentCreatePayloadHook
-        is contracts_module.ComponentCreatePayloadHook
-    )
-    assert components_module.ComponentHooks is contracts_module.ComponentHooks
-    assert (
-        components_module.ComponentInitializeHook
-        is contracts_module.ComponentInitializeHook
-    )
-    assert (
-        components_module.ComponentPrefillHook is contracts_module.ComponentPrefillHook
-    )
-    assert (
-        components_module.ComponentValidateHook
-        is contracts_module.ComponentValidateHook
-    )
+    assert components_module.LifecycleHooks is contracts_module.LifecycleHooks
     assert data_module is imported_data_module
-    assert host_module is imported_host_module
     assert components_module.DataComponent is data_module.DataComponent
-    assert components_module.HostComponent is host_module.HostComponent
-    assert components_module.FieldSpec is contracts_module.FieldSpec
+    assert components_module.CallableComponent is base_module.CallableComponent
+    assert components_module.ComponentSpec is contracts_module.ComponentSpec
     assert components_module.SetupContext is component_contexts_module.SetupContext
     assert components_module.StepContext is component_contexts_module.StepContext
     assert components_module.StepResult is contracts_module.StepResult
-    assert components_module.KEEP_PAYLOAD is contracts_module.KEEP_PAYLOAD
+    assert components_module.SetupResult is contracts_module.SetupResult
+    assert components_module.TransferPolicy is contracts_module.TransferPolicy
 
-    deprecated_aliases = (
-        (components_module, "ComponentFieldSpec", contracts_module.FieldSpec),
-        (
-            components_module,
-            "ComponentSetupContext",
-            component_contexts_module.SetupContext,
-        ),
-        (
-            components_module,
-            "ComponentStepContext",
-            component_contexts_module.StepContext,
-        ),
-        (components_module, "ComponentStepResult", contracts_module.StepResult),
-        (components_module, "HostRuntimeComponent", host_module.HostComponent),
-        (contracts_module, "ComponentFieldSpec", contracts_module.FieldSpec),
-        (contracts_module, "ComponentStepResult", contracts_module.StepResult),
-        (
-            component_contexts_module,
-            "ComponentSetupContext",
-            component_contexts_module.SetupContext,
-        ),
-        (
-            component_contexts_module,
-            "ComponentStepContext",
-            component_contexts_module.StepContext,
-        ),
-        (host_module, "HostRuntimeComponent", host_module.HostComponent),
-    )
-    for module, legacy_name, target in deprecated_aliases:
-        with pytest.warns(DeprecationWarning):
-            assert getattr(module, legacy_name) is target
     assert setup_validation_module.validate_component_setup is not None
-    assert "FieldDefaults" not in contracts_module.__all__
-    assert "FieldDefaults" not in private_contracts_module.__all__
-    assert not hasattr(contracts_module, "FieldDefaults")
-    assert not hasattr(private_contracts_module, "FieldDefaults")
-    assert not hasattr(base_module, "validate_component_setup")
-    assert not hasattr(components_module, "validate_component_setup")
-    assert not hasattr(base_module, "data_component")
-    assert not hasattr(base_module, "differentiable_component")
-    assert not hasattr(base_module, "host_component")
-    assert not hasattr(components_module, "data_component")
-    assert not hasattr(components_module, "differentiable_component")
-    assert not hasattr(components_module, "host_component")
-    assert not hasattr(components_module, "make_data_component")
-    assert not hasattr(components_module, "make_differentiable_component")
-    assert not hasattr(components_module, "make_host_component")
-    assert not hasattr(components_module, "RuntimeComponentState")
-    assert not hasattr(components_module, "ComponentInitContext")
-    assert not hasattr(components_module, "RuntimeStepContext")
-
-
-@pytest.mark.fast_always
-def test_runtime_setup_validation_uses_single_component_entrypoint() -> None:
-    removed_wrapper_name = "validate_" + "registered_component_setup"
-    offenders = [
-        str(path)
-        for path in sorted(Path("vercor").glob("**/*.py"))
-        if removed_wrapper_name in path.read_text(encoding="utf-8")
-    ]
-
-    assert offenders == []
-
-
-@pytest.mark.fast_always
-def test_setup_and_examples_do_not_import_removed_component_factories() -> None:
-    removed_names = {
-        "data_component",
-        "differentiable_component",
-        "host_component",
-    }
-    import_modules = {
-        "vercor",
-        "vercor.components",
-    }
-    scanned_paths = (
-        *Path("vercor/setups").glob("**/*.py"),
-        *Path("examples").glob("**/*.py"),
-    )
-    offenders: list[str] = []
-
-    for path in sorted(scanned_paths):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if (
-                not isinstance(node, ast.ImportFrom)
-                or node.module not in import_modules
-            ):
-                continue
-            imported_removed_names = removed_names.intersection(
-                alias.name for alias in node.names
-            )
-            for name in sorted(imported_removed_names):
-                offenders.append(f"{path}:{node.lineno}:{name}")
-
-    assert offenders == []
-
-
-@pytest.mark.fast_always
-def test_obsolete_compatibility_api_surfaces_are_removed() -> None:
-    import vercor.forcing_data as forcing_data_module
-    import vercor.runtime as runtime_module
-    import vercor.settings as settings_module
-    import vercor.setups.external as external_module
-    import vercor.setups.external.camulator_tensors as camulator_tensors_module
-    import vercor.setups.external.jax_gcm as jax_gcm_module
-
-    removed_runtime_reexports = {
-        "RuntimeComponentContract",
-        "RuntimeComponentState",
-        "RuntimeCouplerState",
-        "RuntimeFieldStore",
-        "RuntimeStepInfo",
-        "append_unique_runtime_fields",
-        "build_runtime_contracts",
-        "dispatch_component_exchanges",
-        "exchange_key_name",
-        "flatten_exchange_fields",
-    }
-    for name in removed_runtime_reexports:
-        assert not hasattr(runtime_module, name)
-    assert getattr(runtime_module, "__all__", []) == []
-    assert not Path("vercor/runtime/contexts.py").exists()
-
-    assert not hasattr(jax_gcm_module, "JAXGCMRuntimePayload")
-    assert "JAXGCMRuntimePayload" not in external_module.__all__
-    assert "JAXGCMRuntimePayload" not in external_module._LAZY_EXPORTS
-    assert not hasattr(jax_gcm_module, "JCMState")
-    assert "JCMState" not in getattr(jax_gcm_module, "__all__", [])
-    assert "JCMState" not in external_module.__all__
-    assert "JCMState" not in external_module._LAZY_EXPORTS
-
-    assert not hasattr(settings_module, "ComponentSettings")
-    assert not hasattr(forcing_data_module, "ComponentForcingData")
-    assert not hasattr(camulator_tensors_module.TensorVariableIndex, "to_mapping")
-    assert not hasattr(camulator_tensors_module.StateVariableAccessor, "get_var_info")
-    assert not hasattr(
-        camulator_tensors_module.StateVariableAccessor,
-        "list_available_vars",
-    )
-
-
-@pytest.mark.fast_always
-def test_active_progress_does_not_advertise_removed_compatibility_surfaces() -> None:
-    progress_source = Path("PROGRESS.md").read_text(encoding="utf-8")
-
-    stale_progress_markers = (
-        "while preserving the\n  existing private compatibility aliases for tests and profiling helpers",
-        "preserving public and private compatibility methods used by tests",
-        "keeping `StateVariableAccessor.get_var_info(...)` dictionary-compatible",
-        "compatibility `JAXGCMRuntimePayload` reexport",
-        "preserving stable package aggregators, `ComponentSettings`",
-        "preserving `vercor.clock` compatibility reexports",
-        "leaving old flux utility import paths as\n  compatibility aliases",
-        "a thin compatibility facade",
-        "Preserved intentional compatibility surfaces, including settings attribute\n"
-        "  compatibility, `ComponentSettings`",
-        "reexports, `ComponentForcingData._read_forcing()`",
-        "`Coupler._run_scanned_runtime()`",
-        "`_runtime_state_from_components()`",
-    )
-
-    for marker in stale_progress_markers:
-        assert marker not in progress_source
-
-
-@pytest.mark.fast_always
-def test_coupler_private_compatibility_aliases_are_removed() -> None:
-    removed_names = (
-        "_regridders",
-        "_binary_masks",
-        "_fractional_masks",
-        "_runtime_contracts",
-        "_compiled_runtime_cache",
-        "_runtime_interrupts",
-        "_runtime_state_from_components",
-        "_validate_runtime_state",
-        "_prepare_runtime_state",
-        "_runtime_dispatch_context",
-        "_runtime_run_context",
-        "_run_scanned_runtime",
-    )
-    for name in removed_names:
-        assert not hasattr(Coupler, name)
-
-
-@pytest.mark.fast_always
-def test_callable_author_api_does_not_expose_legacy_field_seed_keyword() -> None:
-    public_callables = (
-        components_module.Component.from_step,
-        components_module.HostComponent.from_step,
-    )
-    removed_keyword = "initial" + "_fields"
-
-    for callable_factory in public_callables:
-        parameters = signature(callable_factory).parameters
-        assert removed_keyword not in parameters
-        assert "required_fields" not in parameters
-        assert "defaults" in parameters
-        assert "default_fields" in parameters
-        assert parameters["payload"].kind is parameters["payload"].KEYWORD_ONLY
-        assert parameters["settings"].kind is parameters["settings"].KEYWORD_ONLY
-
-    grid = make_test_grid(name="deprecated-from-model")
-    with pytest.warns(DeprecationWarning, match="from_step"):
-        components_module.Component.from_model(
-            "ATM",
-            grid,
-            lambda fields: {},
-            outputs=("temperature",),
-            defaults={"temperature": 280.0},
-        )
-    with pytest.warns(DeprecationWarning, match="from_step"):
-        components_module.HostComponent.from_model(
-            "LND",
-            grid,
-            lambda fields: {},
-            outputs=("temperature",),
-            defaults={"temperature": 280.0},
-        )
 
 
 @pytest.mark.fast_always
 def test_component_base_internals_are_private_modules() -> None:
     base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
-    contracts_source = Path("vercor/components/_contracts.py").read_text(
+    contracts_source = Path("vercor/components/contracts.py").read_text(
         encoding="utf-8"
     )
-    public_contracts_source = Path("vercor/components/contracts.py").read_text(
-        encoding="utf-8"
-    )
+    protocol_source = Path("vercor/components/_protocol.py").read_text(encoding="utf-8")
     data_source = Path("vercor/components/data.py").read_text(encoding="utf-8")
-    host_source = Path("vercor/components/host.py").read_text(encoding="utf-8")
-    callable_source = Path("vercor/components/_callable_wrappers.py").read_text(
-        encoding="utf-8"
-    )
-    runtime_fields_source = Path("vercor/components/_runtime_fields.py").read_text(
-        encoding="utf-8"
-    )
-    runtime_validation_source = Path(
-        "vercor/components/_runtime_validation.py"
-    ).read_text(encoding="utf-8")
-    core_runtime_validation_source = Path("vercor/runtime/validation.py").read_text(
-        encoding="utf-8"
-    )
-    runtime_execution_source = Path("vercor/components/runtime_execution.py").read_text(
-        encoding="utf-8"
-    )
-    lifecycle_source = Path("vercor/components/_lifecycle.py").read_text(
-        encoding="utf-8"
-    )
-    validation_source = Path("vercor/components/setup_validation.py").read_text(
-        encoding="utf-8"
-    )
-    constructor_options_source = Path(
-        "vercor/components/_constructor_options.py"
-    ).read_text(encoding="utf-8")
+    adapter_source = Path("vercor/components/_adapter.py").read_text(encoding="utf-8")
 
-    assert "class FieldSpec" in public_contracts_source
-    assert "class StepResult" in public_contracts_source
-    assert "ComponentInitializeHook =" in public_contracts_source
-    assert "ComponentCreatePayloadHook =" in public_contracts_source
-    assert "ComponentPrefillHook =" in public_contracts_source
-    assert "ComponentValidateHook =" in public_contracts_source
-    assert "__getattr__ = deprecated_getattr(" in public_contracts_source
-    assert "ComponentFieldSpec" not in component_contracts_module.__all__
-    assert "ComponentStepResult" not in component_contracts_module.__all__
-    assert "class ComponentFieldSpec" not in contracts_source
-    assert "class ComponentStepResult" not in contracts_source
+    assert "class Component(Protocol)" in protocol_source
+    assert "from vercor.components._protocol import (" in contracts_source
+    assert "class CallableComponent" in base_source
     assert "class DataComponent" in data_source
-    assert "class HostComponent" in host_source
-    assert "HostRuntimeComponent = HostComponent" not in host_source
-    assert "class DataComponent" not in base_source
-    assert "class HostRuntimeComponent" not in base_source
-    assert "def normalize_field_spec(" in constructor_options_source
-    assert "def normalize_lifecycle_hooks(" in constructor_options_source
-    assert "normalize_field_spec(" in base_source
-    assert "normalize_field_spec(" in host_source
-    assert "normalize_lifecycle_hooks(" in data_source
-    assert "def normalize_author_field_values" in contracts_source
-    assert "class _CallableRuntimeMixin" in callable_source
-    assert "def normalize_component_step_callable" in callable_source
-    assert "def runtime_fields(" in runtime_fields_source
-    assert "def runtime_field(" in runtime_fields_source
-    assert "def runtime_field_or(" in runtime_fields_source
-    assert "def runtime_field_or_zeros_like(" in runtime_fields_source
-    assert "def with_runtime_fields(" in runtime_fields_source
-    assert "def apply_step_result(" in runtime_fields_source
-    assert "def prefill_runtime_fields(" in runtime_fields_source
-    assert "def require_runtime_fields(" not in runtime_fields_source
-    assert "def validate_declared_runtime_fields(" not in runtime_fields_source
-    assert "def require_runtime_fields(" in runtime_validation_source
-    assert "def validate_declared_runtime_fields(" in runtime_validation_source
-    assert (
-        "def validate_runtime_component_data_field("
-        not in core_runtime_validation_source
-    )
-    assert "def component_requires_host_runtime(" not in runtime_execution_source
-    assert "def host_component_names(" in runtime_execution_source
-    assert "def step_component_runtime_state(" in runtime_execution_source
-    assert "from vercor.components._protocols import" in runtime_execution_source
-    assert "ComponentExecutionProtocol" not in runtime_execution_source
-    assert "HostRuntimeExecutionProtocol" in runtime_execution_source
-    assert "if TYPE_CHECKING:" in runtime_execution_source
-    assert "from vercor.components.base import Component" in runtime_execution_source
-    assert "from vercor.components.host import HostRuntimeComponent" not in (
-        runtime_execution_source
-    )
-    assert "isinstance(component, HostRuntimeExecutionProtocol)" in (
-        runtime_execution_source
-    )
-    assert "isinstance(component, HostRuntimeComponent)" not in (
-        runtime_execution_source
-    )
-    assert "def validate_component_setup" in validation_source
-    assert "def _author_field_spec(" not in base_source
-    assert "def component_field_spec(" not in contracts_source
-    assert "def _install_lifecycle_hooks(" not in base_source
-    assert "def _install_lifecycle_hooks(" not in callable_source
-    assert "def _callable_component_from_model(" not in base_source
-    assert "from vercor.components.factories import" not in base_source
-    assert "from vercor.components.factories import" not in host_source
-    assert not Path("vercor/components/factories.py").exists()
-    assert "def data_component(" not in base_source
-    assert "def differentiable_component(" not in base_source
-    assert "def host_component(" not in base_source
-    assert "class ComponentLifecycleHooks" in lifecycle_source
-    assert "def install_lifecycle_hooks(" not in lifecycle_source
-    assert "class ComponentLifecycleOwner" not in lifecycle_source
-    assert "def with_updates(" not in lifecycle_source
-    assert "component._lifecycle_hooks = lifecycle_hooks" in callable_source
-    assert "normalize_lifecycle_hooks(" in data_source
-    assert "ComponentInitializeHook =" not in lifecycle_source
-    assert "ComponentCreatePayloadHook =" not in lifecycle_source
-    assert "ComponentPrefillHook =" not in lifecycle_source
-    assert "ComponentValidateHook =" not in lifecycle_source
-    assert "from vercor.components import _runtime_fields" not in base_source
-    assert "from vercor.components.factories import _install_lifecycle_hooks" not in (
-        callable_source
-    )
-    assert "if TYPE_CHECKING:" in callable_source
-    assert "from vercor.components.base import Component" in callable_source
-    assert "from vercor.components.host import HostRuntimeComponent" not in (
-        callable_source
-    )
-    assert "class _CallableComponentDefinition" not in callable_source
-    assert "def _callable_component_definition(" not in callable_source
-    assert "class _CallableComponent" in base_source
-    assert "class _CallableHostRuntimeComponent" in host_source
-    assert "_required_fields" not in callable_source
-    assert "_prefill_fields" not in callable_source
-    assert "_field_defaults" not in callable_source
-    assert "required_fields:" not in callable_source
-    assert "prefill_fields:" not in callable_source
-    assert "field_defaults:" not in callable_source
-    assert "def apply_callable_step_result" not in callable_source
-    assert "def make_callable_component" not in callable_source
-    assert "def make_callable_host_component" not in callable_source
-    assert "def _create_callable_component" not in callable_source
-
-    private_markers = (
-        "class _CallableRuntimeMixin",
-        "class _CallableHostRuntimeComponent",
-        "def _normalize_component_step_callable",
-        "def _component_step_signature_error",
-        "def _make_differentiable_callable_component",
-        "def _make_host_callable_component",
-        "def make_callable_component",
-        "def make_callable_host_component",
-        "def make_data_component",
-        "def make_differentiable_component",
-        "def make_host_component",
-        "component_state.data.to_mapping()",
-        "component_state.data.replace_many(fields)",
-        "validate_runtime_component_data_field",
-        "from vercor.runtime.validation import",
-        "_initialize_hook",
-        "_create_runtime_payload_hook",
-    )
-    for marker in private_markers:
-        assert marker not in base_source
-
-    for marker in (
-        "validate_runtime_component_data_field",
-        "from vercor.runtime.validation import",
-    ):
-        assert marker not in runtime_fields_source
-
-    assert "_contracts" not in components_module.__all__
-    assert "_callable_wrappers" not in components_module.__all__
-    assert "_runtime_fields" not in components_module.__all__
-    assert "_runtime_validation" not in components_module.__all__
-    assert "runtime_execution" not in components_module.__all__
-    assert "setup_validation" not in components_module.__all__
-    assert not Path("vercor/components/_runtime_execution.py").exists()
-    assert not Path("vercor/components/_validation.py").exists()
-
-
-@pytest.mark.fast_always
-def test_component_base_owns_runtime_access_methods_directly() -> None:
-    expected_author_methods = {
-        "declare_fields",
-        "update_settings",
-        "grid_field_defaults",
-        "seed_field",
-        "seed_fields",
-        "seed_declared_defaults",
-    }
-    expected_runtime_methods = {
-        "runtime_fields",
-        "runtime_field",
-        "has_runtime_field",
-        "runtime_field_or",
-        "runtime_field_or_zeros_like",
-        "with_runtime_fields",
-        "apply_step_result",
-        "require_runtime_fields",
-        "prefill_runtime_fields",
-    }
-    expected_lifecycle_methods = {
-        "initialize",
-        "create_runtime_payload",
-        "prefill_runtime_state_fields",
-        "validate_runtime_state",
-    }
-
-    for method_name in (
-        expected_author_methods | expected_runtime_methods | expected_lifecycle_methods
-    ):
-        assert hasattr(Component, method_name)
-    assert not hasattr(Component, "seed_zero_field")
-    assert not hasattr(Component, "seed_zero_fields")
-    assert not hasattr(Component, "seed_constant_field")
-
-    source = Path("vercor/components/base.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    component_class = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "Component"
-    )
-    directly_defined_methods = {
-        node.name for node in component_class.body if isinstance(node, ast.FunctionDef)
-    }
-
-    assert expected_author_methods.isdisjoint(directly_defined_methods)
-    assert expected_runtime_methods.issubset(directly_defined_methods)
-    assert expected_lifecycle_methods.isdisjoint(directly_defined_methods)
-    assert "ComponentFieldAuthoringMixin" in source
-    assert "ComponentRuntimeAccessMixin" not in source
-    assert not Path("vercor/components/_runtime_access.py").exists()
-    assert "ComponentLifecycleMixin" in source
+    assert "class _ComponentBinding" in adapter_source
+    assert hasattr(Component, "step")
 
 
 @pytest.mark.fast_always
@@ -852,25 +858,11 @@ def test_runtime_field_state_only_helpers_do_not_accept_unused_component() -> No
     assert tuple(signature(runtime_fields_module.runtime_fields).parameters) == (
         "component_state",
     )
-    assert tuple(signature(runtime_fields_module.has_runtime_field).parameters) == (
-        "component_state",
-        "name",
-    )
-
-
-@pytest.mark.fast_always
-def test_lifecycle_mixin_has_no_cast_accessor_indirection() -> None:
-    lifecycle_source = Path("vercor/components/_lifecycle_api.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert "def _lifecycle_component(" not in lifecycle_source
-    assert "_lifecycle_component()" not in lifecycle_source
 
 
 @pytest.mark.fast_always
 def test_component_contract_modules_share_field_name_deduplication_owner() -> None:
-    field_names_module = importlib.import_module("vercor.components._field_names")
+    field_names_module = importlib.import_module("vercor._field_names")
     private_contracts_module = importlib.import_module("vercor.components._contracts")
 
     assert field_names_module.unique_field_names(("a", "b", "a")) == ("a", "b")
@@ -890,19 +882,18 @@ def test_component_contract_modules_share_field_name_deduplication_owner() -> No
     )
     assert "def _unique_field_names(" not in contracts_source
     assert "def unique_field_names(" not in private_contracts_source
-    assert "vercor.components._field_names" in contracts_source
-    assert "vercor.components._field_names" in private_contracts_source
+    assert "vercor._field_names" in contracts_source
+    assert "vercor._field_names" in private_contracts_source
 
 
 @pytest.mark.fast_always
 def test_runtime_component_type_imports_are_annotation_only() -> None:
-    """Runtime facade modules should not import Component for annotations only."""
+    """Private runtime modules should import Component only for type checking."""
 
     modules_with_annotation_only_component_usage = (
-        Path("vercor/coupler.py"),
-        Path("vercor/runtime/initialization.py"),
-        Path("vercor/runtime/topology.py"),
-        Path("vercor/runtime/coupler_state.py"),
+        Path("vercor/_runtime/initialization.py"),
+        Path("vercor/_runtime/topology.py"),
+        Path("vercor/_runtime/coupler_state.py"),
     )
 
     for path in modules_with_annotation_only_component_usage:
@@ -917,22 +908,27 @@ def test_runtime_component_type_imports_are_annotation_only() -> None:
                 assert "Component" not in imported_names, path
         assert "if TYPE_CHECKING:" in source, path
 
+    coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
+    assert "import vercor.components as _components" in coupler_source
+    assert "Iterable[_components.Component]" in coupler_source
+    assert "from vercor.components import Component" not in coupler_source
+    assert "_ComponentInfo" not in coupler_source
+
 
 @pytest.mark.fast_always
-def test_setup_components_use_explicit_metadata_mapping() -> None:
+def test_setup_components_do_not_expose_mutable_metadata_mapping() -> None:
     component = DataComponent(
         name="ATM",
         grid=make_test_grid(name="metadata-boundary"),
     )
 
-    component.setup_metadata["DATA_FILES"] = {"surface": "surface.nc"}
+    assert not hasattr(component, "setup_metadata")
+    assert not hasattr(component, "_setup_metadata")
 
-    assert component.setup_metadata["DATA_FILES"] == {"surface": "surface.nc"}
-
-    helper_source = Path("vercor/setups/data/_component_helpers.py").read_text(
+    helper_source = Path("vercor/setups/_data/_component_helpers.py").read_text(
         encoding="utf-8"
     )
-    era5_atmosphere_source = Path("vercor/setups/data/era5_atmosphere.py").read_text(
+    era5_atmosphere_source = Path("vercor/setups/_data/era5_atmosphere.py").read_text(
         encoding="utf-8"
     )
 
@@ -941,98 +937,20 @@ def test_setup_components_use_explicit_metadata_mapping() -> None:
     assert "cast(Any, component).hybi" not in era5_atmosphere_source
     assert "cast(Any, component).hyam" not in era5_atmosphere_source
     assert "cast(Any, component).hybm" not in era5_atmosphere_source
+    assert "SetupResult(" in era5_atmosphere_source
 
 
 @pytest.mark.fast_always
-def test_setup_forcing_reader_facade_is_removed() -> None:
-    import vercor.forcing_data as forcing_data_module
-
-    assert callable(forcing_data_module.read_forcing)
-    assert not Path("vercor/setups/data/forcing.py").exists()
-
-
-@pytest.mark.fast_always
-def test_setup_coupler_helpers_register_components_and_add_exchanges() -> None:
-    from vercor.setups.coupler_helpers import (
-        add_exchange_specs,
-        add_exchanges,
-        build_coupler,
-        build_exchanges,
-    )
-
-    with pytest.warns(DeprecationWarning, match="Exchange"):
-        from vercor.setups.coupler_helpers import ExchangeSpec as LegacyExchangeSpec
-
-    assert LegacyExchangeSpec is Exchange
-
-    grid = make_test_grid(name="shared")
-    ocean = DataComponent(name="OCN", grid=grid)
-    atmosphere = DataComponent(name="ATM", grid=grid)
-    clock = Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1)
-    run_sequence = ("OCN", "ATM")
-    exchange = Exchange(
-        source="OCN",
-        target="ATM",
-        fields=["sea_surface_temperature"],
-        regrid=bilinear,
-    )
-
-    with pytest.warns(DeprecationWarning, match="Coupler.from_components"):
-        coupler = build_coupler(
-            clock=clock,
-            components=(ocean, atmosphere),
-            run_sequence=run_sequence,
-        )
-    with pytest.warns(DeprecationWarning, match="Coupler.add_exchanges"):
-        add_exchanges(coupler, (exchange,))
-
-    assert coupler.clock is clock
-    assert tuple(coupler.components) == ("OCN", "ATM")
-    assert coupler.run_sequence == run_sequence
-    assert coupler.exchanges == [exchange]
-
-    specs = (
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=("sea_surface_temperature",),
-            regrid=bilinear,
-        ),
-    )
-    with pytest.warns(DeprecationWarning, match="tuple"):
-        built = build_exchanges(specs)
-    assert len(built) == 1
-    assert built[0].source == exchange.source
-    assert built[0].target == exchange.target
-    assert tuple(built[0].fields) == tuple(exchange.fields)
-    assert built[0].regrid is exchange.regrid
-
-    with pytest.warns(DeprecationWarning, match="Coupler.from_components"):
-        second_coupler = build_coupler(
-            clock=clock,
-            components=(ocean, atmosphere),
-            run_sequence=run_sequence,
-        )
-    with pytest.warns(DeprecationWarning) as warning_records:
-        add_exchange_specs(second_coupler, specs)
-    warning_messages = [str(record.message) for record in warning_records]
-    assert any("Coupler.add_exchanges" in message for message in warning_messages)
-    assert any("tuple" in message for message in warning_messages)
-    assert len(second_coupler.exchanges) == 1
-    assert second_coupler.exchanges[0].fields == ("sea_surface_temperature",)
-
-
-@pytest.mark.fast_always
-def test_coupler_run_sequence_is_explicit_empty_schedule_by_default() -> None:
+def test_coupler_run_order_is_explicit_empty_schedule_by_default() -> None:
     coupler = vercor.Coupler(
         Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1)
     )
 
-    assert coupler.run_sequence == ()
+    assert coupler.run_order == ()
 
     coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
-    assert 'hasattr(self, "run_sequence")' not in coupler_source
-    assert 'getattr(self, "run_sequence"' not in coupler_source
+    assert 'hasattr(self, "run_order")' not in coupler_source
+    assert 'getattr(self, "run_order"' not in coupler_source
 
 
 @pytest.mark.fast_always
@@ -1043,55 +961,54 @@ def test_coupler_accepts_plain_component_name_sequences() -> None:
 
     clock = Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1)
     grid = _make_grid("grid")
-    ocean = DataComponent.from_fields(
+    ocean = DataComponent(
         "OCN",
         grid,
         fields={"sea_surface_temperature": np.zeros(grid.shape)},
     )
-    atmosphere = DataComponent.from_fields(
+    atmosphere = DataComponent(
         "ATM",
         grid,
         fields={"sea_surface_temperature": np.zeros(grid.shape)},
     )
 
-    coupler = Coupler.from_components(
+    coupler = Coupler(
         clock=clock,
         components=(ocean, atmosphere),
         run_order=["OCN", "ATM"],
     )
 
-    assert coupler.run_sequence == ("OCN", "ATM")
+    assert coupler.run_order == ("OCN", "ATM")
 
-    with pytest.warns(DeprecationWarning, match="set_run_order"):
-        coupler.set_components_run_sequence(("ATM", "OCN"))
-    assert coupler.run_sequence == ("ATM", "OCN")
+    assert not hasattr(coupler, "set_components_run_order")
+    assert not hasattr(coupler, "set_run_order")
 
 
 @pytest.mark.fast_always
-def test_coupler_rejects_string_run_sequence() -> None:
+def test_coupler_rejects_string_run_order() -> None:
     with pytest.raises(
-        TypeError,
-        match="run_sequence must be a sequence of component names, not str",
+        CouplerError,
+        match="run_order must be a sequence of component names",
     ):
         Coupler(
             clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
-            run_sequence="ATM",
+            run_order="ATM",
         )
 
 
 @pytest.mark.fast_always
-def test_setup_state_reads_run_sequence_as_plain_sequence() -> None:
+def test_setup_state_reads_run_order_as_plain_sequence() -> None:
     setup_state_paths = (
-        Path("vercor/setups/external/jax_gcm_state.py"),
-        Path("vercor/setups/external/veros_gcm_state.py"),
+        Path("vercor/setups/_external/jax_gcm_state.py"),
+        Path("vercor/setups/_external/veros_gcm_state.py"),
     )
 
     for path in setup_state_paths:
-        assert ".run_sequence.order" not in path.read_text(encoding="utf-8")
+        assert ".run_order.order" not in path.read_text(encoding="utf-8")
 
 
 @pytest.mark.fast_always
-def test_multi_exchange_setup_scripts_use_shared_add_exchanges_helper() -> None:
+def test_multi_exchange_setup_scripts_use_constructor_assembly() -> None:
     multi_exchange_scripts = (
         Path("examples/run_data_driver.py"),
         Path("examples/run_jcm_with_verosdata.py"),
@@ -1102,7 +1019,7 @@ def test_multi_exchange_setup_scripts_use_shared_add_exchanges_helper() -> None:
 
     for path in multi_exchange_scripts:
         source = path.read_text(encoding="utf-8")
-        assert ".add_exchanges(" in source, path
+        assert ".add_exchanges(" not in source, path
         assert "add_exchange_specs" not in source, path
         assert "cpl.add_exchange(" not in source, path
 
@@ -1111,9 +1028,9 @@ def test_multi_exchange_setup_scripts_use_shared_add_exchanges_helper() -> None:
 def test_slab_driver_uses_runtime_views_for_ice_diagnostics() -> None:
     slab_source = Path("examples/run_slab_driver.py").read_text(encoding="utf-8")
 
-    assert 'names=("ATM", "OCN", "LND", "ICE")' in slab_source
+    assert 'final_state.components(("ATM", "OCN", "LND", "ICE"))' in slab_source
     assert 'views["ICE"].field("ice_fraction")' in slab_source
-    assert 'get_component_state("ICE").data.get("ice_fraction")' not in slab_source
+    assert 'get_component_state("ICE").fields.get("ice_fraction")' not in slab_source
 
 
 @pytest.mark.fast_always
@@ -1123,10 +1040,10 @@ def test_runtime_state_is_separate_from_public_component_objects() -> None:
         name="ATM",
         grid=make_test_grid(name="api-boundary"),
     )
-    runtime_state = RuntimeComponentState(
-        data=RuntimeFieldStore.empty(),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    runtime_state = ComponentRuntimeState(
+        fields=FieldStore.empty(),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
     assert not isinstance(runtime_state, Component)
@@ -1139,17 +1056,8 @@ def test_runtime_state_is_separate_from_public_component_objects() -> None:
 
 
 @pytest.mark.fast_always
-def test_examples_do_not_import_removed_run_sequence_api() -> None:
-    for path in Path("examples").glob("run_*.py"):
-        source = path.read_text(encoding="utf-8")
-        assert "from vercor.coupler import RunSequence" not in source
-        assert "from vercor import RunSequence" not in source
-        assert "RunSequence" not in source
-
-
-@pytest.mark.fast_always
 def test_setup_factories_are_primary_concrete_component_api() -> None:
-    from vercor.setups.slab import (
+    from vercor.setups._slab import (
         make_slab_atmosphere,
         make_slab_land,
         make_slab_ocean,
@@ -1162,19 +1070,11 @@ def test_setup_factories_are_primary_concrete_component_api() -> None:
     assert isinstance(make_slab_land(grid), Component)
     assert isinstance(make_slab_seaice(grid), Component)
 
-    from vercor.setups.data.era5_land import make_era5_land
-    from vercor.setups.external.veros_gcm import make_veros_gcm
+    from vercor.setups._data.era5_land import make_era5_land
+    from vercor.setups._external.veros_gcm import make_veros_gcm
 
     assert callable(make_era5_land)
     assert callable(make_veros_gcm)
-
-
-@pytest.mark.fast_always
-def test_old_concrete_component_packages_are_removed() -> None:
-    assert not Path("vercor/components/slab").exists()
-    assert not Path("vercor/components/data").exists()
-    assert not Path("vercor/components/external").exists()
-    assert not Path("setups").exists()
 
 
 @pytest.mark.fast_always
@@ -1208,10 +1108,10 @@ def test_private_setup_state_objects_do_not_borrow_component_methods() -> None:
         "prefill_runtime_fields = Component.",
     )
     for path in (
-        Path("vercor/setups/external/jax_gcm.py"),
-        Path("vercor/setups/external/veros_gcm.py"),
-        Path("vercor/setups/external/camulator.py"),
-        Path("vercor/setups/external/camulator_land.py"),
+        Path("vercor/setups/_external/jax_gcm.py"),
+        Path("vercor/setups/_external/veros_gcm.py"),
+        Path("vercor/setups/_external/camulator.py"),
+        Path("vercor/setups/_external/camulator_land.py"),
     ):
         source = path.read_text(encoding="utf-8")
         for marker in forbidden_markers:
@@ -1221,11 +1121,11 @@ def test_private_setup_state_objects_do_not_borrow_component_methods() -> None:
 @pytest.mark.fast_always
 def test_setup_adapters_do_not_import_runtime_context_or_store_internals() -> None:
     forbidden_markers = (
-        "vercor.runtime.contexts",
-        "from vercor.runtime.contexts import ComponentInitContext",
-        "from vercor.runtime.contexts import RuntimeStepContext",
-        "from vercor.runtime import RuntimeFieldStore",
-        "RuntimeFieldStore.from_mapping",
+        "vercor._runtime.contexts",
+        "from vercor._runtime.contexts import ComponentInitContext",
+        "from vercor._runtime.contexts import RuntimeStepContext",
+        "from vercor._runtime import FieldStore",
+        "FieldStore.from_mapping",
     )
     for path in Path("vercor/setups").rglob("*.py"):
         source = path.read_text(encoding="utf-8")
@@ -1236,553 +1136,141 @@ def test_setup_adapters_do_not_import_runtime_context_or_store_internals() -> No
 @pytest.mark.fast_always
 def test_shared_helpers_have_core_owners_not_setup_or_regridder_owners() -> None:
     import vercor.calendar as calendar_module
-    import vercor.clock as clock_module
-    import vercor.field_names as field_names_module
     import vercor.forcing_index as forcing_index_module
     import vercor.fluxes.vertical_coordinates as vertical_module
     import vercor.grid_geometry as grid_geometry_module
-    import vercor.grid_masks as grid_masks_module
-    import vercor.physical_constants as physical_constants_module
-    import vercor.exchange as exchange_module
-    import vercor.settings as settings_module
+    import vercor.physics as physics_module
     import vercor.time_selection as time_selection_module
 
-    from vercor.interpolators.conservative_remap_rectilinear import (
-        ConservativeRectilinearRemapper,
-    )
-
     jax_gcm_pytree_module = importlib.import_module(
-        "vercor.setups.external._jax_gcm_pytree"
+        "vercor.setups._external._jax_gcm_pytree"
     )
 
     assert callable(calendar_module.is_leap_year)
-    removed_calendar_delegates = (
-        "gregorian_month_lengths",
-        "day_of_year_360_to_gregorian",
-        "noleap_day_of_year",
-        "daily_forcing_day_of_year",
-        "daily_forcing_index",
-    )
-    for name in removed_calendar_delegates:
-        assert not hasattr(calendar_module, name)
     assert callable(forcing_index_module.daily_forcing_index)
-    assert not hasattr(calendar_module, "CustomDateTime")
-    assert not hasattr(clock_module, "DateTime360")
-    assert not hasattr(clock_module, "DateTime365")
-    assert not hasattr(clock_module, "ModelDateTime")
-    assert not hasattr(clock_module.Clock, "days_per_year")
-    assert not hasattr(clock_module.Clock, "fixed_30_day_months")
-    assert callable(grid_geometry_module.make_rectilinear_grid)
     assert callable(grid_geometry_module.centers_to_edges)
-    assert not hasattr(grid_masks_module, "grids_identical")
-    assert not hasattr(vertical_module, "compute_pressure_levels")
     assert callable(vertical_module.compute_sigma_pressure_levels)
     assert callable(vertical_module.compute_hybrid_pressure_levels)
     assert callable(vertical_module.compute_hybrid_sigma_full_level_altitudes)
     assert callable(vertical_module.get_altitudes_sigma_levels)
-    assert not hasattr(ConservativeRectilinearRemapper, "get_src_areas")
-    assert not hasattr(ConservativeRectilinearRemapper, "get_src_total_mass")
-    assert not hasattr(ConservativeRectilinearRemapper, "get_dst_total_mass")
     assert callable(jax_gcm_pytree_module.tree_as_real_dtype)
     assert callable(jax_gcm_pytree_module.tree_mean)
     assert callable(jax_gcm_pytree_module.tree_stack)
     assert callable(jax_gcm_pytree_module.tree_unwrap_leading_dims)
     assert callable(time_selection_module.datetime_to_seconds_in_year)
     assert callable(time_selection_module.get_periodic_interval)
-    assert not hasattr(time_selection_module, "get_field_time_slice")
-    assert not hasattr(time_selection_module, "get_field_at_specific_time")
-    assert "apply_daily_time_selection" in settings_module.DEFAULT_SETTINGS
-    assert "get_field_time_slice" not in settings_module.DEFAULT_SETTINGS
-    assert not hasattr(settings_module.VercorSettings(), "get_field_time_slice")
-    with pytest.raises(ModuleNotFoundError, match="vercor.pytree_utils"):
-        importlib.import_module("vercor.pytree_utils")
-    assert "gravity" in physical_constants_module.PHYSICAL_CONSTANT_SETTINGS
-    assert not hasattr(exchange_module, "VALID_EXCHANGE_FIELD_NAMES")
-    assert "sea_surface_temperature" in field_names_module.VALID_EXCHANGE_FIELD_NAMES
-
-    assert exchange_module.ExchangeField == str | tuple[str, str]
-    assert hasattr(exchange_module, "RegridderFactory")
-
-    clock_source = Path("vercor/clock.py").read_text(encoding="utf-8")
-    calendar_source = Path("vercor/calendar.py").read_text(encoding="utf-8")
-    time_selection_source = Path("vercor/time_selection.py").read_text(encoding="utf-8")
-    forcing_index_path = Path("vercor/forcing_index.py")
-    forcing_index_source = forcing_index_path.read_text(encoding="utf-8")
-    runtime_time_source = Path("vercor/runtime/time.py").read_text(encoding="utf-8")
-    runtime_validation_source = Path("vercor/runtime/validation.py").read_text(
-        encoding="utf-8"
+    assert "gravity" in physics_module.PhysicalConstants.__dataclass_fields__
+    assert "sea_surface_temperature" in COMMON_FIELD_NAMES
+    assert calendar_module.is_leap_year.__module__ == "vercor.calendar"
+    assert forcing_index_module.daily_forcing_index.__module__ == (
+        "vercor.forcing_index"
     )
-    exchange_source = Path("vercor/exchange.py").read_text(encoding="utf-8")
-    coupler_helpers_source = Path("vercor/setups/coupler_helpers.py").read_text(
-        encoding="utf-8"
+    assert grid_geometry_module.centers_to_edges.__module__ == "vercor.grid_geometry"
+    assert time_selection_module.get_periodic_interval.__module__ == (
+        "vercor.time_selection"
     )
-    exchange_recipes_source = Path("vercor/setups/exchange_recipes.py").read_text(
-        encoding="utf-8"
-    )
-    exchanges_source = Path("vercor/exchanges.py").read_text(encoding="utf-8")
-    runtime_resources_source = Path("vercor/runtime/resources.py").read_text(
-        encoding="utf-8"
-    )
-    runtime_cache_path = Path("vercor/runtime/cache.py")
-    runtime_compilation_path = Path("vercor/runtime/compilation.py")
-    regridder_base_source = Path("vercor/regridders/base.py").read_text(
-        encoding="utf-8"
-    )
-    settings_source = Path("vercor/settings.py").read_text(encoding="utf-8")
-    coupler_source = Path("vercor/coupler.py").read_text(encoding="utf-8")
-    regridder_init = Path("vercor/regridders/__init__.py").read_text(encoding="utf-8")
-    grid_masks_source = Path("vercor/grid_masks.py").read_text(encoding="utf-8")
-    topology_source = Path("vercor/runtime/topology.py").read_text(encoding="utf-8")
-    component_topology_source = Path("vercor/runtime/component_topology.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_tools_source = Path("vercor/setups/external/jax_gcm_tools.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert forcing_index_path.exists()
-    assert "mapped_day_in_month =" not in calendar_source
-    assert 'if year_type == "360"' not in calendar_source
-    assert "daily_forcing_day_of_year" not in time_selection_source
-    assert "def get_field_time_slice(" not in time_selection_source
-    assert "def get_field_at_specific_time(" not in time_selection_source
-    assert "Protocol" not in time_selection_source
-    assert "_custom_360_day_to_gregorian_day_of_year" not in time_selection_source
-    assert "from vercor.forcing_index import daily_forcing_index" in (
-        runtime_time_source
-    )
-    assert "from vercor.calendar import daily_forcing_index" not in runtime_time_source
-    assert "from vercor.calendar import" in forcing_index_source
-    assert "daily_forcing_index" in forcing_index_source
-    assert not any(
-        "vercor.forcing_index" in cycle
-        for cycle in package_import_cycles("vercor", "vercor")
-    )
-    assert "class _ModelDateTimeBase" not in clock_source
-    assert "class DateTime365" not in clock_source
-    assert "class DateTime360" not in clock_source
-    assert "def runtime_daily_index(" not in runtime_time_source
-    assert "from vercor.exchange import VALID_EXCHANGE_FIELD_NAMES" not in (
-        runtime_validation_source
-    )
-    assert "from vercor.field_names import VALID_EXCHANGE_FIELD_NAMES" in (
-        runtime_validation_source
-    )
-    assert "from vercor.field_names import" not in exchange_source
-    assert (
-        "VALID_EXCHANGE_FIELD_NAMES as VALID_EXCHANGE_FIELD_NAMES"
-        not in exchange_source
-    )
-    assert "VALID_EXCHANGE_FIELD_NAMES: list[str]" not in exchange_source
-    assert "ExchangeField: TypeAlias" in exchange_source
-    assert "RegridderFactory: TypeAlias" in exchange_source
-    assert "ExchangeField = str | tuple[str, str]" not in coupler_helpers_source
-    assert "RegridderFactory = Callable[" not in coupler_helpers_source
-    assert "ExchangeField: TypeAlias" not in exchange_recipes_source
-    assert "from vercor.exchange import ExchangeField" not in coupler_helpers_source
-    assert (
-        "from vercor.exchange import Exchange, ExchangeField, RegridderFactory"
-        in exchanges_source
-    )
-    assert not runtime_compilation_path.exists()
-    assert not runtime_cache_path.exists()
-    assert "from vercor.runtime.compilation import" not in runtime_resources_source
-    assert "CompiledRuntime = Callable[" not in runtime_resources_source
-    assert "CompiledRuntime" not in runtime_resources_source
-    assert "RuntimeCompilationKey" not in runtime_resources_source
-    assert "def _compute_has_identical_grids(" not in regridder_base_source
-    assert "grids_identical(" in regridder_base_source
-    assert "BilinearRectilinearInterpolator" not in regridder_base_source
-    assert "ConservativeRectilinearRemapper" not in regridder_base_source
-    assert "Protocol" not in regridder_base_source
-    assert "SupportsScalarVectorInterpolation" not in regridder_base_source
-    assert '"gravity": Settings(' not in settings_source
-    assert "PHYSICAL_CONSTANT_SETTINGS" in settings_source
-    assert "Incorrect component name" not in coupler_source
-    assert "def validate_component_topology_names(" not in topology_source
-    assert "def validate_component_topology_names(" in component_topology_source
-    assert "make_rectilinear_grid" not in regridder_init
-    assert "centers_to_edges" not in regridder_init
-    assert "compute_land_mask" not in regridder_init
-    assert "def compute_land_mask(" in grid_masks_source
-    assert "def get_component(" not in grid_masks_source
-    assert "def get_component(" not in topology_source
-    assert "def require_component(" in component_topology_source
-    assert "def get_component(" not in component_topology_source
-    assert ".values()" not in component_topology_source
-    assert "def compute_pressure_levels(" not in jax_gcm_tools_source
-    assert "def get_altitudes_sigma_levels(" not in jax_gcm_tools_source
-    assert "def mean_leaf(" not in jax_gcm_tools_source
-    assert "def stack_objects(" not in jax_gcm_tools_source
-    assert "def unwrap_leading_dims(" not in jax_gcm_tools_source
 
 
 @pytest.mark.fast_always
-def test_concrete_regridders_own_call_dispatch() -> None:
-    regridder_base_source = Path("vercor/regridders/base.py").read_text(
+def test_setup_lazy_exports_have_one_public_registry() -> None:
+    import vercor.setups as setups_module
+    import vercor.setups._data as data_setups_module
+    import vercor.setups._external as external_setups_module
+
+    assert {"JCMInputs", "load_jcm_inputs"}.issubset(set(setups_module.__all__))
+
+    assert hasattr(setups_module, "_LAZY_EXPORTS")
+    for private_package in (data_setups_module, external_setups_module):
+        assert private_package.__all__ == []
+        assert not hasattr(private_package, "_LAZY_EXPORTS")
+        assert "__getattr__" not in vars(private_package)
+
+
+@pytest.mark.fast_always
+def test_callable_component_has_one_step_normalization_owner() -> None:
+    callable_source = Path("vercor/components/_callable_wrappers.py").read_text(
         encoding="utf-8"
     )
-    bilinear_source = Path("vercor/regridders/bilinear.py").read_text(encoding="utf-8")
-    conservative_source = Path("vercor/regridders/conservative.py").read_text(
+    base_source = Path("vercor/components/base.py").read_text(encoding="utf-8")
+
+    assert "def normalize_component_step_callable(" in callable_source
+    assert base_source.count("normalize_component_step_callable(") == 1
+
+
+@pytest.mark.fast_always
+def test_production_runtime_modules_use_coupler_state_name() -> None:
+    production_paths = (
+        Path("vercor/_runtime/coupler_state.py"),
+        Path("vercor/_runtime/driver.py"),
+        Path("vercor/_runtime/exchange_dispatch.py"),
+        Path("vercor/_runtime/facade.py"),
+        Path("vercor/_runtime/preparation.py"),
+        Path("vercor/_runtime/state_validation.py"),
+        Path("vercor/output/_runtime.py"),
+    )
+
+    for path in production_paths:
+        source = path.read_text(encoding="utf-8")
+        assert "RuntimeCouplerState" not in source, path
+
+
+@pytest.mark.fast_always
+def test_shared_base_owns_scalar_regrid_dispatch() -> None:
+    regridder_base_source = Path("vercor/_regridders/base.py").read_text(
+        encoding="utf-8"
+    )
+    bilinear_source = Path("vercor/_regridders/bilinear.py").read_text(encoding="utf-8")
+    conservative_source = Path("vercor/_regridders/conservative.py").read_text(
         encoding="utf-8"
     )
 
     assert "def __call__(" not in regridder_base_source
+    assert "def regrid(" in regridder_base_source
+    assert "def regrid_vector(" not in regridder_base_source
     assert "def _ensure_ready(" not in regridder_base_source
-    assert "def __call__(" in bilinear_source
+    assert "def __call__(" not in bilinear_source
+    assert "def regrid(" not in bilinear_source
+    assert "def regrid_vector(" in bilinear_source
     assert "apply_vector" in bilinear_source
-    assert "def __call__(" in conservative_source
+    assert "def __call__(" not in conservative_source
+    assert "def regrid(" not in conservative_source
+    assert "def regrid_vector(" not in conservative_source
     assert "def _ensure_ready(" not in conservative_source
     assert "apply_vector" not in conservative_source
 
 
 @pytest.mark.fast_always
 def test_setup_helper_and_external_output_ownership_boundaries() -> None:
-    import vercor.diagnostics as diagnostics_module
-    import vercor.host_arrays as host_arrays_module
-    import vercor.setups.external.camulator as camulator_module
-    import vercor.setups.external.camulator_contracts as camulator_contracts_module
-    import vercor.setups.external.camulator_fields as camulator_fields_module
-    import vercor.setups.external.camulator_land as camulator_land_module
-    import vercor.setups.external.camulator_output as camulator_output_module
-    import vercor.setups.external.camulator_runtime_settings as camulator_runtime_settings_module
-    import vercor.setups.external.jax_gcm as jax_gcm_module
-    import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
-    import vercor.output.adapters as output_adapters_module
-    import vercor.output.period_averages as period_averages_module
-    import vercor.output.period_files as period_files_module
-    import vercor.setups.external.veros_output as veros_output_module
-    import vercor.setups.external.veros_fluxes as veros_fluxes_module
-    import vercor.setups.external.veros_gcm as veros_gcm_module
-    import vercor.setups.external.veros_setup as veros_setup_module
-    import vercor.setups.external.veros_state as veros_state_module
-
-    assert callable(host_arrays_module.transposed_host_array)
-    assert callable(diagnostics_module.component_vector_speed)
-    assert callable(camulator_land_module.make_camulator_land)
-    assert camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
-    assert callable(camulator_fields_module.prepare_camulator_surface_forcing)
-    assert callable(camulator_runtime_settings_module.configure_camulator_runtime)
-    assert callable(output_adapters_module.ComponentOutputAdapter)
-    assert callable(period_averages_module.PeriodAverageAccumulator)
-    assert callable(period_files_module.write_period_average_netcdf)
-    assert callable(jax_gcm_output_module.record_jax_gcm_period_output)
-    assert callable(veros_output_module.record_veros_period_output)
-    assert callable(camulator_output_module.record_camulator_period_output)
-    assert callable(veros_fluxes_module.compute_fluxes)
-    assert callable(veros_output_module.extract_veros_output_snapshot)
-    assert not hasattr(veros_output_module, "VerosOutputVariable")
-    assert callable(veros_state_module.copy_state)
-    assert hasattr(veros_setup_module, "CustomGlobalFourDegree")
-    assert not hasattr(jax_gcm_module, "_map_jcm_output_fields")
-    assert not hasattr(jax_gcm_module, "_prepare_surface_temperature_forcing")
-    assert not hasattr(camulator_module, "_map_camulator_prediction_arrays")
-    assert not hasattr(camulator_module, "_prepare_camulator_surface_forcing")
-    assert not hasattr(veros_gcm_module, "compute_fluxes")
-    assert not hasattr(veros_gcm_module, "copy_state")
-    assert not hasattr(veros_gcm_module, "set_variable")
-    jax_gcm_source = Path("vercor/setups/external/jax_gcm.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_state_source = Path("vercor/setups/external/jax_gcm_state.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_runtime_source = Path(
-        "vercor/setups/external/jax_gcm_runtime.py"
-    ).read_text(encoding="utf-8")
-    jax_gcm_fields_source = Path("vercor/setups/external/jax_gcm_fields.py").read_text(
-        encoding="utf-8"
-    )
-    camulator_source = Path("vercor/setups/external/camulator.py").read_text(
-        encoding="utf-8"
-    )
-    camulator_runtime_source = Path(
-        "vercor/setups/external/camulator_runtime.py"
-    ).read_text(encoding="utf-8")
-    camulator_gcm_state_source = Path(
-        "vercor/setups/external/camulator_gcm_state.py"
-    ).read_text(encoding="utf-8")
-    camulator_fields_source = Path(
-        "vercor/setups/external/camulator_fields.py"
-    ).read_text(encoding="utf-8")
-    camulator_output_source = Path(
-        "vercor/setups/external/camulator_output.py"
-    ).read_text(encoding="utf-8")
-    camulator_tensors_source = Path(
-        "vercor/setups/external/camulator_tensors.py"
-    ).read_text(encoding="utf-8")
-    camulator_wind_filter_source = Path(
-        "vercor/setups/external/camulator_wind_filter.py"
-    ).read_text(encoding="utf-8")
-    camulator_private_wind_filtering_path = Path(
-        "vercor/setups/external/_camulator_wind_filtering.py"
-    )
-    camulator_private_wind_filtering_source = (
-        camulator_private_wind_filtering_path.read_text(encoding="utf-8")
-        if camulator_private_wind_filtering_path.exists()
-        else ""
-    )
-    camulator_init_source = Path("vercor/setups/external/camulator_init.py").read_text(
-        encoding="utf-8"
-    )
-    camulator_runtime_settings_source = Path(
-        "vercor/setups/external/camulator_runtime_settings.py"
-    ).read_text(encoding="utf-8")
-    veros_gcm_source = Path("vercor/setups/external/veros_gcm.py").read_text(
-        encoding="utf-8"
-    )
-    veros_gcm_state_source = Path(
-        "vercor/setups/external/veros_gcm_state.py"
-    ).read_text(encoding="utf-8")
-    veros_runtime_source = Path("vercor/setups/external/veros_runtime.py").read_text(
-        encoding="utf-8"
-    )
     output_init_source = Path("vercor/output/__init__.py").read_text(encoding="utf-8")
-    runtime_output_source = Path("vercor/output/runtime.py").read_text(encoding="utf-8")
-    period_averages_source = Path("vercor/output/period_averages.py").read_text(
+    output_session_source = Path("vercor/output/_session.py").read_text(
         encoding="utf-8"
     )
-    output_adapters_source = Path("vercor/output/adapters.py").read_text(
-        encoding="utf-8"
+    native_sources = tuple(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "vercor/setups/_external/jax_gcm_output.py",
+            "vercor/setups/_external/veros_output.py",
+            "vercor/setups/_external/camulator_output.py",
+        )
     )
-    output_datasets_source = Path("vercor/output/datasets.py").read_text(
-        encoding="utf-8"
-    )
-    period_files_source = Path("vercor/output/period_files.py").read_text(
-        encoding="utf-8"
-    )
-    jax_gcm_output_source = Path("vercor/setups/external/jax_gcm_output.py").read_text(
-        encoding="utf-8"
-    )
-    veros_output_source = Path("vercor/setups/external/veros_output.py").read_text(
-        encoding="utf-8"
-    )
-    netcdf_output_source = Path("vercor/output/netcdf.py").read_text(encoding="utf-8")
-    host_arrays_source = Path("vercor/host_arrays.py").read_text(encoding="utf-8")
-    camulator_imports_source = Path(
-        "vercor/setups/external/camulator_imports.py"
-    ).read_text(encoding="utf-8")
-    camulator_stepper_source = Path(
-        "vercor/setups/external/camulator_stepper.py"
-    ).read_text(encoding="utf-8")
 
-    assert Path("vercor/setups/external/camulator_land.py").exists()
-    assert Path("vercor/setups/external/camulator_runtime.py").exists()
-    assert Path("vercor/setups/external/camulator_gcm_state.py").exists()
-    assert not Path("vercor/output/jax_gcm.py").exists()
-    assert Path("vercor/output/netcdf.py").exists()
-    assert Path("vercor/output/period_averages.py").exists()
-    assert Path("vercor/output/adapters.py").exists()
-    assert Path("vercor/output/period_files.py").exists()
-    assert Path("vercor/output/datasets.py").exists()
-    assert Path("vercor/output/time.py").exists()
-    assert Path("vercor/output/variables.py").exists()
-    assert not Path("vercor/output/veros.py").exists()
-    assert Path("vercor/setups/external/jax_gcm_fields.py").exists()
-    assert Path("vercor/setups/external/jax_gcm_runtime.py").exists()
-    assert Path("vercor/setups/external/camulator_output.py").exists()
-    assert Path("vercor/setups/external/camulator_contracts.py").exists()
-    assert Path("vercor/setups/external/camulator_fields.py").exists()
-    assert Path("vercor/setups/external/camulator_runtime_settings.py").exists()
-    assert Path("vercor/setups/external/camulator_wind_filter.py").exists()
-    assert Path("vercor/setups/external/veros_fluxes.py").exists()
-    assert Path("vercor/setups/external/veros_setup.py").exists()
-    assert Path("vercor/setups/external/veros_state.py").exists()
-    assert Path("vercor/setups/external/veros_runtime.py").exists()
-    assert Path("vercor/setups/external/jax_gcm_state.py").exists()
-    assert Path("vercor/setups/external/veros_gcm_state.py").exists()
-    assert Path("vercor/setups/external/jax_gcm_output.py").exists()
-    assert not Path("vercor/setups/external/period_averages.py").exists()
-    assert Path("vercor/setups/external/veros_output.py").exists()
-    assert not Path("vercor/setups/jax_array_helpers.py").exists()
-    assert not Path("vercor/setups/data/camulator_land.py").exists()
-    assert not Path("vercor/setups/external/windpp.py").exists()
-    assert "from vercor.runtime.validation import" not in jax_gcm_source
-    assert "class JAXGCMRuntimePayload" not in jax_gcm_source
-    assert "class JAXGCMRuntimePayload" in jax_gcm_runtime_source
-    assert "class JAXGCMSetupState" not in jax_gcm_source
-    assert "class JAXGCMSetupState" in jax_gcm_state_source
-    assert "def create_jax_gcm_runtime_payload(" in jax_gcm_runtime_source
-    assert "def prefill_jax_gcm_runtime_fields(" in jax_gcm_runtime_source
-    assert "def validate_jax_gcm_runtime_state(" in jax_gcm_runtime_source
-    assert "def step_jax_gcm_runtime(" in jax_gcm_runtime_source
-    assert "def record_jax_gcm_host_step(" in jax_gcm_runtime_source
-    assert "def create_runtime_payload(" not in jax_gcm_source
-    assert "def prefill_runtime_state_fields(" not in jax_gcm_source
-    assert "def validate_runtime_state(" not in jax_gcm_source
-    assert "def step_jax_gcm_runtime_callback(" not in jax_gcm_source
-    assert "def create_jax_gcm_runtime_payload_callback(" not in jax_gcm_source
-    assert "def prefill_jax_gcm_runtime_fields_callback(" not in jax_gcm_source
-    assert "def validate_jax_gcm_runtime_state_callback(" not in jax_gcm_source
-    assert "def step_jax_gcm_runtime_callback(" not in jax_gcm_state_source
-    assert "def create_jax_gcm_runtime_payload_callback(" not in jax_gcm_state_source
-    assert "def prefill_jax_gcm_runtime_fields_callback(" not in jax_gcm_state_source
-    assert "def validate_jax_gcm_runtime_state_callback(" not in jax_gcm_state_source
-    assert "def _step_jax_gcm_component_state(" not in jax_gcm_source
-    assert "def _record_jax_gcm_host_step(" not in jax_gcm_source
-    assert "def asfloat(" not in jax_gcm_source
-    assert "def cleanup_surface_temperature_fields(" not in jax_gcm_source
-    assert "def prepare_surface_temperature_forcing(" not in jax_gcm_source
-    assert "def map_jcm_output_fields(" not in jax_gcm_source
-    assert "def cleanup_surface_temperature_fields(" in jax_gcm_fields_source
-    assert "def _should_write_output(" not in jax_gcm_source
-    assert "def _write_output(" not in jax_gcm_source
-    assert "os.environ[" not in camulator_source
-    assert "import torch" not in camulator_source
-    assert "import xarray" not in camulator_source
-    assert "RectilinearGrid" not in camulator_source
-    assert "CamulatorRuntimeCursor" not in camulator_source
-    assert "assign_model_timestep_alignment" not in camulator_source
-    assert "seed_grid_field_defaults" not in camulator_source
-    assert "def configure_camulator_runtime(" in camulator_runtime_settings_source
-    assert "class CAMulatorGCMSetupState" not in camulator_source
-    assert "class CAMulatorGCMSetupState" in camulator_gcm_state_source
-    assert "def coerce_camulator_datetime(" in camulator_runtime_source
-    assert "def run_camulator_prediction_block(" in camulator_runtime_source
-    assert "def step_camulator_runtime(" in camulator_runtime_source
-    assert "def run_camulator_prediction_block(" not in camulator_source
-    assert "def prepare_camulator_surface_forcing(" not in camulator_source
-    assert "def map_camulator_prediction_arrays(" not in camulator_source
-    assert "def prepare_camulator_surface_forcing(" in camulator_fields_source
-    assert "def map_camulator_prediction_arrays(" in camulator_fields_source
-    assert "def torch_tensor_from_jax_array(" not in camulator_source
-    assert "def torch_tensor_from_jax_array(" in camulator_tensors_source
-    assert "def add_init_noise(" not in camulator_source
-    assert "def add_init_noise(" in camulator_init_source
-    assert "def _credit_output_functions(" not in camulator_source
-    assert "def _write_camulator_prediction_output(" not in camulator_source
-    assert "class CustomGlobalFourDegree" not in veros_gcm_source
-    assert "class VerosGCMSetupState" not in veros_gcm_source
-    assert "class VerosGCMSetupState" in veros_gcm_state_source
-    assert "def compute_fluxes(" not in veros_gcm_source
-    assert "def copy_state(" not in veros_gcm_source
-    assert "def set_variable(" not in veros_gcm_source
-    assert "def step_veros_runtime(" in veros_runtime_source
-    assert "compute_fluxes(" in veros_runtime_source
-    assert "apply_veros_forcing_fields(" in veros_runtime_source
-    assert "advance_veros_substeps(" in veros_runtime_source
-    assert "compute_fluxes(" not in veros_gcm_source
-    assert "apply_veros_forcing_fields(" not in veros_gcm_source
-    assert "advance_veros_substeps(" not in veros_gcm_source
-    assert "import h5netcdf" not in veros_gcm_source
-    assert "import h5netcdf" not in veros_runtime_source
-    assert "import h5netcdf" not in jax_gcm_output_source
-    assert "import h5netcdf" not in veros_output_source
-    assert "import h5netcdf" not in period_files_source
-    assert "import numpy" not in veros_gcm_source
-    assert "import numpy" not in veros_runtime_source
-    assert "import h5netcdf" in netcdf_output_source
-    assert "import xarray" not in runtime_output_source
-    assert ".to_netcdf(" not in runtime_output_source
-    assert "from vercor.output.netcdf import write_netcdf_dataset" in (
-        runtime_output_source
-    )
-    assert "from vercor.output.netcdf import write_netcdf_dataset" in (
-        period_files_source
-    )
-    assert "from vercor.output.netcdf import write_netcdf_dataset" not in (
-        jax_gcm_output_source
-    )
-    assert "from vercor.output.netcdf import write_netcdf_dataset" not in (
-        veros_output_source
-    )
-    assert "write_netcdf_dataset(" in runtime_output_source
-    assert "write_netcdf_dataset(" in period_files_source
-    snapshot_output_source = runtime_output_source.split(
-        "def write_coupler_component_snapshots(",
-        1,
-    )[1]
-    assert "component_snapshot_writer(" in snapshot_output_source
-    assert "field_spec.outputs" not in snapshot_output_source
-    assert ".data.get(" not in snapshot_output_source
-    assert "RuntimeComponentView.from_component_state" not in snapshot_output_source
-    assert "import numpy" not in period_averages_source
-    assert "import numpy" not in period_files_source
-    assert "import numpy" not in jax_gcm_output_source
-    assert "import numpy" not in veros_output_source
-    assert "import jax.numpy as jnp" in period_averages_source
-    assert "import jax.numpy as jnp" in veros_output_source
-    assert "def time_coordinate_variable(" in output_datasets_source
-    assert "def used_dimension_names(" in output_datasets_source
-    assert "def period_mean_output_variables(" in period_averages_source
-    assert "def accumulate_output_variables(" not in period_averages_source
-    assert "def write_period_average_netcdf(" in period_files_source
-    assert "class ComponentOutputAdapter" in output_adapters_source
-    assert "accumulate_output_variables(" not in output_adapters_source
-    assert "self._accumulator.add_samples(" in output_adapters_source
-    assert "def record_snapshot(" in output_adapters_source
-    assert "def register_component_snapshot_writer(" in output_adapters_source
-    assert "def record_period_average_if_due(" in output_adapters_source
-    assert "period_mean_output_variables(" in output_adapters_source
-    assert "write_period_average_netcdf(" in output_adapters_source
-    assert "should_write_period_output(" in output_adapters_source
-    assert "MeanVariablesBuilder" not in period_files_source
-    assert "CoordinateVariablesBuilder" not in period_files_source
-    assert "DataVariablesBuilder" not in period_files_source
-    assert "accumulate_output_variables(" not in jax_gcm_output_source
-    assert "period_mean_output_variables(" not in jax_gcm_output_source
-    assert "write_period_average_netcdf(" not in jax_gcm_output_source
-    assert "def make_jax_gcm_output_adapter(" not in jax_gcm_output_source
-    assert "ComponentOutputAdapter(" in jax_gcm_state_source
-    assert "def record_jax_gcm_period_output(" in jax_gcm_output_source
-    assert "def write_jax_gcm_snapshot_output(" in jax_gcm_output_source
-    assert "time_coordinate_variable(" in jax_gcm_output_source
-    assert "accumulate_output_variables(" not in veros_output_source
-    assert "period_mean_output_variables(" not in veros_output_source
-    assert "write_period_average_netcdf(" not in veros_output_source
-    assert "def make_veros_output_adapter(" not in veros_output_source
-    assert "ComponentOutputAdapter(" in veros_gcm_state_source
-    assert "def record_veros_period_output(" in veros_output_source
-    assert "def write_veros_snapshot_output(" in veros_output_source
-    assert "time_coordinate_variable(" in veros_output_source
-    assert "used_dimension_names(" in veros_output_source
-    assert "def make_camulator_output_adapter(" not in camulator_output_source
-    assert "ComponentOutputAdapter(" in camulator_gcm_state_source
-    assert "def record_camulator_period_output(" in camulator_output_source
-    assert "def write_camulator_snapshot_output(" in camulator_output_source
-    assert "write_period_average_if_due(" not in jax_gcm_runtime_source
-    assert "write_period_average_if_due(" not in veros_runtime_source
-    assert "write_period_average_if_due(" not in camulator_runtime_source
-    assert "def __getattr__(" not in output_init_source
-    assert "def __dir__(" not in output_init_source
-    assert "_RUNTIME_EXPORTS" not in output_init_source
-    assert "from vercor.output.runtime import (" in output_init_source
-    assert "write_coupler_runtime_outputs" in output_init_source
-    assert "write_runtime_component_view_to_netcdf" in output_init_source
-    assert "def array_to_host(" in host_arrays_source
-    assert "def host_int64_array(" in host_arrays_source
-    assert "from vercor.setups.external.camulator_wind_filter import" not in (
-        camulator_imports_source
-    )
-    assert "from vercor.setups.external.camulator_wind_filter import" in (
-        camulator_stepper_source
-    )
-    assert camulator_private_wind_filtering_path.exists()
-    assert (
-        "import vercor.setups.external._camulator_wind_filtering as _wind_filtering"
-        in camulator_wind_filter_source
-    )
-    assert "torch.nn.functional" not in camulator_wind_filter_source
-    assert "def build_wind_filter_artifacts(" in camulator_private_wind_filtering_source
-    assert "def apply_wind_filter_to_tensor(" in camulator_private_wind_filtering_source
-    assert "F.conv2d(" in camulator_private_wind_filtering_source
-    assert "_jax_gcm_fields._map_jcm_output_fields(" not in jax_gcm_runtime_source
-    assert "_camulator_fields._prepare_camulator_surface_forcing(" not in (
-        camulator_runtime_source
-    )
-    assert "_camulator_tensors._torch_tensor_from_jax_array(" not in (
-        camulator_runtime_source
-    )
-    assert "_veros_state._prepare_surface_forcing_fields(" not in veros_runtime_source
-    assert "_veros_state._advance_veros_substeps(" not in veros_runtime_source
-    import vercor.setups.external as external_module
-
-    assert "JAXGCMRuntimePayload" not in external_module._LAZY_EXPORTS
+    assert not Path("vercor/output/_component_adapter.py").exists()
+    assert not Path("vercor/output/_period_files.py").exists()
+    assert "class PeriodAverageAccumulator" not in Path(
+        "vercor/output/_period.py"
+    ).read_text(encoding="utf-8")
+    assert output_session_source.count("class _OutputAccumulator") == 1
+    assert "class OutputSpec" in output_init_source
+    assert '"OutputSpec"' in output_init_source
+    assert "class OutputConfig" not in output_init_source
+    for source in native_sources:
+        assert "def sample(self, context: OutputContext) -> OutputFrame:" in source
+        assert "record_period" not in source
 
 
 @pytest.mark.fast_always
 def test_external_adapter_all_exports_are_public() -> None:
-    for path in Path("vercor/setups/external").glob("*.py"):
+    for path in Path("vercor/setups/_external").glob("*.py"):
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
         for node in tree.body:
@@ -1809,63 +1297,51 @@ def test_external_adapter_all_exports_are_public() -> None:
 @pytest.mark.fast_always
 def test_external_runtime_helpers_use_concrete_setup_state_annotations() -> None:
     runtime_sources = {
-        "vercor/setups/external/jax_gcm_runtime.py": (
+        "vercor/setups/_external/jax_gcm_runtime.py": (
             "JAXGCMSetupState",
-            "vercor.setups.external.jax_gcm_state",
+            "vercor.setups._external.jax_gcm_state",
+            "state",
         ),
-        "vercor/setups/external/veros_runtime.py": (
+        "vercor/setups/_external/veros_runtime.py": (
             "VerosGCMSetupState",
-            "vercor.setups.external.veros_gcm_state",
+            "vercor.setups._external.veros_gcm_state",
+            "resources",
         ),
-        "vercor/setups/external/camulator_runtime.py": (
+        "vercor/setups/_external/camulator_runtime.py": (
             "CAMulatorGCMSetupState",
-            "vercor.setups.external.camulator_gcm_state",
+            "vercor.setups._external.camulator_gcm_state",
+            "resources",
         ),
     }
 
-    for path_name, (state_name, state_module) in runtime_sources.items():
+    for path_name, (
+        state_name,
+        state_module,
+        parameter_name,
+    ) in runtime_sources.items():
         source = Path(path_name).read_text(encoding="utf-8")
         assert "Protocol" not in source
         assert f"from {state_module} import {state_name}" in source
-        assert f"state: {state_name}" in source or f'state: "{state_name}"' in source
+        assert f"{parameter_name}: {state_name}" in source or (
+            f'{parameter_name}: "{state_name}"' in source
+        )
 
 
 @pytest.mark.fast_always
 def test_jax_gcm_factory_binds_runtime_hooks_directly() -> None:
-    source = Path("vercor/setups/external/jax_gcm.py").read_text(encoding="utf-8")
-    state_source = Path("vercor/setups/external/jax_gcm_state.py").read_text(
-        encoding="utf-8"
-    )
+    source = Path("vercor/setups/_external/jax_gcm.py").read_text(encoding="utf-8")
     factory_source = source.split("def make_jax_gcm(", 1)[1]
 
     assert "from functools import partial" in source
-    assert "def step_jax_gcm_runtime_callback(" not in state_source
-    assert "def create_jax_gcm_runtime_payload_callback(" not in state_source
-    assert "def prefill_jax_gcm_runtime_fields_callback(" not in state_source
-    assert "def validate_jax_gcm_runtime_state_callback(" not in state_source
-    assert "step=partial(_jax_gcm_runtime.step_jax_gcm_component, state)" in (
-        factory_source
-    )
-    assert "_jax_gcm_runtime.create_jax_gcm_runtime_payload" in factory_source
+    assert "partial(_jax_gcm_runtime.step_jax_gcm_component, state)" in factory_source
+    assert "setup=state.setup" in factory_source
     assert "_jax_gcm_runtime.prefill_jax_gcm_runtime_fields" in factory_source
     assert "_jax_gcm_runtime.validate_jax_gcm_runtime_state" in factory_source
-    assert "_jax_gcm_state.step_jax_gcm_runtime_callback" not in factory_source
-    assert "_jax_gcm_state.create_jax_gcm_runtime_payload_callback" not in (
-        factory_source
-    )
-    assert "_jax_gcm_state.prefill_jax_gcm_runtime_fields_callback" not in (
-        factory_source
-    )
-    assert "_jax_gcm_state.validate_jax_gcm_runtime_state_callback" not in (
-        factory_source
-    )
-    assert "lambda fields" not in factory_source
-    assert "lambda component" not in factory_source
 
 
 @pytest.mark.fast_always
 def test_jax_gcm_average_writer_bypasses_xarray_adapter() -> None:
-    source = Path("vercor/setups/external/jax_gcm_output.py").read_text(
+    source = Path("vercor/setups/_external/jax_gcm_output.py").read_text(
         encoding="utf-8"
     )
 
@@ -1876,7 +1352,8 @@ def test_jax_gcm_average_writer_bypasses_xarray_adapter() -> None:
 @pytest.mark.fast_always
 def test_external_package_has_no_top_level_import_cycles() -> None:
     assert (
-        package_import_cycles("vercor/setups/external", "vercor.setups.external") == []
+        package_import_cycles("vercor/setups/_external", "vercor.setups._external")
+        == []
     )
 
 
@@ -1887,7 +1364,7 @@ def test_output_package_has_no_top_level_import_cycles() -> None:
 
 @pytest.mark.fast_always
 def test_veros_runtime_settings_imports_runtime_settings_lazily() -> None:
-    source = Path("vercor/setups/external/veros_runtime_settings.py").read_text(
+    source = Path("vercor/setups/_external/veros_runtime_settings.py").read_text(
         encoding="utf-8"
     )
     before_function, function_body = source.split(
@@ -1901,35 +1378,28 @@ def test_veros_runtime_settings_imports_runtime_settings_lazily() -> None:
 
 @pytest.mark.fast_always
 def test_common_exchange_recipes_are_centralized_for_examples() -> None:
-    import vercor.exchanges as exchanges_module
+    import vercor.recipes as recipes_module
+    from vercor.recipes import (
+        ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+        JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+        SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
+    )
 
     required_recipes = (
         "ATMOSPHERE_TO_DATA_OCEAN_FIELDS",
         "ATMOSPHERE_TO_LAND_RADIATION_FIELDS",
         "ATMOSPHERE_TO_LAND_STATE_FIELDS",
+        "JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS",
         "LAND_TO_ATMOSPHERE_SURFACE_FIELDS",
         "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS",
         "SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
         "SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
     )
+    recipes_source = Path("vercor/recipes.py").read_text(encoding="utf-8")
     for recipe_name in required_recipes:
-        assert hasattr(exchanges_module, recipe_name)
-
-    deprecated_recipe_aliases = (
-        "ATMOSPHERE_TO_DATA_OCEAN",
-        "ATMOSPHERE_TO_LAND_RADIATION",
-        "ATMOSPHERE_TO_LAND_STATE",
-        "LAND_TO_ATMOSPHERE_SURFACE",
-        "OCEAN_TO_ATMOSPHERE_SURFACE",
-        "SLAB_ATMOSPHERE_TO_LAND_FLUX",
-        "SLAB_ATMOSPHERE_TO_OCEAN_FLUX",
-    )
-    for recipe_name in deprecated_recipe_aliases:
-        with pytest.warns(DeprecationWarning, match=f"{recipe_name}_FIELDS"):
-            assert getattr(exchanges_module, recipe_name) == getattr(
-                exchanges_module,
-                f"{recipe_name}_FIELDS",
-            )
+        assert recipe_name in recipes_module.__all__
+        assert isinstance(getattr(recipes_module, recipe_name), tuple)
+        assert f"{recipe_name}: tuple[_ExchangeField, ...]" in recipes_source
 
     recipe_users = (
         Path("examples/run_jcm_with_verosdata.py"),
@@ -1942,79 +1412,76 @@ def test_common_exchange_recipes_are_centralized_for_examples() -> None:
     )
     for path in recipe_users:
         source = path.read_text(encoding="utf-8")
-        assert "from vercor.exchanges import" in source, path
-        assert "from vercor.setups.exchange_recipes import" not in source, path
+        assert "from vercor.recipes import" in source, path
         if path.name.startswith("run_"):
             assert "Exchange(" in source, path
-            assert "ExchangeSpec(" not in source, path
+
+    assert _flatten_field_items(
+        JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS
+    ) == _flatten_field_items(
+        (*ATMOSPHERE_TO_DATA_OCEAN_FIELDS, *SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS)
+    )
+    jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
+    assert "JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS" in jcm_slab_source
 
 
 @pytest.mark.fast_always
 def test_assets_and_diagnostics_have_focused_ownership_boundaries() -> None:
     import vercor.assets as assets_module
     import vercor.diagnostics as diagnostics_module
-    import vercor.setups.data.assets as setup_assets_module
+    import vercor.setups._data.assets as setup_assets_module
 
-    assert hasattr(assets_module, "ensure_registered_asset")
-    assert not hasattr(assets_module, "get_forcing_data")
-    assert not hasattr(assets_module, "_FORCING_ASSETS")
-    assert hasattr(setup_assets_module, "get_forcing_data")
+    assert assets_module.ensure_registered_asset.__module__ == "vercor.assets"
+    assert setup_assets_module.get_forcing_data.__module__ == (
+        "vercor.setups._data.assets"
+    )
 
     assert diagnostics_module.combine_surface_temperatures is not None
     assert diagnostics_module.print_component_field_means_table is not None
     assert diagnostics_module.plot_component_scalar_vector_comparison is not None
-    assert Path("vercor/diagnostics/fields.py").exists()
-    assert Path("vercor/diagnostics/tables.py").exists()
-    assert Path("vercor/diagnostics/plotting.py").exists()
-    assert not Path("vercor/diagnostics.py").exists()
-    diagnostics_fields_source = Path("vercor/diagnostics/fields.py").read_text(
-        encoding="utf-8"
+    assert diagnostics_module.combine_surface_temperatures.__module__ == (
+        "vercor.diagnostics.fields"
     )
-    assert ".data.get(" not in diagnostics_fields_source
-    assert "getattr(" not in diagnostics_fields_source
-    assert "def view_field_candidates(" not in diagnostics_fields_source
-    assert "def view_field(" not in diagnostics_fields_source
-    assert "runtime_field(" in diagnostics_fields_source
 
 
 @pytest.mark.fast_always
-def test_veros_setup_state_does_not_keep_one_line_step_wrapper() -> None:
-    gcm_source = Path("vercor/setups/external/veros_gcm.py").read_text(encoding="utf-8")
-    source = Path("vercor/setups/external/veros_gcm_state.py").read_text(
+def test_veros_factory_binds_current_runtime_step_and_setup() -> None:
+    gcm_source = Path("vercor/setups/_external/veros_gcm.py").read_text(
         encoding="utf-8"
     )
-    tree = ast.parse(source)
-    setup_state_class = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "VerosGCMSetupState"
-    )
-
-    assert "def advance_veros_model_step(" not in source
-    assert '"advance_veros_model_step"' not in source
-    assert "partial(" in source
-    assert "_veros_state.pure," in source
-    assert "step" not in {
-        node.name
-        for node in setup_state_class.body
-        if isinstance(node, ast.FunctionDef)
-    }
     assert "from functools import partial" in gcm_source
-    assert "import vercor.setups.external.veros_runtime as _veros_runtime" in gcm_source
-    assert "step=partial(_veros_runtime.step_veros_runtime, state)," in gcm_source
+    loader_source, factory_source = gcm_source.split("def make_veros_gcm(", 1)
+    assert (
+        "import vercor.setups._external.veros_runtime as veros_runtime" in loader_source
+    )
+    assert "configure_veros_runtime()" in factory_source
+    assert "_load_veros_implementation()" in factory_source
+    assert factory_source.index("configure_veros_runtime()") < factory_source.index(
+        "_load_veros_implementation()"
+    )
+    assert "partial(_veros_runtime.step_veros_runtime, state)" in factory_source
+    assert "LifecycleHooks(setup=state.setup)" in factory_source
+    assert "_veros_output.veros_output_provider()" in factory_source
+    assert "partial(_veros_output.write_veros_snapshot_output, state)" not in (
+        factory_source
+    )
+    runtime_source = Path("vercor/setups/_external/veros_runtime.py").read_text(
+        encoding="utf-8"
+    )
+    assert "resources._veros_state" not in runtime_source
 
 
 @pytest.mark.fast_always
 def test_camulator_adapters_share_runtime_cursor_state_transition_helper() -> None:
-    for path in (Path("vercor/setups/external/camulator_gcm_state.py"),):
+    for path in (Path("vercor/setups/_external/camulator_gcm_state.py"),):
         source = path.read_text(encoding="utf-8")
         assert "CamulatorRuntimeCursor" in source, path
         assert "runtime_forcing_index(" not in source, path
         assert "timestep_counter += 1" not in source, path
 
     for path in (
-        Path("vercor/setups/external/camulator.py"),
-        Path("vercor/setups/external/camulator_land.py"),
+        Path("vercor/setups/_external/camulator.py"),
+        Path("vercor/setups/_external/camulator_land.py"),
     ):
         source = path.read_text(encoding="utf-8")
         assert "runtime_forcing_index(" not in source, path
@@ -2023,8 +1490,10 @@ def test_camulator_adapters_share_runtime_cursor_state_transition_helper() -> No
 
 @pytest.mark.fast_always
 def test_camulator_gcm_factory_passes_runtime_step_directly() -> None:
-    gcm_source = Path("vercor/setups/external/camulator.py").read_text(encoding="utf-8")
-    state_source = Path("vercor/setups/external/camulator_gcm_state.py").read_text(
+    gcm_source = Path("vercor/setups/_external/camulator.py").read_text(
+        encoding="utf-8"
+    )
+    state_source = Path("vercor/setups/_external/camulator_gcm_state.py").read_text(
         encoding="utf-8"
     )
     tree = ast.parse(state_source)
@@ -2041,44 +1510,34 @@ def test_camulator_gcm_factory_passes_runtime_step_directly() -> None:
     }
     assert "from functools import partial" in gcm_source
     assert (
-        "import vercor.setups.external.camulator_runtime as _camulator_runtime"
+        "import vercor.setups._external.camulator_runtime as _camulator_runtime"
         in gcm_source
     )
-    assert (
-        "step=partial(_camulator_runtime.step_camulator_runtime, state)," in gcm_source
+    assert "partial(_camulator_runtime.step_camulator_runtime, resources)" in gcm_source
+    assert "LifecycleHooks(setup=resources.setup)" in gcm_source
+    setup_attributes = {
+        target.attr
+        for node in ast.walk(setup_state_class)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
+        if isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    }
+    assert setup_attributes.isdisjoint(
+        {
+            "state",
+            "runtime_cursor",
+            "_output_prediction",
+            "_output_prediction_samples",
+            "forecast_hour",
+        }
     )
-
-
-@pytest.mark.fast_always
-def test_camulator_state_facade_is_removed() -> None:
-    focused_modules = (
-        Path("vercor/setups/external/camulator_imports.py"),
-        Path("vercor/setups/external/camulator_forcing.py"),
-        Path("vercor/setups/external/camulator_tensors.py"),
-        Path("vercor/setups/external/camulator_stepper.py"),
-        Path("vercor/setups/external/camulator_init.py"),
-        Path("vercor/setups/external/camulator_gcm_state.py"),
-    )
-    for path in focused_modules:
-        assert path.exists(), path
-
-    assert not Path("vercor/setups/external/camulator_state.py").exists()
-    gcm_state_source = Path("vercor/setups/external/camulator_gcm_state.py").read_text(
-        encoding="utf-8"
-    )
-    stepper_source = Path("vercor/setups/external/camulator_stepper.py").read_text(
-        encoding="utf-8"
-    )
-    assert "accessor_state" not in gcm_state_source
-    assert "StateVariableAccessor" not in stepper_source
-    assert "def step(" not in stepper_source
-    assert "def get_state_var(" not in stepper_source
-    assert "def set_state_var(" not in stepper_source
 
 
 @pytest.mark.fast_always
 def test_jcm_land_inlines_single_use_coordinate_conversion() -> None:
-    source = Path("vercor/setups/data/jcm_land.py").read_text(encoding="utf-8")
+    source = Path("vercor/setups/_data/jcm_land.py").read_text(encoding="utf-8")
 
     assert "def _jcm_coordinates_in_degrees" not in source
     assert "def _prepare_jcm_land_runtime_fields" not in source
@@ -2088,7 +1547,7 @@ def test_jcm_land_inlines_single_use_coordinate_conversion() -> None:
 
 @pytest.mark.fast_always
 def test_bilinear_interpolator_removes_unused_cartesian_helper() -> None:
-    source = Path("vercor/interpolators/bilinear_rectilinear.py").read_text(
+    source = Path("vercor/_interpolators/bilinear_rectilinear.py").read_text(
         encoding="utf-8"
     )
 
@@ -2099,7 +1558,7 @@ def test_bilinear_interpolator_removes_unused_cartesian_helper() -> None:
 
 @pytest.mark.fast_always
 def test_jax_gcm_factory_does_not_attach_test_only_setup_state() -> None:
-    jax_gcm_source = Path("vercor/setups/external/jax_gcm.py").read_text(
+    jax_gcm_source = Path("vercor/setups/_external/jax_gcm.py").read_text(
         encoding="utf-8"
     )
     runtime_test_source = Path("tests/test_coupler_runtime.py").read_text(
@@ -2122,27 +1581,39 @@ def test_jax_gcm_factory_does_not_attach_test_only_setup_state() -> None:
 
 
 @pytest.mark.fast_always
-def test_data_and_host_factories_return_core_contract_instances() -> None:
-    from vercor.setups.data.era5_land import make_era5_land
-    from vercor.setups.external.camulator import make_camulator_gcm
+def test_jcm_examples_use_public_input_loader_facade() -> None:
+    jcm_slab_source = Path("examples/run_jcm_with_slab.py").read_text(encoding="utf-8")
+    assert "vercor.setups._external.jax_gcm_tools" not in jcm_slab_source
+    assert "load_jcm_inputs" in jcm_slab_source
+
+    jcm_veros_source = Path("examples/run_jcm_with_veros.py").read_text(
+        encoding="utf-8"
+    )
+    assert "generate_jcm_coords_forcing_topography_files" not in jcm_veros_source
+
+
+@pytest.mark.fast_always
+def test_data_and_callable_factories_return_core_contract_instances() -> None:
+    from vercor.setups._data.era5_land import make_era5_land
+    from vercor.setups._external.camulator import make_camulator_gcm
 
     assert callable(make_era5_land)
     assert callable(make_camulator_gcm)
-    assert issubclass(DataComponent, Component)
-    assert issubclass(HostComponent, Component)
+    grid = make_test_grid(name="component-protocol-instances")
+    assert isinstance(DataComponent("DATA", grid), Component)
+    assert isinstance(CallableComponent("CALLABLE", grid, lambda fields: {}), Component)
 
 
 @pytest.mark.fast_always
 @pytest.mark.parametrize(
     "import_statement",
     (
-        "import vercor.setups.external",
-        "import vercor.setups.data",
-        "import vercor.setups.jcm_setup_helpers",
-        "from vercor.setups.external import __all__",
-        "from vercor.setups.data import __all__",
-        "import vercor.setups.data.era5_land",
-        "from vercor.setups.data import make_era5_land",
+        "import vercor.setups._external",
+        "import vercor.setups._data",
+        "import vercor.setups._jcm",
+        "from vercor.setups._external import __all__",
+        "from vercor.setups._data import __all__",
+        "import vercor.setups._data.era5_land",
     ),
 )
 def test_unrelated_setup_imports_do_not_initialize_optional_adapters(

@@ -1,122 +1,70 @@
-"""Public exchange declarations and bundled exchange field groups."""
+"""Public exchange declarations for coupled component field transfers."""
 
-from vercor._deprecation import deprecated_getattr
-from vercor.exchange import Exchange, ExchangeField, RegridderFactory
-from vercor.setups.exchange_recipes import (
-    ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-    ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-    ATMOSPHERE_TO_LAND_BASIC_FIELDS,
-    ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
-    ATMOSPHERE_TO_LAND_STATE_FIELDS,
-    ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
-    ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
-    ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
-    JCM_LAND_TO_ATMOSPHERE_FIELDS,
-    LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-    LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-    OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-    OCEAN_TO_SEAICE_SURFACE_FIELDS,
-    SEAICE_TO_OCEAN_FIELDS,
-    SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-    SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-    SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
-)
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+import vercor.fields as _fields
+import vercor.regridding as _regridding
+from vercor.fields import _normalize_field_items
+from vercor.regridding import bilinear as _bilinear
+
+
+@dataclass(frozen=True, init=False)
+class Exchange:
+    """Declare one stable, named field-transfer route between components."""
+
+    source: str
+    target: str
+    fields: Sequence[_fields.ExchangeField]
+    route_id: str
+    regridder_factory: _regridding.RegridderFactory
+
+    def __init__(
+        self,
+        source: str,
+        target: str,
+        fields: Sequence[_fields.ExchangeField],
+        *,
+        route_id: str | None = None,
+        regridder_factory: _regridding.RegridderFactory = _bilinear,
+    ) -> None:
+        """Create an exchange with an explicit or endpoint-derived route ID."""
+
+        for label, value in (("source", source), ("target", target)):
+            if not isinstance(value, str):
+                raise TypeError(f"{label} must be a string")
+            if not value.strip():
+                raise ValueError(f"{label} must be a non-empty string")
+        if route_id is not None and not isinstance(route_id, str):
+            raise TypeError("route_id must be a string or None")
+        normalized_route_id = f"{source}->{target}" if route_id is None else route_id
+        if not normalized_route_id.strip():
+            raise ValueError("route_id must be a non-empty string")
+        if not callable(regridder_factory):
+            raise TypeError("regridder_factory must be callable")
+
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "target", target)
+        object.__setattr__(self, "fields", _normalize_field_items(fields))
+        object.__setattr__(self, "route_id", normalized_route_id)
+        object.__setattr__(self, "regridder_factory", regridder_factory)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"├── Route ID: {self.route_id}\n"
+            f"├── Source component: {self.source}\n"
+            f"└── Target component: {self.target}\n"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(route_id={self.route_id!r}, "
+            f"source={self.source!r}, target={self.target!r}, fields={self.fields!r})"
+        )
+
 
 __all__ = [
-    "ATMOSPHERE_TO_DATA_OCEAN_FIELDS",
-    "ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS",
-    "ATMOSPHERE_TO_LAND_BASIC_FIELDS",
-    "ATMOSPHERE_TO_LAND_RADIATION_FIELDS",
-    "ATMOSPHERE_TO_LAND_STATE_FIELDS",
-    "ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS",
-    "ATMOSPHERE_TO_OCEAN_STATE_FIELDS",
-    "ATMOSPHERE_TO_VEROS_FORCING_FIELDS",
     "Exchange",
-    "ExchangeField",
-    "JCM_LAND_TO_ATMOSPHERE_FIELDS",
-    "LAND_TO_ATMOSPHERE_SOIL_FIELDS",
-    "LAND_TO_ATMOSPHERE_SURFACE_FIELDS",
-    "OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS",
-    "OCEAN_TO_SEAICE_SURFACE_FIELDS",
-    "RegridderFactory",
-    "SEAICE_TO_OCEAN_FIELDS",
-    "SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
-    "SLAB_ATMOSPHERE_TO_OCEAN_FIELDS",
-    "SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
 ]
-
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ATMOSPHERE_TO_DATA_OCEAN": (
-            "vercor.exchanges.ATMOSPHERE_TO_DATA_OCEAN_FIELDS",
-            ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-        ),
-        "ATMOSPHERE_TO_JCM_LAND_FLUX": (
-            "vercor.exchanges.ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS",
-            ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-        ),
-        "ATMOSPHERE_TO_LAND_BASIC": (
-            "vercor.exchanges.ATMOSPHERE_TO_LAND_BASIC_FIELDS",
-            ATMOSPHERE_TO_LAND_BASIC_FIELDS,
-        ),
-        "ATMOSPHERE_TO_LAND_RADIATION": (
-            "vercor.exchanges.ATMOSPHERE_TO_LAND_RADIATION_FIELDS",
-            ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
-        ),
-        "ATMOSPHERE_TO_LAND_STATE": (
-            "vercor.exchanges.ATMOSPHERE_TO_LAND_STATE_FIELDS",
-            ATMOSPHERE_TO_LAND_STATE_FIELDS,
-        ),
-        "ATMOSPHERE_TO_OCEAN_RADIATION": (
-            "vercor.exchanges.ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS",
-            ATMOSPHERE_TO_OCEAN_RADIATION_FIELDS,
-        ),
-        "ATMOSPHERE_TO_OCEAN_STATE": (
-            "vercor.exchanges.ATMOSPHERE_TO_OCEAN_STATE_FIELDS",
-            ATMOSPHERE_TO_OCEAN_STATE_FIELDS,
-        ),
-        "ATMOSPHERE_TO_VEROS_FORCING": (
-            "vercor.exchanges.ATMOSPHERE_TO_VEROS_FORCING_FIELDS",
-            ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
-        ),
-        "JCM_LAND_TO_ATMOSPHERE": (
-            "vercor.exchanges.JCM_LAND_TO_ATMOSPHERE_FIELDS",
-            JCM_LAND_TO_ATMOSPHERE_FIELDS,
-        ),
-        "LAND_TO_ATMOSPHERE_SOIL": (
-            "vercor.exchanges.LAND_TO_ATMOSPHERE_SOIL_FIELDS",
-            LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-        ),
-        "LAND_TO_ATMOSPHERE_SURFACE": (
-            "vercor.exchanges.LAND_TO_ATMOSPHERE_SURFACE_FIELDS",
-            LAND_TO_ATMOSPHERE_SURFACE_FIELDS,
-        ),
-        "OCEAN_TO_ATMOSPHERE_SURFACE": (
-            "vercor.exchanges.OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS",
-            OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-        ),
-        "OCEAN_TO_SEAICE_SURFACE": (
-            "vercor.exchanges.OCEAN_TO_SEAICE_SURFACE_FIELDS",
-            OCEAN_TO_SEAICE_SURFACE_FIELDS,
-        ),
-        "SEAICE_TO_OCEAN": (
-            "vercor.exchanges.SEAICE_TO_OCEAN_FIELDS",
-            SEAICE_TO_OCEAN_FIELDS,
-        ),
-        "SLAB_ATMOSPHERE_TO_LAND_FLUX": (
-            "vercor.exchanges.SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS",
-            SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-        ),
-        "SLAB_ATMOSPHERE_TO_OCEAN": (
-            "vercor.exchanges.SLAB_ATMOSPHERE_TO_OCEAN_FIELDS",
-            SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-        ),
-        "SLAB_ATMOSPHERE_TO_OCEAN_FLUX": (
-            "vercor.exchanges.SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS",
-            SLAB_ATMOSPHERE_TO_OCEAN_FLUX_FIELDS,
-        ),
-    },
-    remove_in="0.2.0",
-)

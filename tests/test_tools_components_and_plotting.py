@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 import os
 from pathlib import Path
 import tempfile
-from typing import cast
+from types import SimpleNamespace
 
 import jax
 import jax.numpy as jnp
@@ -13,20 +12,20 @@ import numpy as np
 import pytest
 
 import tests.conftest as conftest_module
-from tests._tools_support import DummyComponentA, DummyComponentB
+from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
-import vercor.runtime.component_topology as component_topology_module
-from vercor.components.base import Component
+import vercor._runtime.surface_masks as surface_masks_module
 from vercor.exceptions import CouplerError
-from vercor.grid import RectilinearGrid
-from vercor.runtime.contracts import (
+from vercor.fields import vector
+from vercor.grids import RectilinearGrid
+from vercor._runtime.contracts import (
     append_unique_runtime_fields,
     flatten_exchange_fields,
 )
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.views import RuntimeComponentView
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
+from vercor.state import ComponentState
 from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
@@ -40,6 +39,8 @@ matplotlib.use("Agg")
 @pytest.mark.fast_always
 def test_test_environment_uses_writable_plotting_cache_defaults() -> None:
     temp_root = Path(tempfile.gettempdir())
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER")
+    worker_suffix = f"-{worker_id}" if worker_id is not None else ""
 
     assert "MPLBACKEND" in os.environ
     assert "MPLCONFIGDIR" in os.environ
@@ -47,13 +48,17 @@ def test_test_environment_uses_writable_plotting_cache_defaults() -> None:
     if conftest_module._PLOTTING_CACHE_ENV_DEFAULTED["MPLBACKEND"]:
         assert os.environ["MPLBACKEND"] == "Agg"
     if conftest_module._PLOTTING_CACHE_ENV_DEFAULTED["MPLCONFIGDIR"]:
-        assert Path(os.environ["MPLCONFIGDIR"]).parent == temp_root
+        assert Path(os.environ["MPLCONFIGDIR"]) == (
+            temp_root / f"vercor-matplotlib-cache{worker_suffix}"
+        )
     if conftest_module._PLOTTING_CACHE_ENV_DEFAULTED["XDG_CACHE_HOME"]:
-        assert Path(os.environ["XDG_CACHE_HOME"]).parent == temp_root
+        assert Path(os.environ["XDG_CACHE_HOME"]) == (
+            temp_root / f"vercor-xdg-cache{worker_suffix}"
+        )
 
 
 def test_flatten_fields_and_append_unique() -> None:
-    flattened = flatten_exchange_fields(["a", ("b", "c"), "d"])
+    flattened = flatten_exchange_fields(["a", vector("b", "c"), "d"])
     assert flattened == ["a", "b", "c", "d"]
 
     target = ["a", "b"]
@@ -72,27 +77,16 @@ def test_grids_identical_detects_equal_and_unequal_grids() -> None:
     assert not grids_identical(g0, g2)
 
 
-def test_require_component_uses_canonical_component_mapping_keys() -> None:
-    allcomponents = cast(
-        Mapping[str, Component],
-        {
-            "ATM": DummyComponentA(name="ATM"),
-            "OCN": DummyComponentB(name="OCN"),
-        },
-    )
-    require_component = component_topology_module.require_component
+def test_surface_role_lookup_checks_mapping_key_and_component_name() -> None:
+    message = "Surface mask policy requires role component 'ATM' to be registered"
+    components = {"ATM": SimpleNamespace(name="WRONG", grid=make_test_grid())}
+    with pytest.raises(CouplerError, match=message) as mismatched:
+        surface_masks_module._require_surface_role(components, "ATM")
+    assert mismatched.value.__cause__ is None
 
-    selected = require_component(allcomponents, "ATM")
-    assert isinstance(selected, DummyComponentA)
-
-    with pytest.raises(CouplerError, match="No component"):
-        require_component(allcomponents, "UNKNOWN")
-
-    with pytest.raises(CouplerError, match="registered under key 'ATM'"):
-        require_component(
-            cast(Mapping[str, Component], {"ATM": DummyComponentA(name="OCN")}),
-            "ATM",
-        )
+    with pytest.raises(CouplerError, match=message) as missing:
+        surface_masks_module._require_surface_role({}, "ATM")
+    assert isinstance(missing.value.__cause__, KeyError)
 
 
 def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
@@ -101,12 +95,10 @@ def test_safe_component_nanmean_returns_nan_for_missing_fields() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    comp = RuntimeComponentView(
+    comp = ComponentState(
         name="DUMMY",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])}
-        ),
+        fields={"foo": jnp.array([[1.0, jnp.nan], [3.0, 5.0]])},
     )
 
     assert np.isclose(safe_component_nanmean(comp, "foo"), 3.0)
@@ -120,28 +112,30 @@ def test_runtime_component_view_reads_fields_without_store_internals() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    view = RuntimeComponentView(
+    view = ComponentState(
         name="ATM",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping({"shared": jnp.asarray(1.0)}),
-        incoming=RuntimeFieldStore.from_mapping(
-            {"shared": jnp.asarray(2.0), "only_incoming": jnp.asarray(3.0)}
-        ),
-        outgoing=RuntimeFieldStore.from_mapping({"only_outgoing": jnp.asarray(4.0)}),
+        fields={"shared": jnp.asarray(1.0)},
+        received={"shared": jnp.asarray(2.0), "only_incoming": jnp.asarray(3.0)},
+        sent={"only_outgoing": jnp.asarray(4.0)},
     )
 
-    assert [float(value) for value in view.field_candidates("shared")] == [1.0, 2.0]
+    assert [
+        float(value)
+        for _, name, value in view.iter_fields("state", "received", "sent")
+        if name == "shared"
+    ] == [1.0, 2.0]
     assert float(view.field("only_incoming")) == 3.0
     assert [
         (store_name, field_name, float(value))
-        for store_name, field_name, value in view.iter_store_fields(
-            "incoming",
-            "outgoing",
+        for store_name, field_name, value in view.iter_fields(
+            "received",
+            "sent",
         )
     ] == [
-        ("incoming", "shared", 2.0),
-        ("incoming", "only_incoming", 3.0),
-        ("outgoing", "only_outgoing", 4.0),
+        ("received", "shared", 2.0),
+        ("received", "only_incoming", 3.0),
+        ("sent", "only_outgoing", 4.0),
     ]
     with pytest.raises(KeyError, match="Field 'missing' not found"):
         view.field("missing")
@@ -155,27 +149,23 @@ def test_print_component_field_means_table_with_callable_metric(
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    atm = RuntimeComponentView(
+    atm = ComponentState(
         name="ATM",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u": np.array([[3.0, 4.0], [0.0, 0.0]]),
-                "v": np.array([[4.0, 3.0], [0.0, 0.0]]),
-                "temp": np.array([[280.0, 282.0], [284.0, 286.0]]),
-            }
-        ),
+        fields={
+            "u": np.array([[3.0, 4.0], [0.0, 0.0]]),
+            "v": np.array([[4.0, 3.0], [0.0, 0.0]]),
+            "temp": np.array([[280.0, 282.0], [284.0, 286.0]]),
+        },
     )
-    ocn = RuntimeComponentView(
+    ocn = ComponentState(
         name="OCN",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u": np.array([[1.0, 2.0], [0.0, 0.0]]),
-                "v": np.array([[2.0, 1.0], [0.0, 0.0]]),
-                "temp": np.array([[270.0, 271.0], [272.0, 273.0]]),
-            }
-        ),
+        fields={
+            "u": np.array([[1.0, 2.0], [0.0, 0.0]]),
+            "v": np.array([[2.0, 1.0], [0.0, 0.0]]),
+            "temp": np.array([[270.0, 271.0], [272.0, 273.0]]),
+        },
     )
 
     print_component_field_means_table(
@@ -213,27 +203,23 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
         latitude=np.array([-2.0, 0.0, 2.0]),
     )
 
-    atm = RuntimeComponentView(
+    atm = ComponentState(
         name="ATM",
         grid=atm_grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
-                "u": jnp.ones((2, 3)),
-                "v": jnp.zeros((2, 3)),
-            }
-        ),
+        fields={
+            "scalar": jnp.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]),
+            "u": jnp.ones((2, 3)),
+            "v": jnp.zeros((2, 3)),
+        },
     )
-    ocn = RuntimeComponentView(
+    ocn = ComponentState(
         name="OCN",
         grid=ocn_grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "scalar": np.array([[7.0, 10.0], [8.0, 11.0], [9.0, 12.0]]),
-                "u": np.zeros((3, 2)),
-                "v": np.ones((3, 2)),
-            }
-        ),
+        fields={
+            "scalar": np.array([[7.0, 10.0], [8.0, 11.0], [9.0, 12.0]]),
+            "u": np.zeros((3, 2)),
+            "v": np.ones((3, 2)),
+        },
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
@@ -246,7 +232,7 @@ def test_plot_component_scalar_vector_comparison_aligns_axes_and_shapes() -> Non
     )
 
     assert axs.shape == (2, 2)
-    assert isinstance(atm.data.get("scalar"), jax.Array)
+    assert isinstance(atm.field("scalar"), jax.Array)
     assert scalar_mappable is not None
     assert_allclose_compact(axs[0, 0].get_xlim(), axs[1, 0].get_xlim())
     assert_allclose_compact(axs[0, 1].get_xlim(), axs[1, 1].get_xlim())
@@ -264,8 +250,8 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         longitude=jnp.asarray([0.0, 1.0, 2.0]),
         latitude=jnp.asarray([-1.0, 1.0]),
     )
-    runtime_state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
+    runtime_state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping(
             {
                 "total_surface_temperature": jnp.array(
                     [[280.0, 281.0, 282.0], [283.0, 284.0, 285.0]]
@@ -274,8 +260,8 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
                 "v_velocity": jnp.zeros((2, 3, 2)),
             }
         ),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.from_mapping(
+        received=FieldStore.empty(),
+        sent=FieldStore.from_mapping(
             {
                 "u_velocity": jnp.ones((2, 3)),
                 "v_velocity": jnp.zeros((2, 3)),
@@ -287,7 +273,7 @@ def test_plot_component_scalar_vector_comparison_reads_runtime_state_pair() -> N
         rows=[
             (
                 "ATM",
-                RuntimeComponentView.from_component_state("ATM", grid, runtime_state),
+                ComponentState._from_runtime("ATM", grid, runtime_state),
                 "total_surface_temperature",
                 "u_velocity",
                 "v_velocity",
@@ -312,25 +298,19 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([-1.0, 1.0]),
     )
-    runtime_view = RuntimeComponentView(
+    runtime_view = ComponentState(
         name="ATM",
         grid=grid,
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u_velocity": jnp.ones(grid.shape),
-                "v_velocity": jnp.zeros(grid.shape),
-            }
-        ),
-        incoming=RuntimeFieldStore.from_mapping(
-            {
-                "land_surface_temperature": jnp.asarray(
-                    [[jnp.nan, 270.0], [271.0, jnp.nan]]
-                ),
-                "sea_surface_temperature": jnp.asarray(
-                    [[272.0, jnp.nan], [273.0, 274.0]]
-                ),
-            }
-        ),
+        fields={
+            "u_velocity": jnp.ones(grid.shape),
+            "v_velocity": jnp.zeros(grid.shape),
+        },
+        received={
+            "land_surface_temperature": jnp.asarray(
+                [[jnp.nan, 270.0], [271.0, jnp.nan]]
+            ),
+            "sea_surface_temperature": jnp.asarray([[272.0, jnp.nan], [273.0, 274.0]]),
+        },
     )
 
     fig, axs, scalar_mappable = plot_component_scalar_vector_comparison(
@@ -348,7 +328,7 @@ def test_plot_component_scalar_vector_comparison_accepts_callable_scalar() -> No
     )
 
     assert axs.shape == (1, 2)
-    assert "total_surface_temperature" not in runtime_view.data.field_names
+    assert "total_surface_temperature" not in runtime_view.fields()
     assert scalar_mappable is not None
 
     plt.close(fig)

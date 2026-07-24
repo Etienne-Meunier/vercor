@@ -1,73 +1,28 @@
-from vercor._deprecation import deprecated_getattr
-from vercor import fluxes
-from vercor.calendar import DateTime360, DateTime365, ModelDateTime
+"""Primary VerCOR 0.4 assembly conveniences."""
+
+import sys as _sys
+
 from vercor.clock import Clock
-from vercor.components.base import (
-    Component,
-)
-from vercor.components.contracts import (
-    ComponentHooks,
-    ComponentCreatePayloadHook,
-    ComponentInitializeHook,
-    ComponentPrefillHook,
-    ComponentValidateHook,
-    FieldSpec,
-    KEEP_PAYLOAD,
-    StepResult,
-)
-from vercor.components.contexts import (
-    SetupContext,
-    StepContext,
-)
-from vercor.components.data import (
-    DataComponent,
-)
-from vercor.components.host import (
-    HostComponent,
-)
 from vercor.coupler import Coupler
-from vercor.exchange import Exchange
-from vercor.grid import RectilinearGrid
-from vercor.runtime.state import CouplerState
-from vercor.runtime.views import ComponentView
-from vercor.settings import VercorSettings as Settings
+from vercor.exchanges import Exchange
+from vercor.grids import RectilinearGrid
+from vercor.runtime import RuntimeOptions
+from vercor.state import RunState
 
 __all__ = [
-    "Coupler",
-    "Component",
-    "ComponentCreatePayloadHook",
-    "ComponentHooks",
-    "ComponentInitializeHook",
-    "ComponentPrefillHook",
-    "ComponentValidateHook",
-    "ComponentView",
-    "CouplerState",
-    "DataComponent",
-    "FieldSpec",
-    "HostComponent",
-    "KEEP_PAYLOAD",
-    "Settings",
-    "SetupContext",
-    "StepContext",
-    "StepResult",
     "Clock",
-    "DateTime360",
-    "DateTime365",
-    "RectilinearGrid",
+    "Coupler",
     "Exchange",
-    "fluxes",
-    "ModelDateTime",
+    "RectilinearGrid",
+    "RunState",
+    "RuntimeOptions",
 ]
 
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ComponentFieldSpec": ("vercor.FieldSpec", FieldSpec),
-        "ComponentSetupContext": ("vercor.SetupContext", SetupContext),
-        "ComponentStepContext": ("vercor.StepContext", StepContext),
-        "ComponentStepResult": ("vercor.StepResult", StepResult),
-        "HostRuntimeComponent": ("vercor.HostComponent", HostComponent),
-    },
-    remove_in="0.2.0",
-)
+# The assembly imports load private component runtime modules after the
+# component facade has initialized.  Python attaches such children to their
+# parent package; remove those accidental alternate access paths once root
+# assembly is complete.
+_component_facade = _sys.modules["vercor.components"]
+for _module_name in ("runtime_execution", "setup_validation"):
+    vars(_component_facade).pop(_module_name, None)
+del _component_facade, _module_name

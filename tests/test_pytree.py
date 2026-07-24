@@ -5,24 +5,24 @@ import jax.numpy as jnp
 import numpy as np
 
 from tests.assertions import assert_allclose_compact
-from vercor.grid import RectilinearGrid
-from vercor.interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
-from vercor.interpolators.conservative_remap_rectilinear import (
+from vercor.grids import RectilinearGrid
+from vercor._interpolators.bilinear_rectilinear import BilinearRectilinearInterpolator
+from vercor._interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
-from vercor.pytree import PyTreeNodeMixin
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.time import RuntimeStepInfo
-from vercor.setups.external.jax_gcm_runtime import JAXGCMRuntimePayload
+from vercor._pytree import PyTreeNodeMixin
+from vercor._runtime.state import ComponentRuntimeState
+from vercor.state import RunState
+from vercor._runtime.stores import FieldStore
+from vercor._runtime.time import RuntimeStepInfo
+from vercor.setups._external.jax_gcm_runtime import JAXGCMRuntimePayload
 
 
 def test_registered_pytree_classes_inherit_shared_flatten_methods() -> None:
     registered_classes = (
         RuntimeStepInfo,
-        RuntimeFieldStore,
-        RuntimeComponentState,
-        RuntimeCouplerState,
+        FieldStore,
+        ComponentRuntimeState,
         RectilinearGrid,
         BilinearRectilinearInterpolator,
         ConservativeRectilinearRemapper,
@@ -33,6 +33,15 @@ def test_registered_pytree_classes_inherit_shared_flatten_methods() -> None:
         assert issubclass(registered_class, PyTreeNodeMixin)
         assert "tree_flatten" not in registered_class.__dict__
         assert "tree_unflatten" not in registered_class.__dict__
+
+    assert not issubclass(RunState, PyTreeNodeMixin)
+    state = RunState._from_runtime(
+        component_names=(),
+        components=(),
+        fractional_masks=FieldStore.empty(),
+    )
+    leaves, tree = jax.tree_util.tree_flatten(state)
+    assert isinstance(jax.tree_util.tree_unflatten(tree, leaves), RunState)
 
 
 def test_array_only_pytree_round_trip_uses_declared_children() -> None:
@@ -62,7 +71,7 @@ def test_static_pytree_metadata_round_trip_uses_declared_aux_fields() -> None:
         latitude=np.asarray([-45.0, 45.0]),
         binary_mask=np.asarray([[1, 0], [0, 1]]),
     )
-    store = RuntimeFieldStore.from_mapping(
+    store = FieldStore.from_mapping(
         {
             "temperature": jnp.asarray([280.0, 281.0]),
             "humidity": jnp.asarray([0.001, 0.002]),

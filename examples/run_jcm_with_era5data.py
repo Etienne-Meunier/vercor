@@ -1,79 +1,137 @@
+"""Run the bundled JCM atmosphere/land setup with ERA5 ocean forcing."""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange
-from vercor.setups import make_era5_ocean
-from vercor.exchanges import (
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RunState,
+    RuntimeOptions,
+)
+from vercor.components import DataComponent
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
+from vercor.recipes import (
     ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
-from vercor.setups.jcm_setup_helpers import build_jcm_land_atmosphere_components
 from vercor.regridding import bilinear
+from vercor.setups import (
+    JAXGCMConfig,
+    JCMLandAtmosphereConfig,
+    JCMInputs,
+    Spinup,
+    make_era5_ocean,
+    make_jcm_land_atmosphere,
+)
+from vercor.topology import SurfaceMaskPolicy
 
-if __name__ == "__main__":
-    ocn = make_era5_ocean()
 
-    jcm_setup = build_jcm_land_atmosphere_components(
+def _default_clock(*, steps: int = 365 * 100 - 2) -> Clock:
+    """Return the historic noleap clock, optionally with a shorter run."""
+
+    return Clock(
+        start=datetime(2000, 1, 3, 0, 0, 0),
+        dt_seconds=86400.0,
+        steps=steps,
+        calendar="noleap",
+    )
+
+
+def build_coupler(
+    *,
+    ocean: DataComponent | None = None,
+    jcm_inputs: JCMInputs | None = None,
+    clock: Clock | None = None,
+) -> Coupler:
+    """Build the example coupler, reusing supplied model/data objects."""
+
+    ocn = make_era5_ocean() if ocean is None else ocean
+    jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
-        do_spinup=True,
-        jitted=True,
-        output_frequency="month",
+        inputs=jcm_inputs,
+        config=JCMLandAtmosphereConfig(
+            atmosphere=JAXGCMConfig(
+                spinup=Spinup(enabled=True),
+                output=OutputSpec(period=PeriodOutput(frequency="month")),
+                jitted=True,
+            ),
+        ),
     )
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere
 
-    # Clock and sequence
-    # Note that the number of steps is set to 365*100-2,
-    # which corresponds to 100 years of simulation with a daily time step,
-    # starting from January 3rd, 2000.
-    # The -2 accounts for the fact that the simulation starts on January 3rd,
-    # because of 2 days spinup of JCM model, so it will end on December 31st, 2099.
-    clock = Clock(
-        start=datetime(2000, 1, 3, 0, 0, 0),
-        dt_seconds=86400.0,
-        steps=365 * 100 - 2,
-        year_type="noleap",
-    )
-    run_sequence = ["OCN", "LND", "ATM"]
-
-    components = [ocn, lnd, atm]
-    cpl = Coupler.from_components(
-        clock=clock,
-        components=components,
-        run_order=run_sequence,
-    )
-
-    # Exchanges
-    cpl.add_exchanges(
-        (
+    return Coupler(
+        _default_clock() if clock is None else clock,
+        components=[ocn, lnd, atm],
+        exchanges=(
             Exchange(
-                source="ATM",
-                target="OCN",
+                source=atm.name,
+                target=ocn.name,
                 fields=ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-                regrid=bilinear,
+                regridder_factory=bilinear,
             ),
             Exchange(
-                source="OCN",
-                target="ATM",
+                source=ocn.name,
+                target=atm.name,
                 fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
+                regridder_factory=bilinear,
             ),
             Exchange(
-                source="LND",
-                target="ATM",
+                source=lnd.name,
+                target=atm.name,
                 fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
-                regrid=bilinear,
+                regridder_factory=bilinear,
             ),
             Exchange(
-                source="ATM",
-                target="LND",
+                source=atm.name,
+                target=lnd.name,
                 fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-                regrid=bilinear,
+                regridder_factory=bilinear,
             ),
         ),
+        run_order=[ocn.name, lnd.name, atm.name],
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
     )
 
-    cpl.initialize()
-    final_state = cpl.run()
-    cpl.finalize(final_state)
+
+def _parse_args(arguments: Sequence[str] | None) -> argparse.Namespace:
+    """Parse optional short-run and initialization-only CLI controls."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--initial-state-only",
+        action="store_true",
+        help="prepare and validate the coupled initial state without stepping",
+    )
+    parser.add_argument(
+        "--steps",
+        type=int,
+        default=None,
+        help="override the historic 100-year workflow with a short step count",
+    )
+    return parser.parse_args(arguments)
+
+
+def main(arguments: Sequence[str] | None = None) -> RunState:
+    """Run the example or return its prepared initial state."""
+
+    args = _parse_args(arguments)
+    if args.steps is not None and args.steps < 0:
+        raise ValueError("--steps must be non-negative")
+    clock = None if args.steps is None else _default_clock(steps=args.steps)
+    coupler = build_coupler(clock=clock)
+    if args.initial_state_only:
+        return coupler.initial_state()
+
+    return coupler.run(output=OutputTarget("."))
+
+
+if __name__ == "__main__":
+    main()

@@ -6,32 +6,32 @@ import numpy as np
 
 from tests.assertions import assert_allclose_compact
 import vercor.diagnostics as diagnostics_module
-from vercor.dtypes import as_jax_real_array
+from vercor.dtypes import DTypePolicy, as_jax_real_array
 from vercor.field_layout import canonicalize_time_last_surface_field
-from vercor.setups.data.era5_atmosphere import (
+from vercor.setups._data.era5_atmosphere import (
     _compute_monthly_diagnostics,
     _decode_surface_pressure,
 )
-from vercor.setups.data._field_helpers import (
+from vercor.setups._data._field_helpers import (
     canonicalize_surface_field,
     mask_time_last_surface_field,
     positive_binary_mask,
 )
-from vercor.setups.data.era5_ocean import (
+from vercor.setups._data.era5_ocean import (
     _ocean_binary_mask_from_land_fraction,
 )
-from vercor.setups.data.erainterim_ocean import (
+from vercor.setups._data.erainterim_ocean import (
     _assemble_erainterim_field,
     _assemble_erainterim_latitude,
     _binary_ocean_mask_from_salinity,
 )
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.views import RuntimeComponentView
-from vercor.settings import VercorSettings
+from vercor.state import ComponentState
+from vercor.physics import PhysicalConstants
 
 
 def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
-    settings = VercorSettings()
+    constants = PhysicalConstants()
+    dtype = DTypePolicy()
     lnsp = jnp.log(jnp.asarray([[100000.0, 100500.0], [101000.0, 101500.0]]))
     hyai = jnp.asarray([1000.0, 2000.0, 3000.0])
     hybi = jnp.asarray([0.10, 0.20, 0.30])
@@ -53,7 +53,8 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
         potential_temperature,
     ) = jax.jit(
         lambda sp, t3d, q3d, t: _compute_monthly_diagnostics(
-            settings,
+            constants,
+            dtype,
             sp,
             hyai,
             hybi,
@@ -99,7 +100,8 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
     density_gradient = jax.grad(
         lambda sp: jnp.sum(
             _compute_monthly_diagnostics(
-                settings,
+                constants,
+                dtype,
                 sp,
                 hyai,
                 hybi,
@@ -115,19 +117,15 @@ def test_era5_atmosphere_helpers_support_jit_and_gradients() -> None:
 
 
 def test_total_surface_temperature_diagnostic_uses_runtime_view_fields() -> None:
-    view = RuntimeComponentView(
+    view = ComponentState(
         name="ATM",
         grid=None,  # type: ignore[arg-type]
-        incoming=RuntimeFieldStore.from_mapping(
-            {
-                "land_surface_temperature": jnp.asarray(
-                    [[jnp.nan, 270.0], [271.0, jnp.nan]]
-                ),
-                "sea_surface_temperature": jnp.asarray(
-                    [[272.0, jnp.nan], [273.0, 274.0]]
-                ),
-            }
-        ),
+        received={
+            "land_surface_temperature": jnp.asarray(
+                [[jnp.nan, 270.0], [271.0, jnp.nan]]
+            ),
+            "sea_surface_temperature": jnp.asarray([[272.0, jnp.nan], [273.0, 274.0]]),
+        },
     )
 
     total = diagnostics_module.total_surface_temperature(view)

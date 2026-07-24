@@ -12,12 +12,12 @@ from vercor.diagnostics.fields import (
     component_plot_field,
     component_plot_scalar,
 )
-from vercor.host_arrays import runtime_array_to_host
-from vercor.runtime.views import RuntimeComponentView
+from vercor._host_arrays import runtime_array_to_host
+from vercor.state import ComponentState
 
 
 def _get_component_plot_data(
-    component: RuntimeComponentView,
+    component: ComponentState,
     scalar: ComponentMetric,
     u_field_name: str,
     v_field_name: str,
@@ -25,6 +25,8 @@ def _get_component_plot_data(
     """Return lon/lat grids and scalar/vector fields for one component."""
 
     grid = component.grid
+    if grid is None:
+        raise ValueError("ComponentState grid is required for plotting.")
     lon = runtime_array_to_host(grid.longitude)
     lat = runtime_array_to_host(grid.latitude)
     lon_2d, lat_2d = np.meshgrid(lon, lat, indexing="ij")
@@ -41,7 +43,7 @@ def _get_component_plot_data(
 
 
 def plot_component_scalar_vector_comparison(
-    rows: Sequence[tuple[str, RuntimeComponentView, ComponentMetric, str, str]],
+    rows: Sequence[tuple[str, ComponentState, ComponentMetric, str, str]],
     *,
     figsize: tuple[float, float] = (15.0, 10.0),
     quiver_scale: float = 100.0,

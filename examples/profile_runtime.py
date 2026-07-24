@@ -4,13 +4,18 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime
 import time
-from typing import Sequence
+from typing import Any, Sequence
 
 import jax
 
-from vercor import Clock, Coupler, CouplerState, Exchange
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RuntimeOptions,
+)
 from vercor.dtypes import jax_ones
-from vercor.grids import rectilinear
+from vercor import RectilinearGrid
 from vercor.regridding import bilinear, conservative
 from vercor.setups import (
     make_slab_atmosphere,
@@ -18,7 +23,7 @@ from vercor.setups import (
     make_slab_ocean,
     make_slab_seaice,
 )
-from vercor.exchanges import (
+from vercor.recipes import (
     LAND_TO_ATMOSPHERE_SOIL_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
     OCEAN_TO_SEAICE_SURFACE_FIELDS,
@@ -26,6 +31,7 @@ from vercor.exchanges import (
     SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
     SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
 )
+from vercor.topology import SurfaceMaskPolicy
 
 
 @dataclass(frozen=True)
@@ -65,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _block_until_ready(value: CouplerState) -> CouplerState:
+def _block_until_ready(value: Any) -> Any:
     for leaf in jax.tree_util.tree_leaves(value):
         if hasattr(leaf, "block_until_ready"):
             leaf.block_until_ready()
@@ -81,46 +87,76 @@ def build_slab_coupler(
 ) -> Coupler:
     """Build and initialize a small pure-JAX slab coupler for profiling."""
 
-    atm_grid = rectilinear(
+    atm_grid = RectilinearGrid.uniform(
         "profile-atm-grid",
-        grid_nx,
-        grid_ny,
-        0.0,
-        360.0,
-        -90.0,
-        90.0,
+        nlon=grid_nx,
+        nlat=grid_ny,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
     ocn_mask = jax_ones((grid_ny, grid_nx)).at[:2, :].set(0.0)
-    ocn_grid = rectilinear(
+    ocn_grid = RectilinearGrid.uniform(
         "profile-ocn-grid",
-        grid_nx,
-        grid_ny,
-        0.0,
-        360.0,
-        -90.0,
-        90.0,
-        mask=ocn_mask,
+        nlon=grid_nx,
+        nlat=grid_ny,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
+        binary_mask=ocn_mask,
     )
-    lnd_grid = rectilinear(
+    lnd_grid = RectilinearGrid.uniform(
         "profile-lnd-grid",
-        grid_nx,
-        grid_ny,
-        0.0,
-        360.0,
-        -90.0,
-        90.0,
+        nlon=grid_nx,
+        nlat=grid_ny,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
-    ice_grid = rectilinear(
+    ice_grid = RectilinearGrid.uniform(
         "profile-ice-grid",
-        grid_nx,
-        grid_ny,
-        0.0,
-        360.0,
-        -90.0,
-        90.0,
+        nlon=grid_nx,
+        nlat=grid_ny,
+        longitude=(0.0, 360.0),
+        latitude=(-90.0, 90.0),
     )
 
-    coupler = Coupler.from_components(
+    exchanges = (
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
+            regridder_factory=conservative,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ICE",
+            fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ICE",
+            target="OCN",
+            fields=SEAICE_TO_OCEAN_FIELDS,
+            regridder_factory=conservative,
+        ),
+    )
+    return Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
         components=(
             make_slab_atmosphere(atm_grid),
@@ -128,51 +164,11 @@ def build_slab_coupler(
             make_slab_land(lnd_grid),
             make_slab_seaice(ice_grid),
         ),
+        exchanges=exchanges,
         run_order=("OCN", "ATM", "LND", "ICE"),
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
         log_level=log_level,
     )
-    coupler.add_exchanges(
-        (
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=SLAB_ATMOSPHERE_TO_OCEAN_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=SLAB_ATMOSPHERE_TO_LAND_FLUX_FIELDS,
-                regrid=conservative,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=LAND_TO_ATMOSPHERE_SOIL_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ICE",
-                fields=OCEAN_TO_SEAICE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ICE",
-                target="OCN",
-                fields=SEAICE_TO_OCEAN_FIELDS,
-                regrid=conservative,
-            ),
-        ),
-    )
-    coupler.initialize()
-    return coupler
 
 
 def profile_runtime(
@@ -190,7 +186,7 @@ def profile_runtime(
         grid_ny=grid_ny,
         log_level=log_level,
     )
-    runtime_state = coupler.state()
+    runtime_state = coupler.initial_state()
 
     start = time.perf_counter()
     final_state = _block_until_ready(coupler.run(runtime_state))

@@ -18,13 +18,13 @@ from vercor.grid_masks import (
     compute_ocn_lnd_masks_on_atm_grid,
     create_lnd_mask_from_ocn,
 )
-from vercor.grid import RectilinearGrid
+from vercor.grids import RectilinearGrid
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 
 def test_compute_ocn_lnd_masks_on_atm_grid_clips_and_builds_binary_land_mask() -> None:
     class DummyRegridder:
-        def __call__(self, _arr: np.ndarray) -> jax.Array:
+        def regrid(self, _arr: np.ndarray) -> jax.Array:
             return jnp.asarray([[1.2, -0.2], [0.4, 0.0]])
 
     ocean_binary_mask = jnp.asarray([[1.0, 0.0], [1.0, 0.0]])
@@ -74,7 +74,7 @@ def test_check_remap_conservation_handles_skip_and_mismatch(
             self.interpolator = interpolator
 
     monkeypatch.setattr(
-        grid_masks_module, "ConservativeRectilinearRemapper", DummyRemapper
+        grid_masks_module, "_ConservativeRectilinearRemapper", DummyRemapper
     )
     skip_interp = DummyRemapper(
         src_lon_b=np.array([0.0, 1.0, 2.0]),
@@ -108,19 +108,17 @@ def test_create_lnd_mask_from_ocn_accepts_jax_backed_masks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class DummyRegridder:
-        def __init__(
-            self, source_grid: RectilinearGrid, destination_grid: RectilinearGrid
-        ):
+        def __init__(self, source_grid: RectilinearGrid, target_grid: RectilinearGrid):
             self.source_grid = source_grid
-            self.destination_grid = destination_grid
+            self.target_grid = target_grid
             self.interpolator = None
 
-        def __call__(self, _field: jax.Array) -> jax.Array:
+        def regrid(self, _field: jax.Array) -> jax.Array:
             return jnp.asarray([[0.8, 0.1], [0.0, 0.6]])
 
     monkeypatch.setattr(
         grid_masks_module,
-        "ConservativeRectilinearRegridder",
+        "_ConservativeRectilinearRegridder",
         DummyRegridder,
     )
 

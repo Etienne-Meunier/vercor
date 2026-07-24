@@ -6,15 +6,26 @@ import numpy as np
 from numpy.typing import NDArray
 import pytest
 
-import vercor.host_arrays as host_arrays_module
+from examples import custom_component_wrapping
+import vercor._host_arrays as host_arrays_module
 from vercor.diagnostics import component_vector_speed
-from vercor.grid import RectilinearGrid
-from vercor.host_arrays import transposed_host_array
+from vercor.grids import RectilinearGrid
+from vercor._host_arrays import transposed_host_array
 from tests.assertions import assert_allclose_compact
-from vercor.host_arrays import runtime_array_to_host
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.runtime.views import RuntimeComponentView
+from vercor._host_arrays import runtime_array_to_host
+from vercor.state import ComponentState
+
+
+def test_custom_component_example_runs_behaviorally() -> None:
+    grid = custom_component_wrapping.make_example_grid()
+    coupler = custom_component_wrapping.make_custom_coupler(grid)
+
+    final_state = coupler.run()
+
+    assert_allclose_compact(
+        final_state.component("MODEL").field("custom_flux"),
+        jnp.full(grid.shape, 3.0),
+    )
 
 
 def test_runtime_array_to_host_is_canonical_host_transfer() -> None:
@@ -45,15 +56,13 @@ def test_transposed_host_array_uses_canonical_host_transfer(
 
 
 def test_component_vector_speed_uses_jax_arrays() -> None:
-    state = RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
-            {
-                "u": jnp.asarray([[3.0, 0.0], [4.0, 0.0]]),
-                "v": jnp.asarray([[4.0, 0.0], [3.0, 0.0]]),
-            }
-        ),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
+    state = ComponentState(
+        name="ATM",
+        grid=None,
+        fields={
+            "u": jnp.asarray([[3.0, 0.0], [4.0, 0.0]]),
+            "v": jnp.asarray([[4.0, 0.0], [3.0, 0.0]]),
+        },
     )
     speed = component_vector_speed(state, "u", "v")
 
@@ -67,15 +76,13 @@ def test_component_vector_speed_reads_runtime_component_view() -> None:
         longitude=np.array([0.0, 1.0]),
         latitude=np.array([0.0, 1.0]),
     )
-    view = RuntimeComponentView(
+    view = ComponentState(
         name="ATM",
         grid=grid,
-        incoming=RuntimeFieldStore.from_mapping(
-            {
-                "u": jnp.asarray([[5.0, 0.0], [12.0, 0.0]]),
-                "v": jnp.asarray([[12.0, 0.0], [5.0, 0.0]]),
-            }
-        ),
+        received={
+            "u": jnp.asarray([[5.0, 0.0], [12.0, 0.0]]),
+            "v": jnp.asarray([[12.0, 0.0], [5.0, 0.0]]),
+        },
     )
 
     speed = component_vector_speed(view, "u", "v")

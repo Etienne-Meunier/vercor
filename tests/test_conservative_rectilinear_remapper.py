@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 
 from tests.assertions import assert_allclose_compact
 from vercor.dtypes import jax_index_dtype, jax_real_dtype
-from vercor.interpolators.conservative_remap_rectilinear import (
+from vercor._interpolators.conservative_remap_rectilinear import (
     ConservativeRectilinearRemapper,
 )
 from vercor.types import RuntimeArray

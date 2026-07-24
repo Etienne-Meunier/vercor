@@ -1,53 +1,47 @@
-from vercor._deprecation import deprecated_getattr
-from vercor.components.base import (
-    Component,
-)
+"""Protocol-first public component authoring API."""
+
+from vercor.components.base import CallableComponent
+from vercor.components.contexts import SetupContext, StepContext
 from vercor.components.contracts import (
-    ComponentHooks,
-    ComponentCreatePayloadHook,
-    ComponentInitializeHook,
-    ComponentPrefillHook,
-    ComponentValidateHook,
-    FieldSpec,
-    KEEP_PAYLOAD,
+    Component,
+    ComponentSpec,
+    LifecycleHooks,
+    PrefillContext,
+    PrefillResult,
+    SetupResult,
     StepResult,
+    TransferPolicy,
+    ValidationContext,
 )
-from vercor.components.contexts import (
-    SetupContext,
-    StepContext,
-)
-from vercor.components.data import (
-    DataComponent,
-)
-from vercor.components.host import (
-    HostComponent,
-)
+from vercor.components.data import DataComponent
 
 __all__ = [
+    "CallableComponent",
     "Component",
-    "ComponentCreatePayloadHook",
-    "ComponentHooks",
-    "ComponentInitializeHook",
-    "ComponentPrefillHook",
-    "ComponentValidateHook",
+    "ComponentSpec",
     "DataComponent",
-    "FieldSpec",
-    "HostComponent",
-    "KEEP_PAYLOAD",
+    "LifecycleHooks",
+    "PrefillContext",
+    "PrefillResult",
     "SetupContext",
+    "SetupResult",
     "StepContext",
     "StepResult",
+    "TransferPolicy",
+    "ValidationContext",
 ]
 
-
-__getattr__ = deprecated_getattr(
-    __name__,
-    {
-        "ComponentFieldSpec": ("vercor.components.FieldSpec", FieldSpec),
-        "ComponentSetupContext": ("vercor.components.SetupContext", SetupContext),
-        "ComponentStepContext": ("vercor.components.StepContext", StepContext),
-        "ComponentStepResult": ("vercor.components.StepResult", StepResult),
-        "HostRuntimeComponent": ("vercor.components.HostComponent", HostComponent),
-    },
-    remove_in="0.2.0",
-)
+# Importing package children attaches them to this facade automatically.  They
+# are implementation modules, not additional public owners; keep only the
+# explicit contract above visible from the facade namespace.
+for _module_name in (
+    "_protocol",
+    "base",
+    "contexts",
+    "contracts",
+    "data",
+    "runtime_execution",
+    "setup_validation",
+):
+    globals().pop(_module_name, None)
+del _module_name

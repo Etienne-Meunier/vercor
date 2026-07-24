@@ -1,20 +1,47 @@
 from datetime import datetime
 
-from vercor import Clock, Coupler, Exchange
-from vercor.setups import make_veros_gcm
-from vercor.setups.external.jax_gcm_tools import (
-    get_default_parameter_values,
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RuntimeOptions,
 )
-from vercor.exchanges import (
+from vercor.output import OutputSpec, OutputTarget, PeriodOutput
+from vercor.setups import (
+    JAXGCMConfig,
+    JCMLandAtmosphereConfig,
+    Spinup,
+    VerosConfig,
+    make_veros_gcm,
+)
+from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
     ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
-from vercor.setups.jcm_setup_helpers import build_jcm_land_atmosphere_components
+from vercor.setups import make_jcm_land_atmosphere
 from vercor.regridding import bilinear
+from vercor.topology import SurfaceMaskPolicy
 
 from jcm.physics.speedy.params import Parameters
+
+
+def _default_jcm_parameter_values(
+    parameters: list[str],
+    default_parameters: Parameters,
+) -> dict[str, float]:
+    """Return selected default JCM parameter values for the example script."""
+
+    output = {}
+    for parameter in parameters:
+        parameter_group_name, parameter_name = parameter.split(".")
+        output[parameter] = getattr(
+            getattr(default_parameters, parameter_group_name),
+            parameter_name,
+        )
+    return output
+
 
 if __name__ == "__main__":
     optimized_parameters: list = [
@@ -24,7 +51,7 @@ if __name__ == "__main__":
         "surface_flux.cds",
     ]
 
-    custom_jcm_parameters: dict[str, float] = get_default_parameter_values(
+    custom_jcm_parameters: dict[str, float] = _default_jcm_parameter_values(
         parameters=optimized_parameters,
         default_parameters=Parameters.default(),
     )
@@ -33,26 +60,36 @@ if __name__ == "__main__":
     # custom_jcm_parameters['surface_flux.vgust'] = 5.01
 
     ocn = make_veros_gcm(
-        do_spinup=True,
-        output_frequency="month",
-        output_variables=(
-            "temp",
-            "salt",
-            "u",
-            "v",
-            "w",
-            "surface_taux",
-            "surface_tauy",
-            "psi",
+        config=VerosConfig(
+            spinup=Spinup(enabled=True),
+            output=OutputSpec(
+                period=PeriodOutput(
+                    frequency="month",
+                    variables=(
+                        "temp",
+                        "salt",
+                        "u",
+                        "v",
+                        "w",
+                        "surface_taux",
+                        "surface_tauy",
+                        "psi",
+                    ),
+                ),
+            ),
         ),
     )
 
-    jcm_setup = build_jcm_land_atmosphere_components(
+    jcm_setup = make_jcm_land_atmosphere(
         ocn.grid,
-        custom_parameters=custom_jcm_parameters,
-        do_spinup=True,
-        jitted=True,
-        output_frequency="month",
+        config=JCMLandAtmosphereConfig(
+            atmosphere=JAXGCMConfig(
+                custom_parameters=custom_jcm_parameters,
+                spinup=Spinup(enabled=True),
+                output=OutputSpec(period=PeriodOutput(frequency="month")),
+                jitted=True,
+            ),
+        ),
     )
     lnd = jcm_setup.land
     atm = jcm_setup.atmosphere
@@ -68,48 +105,44 @@ if __name__ == "__main__":
         start=datetime(2000, 1, 3, 0, 0, 0),
         dt_seconds=86400.0,
         steps=365 * 100 - 2,
-        year_type="noleap",
+        calendar="noleap",
     )
-    run_sequence = ["OCN", "LND", "ATM"]
-
-    # Coupler
-    components = [ocn, lnd, atm]
-    cpl = Coupler.from_components(
-        clock=clock,
-        components=components,
-        run_order=run_sequence,
-    )
+    run_order = ["OCN", "LND", "ATM"]
 
     # Exchanges
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-                regrid=bilinear,
-            ),
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=ATMOSPHERE_TO_VEROS_FORCING_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+            regridder_factory=bilinear,
         ),
     )
+    components = [ocn, lnd, atm]
+    cpl = Coupler(
+        clock=clock,
+        components=components,
+        exchanges=exchanges,
+        run_order=run_order,
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
+    )
 
-    cpl.initialize()
-    final_state = cpl.run()
-    cpl.finalize(final_state)
+    cpl.run(output=OutputTarget("."))

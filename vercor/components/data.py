@@ -1,98 +1,76 @@
+"""Data-only convenience adapter for the structural component protocol."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, final
+from typing import Any
 
-from vercor.components.contracts import (
-    AuthorFieldValues,
-    ComponentHooks,
-    ComponentCreatePayloadHook,
-    ComponentInitializeHook,
-    ComponentPrefillHook,
-    ComponentValidateHook,
-)
-from vercor.components._contracts import (
-    merge_component_outputs,
-)
-from vercor.components._constructor_options import normalize_lifecycle_hooks
-from vercor.components.base import Component
-from vercor.dtypes import PrecisionPolicy
-from vercor.grid import RectilinearGrid
-from vercor.settings import VercorSettings
-
-if TYPE_CHECKING:
-    from vercor.components.contexts import StepContext
-    from vercor.runtime.state import RuntimeComponentState
+from vercor._field_names import unique_field_names
+from vercor.components.contracts import ComponentSpec, StepResult
+from vercor.components.contexts import StepContext
+from vercor.grids import RectilinearGrid
+from vercor.types import RuntimeArray
 
 
-class DataComponent(Component):
-    """Base class for data-only components that intentionally do not step.
+class DataComponent:
+    """Compose a no-op component from immutable initial data fields.
 
-    Use this for forcing and boundary-condition adapters whose runtime behavior is
-    limited to importing/exporting seeded fields through the coupler contract.
-    Data components must not own active runtime stepping behavior; compute
-    plotting-only diagnostics outside runtime state. Active differentiable models
-    should inherit :class:`Component` and implement
-    :meth:`Component.step_runtime_state` instead.
+    Supplied ``fields`` are merged with ``spec.initial_fields``, defensively
+    snapshotted, and declared as outputs. Scalar values expand on ``grid`` and
+    all values adopt the runtime dtype during private preparation. The adapter
+    never performs an active model step; time selection and host capability are
+    declared through the optional ``ComponentSpec``.
     """
 
-    @classmethod
-    def from_fields(
-        cls,
+    name: str
+    grid: RectilinearGrid
+    spec: ComponentSpec
+
+    def __init__(
+        self,
         name: str,
         grid: RectilinearGrid,
-        fields: AuthorFieldValues = None,
-        settings: VercorSettings | None = None,
+        fields: Mapping[str, object] | None = None,
         *,
-        hooks: ComponentHooks | None = None,
-        initialize: ComponentInitializeHook | None = None,
-        create_runtime_payload: ComponentCreatePayloadHook | None = None,
-        prefill_runtime_state_fields: ComponentPrefillHook | None = None,
-        validate_runtime_state: ComponentValidateHook | None = None,
-    ) -> "DataComponent":
-        """Create a data-only component from user-provided grid fields.
+        spec: ComponentSpec | None = None,
+    ) -> None:
+        """Validate configuration and build the merged immutable spec."""
 
-        Scalar field values expand to grid-shaped constants and seeded field
-        names are exposed as declared outputs. Optional lifecycle hooks mirror
-        the callable component constructors for setup and runtime customization.
-        """
-
-        if settings is None:
-            component = cls(name=name, grid=grid)
-        else:
-            component = cls(name=name, grid=grid, settings=settings)
-        if fields is not None:
-            component.seed_fields(fields)
-        component._lifecycle_hooks = normalize_lifecycle_hooks(
-            hooks=hooks,
-            initialize=initialize,
-            create_runtime_payload=create_runtime_payload,
-            prefill_runtime_state_fields=prefill_runtime_state_fields,
-            validate_runtime_state=validate_runtime_state,
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("name must be a non-empty string")
+        if not isinstance(grid, RectilinearGrid):
+            raise TypeError("grid must be RectilinearGrid")
+        if spec is not None and not isinstance(spec, ComponentSpec):
+            raise TypeError("spec must be ComponentSpec or None")
+        declaration = ComponentSpec() if spec is None else spec
+        supplied_fields = dict(fields or {})
+        merged_fields = dict(declaration.initial_fields)
+        merged_fields.update(supplied_fields)
+        self.name = name
+        self.grid = grid
+        self.spec = ComponentSpec(
+            inputs=declaration.inputs,
+            outputs=unique_field_names((*declaration.outputs, *tuple(supplied_fields))),
+            initial_fields=merged_fields,
+            execution=declaration.execution,
+            lifecycle=declaration.lifecycle,
+            transfer=declaration.transfer,
+            output=declaration.output,
         )
-        return component
 
-    def seed_fields(
+    def step(
         self,
-        fields: Mapping[str, object],
-        policy: PrecisionPolicy = None,
-    ) -> "DataComponent":
-        """Seed data fields and expose their names as declared outputs."""
-
-        super().seed_fields(fields, policy=policy)
-        self._field_spec = merge_component_outputs(self.field_spec, fields.keys())
-        return self
-
-    @final
-    def step_runtime_state(
-        self,
-        component_state: "RuntimeComponentState",
+        fields: Mapping[str, RuntimeArray],
         context: StepContext,
-    ) -> "RuntimeComponentState":
-        """Return the runtime state unchanged for data-only components."""
+        payload: Any | None = None,
+    ) -> Mapping[str, RuntimeArray] | StepResult:
+        """Return no updates because data components have no active model step."""
 
-        _ = context
-        return component_state
+        _ = fields, context, payload
+        return {}
+
+    def __repr__(self) -> str:
+        return f"DataComponent(name={self.name!r}, grid={self.grid!r})"
 
 
 __all__ = ["DataComponent"]

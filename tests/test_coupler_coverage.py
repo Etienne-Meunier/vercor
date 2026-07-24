@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import inspect
 import logging
 from pathlib import Path
-import sys
-from types import SimpleNamespace
 from typing import Any, cast
 
 import jax
@@ -13,12 +12,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-import vercor.runtime.surface_masks as surface_masks_module
+import vercor._runtime.surface_masks as surface_masks_module
 import vercor.coupler as coupler_module
-import vercor.output as output_module
-import vercor.output.runtime as output_runtime_module
+import vercor.output._runtime as output_runtime_module
 from tests._coverage_support import (
-    DummyComponent,
     RecordingRegridder,
     capture_logger_output,
     make_test_grid,
@@ -29,14 +26,14 @@ from tests._runtime_helpers import (
     runtime_state_from_coupler_components,
 )
 from tests.assertions import assert_allclose_compact
-from vercor.calendar import ModelDateTime
 from vercor.clock import Clock
-from vercor.components.base import Component
-from vercor.components.host import HostComponent
+from vercor.components import ComponentSpec, DataComponent
 from vercor.components.contexts import StepContext
 from vercor.coupler import Coupler
-from vercor.exceptions import ComponentError, CouplerError, ExchangerError
-from vercor.exchange import Exchange
+from vercor.dtypes import DTypePolicy
+from vercor.exceptions import ComponentError, CouplerError, ExchangeError
+from vercor.exchanges import Exchange
+from vercor.fields import vector
 from vercor.jax_logging import (
     CANONICAL_LOG_DATE_FORMAT,
     CANONICAL_LOG_FORMAT,
@@ -45,24 +42,20 @@ from vercor.jax_logging import (
     get_default_logger,
     setup_logger,
 )
-from vercor.regridders.bilinear import bilinear
-from vercor.regridders.conservative import conservative
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.exchange_dispatch import dispatch_component_exchanges
-from vercor.output import output_masks_for_component
-from vercor.output.adapters import register_component_snapshot_writer
-from vercor.runtime.surface_masks import (
-    apply_surface_exchange_masks,
+from vercor._regridders.bilinear import bilinear
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.exchange_dispatch import dispatch_component_exchanges
+from vercor.output._runtime import output_masks_for_component
+from vercor.output import OutputSpec, OutputTarget, SnapshotContext
+from vercor.runtime import RuntimeOptions
+from vercor._runtime.surface_masks import (
     create_surface_exchange_masks,
     validate_land_mask_consistency,
 )
-from vercor.runtime.topology import build_exchange_topology
-from vercor.runtime.topology_state import (
-    ExchangeTopologyState,
-    RuntimeTopologyMaps,
-    SurfaceExchangeMasks,
-)
-from vercor.settings import VercorSettings
+from vercor.state import ComponentState
+from vercor._runtime.topology import build_exchange_topology
+from vercor._runtime.topology_state import RuntimeTopologyMaps
+from vercor.topology import SurfaceMaskPolicy
 
 
 class _RecordingLogger:
@@ -80,83 +73,139 @@ class _RecordingLogger:
     def debug(self, message: str, *args: Any) -> None:
         self.debug_messages.append(message.format(*args) if args else message)
 
+    def error(self, message: str, *args: Any) -> None:
+        _ = message, args
 
-class _RunComponent(Component):
+    def setLevel(self, level: int | str) -> None:
+        _ = level
+
+    def isEnabledFor(self, level: int) -> bool:
+        _ = level
+        return True
+
+
+class _RunComponent:
     def __init__(self, name: str, events: list[str], timestamp: datetime) -> None:
         _ = timestamp
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+        )
         self.events = events
-        self.data["temperature"] = np.ones((2, 2))
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = fields, payload
         time = context.time
         time_label = "none" if time is None else time.isoformat()
-        self.events.append(
-            f"step_runtime:{self.name}:{time_label}:{context.dt_seconds}"
-        )
-        return component_state
+        self.events.append(f"step:{self.name}:{time_label}:{context.dt_seconds}")
+        return {}
 
 
-class _LoggingRunComponent(Component):
+class _LoggingRunComponent:
     def __init__(self, name: str) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
-        self.data["temperature"] = np.ones((2, 2), dtype=float)
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": np.ones((2, 2), dtype=float)},
+        )
 
-    def step_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = payload
         assert context.logger is not None
         context.logger.info(
             "scanned {} {}",
             self.name,
-            jnp.sum(component_state.data.get("temperature")),
+            jnp.sum(fields["temperature"]),
         )
-        return component_state
+        return {}
 
 
-class _HostRunComponent(HostComponent):
+class _HostRunComponent:
     def __init__(self, name: str, events: list[str] | None = None) -> None:
-        super().__init__(name=name, grid=make_test_grid(name=name.lower()))
+        self.name = name
+        self.grid = make_test_grid(name=name.lower())
+        self.spec = ComponentSpec(
+            outputs=("temperature", "host_time_seen"),
+            initial_fields={
+                "temperature": np.ones((2, 2), dtype=float),
+                "host_time_seen": np.zeros((2, 2), dtype=float),
+            },
+            execution="host",
+        )
         self.events = events
-        self.data["temperature"] = np.ones((2, 2))
 
-    def step_host_runtime_state(
+    def step(
         self,
-        component_state: Any,
+        fields: Mapping[str, Any],
         context: StepContext,
-    ) -> Any:
+        payload: Any | None = None,
+    ) -> Mapping[str, Any]:
+        _ = payload
         if self.events is not None:
             time = context.time
             time_label = "none" if time is None else time.isoformat()
             self.events.append(
                 f"step_host:{self.name}:{time_label}:{context.dt_seconds}"
             )
-        data = component_state.data.set(
-            "temperature",
-            component_state.data.get("temperature") + context.dt_seconds,
-        )
-        self.data["host_event"] = np.asarray(context.dt_seconds)
-        return component_state.with_data(data.set("host_time_seen", np.asarray(1.0)))
+        return {
+            "temperature": fields["temperature"] + context.dt_seconds,
+            "host_time_seen": np.ones((2, 2)),
+        }
 
 
-def make_coupler() -> Coupler:
-    return Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1))
+def make_coupler(
+    *,
+    components: Any = (),
+    exchanges: Any = (),
+    run_order: Any = (),
+    runtime: RuntimeOptions | None = None,
+    logger: Any = None,
+) -> Coupler:
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=components,
+        exchanges=exchanges,
+        run_order=run_order,
+        runtime=runtime,
+        logger=logger,
+    )
 
 
-def _snapshot_output_time_for_finalize(
+def _snapshot_output_time_for_run_output(
     coupler: Coupler,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Any:
-    components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-    }
-    coupler.components = cast(Any, components)
+    coupler = Coupler(
+        clock=coupler.clock,
+        components=(
+            cast(
+                Any,
+                DataComponent(
+                    name="ATM",
+                    grid=make_test_grid(name="atm"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+        ),
+        run_order=("ATM",),
+        runtime=coupler.runtime,
+        constants=coupler.constants,
+        logger=coupler.logger,
+        log_level=coupler.log_level,
+    )
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_snapshots: dict[str, Any] = {}
 
@@ -167,31 +216,43 @@ def _snapshot_output_time_for_finalize(
         captured_snapshots.update(kwargs)
 
     monkeypatch.setattr(
-        output_module, "write_coupler_runtime_outputs", fake_write_outputs
+        output_runtime_module, "write_coupler_runtime_outputs", fake_write_outputs
     )
     monkeypatch.setattr(
-        output_module, "write_coupler_component_snapshots", fake_write_snapshots
+        output_runtime_module, "write_coupler_component_snapshots", fake_write_snapshots
     )
 
-    coupler.finalize(state)
+    coupler.run(
+        state,
+        output=OutputTarget(
+            ".",
+            write_period=False,
+        ),
+    )
 
     return captured_snapshots["output_time"]
 
 
-def _topology_components() -> dict[str, DummyComponent]:
+def _topology_components() -> dict[str, DataComponent]:
     lnd_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]])
     return {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        "OCN": DataComponent(
             name="OCN",
             grid=make_test_grid(
                 name="ocn",
                 binary_mask=np.asarray([[0.0, 1.0], [1.0, 0.0]]),
             ),
+            fields={"temperature": 0.0},
         ),
-        "LND": DummyComponent(
+        "LND": DataComponent(
             name="LND",
             grid=make_test_grid(name="lnd", binary_mask=lnd_mask),
+            fields={"temperature": 0.0},
         ),
     }
 
@@ -205,7 +266,7 @@ def _dispatch_runtime_fields(
         runtime_state,
         component_name,
         coupler.exchanges,
-        coupler._runtime_resources.topology_maps.regridders,
+        coupler._ensure_prepared().topology_maps.regridders,
     )
 
 
@@ -292,30 +353,27 @@ def test_setup_logger_routes_child_loggers_through_parent_canonical_handler() ->
 
 @pytest.mark.fast_always
 def test_coupler_runtime_component_views_returns_ordered_named_views() -> None:
-    coupler = make_coupler()
-    for component_name in ("ATM", "OCN", "LND"):
-        coupler.add_component(
-            DummyComponent(
+    coupler = make_coupler(
+        components=tuple(
+            DataComponent(
                 name=component_name,
                 grid=make_test_grid(name=component_name.lower()),
+                fields={"temperature": 0.0},
             )
-        )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-            "LND",
-        )
+            for component_name in ("ATM", "OCN", "LND")
+        ),
+        run_order=("ATM", "OCN", "LND"),
     )
 
-    runtime_state = coupler.state(prefill=True)
+    runtime_state = coupler.initial_state(prefill_missing=True)
 
-    all_views = coupler.views(runtime_state)
-    selected_views = coupler.views(runtime_state, names=("LND", "ATM"))
+    all_views = runtime_state.components(coupler.run_order)
+    selected_views = runtime_state.components(("LND", "ATM"))
 
     assert tuple(all_views) == ("ATM", "OCN", "LND")
     assert tuple(selected_views) == ("LND", "ATM")
     assert all_views["ATM"].name == "ATM"
+    assert selected_views["LND"].grid is not None
     assert selected_views["LND"].grid.name == "lnd"
 
 
@@ -365,17 +423,18 @@ def test_coupler_wraps_injected_python_logger_for_scanned_runtime() -> None:
     logger_name = "VerCOR.test.injected"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _LoggingRunComponent("ATM")),),
+        run_order=("ATM",),
         logger=logging.getLogger(logger_name),
         log_level="INFO",
     )
-    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
     assert "scanned ATM 4.0" in stream.getvalue()
 
 
@@ -405,17 +464,18 @@ def test_scanned_runtime_passes_callback_logger_to_components() -> None:
     logger_name = "VerCOR.test.scanned-runtime"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _LoggingRunComponent("ATM")),),
+        run_order=("ATM",),
+        logger=setup_logger(level="INFO", name=logger_name),
         log_level="INFO",
     )
-    coupler.logger = setup_logger(level="INFO", name=logger_name)
-    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
     assert "scanned ATM 4.0" in stream.getvalue()
 
 
@@ -423,72 +483,74 @@ def test_scanned_runtime_logs_host_equivalent_progress_messages() -> None:
     logger_name = "VerCOR.test.scanned-runtime-progress"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2),
+        components=(
+            cast(Any, _LoggingRunComponent("ATM")),
+            cast(Any, _LoggingRunComponent("OCN")),
+        ),
+        run_order=(
+            "ATM",
+            "OCN",
+        ),
+        logger=setup_logger(level="INFO", name=logger_name),
         log_level="INFO",
     )
-    coupler.logger = setup_logger(level="INFO", name=logger_name)
-    coupler.components = {
-        "ATM": cast(Any, _LoggingRunComponent("ATM")),
-        "OCN": cast(Any, _LoggingRunComponent("OCN")),
-    }
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
-    )
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM", "OCN")
+    assert tuple(final_state.components()) == ("ATM", "OCN")
     log_text = stream.getvalue()
     assert (
-        " ====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
+        "====== Step: 00000 ====== Date: 2000-01-01 00:00:00 ====== Δt: 0:01:00 "
         in log_text
     )
     assert (
-        " ====== Step: 00001 ====== Date: 2000-01-01 00:01:00 ====== Δt: 0:01:00 "
+        "====== Step: 00001 ====== Date: 2000-01-01 00:01:00 ====== Δt: 0:01:00 "
         in log_text
     )
-    assert log_text.count(" Run component: ATM") == 2
-    assert log_text.count(" Run component: OCN") == 2
+    assert log_text.count("Run component: ATM") == 2
+    assert log_text.count("Run component: OCN") == 2
 
 
 def test_scanned_runtime_suppresses_info_below_log_level() -> None:
     logger_name = "VerCOR.test.scanned-runtime-warning"
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(cast(Any, _LoggingRunComponent("ATM")),),
+        run_order=("ATM",),
+        logger=setup_logger(level="WARNING", name=logger_name),
         log_level="WARNING",
     )
-    coupler.logger = setup_logger(level="WARNING", name=logger_name)
-    coupler.components = {"ATM": cast(Any, _LoggingRunComponent("ATM"))}
-    coupler.run_sequence = ("ATM",)
+    coupler._ensure_prepared()
 
     with capture_logger_output(logger_name, set_logger_level=False) as stream:
         final_state = jax.jit(lambda: run_scanned_coupler(coupler))()
         jax.effects_barrier()
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
     log_text = stream.getvalue()
     assert "scanned ATM" not in log_text
-    assert " ====== Step:" not in log_text
-    assert " Run component:" not in log_text
+    assert "====== Step:" not in log_text
+    assert "Run component:" not in log_text
 
 
 @pytest.mark.fast_always
-def test_coupler_register_and_run_sequence_validation() -> None:
-    coupler = make_coupler()
-    atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    coupler.add_component(cast(Any, atmosphere))
+def test_coupler_constructor_validates_duplicate_components_and_run_order() -> None:
+    atmosphere = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="atm"),
+        fields={"temperature": 0.0},
+    )
 
-    with pytest.raises(CouplerError, match="already registered"):
-        coupler.add_component(cast(Any, atmosphere))
+    with pytest.raises(CouplerError, match="Duplicate component name.*ATM"):
+        make_coupler(components=(cast(Any, atmosphere), cast(Any, atmosphere)))
 
-    with pytest.raises(CouplerError, match="not registered in coupler"):
-        coupler.set_run_order(
-            (
-                "ATM",
-                "OCN",
-            )
+    with pytest.raises(CouplerError, match="Unknown run-order component.*OCN"):
+        make_coupler(
+            components=(cast(Any, atmosphere),),
+            run_order=("ATM", "OCN"),
         )
 
 
@@ -504,77 +566,112 @@ def test_coupler_initialize_rejects_missing_exchange_endpoints(
     source: str,
     destination: str,
 ) -> None:
-    coupler = make_coupler()
     components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        "OCN": DataComponent(
+            name="OCN",
+            grid=make_test_grid(name="ocn"),
+            fields={"temperature": 0.0},
+        ),
     }
-    for name in registered_names:
-        coupler.add_component(cast(Any, components[name]))
-
-    coupler.add_exchange(
-        Exchange(
-            source=source,
-            target=destination,
-            fields=["temperature"],
-            regrid=bilinear,
+    with pytest.raises(CouplerError, match="unknown .* component"):
+        make_coupler(
+            components=tuple(cast(Any, components[name]) for name in registered_names),
+            exchanges=(
+                Exchange(
+                    source=source,
+                    target=destination,
+                    fields=["temperature"],
+                    regridder_factory=bilinear,
+                ),
+            ),
         )
-    )
-
-    with pytest.raises(CouplerError, match="not registered in coupler"):
-        coupler.initialize()
 
 
 def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
     logger = _RecordingLogger()
-    coupler.logger = cast(Any, logger)
-    coupler.settings.enable_x64 = False
-
     lnd_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]])
     components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={
+                "temperature": 0.0,
+                "downward_longwave_radiation_flux": np.full((2, 2), 1.0),
+                "temperature_2m": np.full((2, 2), 2.0),
+                "sensible_heat_flux": np.full((2, 2), 3.0),
+            },
+            spec=ComponentSpec(
+                inputs=(
+                    "temperature",
+                    "specific_humidity",
+                    "soil_moisture",
+                    "ice_fraction",
+                ),
+                outputs=(
+                    "downward_longwave_radiation_flux",
+                    "temperature_2m",
+                    "sensible_heat_flux",
+                ),
+            ),
+        ),
+        "OCN": DataComponent(
             name="OCN",
             grid=make_test_grid(
                 name="ocn", binary_mask=np.asarray([[0.0, 1.0], [1.0, 0.0]])
             ),
+            fields={
+                "temperature": np.full((2, 2), 4.0),
+                "specific_humidity": np.full((2, 2), 5.0),
+            },
+            spec=ComponentSpec(
+                inputs=("downward_longwave_radiation_flux",),
+                outputs=("temperature", "specific_humidity"),
+            ),
         ),
-        "LND": DummyComponent(
+        "LND": DataComponent(
             name="LND",
             grid=make_test_grid(name="lnd", binary_mask=lnd_mask),
+            fields={
+                "temperature": 0.0,
+                "soil_moisture": np.full((2, 2), 6.0),
+            },
+            spec=ComponentSpec(
+                inputs=("temperature_2m",),
+                outputs=("soil_moisture",),
+            ),
         ),
-        "ICE": DummyComponent(name="ICE", grid=make_test_grid(name="ice")),
+        "ICE": DataComponent(
+            name="ICE",
+            grid=make_test_grid(name="ice"),
+            fields={
+                "temperature": 0.0,
+                "ice_fraction": np.full((2, 2), 7.0),
+            },
+            spec=ComponentSpec(
+                inputs=("sensible_heat_flux",),
+                outputs=("ice_fraction",),
+            ),
+        ),
     }
-    components["ATM"].data.update(
-        {
-            "downward_longwave_radiation_flux": np.full((2, 2), 1.0),
-            "temperature_2m": np.full((2, 2), 2.0),
-            "sensible_heat_flux": np.full((2, 2), 3.0),
-        }
-    )
-    components["OCN"].data.update(
-        {
-            "temperature": np.full((2, 2), 4.0),
-            "specific_humidity": np.full((2, 2), 5.0),
-        }
-    )
-    components["LND"].data["soil_moisture"] = np.full((2, 2), 6.0)
-    components["ICE"].data["ice_fraction"] = np.full((2, 2), 7.0)
-
-    for component in components.values():
-        coupler.add_component(cast(Any, component))
 
     created_keys: list[tuple[str, str]] = []
 
     def recording_regridder_factory(
         interpolation_type: str,
     ) -> Any:
-        def factory(source_grid: Any, destination_grid: Any) -> RecordingRegridder:
-            created_keys.append((source_grid.name, destination_grid.name))
-            return RecordingRegridder()
+        def factory(source_grid: Any, target_grid: Any) -> RecordingRegridder:
+            created_keys.append((source_grid.name, target_grid.name))
+            return RecordingRegridder(
+                source_grid=source_grid,
+                target_grid=target_grid,
+            )
 
         factory.__name__ = interpolation_type
         return cast(Any, factory)
@@ -586,57 +683,56 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         Exchange(
             source="OCN",
             target="ATM",
-            fields=["temperature"],
-            regrid=bilinear_recording,
-        ),
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["specific_humidity"],
-            regrid=bilinear_recording,
+            fields=["temperature", "specific_humidity"],
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ATM",
             target="OCN",
             fields=["downward_longwave_radiation_flux"],
-            regrid=conservative_recording,
+            regridder_factory=conservative_recording,
         ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["soil_moisture"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ATM",
             target="LND",
             fields=["temperature_2m"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ICE",
             target="ATM",
             fields=["ice_fraction"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
         Exchange(
             source="ATM",
             target="ICE",
             fields=["sensible_heat_flux"],
-            regrid=bilinear_recording,
+            regridder_factory=bilinear_recording,
         ),
     ]
-    for exchange in exchanges:
-        coupler.add_exchange(exchange)
+    coupler = make_coupler(
+        components=tuple(cast(Any, component) for component in components.values()),
+        exchanges=exchanges,
+        runtime=RuntimeOptions(
+            dtype=DTypePolicy(enable_x64=True),
+            topology=SurfaceMaskPolicy(),
+        ),
+        logger=cast(Any, logger),
+    )
 
-    def fake_create_surface_exchange_masks(
-        *args: Any, **kwargs: Any
-    ) -> SurfaceExchangeMasks:
+    def fake_create_surface_exchange_masks(*args: Any, **kwargs: Any) -> Any:
         _ = args, kwargs
-        return SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.full((2, 2), 0.4),
-            lnd_fmask_on_atm_grid=np.full((2, 2), 0.6),
-            lnd_bmask_on_atm_grid=lnd_mask,
+        return (
+            np.full((2, 2), 0.4),
+            np.full((2, 2), 0.6),
+            lnd_mask,
         )
 
     monkeypatch.setattr(
@@ -644,60 +740,49 @@ def test_coupler_initialize_happy_path_builds_unique_regridders_and_supports_x64
         "create_surface_exchange_masks",
         fake_create_surface_exchange_masks,
     )
-    jax_calls: list[tuple[str, bool]] = []
-    monkeypatch.setitem(
-        sys.modules,
-        "jax",
-        SimpleNamespace(
-            config=SimpleNamespace(
-                update=lambda key, value: jax_calls.append((key, value))
-            )
-        ),
-    )
+    coupler._initialize_runtime()
 
-    coupler.initialize(enable_x64_computations=True)
-
-    assert coupler.settings.enable_x64 is True
-    assert jax_calls == [("jax_enable_x64", True)]
+    assert coupler.runtime.dtype.enable_x64 is True
     assert len(created_keys) == 6
-    topology_maps = coupler._runtime_resources.topology_maps
+    assert coupler._prepared is not None
+    topology_maps = coupler._prepared.topology_maps
     assert len(topology_maps.regridders) == 6
-    assert any("already exists" in message for message in logger.warning_messages)
     assert isinstance(
-        topology_maps.binary_masks[("ATM", "OCN", "conservative")],
+        topology_maps.binary_masks["ATM->OCN"],
         jax.Array,
     )
     assert isinstance(
-        topology_maps.fractional_masks[("ATM", "OCN", "conservative")],
+        topology_maps.fractional_masks["ATM->OCN"],
         jax.Array,
     )
-    assert coupler._runtime_resources.runtime_contracts[
-        "ATM"
-    ] == RuntimeComponentContract(
-        imports=(
+    assert coupler._prepared.contracts["ATM"] == ExchangeContract(
+        receives=(
             "temperature",
             "specific_humidity",
             "soil_moisture",
             "ice_fraction",
         ),
-        exports=(
+        sends=(
             "downward_longwave_radiation_flux",
             "temperature_2m",
             "sensible_heat_flux",
         ),
     )
     assert_allclose_compact(
-        topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
+        topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
     )
     assert_allclose_compact(
-        topology_maps.binary_masks[("LND", "ATM", "bilinear")],
+        topology_maps.binary_masks["LND->ATM"],
         lnd_mask,
     )
+    assert not hasattr(coupler, "ocn_fmask_on_atm_grid")
+    assert not hasattr(coupler, "lnd_fmask_on_atm_grid")
+    assert not hasattr(coupler, "lnd_bmask_on_atm_grid")
 
 
 @pytest.mark.fast_always
-def test_build_exchange_topology_returns_explicit_patched_state(
+def test_build_exchange_topology_returns_runtime_topology_maps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     components = _topology_components()
@@ -705,41 +790,36 @@ def test_build_exchange_topology_returns_explicit_patched_state(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
-        lambda *args, **kwargs: SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.full((2, 2), 0.4),
-            lnd_fmask_on_atm_grid=np.full((2, 2), 0.6),
-            lnd_bmask_on_atm_grid=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+        lambda *args, **kwargs: (
+            np.full((2, 2), 0.4),
+            np.full((2, 2), 0.6),
+            np.asarray([[1.0, 0.0], [0.0, 1.0]]),
         ),
     )
 
-    state = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
-        settings=VercorSettings(),
+        dtype=DTypePolicy(),
+        topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
 
-    assert isinstance(state, ExchangeTopologyState)
-    assert set(state.topology_maps.regridders) == {("OCN", "ATM", "bilinear")}
+    assert isinstance(topology_maps, RuntimeTopologyMaps)
+    assert set(topology_maps.regridders) == {"OCN->ATM"}
     assert_allclose_compact(
-        state.topology_maps.fractional_masks[("OCN", "ATM", "bilinear")],
+        topology_maps.fractional_masks["OCN->ATM"],
         np.full((2, 2), 0.4),
-    )
-    assert_allclose_compact(
-        state.surface_masks.lnd_bmask_on_atm_grid,
-        np.asarray([[1.0, 0.0], [0.0, 1.0]]),
     )
 
 
 @pytest.mark.fast_always
-def test_build_exchange_topology_preserves_duplicate_regridder_warning(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_exchange_topology_rejects_duplicate_topology_keys() -> None:
     components = _topology_components()
     logger = _RecordingLogger()
     exchanges = (
@@ -747,34 +827,69 @@ def test_build_exchange_topology_preserves_duplicate_regridder_warning(
             source="OCN",
             target="ATM",
             fields=["temperature"],
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
         Exchange(
             source="OCN",
             target="ATM",
             fields=["specific_humidity"],
-            regrid=bilinear,
+            regridder_factory=bilinear,
         ),
     )
+    with pytest.raises(
+        CouplerError,
+        match="Duplicate exchange route ID 'OCN->ATM'",
+    ):
+        build_exchange_topology(
+            components=cast(Any, components),
+            exchanges=exchanges,
+            dtype=DTypePolicy(),
+            logger=cast(Any, logger),
+        )
+
+
+@pytest.mark.fast_always
+def test_surface_mask_policy_uses_one_build_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    components = _topology_components()
+    exchange = Exchange(
+        source="OCN",
+        target="ATM",
+        fields=["temperature"],
+        regridder_factory=bilinear,
+    )
+    events: list[str] = []
+    original_build = SurfaceMaskPolicy.build
+
+    def recording_build(self: SurfaceMaskPolicy, context: Any) -> Any:
+        events.append("build")
+        return original_build(self, context)
+
+    monkeypatch.setattr(SurfaceMaskPolicy, "build", recording_build)
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
-        lambda *args, **kwargs: SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.ones((2, 2)),
-            lnd_fmask_on_atm_grid=np.zeros((2, 2)),
-            lnd_bmask_on_atm_grid=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+        lambda *args, **kwargs: (
+            np.full((2, 2), 0.4),
+            np.full((2, 2), 0.6),
+            np.asarray([[1.0, 0.0], [0.0, 1.0]]),
         ),
     )
 
-    state = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=cast(Any, components),
-        exchanges=exchanges,
-        settings=VercorSettings(),
-        logger=cast(Any, logger),
+        exchanges=(exchange,),
+        dtype=DTypePolicy(),
+        topology_policy=SurfaceMaskPolicy(),
+        logger=cast(Any, _RecordingLogger()),
     )
 
-    assert len(state.topology_maps.regridders) == 1
-    assert any("already exists" in message for message in logger.warning_messages)
+    assert events == ["build"]
+    assert_allclose_compact(
+        topology_maps.fractional_masks["OCN->ATM"],
+        np.full((2, 2), 0.4),
+    )
 
 
 @pytest.mark.fast_always
@@ -786,22 +901,26 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
         source="LND",
         target="ATM",
         fields=["soil_moisture"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
-    existing_regridders: dict[tuple[str, str, str], Any] = {}
-    existing_binary_masks: dict[tuple[str, str, str], Any] = {}
-    existing_fractional_masks: dict[tuple[str, str, str], Any] = {}
+    seeded_route = "seeded"
+    seeded_regridder = object()
+    seeded_binary_mask = np.ones((2, 2))
+    seeded_fractional_mask = np.full((2, 2), 0.25)
+    existing_regridders: dict[str, Any] = {seeded_route: seeded_regridder}
+    existing_binary_masks: dict[str, Any] = {seeded_route: seeded_binary_mask}
+    existing_fractional_masks: dict[str, Any] = {seeded_route: seeded_fractional_mask}
     monkeypatch.setattr(
         surface_masks_module,
         "create_surface_exchange_masks",
-        lambda *args, **kwargs: SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=np.zeros((2, 2)),
-            lnd_fmask_on_atm_grid=np.full((2, 2), 0.75),
-            lnd_bmask_on_atm_grid=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+        lambda *args, **kwargs: (
+            np.zeros((2, 2)),
+            np.full((2, 2), 0.75),
+            np.asarray([[1.0, 0.0], [0.0, 1.0]]),
         ),
     )
 
-    state = build_exchange_topology(
+    topology_maps = build_exchange_topology(
         components=cast(Any, components),
         exchanges=(exchange,),
         topology_maps=RuntimeTopologyMaps(
@@ -809,238 +928,257 @@ def test_build_exchange_topology_does_not_mutate_existing_mappings(
             binary_masks=existing_binary_masks,
             fractional_masks=existing_fractional_masks,
         ),
-        settings=VercorSettings(),
+        dtype=DTypePolicy(),
+        topology_policy=SurfaceMaskPolicy(),
         logger=cast(Any, _RecordingLogger()),
     )
 
-    assert existing_regridders == {}
-    assert existing_binary_masks == {}
-    assert existing_fractional_masks == {}
-    assert state.topology_maps.regridders is not existing_regridders
+    assert existing_regridders == {seeded_route: seeded_regridder}
+    assert existing_binary_masks[seeded_route] is seeded_binary_mask
+    assert existing_fractional_masks[seeded_route] is seeded_fractional_mask
+    assert topology_maps.regridders is not existing_regridders
+    assert topology_maps.regridders[seeded_route] is seeded_regridder
+    assert topology_maps.binary_masks[seeded_route] is seeded_binary_mask
+    assert topology_maps.fractional_masks[seeded_route] is seeded_fractional_mask
     assert_allclose_compact(
-        state.topology_maps.binary_masks[("LND", "ATM", "bilinear")],
+        topology_maps.binary_masks["LND->ATM"],
         np.asarray([[1.0, 0.0], [0.0, 1.0]]),
-    )
-
-
-def test_apply_surface_exchange_masks_updates_only_expected_bilinear_pairs() -> None:
-    coupler = make_coupler()
-    ocn_key = ("OCN", "ATM", "bilinear")
-    lnd_key = ("LND", "ATM", "bilinear")
-    other_key = ("OCN", "ATM", "conservative")
-
-    binary_masks = {
-        ocn_key: np.zeros((2, 2)),
-        lnd_key: np.zeros((2, 2)),
-        other_key: np.full((2, 2), 9.0),
-    }
-    fractional_masks = {
-        ocn_key: np.zeros((2, 2)),
-        lnd_key: np.zeros((2, 2)),
-        other_key: np.full((2, 2), 7.0),
-    }
-    replace_runtime_topology_maps(
-        coupler,
-        regridders={},
-        binary_masks=binary_masks,
-        fractional_masks=fractional_masks,
-    )
-    coupler.ocn_fmask_on_atm_grid = np.full((2, 2), 0.25)
-    coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
-    coupler.lnd_fmask_on_atm_grid = np.full((2, 2), 0.75)
-
-    topology_maps = coupler._runtime_resources.topology_maps
-    apply_surface_exchange_masks(
-        topology_maps,
-        surface_masks=SurfaceExchangeMasks(
-            ocn_fmask_on_atm_grid=coupler.ocn_fmask_on_atm_grid,
-            lnd_fmask_on_atm_grid=coupler.lnd_fmask_on_atm_grid,
-            lnd_bmask_on_atm_grid=coupler.lnd_bmask_on_atm_grid,
-        ),
-    )
-
-    assert_allclose_compact(
-        topology_maps.fractional_masks[ocn_key], np.full((2, 2), 0.25)
-    )
-    assert_allclose_compact(
-        topology_maps.binary_masks[lnd_key],
-        np.asarray([[1.0, 0.0], [0.0, 1.0]]),
-    )
-    assert_allclose_compact(
-        topology_maps.fractional_masks[lnd_key], np.full((2, 2), 0.75)
-    )
-    assert_allclose_compact(topology_maps.binary_masks[other_key], np.full((2, 2), 9.0))
-    assert_allclose_compact(
-        topology_maps.fractional_masks[other_key], np.full((2, 2), 7.0)
     )
 
 
 def test_validate_land_mask_consistency_rejects_shape_and_value_mismatches() -> None:
-    coupler = make_coupler()
-    coupler.components = cast(
-        Any,
-        {
-            "LND": DummyComponent(
-                name="LND",
-                grid=make_test_grid(name="lnd", binary_mask=np.ones((3, 2))),
-            )
-        },
+    shape_coupler = make_coupler(
+        components=(
+            cast(
+                Any,
+                DataComponent(
+                    name="LND",
+                    grid=make_test_grid(name="lnd", binary_mask=np.ones((3, 2))),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+        )
     )
-    coupler.lnd_bmask_on_atm_grid = np.ones((2, 2))
+    shape_lnd_bmask_on_atm_grid = np.ones((2, 2))
 
     with pytest.raises(CouplerError, match="does not match atmospheric grid shape"):
         validate_land_mask_consistency(
-            coupler.components,
-            SurfaceExchangeMasks(
-                ocn_fmask_on_atm_grid=np.zeros((2, 2)),
-                lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=coupler.lnd_bmask_on_atm_grid,
-            ),
+            shape_coupler._runtime_components,
+            shape_lnd_bmask_on_atm_grid,
+            policy=SurfaceMaskPolicy(),
         )
 
-    coupler.components["LND"] = cast(
-        Any,
-        DummyComponent(
-            name="LND",
-            grid=make_test_grid(
-                name="lnd",
-                binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
+    value_coupler = make_coupler(
+        components=(
+            cast(
+                Any,
+                DataComponent(
+                    name="LND",
+                    grid=make_test_grid(
+                        name="lnd",
+                        binary_mask=np.asarray([[1.0, 0.0], [1.0, 0.0]]),
+                    ),
+                    fields={"temperature": 0.0},
+                ),
             ),
-        ),
+        )
     )
-    coupler.lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
+    value_lnd_bmask_on_atm_grid = np.asarray([[1.0, 0.0], [0.0, 1.0]])
 
     with pytest.raises(CouplerError, match="mismatched points: 2"):
         validate_land_mask_consistency(
-            coupler.components,
-            SurfaceExchangeMasks(
-                ocn_fmask_on_atm_grid=np.zeros((2, 2)),
-                lnd_fmask_on_atm_grid=np.ones((2, 2)),
-                lnd_bmask_on_atm_grid=coupler.lnd_bmask_on_atm_grid,
-            ),
+            value_coupler._runtime_components,
+            value_lnd_bmask_on_atm_grid,
+            policy=SurfaceMaskPolicy(),
         )
 
 
 def test_create_surface_exchange_masks_rejects_non_identical_land_and_atmosphere_grids() -> (
     None
 ):
-    coupler = make_coupler()
-    coupler.components = cast(
-        Any,
-        {
-            "ATM": DummyComponent(
-                name="ATM",
-                grid=make_test_grid(name="atm", latitude=np.asarray([0.0, 1.0])),
-            ),
-            "LND": DummyComponent(
-                name="LND",
-                grid=make_test_grid(name="lnd", latitude=np.asarray([0.0, 2.0])),
-            ),
-            "OCN": DummyComponent(
-                name="OCN",
-                grid=make_test_grid(
-                    name="ocn", binary_mask=np.asarray([[1.0, 0.0], [0.0, 1.0]])
+    coupler = make_coupler(
+        components=cast(
+            Any,
+            (
+                DataComponent(
+                    name="ATM",
+                    grid=make_test_grid(name="atm", latitude=np.asarray([0.0, 1.0])),
+                    fields={"temperature": 0.0},
+                ),
+                DataComponent(
+                    name="LND",
+                    grid=make_test_grid(name="lnd", latitude=np.asarray([0.0, 2.0])),
+                    fields={"temperature": 0.0},
+                ),
+                DataComponent(
+                    name="OCN",
+                    grid=make_test_grid(
+                        name="ocn",
+                        binary_mask=np.asarray([[1.0, 0.0], [0.0, 1.0]]),
+                    ),
+                    fields={"temperature": 0.0},
                 ),
             ),
-        },
+        )
     )
 
     with pytest.raises(CouplerError, match="must use identical horizontal grids"):
-        create_surface_exchange_masks(coupler.components, logger=setup_logger())
+        create_surface_exchange_masks(
+            coupler._runtime_components,
+            policy=SurfaceMaskPolicy(),
+            logger=setup_logger(),
+        )
 
 
 def test_create_surface_exchange_masks_rejects_missing_ocean_binary_mask() -> None:
-    coupler = make_coupler()
-    coupler.components = cast(
-        Any,
-        {
-            "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-            "LND": DummyComponent(name="LND", grid=make_test_grid(name="lnd")),
-            "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
-        },
+    coupler = make_coupler(
+        components=(
+            cast(
+                Any,
+                DataComponent(
+                    name="ATM",
+                    grid=make_test_grid(name="atm"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+            cast(
+                Any,
+                DataComponent(
+                    name="LND",
+                    grid=make_test_grid(name="lnd"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+            cast(
+                Any,
+                DataComponent(
+                    name="OCN",
+                    grid=make_test_grid(name="ocn"),
+                    fields={"temperature": 0.0},
+                ),
+            ),
+        )
     )
 
     with pytest.raises(ComponentError, match="has no binary mask defined"):
-        create_surface_exchange_masks(coupler.components, logger=setup_logger())
+        create_surface_exchange_masks(
+            coupler._runtime_components,
+            policy=SurfaceMaskPolicy(),
+            logger=setup_logger(),
+        )
 
 
 def test_output_masks_for_component_returns_destination_exchange_masks() -> None:
-    coupler = make_coupler()
     ocn_exchange = Exchange(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
     lnd_exchange = Exchange(
         source="LND",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
-    coupler.exchanges = [ocn_exchange, lnd_exchange]
+    exchanges = (ocn_exchange, lnd_exchange)
     binary_masks = {
-        ("OCN", "ATM", "bilinear"): np.zeros((2, 2)),
-        ("LND", "ATM", "bilinear"): np.ones((2, 2)),
+        "OCN->ATM": np.zeros((2, 2)),
+        "LND->ATM": np.ones((2, 2)),
     }
     fractional_masks = {
-        ("OCN", "ATM", "bilinear"): np.full((2, 2), 0.25),
-        ("LND", "ATM", "bilinear"): np.full((2, 2), 0.75),
+        "OCN->ATM": np.full((2, 2), 0.25),
+        "LND->ATM": np.full((2, 2), 0.75),
     }
-    replace_runtime_topology_maps(
-        coupler,
-        regridders={},
-        binary_masks=binary_masks,
-        fractional_masks=fractional_masks,
-    )
-
-    assert not hasattr(coupler, "_output_masks_for_component")
+    assert not hasattr(Coupler, "_output_masks_for_component")
 
     masks = output_masks_for_component(
         "ATM",
-        coupler.exchanges,
-        coupler._runtime_resources.topology_maps.binary_masks,
-        coupler._runtime_resources.topology_maps.fractional_masks,
+        exchanges,
+        binary_masks,
+        fractional_masks,
     )
 
     assert set(masks) == {
-        "bmask_OCN_ATM_bilinear",
-        "fmask_OCN_ATM_bilinear",
-        "bmask_LND_ATM_bilinear",
-        "fmask_LND_ATM_bilinear",
+        "bmask_OCN_ATM",
+        "fmask_OCN_ATM",
+        "bmask_LND_ATM",
+        "fmask_LND_ATM",
     }
-    assert_allclose_compact(masks["fmask_LND_ATM_bilinear"], np.full((2, 2), 0.75))
+    assert_allclose_compact(masks["fmask_LND_ATM"], np.full((2, 2), 0.75))
+
+
+def test_output_mask_names_remain_unique_after_route_token_sanitizing() -> None:
+    exchanges = (
+        Exchange("OCN", "ATM", ("temperature",), route_id="a-b"),
+        Exchange("LND", "ATM", ("temperature",), route_id="a_b"),
+    )
+    binary_masks = {
+        "a-b": np.zeros((2, 2)),
+        "a_b": np.ones((2, 2)),
+    }
+    fractional_masks = {
+        "a-b": np.full((2, 2), 0.25),
+        "a_b": np.full((2, 2), 0.75),
+    }
+
+    masks = output_masks_for_component(
+        "ATM",
+        exchanges,
+        binary_masks,
+        fractional_masks,
+    )
+
+    assert len(masks) == 4
+    assert sorted(float(np.mean(value)) for value in masks.values()) == [
+        0.0,
+        0.25,
+        0.75,
+        1.0,
+    ]
 
 
 def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
-    coupler = make_coupler()
-    source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source.data["temperature"] = jnp.full((2, 2), 5.0)
-    source.data["u_velocity"] = np.full((2, 2), 1.0)
-    source.data["v_velocity"] = np.full((2, 2), -1.0)
+    source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        fields={
+            "temperature": jnp.full((2, 2), 5.0),
+            "u_velocity": np.ones((2, 2)),
+            "v_velocity": np.ones((2, 2)),
+        },
+    )
+    destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("temperature", "u_velocity", "v_velocity")),
+    )
 
     scalar_exchange = Exchange(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        route_id="ocn-atm-scalar",
+        regridder_factory=bilinear,
     )
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=[("u_velocity", "v_velocity")],
-        regrid=conservative,
+        fields=[vector("u_velocity", "v_velocity")],
+        route_id="ocn-atm-vector",
+        regridder_factory=bilinear,
     )
-    coupler.components = cast(Any, {"OCN": source, "ATM": destination})
-    coupler.exchanges = [scalar_exchange, vector_exchange]
+    coupler = make_coupler(
+        components=(cast(Any, source), cast(Any, destination)),
+        exchanges=(scalar_exchange, vector_exchange),
+    )
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "bilinear"): RecordingRegridder(
+            "ocn-atm-scalar": RecordingRegridder(
                 scalar_result=jnp.asarray([[2.0, 4.0], [6.0, 8.0]])
             ),
-            ("OCN", "ATM", "conservative"): RecordingRegridder(
+            "ocn-atm-vector": RecordingRegridder(
                 vector_result=(
                     np.full((2, 2), 9.0),
                     np.full((2, 2), -9.0),
@@ -1052,8 +1190,8 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         coupler,
         regridders=regridders,
         fractional_masks={
-            ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
-            ("OCN", "ATM", "conservative"): np.ones((2, 2)),
+            "ocn-atm-scalar": np.asarray([[1.0, 0.5], [0.0, 1.0]]),
+            "ocn-atm-vector": np.ones((2, 2)),
         },
     )
 
@@ -1062,41 +1200,49 @@ def test_runtime_field_dispatch_handles_scalar_and_vector_paths() -> None:
         runtime_state_from_coupler_components(coupler, prefill_missing=True),
         "ATM",
     )
-    destination_state = runtime_state.get_component_state("ATM")
+    destination_state = runtime_state._component_state("ATM")
 
     assert_allclose_compact(
-        destination_state.incoming.get("temperature"),
+        destination_state.received.get("temperature"),
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
-    assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
+    assert isinstance(destination_state.received.get("temperature"), jax.Array)
     assert_allclose_compact(
-        destination_state.incoming.get("u_velocity"),
+        destination_state.received.get("u_velocity"),
         np.full((2, 2), 9.0),
     )
     assert_allclose_compact(
-        destination_state.incoming.get("v_velocity"),
+        destination_state.received.get("v_velocity"),
         np.full((2, 2), -9.0),
     )
 
 
 def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
-    coupler = make_coupler()
-    source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    source.data["temperature"] = np.full((2, 2), 5.0)
+    source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        fields={"temperature": np.full((2, 2), 5.0)},
+    )
+    destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("temperature",)),
+    )
 
     exchange = Exchange(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
-    coupler.components = cast(Any, {"OCN": source, "ATM": destination})
-    coupler.exchanges = [exchange]
+    coupler = make_coupler(
+        components=(cast(Any, source), cast(Any, destination)),
+        exchanges=(exchange,),
+    )
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "bilinear"): RecordingRegridder(
+            "OCN->ATM": RecordingRegridder(
                 scalar_result=jnp.asarray([[2.0, 4.0], [6.0, 8.0]])
             )
         },
@@ -1105,7 +1251,7 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         coupler,
         regridders=regridders,
         fractional_masks={
-            ("OCN", "ATM", "bilinear"): np.asarray([[1.0, 0.5], [0.0, 1.0]]),
+            "OCN->ATM": np.asarray([[1.0, 0.5], [0.0, 1.0]]),
         },
     )
 
@@ -1114,60 +1260,78 @@ def test_runtime_field_dispatch_accepts_mixed_numpy_and_jax_arrays() -> None:
         runtime_state_from_coupler_components(coupler, prefill_missing=True),
         "ATM",
     )
-    destination_state = runtime_state.get_component_state("ATM")
+    destination_state = runtime_state._component_state("ATM")
 
-    assert isinstance(destination_state.incoming.get("temperature"), jax.Array)
+    assert isinstance(destination_state.received.get("temperature"), jax.Array)
     assert_allclose_compact(
-        destination_state.incoming.get("temperature"),
+        destination_state.received.get("temperature"),
         np.asarray([[2.0, 2.0], [0.0, 8.0]]),
     )
 
 
 def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> None:
-    coupler = make_coupler()
-
-    scalar_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    scalar_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
+    scalar_source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        spec=ComponentSpec(outputs=("temperature",)),
+    )
+    scalar_destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("temperature",)),
+    )
     scalar_exchange = Exchange(
         source="OCN",
         target="ATM",
         fields=["temperature"],
-        regrid=bilinear,
+        regridder_factory=bilinear,
     )
-    coupler.components = cast(Any, {"OCN": scalar_source, "ATM": scalar_destination})
-    coupler.exchanges = [scalar_exchange]
+    coupler = make_coupler(
+        components=(cast(Any, scalar_source), cast(Any, scalar_destination)),
+        exchanges=(scalar_exchange,),
+    )
     regridders = cast(
         Any,
-        {("OCN", "ATM", "bilinear"): RecordingRegridder(scalar_result=np.ones((2, 2)))},
+        {"OCN->ATM": RecordingRegridder(scalar_result=np.ones((2, 2)))},
     )
     replace_runtime_topology_maps(
         coupler,
         regridders=regridders,
-        fractional_masks={("OCN", "ATM", "bilinear"): np.ones((2, 2))},
+        fractional_masks={"OCN->ATM": np.ones((2, 2))},
     )
 
-    with pytest.raises(ExchangerError, match="Field temperature not present"):
+    with pytest.raises(ExchangeError, match="Field temperature not present"):
         _dispatch_runtime_fields(
             coupler,
             runtime_state_from_coupler_components(coupler, prefill_missing=False),
             scalar_destination.name,
         )
 
-    vector_source = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    vector_destination = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    vector_source.data["u_velocity"] = np.ones((2, 2))
+    vector_source = DataComponent(
+        "OCN",
+        make_test_grid(name="ocn"),
+        fields={"u_velocity": np.ones((2, 2))},
+        spec=ComponentSpec(outputs=("u_velocity", "v_velocity")),
+    )
+    vector_destination = DataComponent(
+        "ATM",
+        make_test_grid(name="atm"),
+        spec=ComponentSpec(inputs=("u_velocity", "v_velocity")),
+    )
     vector_exchange = Exchange(
         source="OCN",
         target="ATM",
-        fields=[("u_velocity", "v_velocity")],
-        regrid=conservative,
+        fields=[vector("u_velocity", "v_velocity")],
+        regridder_factory=bilinear,
     )
-    coupler.components = cast(Any, {"OCN": vector_source, "ATM": vector_destination})
-    coupler.exchanges = [vector_exchange]
+    coupler = make_coupler(
+        components=(cast(Any, vector_source), cast(Any, vector_destination)),
+        exchanges=(vector_exchange,),
+    )
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "conservative"): RecordingRegridder(
+            "OCN->ATM": RecordingRegridder(
                 vector_result=(np.ones((2, 2)), np.ones((2, 2)))
             )
         },
@@ -1175,10 +1339,10 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
     replace_runtime_topology_maps(
         coupler,
         regridders=regridders,
-        fractional_masks={("OCN", "ATM", "conservative"): np.ones((2, 2))},
+        fractional_masks={"OCN->ATM": np.ones((2, 2))},
     )
 
-    with pytest.raises(ExchangerError, match="Not all fields in vector"):
+    with pytest.raises(ExchangeError, match="Not all fields in vector"):
         _dispatch_runtime_fields(
             coupler,
             runtime_state_from_coupler_components(coupler, prefill_missing=False),
@@ -1186,15 +1350,25 @@ def test_runtime_field_dispatch_rejects_missing_scalar_and_vector_fields() -> No
         )
 
 
-def test_coupler_finalize_writes_runtime_outputs_for_all_components(
+def test_coupler_run_writes_enabled_outputs_for_all_components(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
-    components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
-    }
-    coupler.components = cast(Any, components)
+    components = (
+        DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        DataComponent(
+            name="OCN",
+            grid=make_test_grid(name="ocn"),
+            fields={"temperature": 0.0},
+        ),
+    )
+    coupler = make_coupler(
+        components=cast(Any, components),
+        run_order=tuple(component.name for component in components),
+    )
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
     captured_runtime: dict[str, Any] = {}
     captured_snapshots: dict[str, Any] = {}
@@ -1206,49 +1380,64 @@ def test_coupler_finalize_writes_runtime_outputs_for_all_components(
         captured_snapshots.update(kwargs)
 
     monkeypatch.setattr(
-        output_module, "write_coupler_runtime_outputs", fake_write_outputs
+        output_runtime_module, "write_coupler_runtime_outputs", fake_write_outputs
     )
     monkeypatch.setattr(
-        output_module, "write_coupler_component_snapshots", fake_write_snapshots
+        output_runtime_module, "write_coupler_component_snapshots", fake_write_snapshots
     )
 
-    coupler.finalize(state, output=Path("snapshot"))
+    final_state = coupler.run(
+        state,
+        output=OutputTarget(
+            Path("snapshot"),
+            write_period=False,
+        ),
+    )
 
-    assert captured_runtime["final_state"] is state
-    assert captured_runtime["components"] is coupler.components
+    assert captured_runtime["final_state"] is final_state
+    captured_components = captured_runtime["components"]
+    prepared_components = coupler._ensure_prepared().components
+    assert tuple(captured_components) == tuple(prepared_components)
+    for name, component in prepared_components.items():
+        assert captured_components[name] is component
+        assert component._component is coupler._runtime_components[name].component
     assert captured_runtime["exchanges"] is coupler.exchanges
     assert (
         captured_runtime["binary_masks"]
-        is coupler._runtime_resources.topology_maps.binary_masks
+        is coupler._ensure_prepared().topology_maps.binary_masks
     )
     assert (
         captured_runtime["fractional_masks"]
-        is coupler._runtime_resources.topology_maps.fractional_masks
+        is coupler._ensure_prepared().topology_maps.fractional_masks
     )
-    assert captured_runtime["output_file_mask"] == Path("snapshot")
+    assert captured_runtime["output_dir"] == Path("snapshot")
     assert captured_runtime["logger"] is coupler.logger
-    assert captured_snapshots["final_state"] is state
-    assert captured_snapshots["components"] is coupler.components
-    assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 0)
+    assert captured_snapshots["final_state"] is final_state
+    snapshot_components = captured_snapshots["components"]
+    assert tuple(snapshot_components) == tuple(prepared_components)
+    for name, component in prepared_components.items():
+        assert snapshot_components[name] is component
+    assert captured_snapshots["output_time"] == datetime(2000, 1, 1, 0, 1)
+    assert captured_snapshots["output_dir"] == Path("snapshot")
     assert captured_snapshots["logger"] is coupler.logger
 
 
-def test_coupler_finalize_uses_last_executed_runtime_step_time(
+def test_coupler_run_output_uses_final_runtime_state_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=2))
 
-    output_time = _snapshot_output_time_for_finalize(coupler, monkeypatch)
+    output_time = _snapshot_output_time_for_run_output(coupler, monkeypatch)
 
-    assert output_time == datetime(2000, 1, 1, 0, 1)
+    assert output_time == datetime(2000, 1, 1, 0, 2)
 
 
-def test_coupler_finalize_uses_clock_start_without_runtime_steps(
+def test_coupler_run_output_uses_clock_start_without_runtime_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coupler = Coupler(clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=0))
 
-    output_time = _snapshot_output_time_for_finalize(coupler, monkeypatch)
+    output_time = _snapshot_output_time_for_run_output(coupler, monkeypatch)
 
     assert output_time == coupler.clock.start
 
@@ -1256,13 +1445,21 @@ def test_coupler_finalize_uses_clock_start_without_runtime_steps(
 def test_output_boundary_builds_runtime_views_filenames_and_masks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
     components = {
-        "ATM": DummyComponent(name="ATM", grid=make_test_grid(name="atm")),
-        "OCN": DummyComponent(name="OCN", grid=make_test_grid(name="ocn")),
+        "ATM": DataComponent(
+            name="ATM",
+            grid=make_test_grid(name="atm"),
+            fields={"temperature": 0.0},
+        ),
+        "OCN": DataComponent(
+            name="OCN",
+            grid=make_test_grid(name="ocn"),
+            fields={"temperature": 0.0},
+        ),
     }
-    coupler.components = cast(Any, components)
+    coupler = make_coupler(components=cast(Any, tuple(components.values())))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
+    prepared = coupler._ensure_prepared()
     captured: list[tuple[str, Any, Path, dict[str, Any]]] = []
 
     def fake_write(
@@ -1277,20 +1474,19 @@ def test_output_boundary_builds_runtime_views_filenames_and_masks(
         output_runtime_module, "write_runtime_component_view_to_netcdf", fake_write
     )
 
-    output_module.write_coupler_runtime_outputs(
+    output_runtime_module.write_coupler_runtime_outputs(
         final_state=state,
-        components=coupler.components,
+        components=prepared.components,
         exchanges=coupler.exchanges,
-        binary_masks=coupler._runtime_resources.topology_maps.binary_masks,
-        fractional_masks=coupler._runtime_resources.topology_maps.fractional_masks,
-        output_file_mask=Path("snapshot"),
+        binary_masks=prepared.topology_maps.binary_masks,
+        fractional_masks=prepared.topology_maps.fractional_masks,
         logger=coupler.logger,
     )
 
     assert [item[0] for item in captured] == ["ATM", "OCN"]
-    assert captured[0][1].grid is components["ATM"].grid
-    assert captured[0][2] == Path("atm_snapshot.nc")
-    assert captured[1][2] == Path("ocn_snapshot.nc")
+    assert captured[0][1].grid is prepared.components["ATM"].grid
+    assert captured[0][2] == Path("atm.runtime_fields.nc")
+    assert captured[1][2] == Path("ocn.runtime_fields.nc")
 
 
 def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
@@ -1298,84 +1494,91 @@ def test_output_boundary_calls_registered_snapshot_writers_and_skips_others(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    component = DummyComponent(name="ATM", grid=make_test_grid(name="snapshot-atm"))
-    skipped = DummyComponent(name="OCN", grid=make_test_grid(name="snapshot-ocn"))
-    coupler = make_coupler()
-    coupler.components = cast(Any, {"ATM": component, "OCN": skipped})
+    calls: list[SnapshotContext] = []
+
+    def write_snapshot(context: SnapshotContext) -> None:
+        calls.append(context)
+
+    component = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="snapshot-atm"),
+        fields={"temperature": 0.0},
+        spec=ComponentSpec(output=OutputSpec(snapshot_writer=write_snapshot)),
+    )
+    skipped = DataComponent(
+        name="OCN",
+        grid=make_test_grid(name="snapshot-ocn"),
+        fields={"temperature": 0.0},
+    )
+    coupler = make_coupler(components=(cast(Any, component), cast(Any, skipped)))
     state = runtime_state_from_coupler_components(coupler, prefill_missing=True)
-    calls: list[tuple[Any, Path, datetime | ModelDateTime, Any]] = []
+    prepared_components = coupler._ensure_prepared().components
 
-    def write_snapshot(
-        component_state: Any,
-        output: Path,
-        output_time: datetime | ModelDateTime,
-        logger: Any,
-    ) -> None:
-        calls.append((component_state, output, output_time, logger))
-
-    register_component_snapshot_writer(component, write_snapshot)
-
-    output_module.write_coupler_component_snapshots(
+    output_runtime_module.write_coupler_component_snapshots(
         final_state=state,
-        components=coupler.components,
+        components=prepared_components,
         output_time=datetime(2000, 1, 1, 0, 1),
         logger=coupler.logger,
     )
 
-    assert calls == [
-        (
-            state.get_component_state("ATM"),
-            Path("atm.snapshot.nc"),
-            datetime(2000, 1, 1, 0, 1),
-            coupler.logger,
-        )
-    ]
+    assert len(calls) == 1
+    assert calls[0].component.name == component.name
+    assert calls[0].component.spec is component.spec
+    assert isinstance(calls[0].state, ComponentState)
+    assert calls[0].state.name == "ATM"
+    assert calls[0].output_path == Path("atm.snapshot.nc")
+    assert calls[0].time == datetime(2000, 1, 1, 0, 1)
+    assert calls[0].logger is coupler.logger
     assert not (tmp_path / "ocn.snapshot.nc").exists()
 
 
 def test_coupler_string_representations_include_registered_state() -> None:
-    coupler = make_coupler()
-    atmosphere = DummyComponent(name="ATM", grid=make_test_grid(name="atm"))
-    ocean = DummyComponent(name="OCN", grid=make_test_grid(name="ocn"))
-    coupler.add_component(cast(Any, atmosphere))
-    coupler.add_component(cast(Any, ocean))
-    coupler.add_exchange(
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=["temperature"],
-            regrid=bilinear,
-        )
+    atmosphere = DataComponent(
+        name="ATM",
+        grid=make_test_grid(name="atm"),
+        fields={"temperature": 0.0},
     )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-        )
+    ocean = DataComponent(
+        name="OCN",
+        grid=make_test_grid(name="ocn"),
+        fields={"temperature": 0.0},
+    )
+    coupler = make_coupler(
+        components=(cast(Any, atmosphere), cast(Any, ocean)),
+        exchanges=(
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=["temperature"],
+                regridder_factory=bilinear,
+            ),
+        ),
+        run_order=("ATM", "OCN"),
     )
 
     rendered = str(coupler)
     representation = repr(coupler)
 
     assert "Coupler:" in rendered
-    assert "<DummyComponent>(ATM)" in rendered
-    assert "ATM --(bilinear)--> OCN" in rendered
+    assert "<DataComponent>(ATM)" in rendered
+    assert "ATM->OCN" in rendered
     assert "ATM, OCN" in rendered
-    assert "run_sequence=ATM -> OCN" in representation
+    assert "run_order=ATM -> OCN" in representation
 
 
 def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coupler = make_coupler()
-    coupler.logger = cast(Any, _RecordingLogger())
     events: list[str] = []
     atmosphere = _HostRunComponent("ATM", events)
     ocean = _HostRunComponent("OCN", events)
-    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
+    coupler = make_coupler(
+        components=(cast(Any, atmosphere), cast(Any, ocean)),
+        run_order=(
+            "ATM",
+            "OCN",
+        ),
+        logger=cast(Any, _RecordingLogger()),
     )
 
     def fake_dispatch(state: Any, component_name: str, *args: Any) -> Any:
@@ -1399,10 +1602,10 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
         return component_state
 
     monkeypatch.setattr(
-        "vercor.runtime.driver.dispatch_component_exchanges", fake_dispatch
+        "vercor._runtime.driver.dispatch_component_exchanges", fake_dispatch
     )
-    monkeypatch.setattr("vercor.runtime.driver.receive_runtime_fields", fake_receive)
-    monkeypatch.setattr("vercor.runtime.driver.send_runtime_fields", fake_send)
+    monkeypatch.setattr("vercor._runtime.driver.receive_runtime_fields", fake_receive)
+    monkeypatch.setattr("vercor._runtime.driver.send_runtime_fields", fake_send)
 
     coupler.run()
 
@@ -1420,35 +1623,34 @@ def test_coupler_run_happy_path_dispatches_and_steps_in_sequence(
     ]
 
 
-def test_host_runtime_components_use_explicit_host_contract() -> None:
-    coupler = make_coupler()
+def test_host_components_use_explicit_host_contract() -> None:
     host_component = _HostRunComponent("ATM")
-    coupler.components = cast(Any, {"ATM": host_component})
-    coupler.run_sequence = ("ATM",)
+    coupler = make_coupler(
+        components=(cast(Any, host_component),),
+        run_order=("ATM",),
+    )
 
     final_state = coupler.run()
-    final_component = final_state.get_component_state("ATM")
+    final_component = final_state._component_state("ATM")
 
-    assert isinstance(host_component, HostComponent)
-    assert "host_time_seen" in final_component.data.field_names
+    assert host_component.spec.execution == "host"
+    assert "host_time_seen" in final_component.fields.field_names
     assert_allclose_compact(
-        final_component.data.get("temperature"),
+        final_component.fields.get("temperature"),
         np.full((2, 2), 61.0),
     )
 
 
 def test_run_warns_when_host_backed_components_make_loop_nondifferentiable() -> None:
     logger = _RecordingLogger()
-    coupler = make_coupler()
-    coupler.logger = cast(Any, logger)
-    coupler.components = cast(
-        Any,
-        {
-            "ATM": _HostRunComponent("ATM"),
-            "OCN": _HostRunComponent("OCN"),
-        },
+    coupler = make_coupler(
+        components=(
+            cast(Any, _HostRunComponent("ATM")),
+            cast(Any, _HostRunComponent("OCN")),
+        ),
+        run_order=("ATM", "OCN"),
+        logger=cast(Any, logger),
     )
-    coupler.run_sequence = ("ATM", "OCN")
 
     coupler.run()
 
@@ -1490,24 +1692,30 @@ def test_host_and_scanned_run_use_runtime_component_helper(
         return state
 
     monkeypatch.setattr(
-        "vercor.runtime.runner.step_runtime_component", fake_runtime_step
+        "vercor._runtime.backends.step_runtime_component", fake_runtime_step
     )
 
-    coupler.components = cast(Any, {"ATM": _HostRunComponent("ATM")})
-    coupler.run_sequence = ("ATM",)
-    coupler.run()
+    host_coupler = Coupler(
+        clock=coupler.clock,
+        components=(cast(Any, _HostRunComponent("ATM")),),
+        run_order=("ATM",),
+    )
+    host_coupler.run()
     run_events = list(events)
     events.clear()
 
     timestamp = coupler.clock.start
     atmosphere = _RunComponent("ATM", [], timestamp)
     ocean = _RunComponent("OCN", [], timestamp)
-    coupler.components = cast(Any, {"ATM": atmosphere, "OCN": ocean})
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
+    scan_coupler = Coupler(
+        clock=coupler.clock,
+        components=(cast(Any, atmosphere), cast(Any, ocean)),
+        run_order=(
+            "ATM",
+            "OCN",
+        ),
     )
-    run_scanned_coupler(coupler)
+    run_scanned_coupler(scan_coupler)
 
     assert run_events == ["run:ATM"]
     assert events == ["scan:ATM", "scan:OCN"]

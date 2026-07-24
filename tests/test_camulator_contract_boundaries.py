@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vercor.setups.external import camulator_contracts
+from vercor.setups._external import camulator_contracts
 
 
 def test_camulator_runtime_field_names_have_lightweight_contract_owner() -> None:
@@ -14,7 +14,7 @@ def test_camulator_runtime_field_names_have_lightweight_contract_owner() -> None
 
 
 def test_camulator_factory_uses_contract_owner_for_runtime_fields() -> None:
-    camulator_source = Path("vercor/setups/external/camulator.py").read_text(
+    camulator_source = Path("vercor/setups/_external/camulator.py").read_text(
         encoding="utf-8"
     )
 

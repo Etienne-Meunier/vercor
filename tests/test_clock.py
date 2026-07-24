@@ -235,7 +235,7 @@ def test_clock_iteration_cases(select_fast_cases: SelectFastCases) -> None:
                 start=datetime(2025, 12, 30, 6, 0, 0),
                 dt_seconds=86400.0,
                 steps=3,
-                year_type="360",
+                calendar="360_day",
             ),
             expected_times=[
                 DateTime360(2025, 12, 30, 6, 0, 0, 0, 360),
@@ -249,7 +249,7 @@ def test_clock_iteration_cases(select_fast_cases: SelectFastCases) -> None:
                 start=datetime(2024, 2, 28, 0, 0, 0),
                 dt_seconds=86400.0,
                 steps=3,
-                year_type="noleap",
+                calendar="noleap",
             ),
             expected_times=[
                 DateTime365(2024, 2, 28, 0, 0, 0, 0, 59),
@@ -263,7 +263,7 @@ def test_clock_iteration_cases(select_fast_cases: SelectFastCases) -> None:
                 start=datetime(2025, 1, 30, 12, 0, 0),
                 dt_seconds=86400.0,
                 steps=2,
-                year_type="noleap",
+                calendar="noleap",
             ),
             expected_times=[
                 DateTime365(2025, 1, 30, 12, 0, 0, 0, 30),
@@ -276,7 +276,7 @@ def test_clock_iteration_cases(select_fast_cases: SelectFastCases) -> None:
                 start=datetime(2024, 2, 29),
                 dt_seconds=86400.0,
                 steps=2,
-                year_type="leap",
+                calendar="gregorian",
             ),
             expected_times=[
                 datetime(2024, 2, 29, 0, 0, 0),
@@ -295,13 +295,13 @@ def test_clock_iteration_cases(select_fast_cases: SelectFastCases) -> None:
         assert actual_times == case.expected_times
 
 
-def test_clock_rejects_invalid_year_type() -> None:
-    with pytest.raises(ValueError, match="year_type must be one of"):
+def test_clock_rejects_invalid_calendar() -> None:
+    with pytest.raises(ValueError, match="calendar must be one of"):
         Clock(
             start=datetime(2025, 1, 1),
             dt_seconds=3600.0,
             steps=1,
-            year_type="gregorian",  # type: ignore[arg-type]
+            calendar="leap",  # type: ignore[arg-type]
         )
 
 
@@ -324,7 +324,7 @@ def test_clock_360_rejects_day_31_start() -> None:
             start=datetime(2025, 1, 31),
             dt_seconds=3600.0,
             steps=1,
-            year_type="360",
+            calendar="360_day",
         )
 
 
@@ -334,7 +334,7 @@ def test_clock_noleap_rejects_feb_29_start() -> None:
             start=datetime(2024, 2, 29),
             dt_seconds=3600.0,
             steps=1,
-            year_type="noleap",
+            calendar="noleap",
         )
 
 
@@ -343,7 +343,7 @@ def test_clock_360_rolls_microseconds_across_year_boundary() -> None:
         start=datetime(2025, 12, 30, 23, 59, 59, 999999),
         dt_seconds=0.000002,
         steps=2,
-        year_type="360",
+        calendar="360_day",
     )
 
     values = list(clock.iter())
@@ -360,7 +360,7 @@ def test_clock_noleap_100_year_daily_run_reaches_year_100() -> None:
         start=datetime(2000, 1, 3, 0, 0, 0),
         dt_seconds=86400.0,
         steps=365 * 100 - 2,
-        year_type="noleap",
+        calendar="noleap",
     )
 
     values = list(clock.iter())
@@ -372,18 +372,18 @@ def test_clock_noleap_100_year_daily_run_reaches_year_100() -> None:
 
 @pytest.mark.parametrize(
     (
-        "year_type",
+        "calendar",
         "expected_type",
         "expected_days_per_year",
         "expected_fixed_30_day_months",
     ),
     [
         ("noleap", DateTime365, 365, False),
-        ("360", DateTime360, 360, True),
+        ("360_day", DateTime360, 360, True),
     ],
 )
 def test_clock_model_calendar_metadata_lives_on_yielded_times(
-    year_type: str,
+    calendar: str,
     expected_type: type[DateTime365] | type[DateTime360],
     expected_days_per_year: int,
     expected_fixed_30_day_months: bool,
@@ -392,7 +392,7 @@ def test_clock_model_calendar_metadata_lives_on_yielded_times(
         start=datetime(2025, 1, 1),
         dt_seconds=3600.0,
         steps=1,
-        year_type=year_type,  # type: ignore[arg-type]
+        calendar=calendar,  # type: ignore[arg-type]
     )
 
     _, model_time, _ = next(clock.iter())
@@ -409,7 +409,7 @@ def test_clock_does_not_store_iterator_dispatch_callable() -> None:
         start=datetime(2025, 1, 1),
         dt_seconds=3600.0,
         steps=1,
-        year_type="360",
+        calendar="360_day",
     )
 
     assert not hasattr(clock, "_iter_impl")

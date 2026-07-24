@@ -2,14 +2,15 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from jax.typing import ArrayLike
+from typing import cast
 
 from vercor.dtypes import as_jax_real_array
 from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
-from vercor.settings import VercorSettings
+from vercor.physics import PhysicalConstants
 
 
 def _compute_stability_terms(
-    settings: VercorSettings,
+    constants: PhysicalConstants,
     zbot: jax.Array,
     thref: jax.Array,
     qbot: jax.Array,
@@ -18,10 +19,13 @@ def _compute_stability_terms(
     qstar: jax.Array,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     hol = (
-        settings.karman
-        * settings.gravity
+        constants.von_karman_constant
+        * constants.gravity
         * zbot
-        * (tstar / thref + qstar / (1.0 / settings.zvir + qbot))
+        * (
+            tstar / thref
+            + qstar / (1.0 / constants.water_vapor_mass_ratio_correction + qbot)
+        )
         / ustar**2
     )
     hol = jnp.minimum(jnp.abs(hol), 10.0) * jnp.sign(hol)
@@ -34,7 +38,7 @@ def _compute_stability_terms(
 
 
 def _iterate_ocean_exchange(
-    settings: VercorSettings,
+    constants: PhysicalConstants,
     zbot: jax.Array,
     thbot: jax.Array,
     qbot: jax.Array,
@@ -51,18 +55,24 @@ def _iterate_ocean_exchange(
     ...,
 ]:
     hol, stable, psimh, psixh = _compute_stability_terms(
-        settings, zbot, thbot, qbot, ustar, tstar, qstar
+        constants, zbot, thbot, qbot, ustar, tstar, qstar
     )
-    rd = rdn / (1.0 + rdn / settings.karman * (alz - psimh))
+    rd = rdn / (1.0 + rdn / constants.von_karman_constant * (alz - psimh))
     u10n = vmag * rd / rdn
 
     next_rdn = jnp.sqrt(cdn(u10n))
     next_ren = jnp.full_like(next_rdn, 0.0346)
     next_rhn = (1.0 - stable) * 0.0327 + stable * 0.018
 
-    next_rd = next_rdn / (1.0 + next_rdn / settings.karman * (alz - psimh))
-    next_rh = next_rhn / (1.0 + next_rhn / settings.karman * (alz - psixh))
-    next_re = next_ren / (1.0 + next_ren / settings.karman * (alz - psixh))
+    next_rd = next_rdn / (
+        1.0 + next_rdn / constants.von_karman_constant * (alz - psimh)
+    )
+    next_rh = next_rhn / (
+        1.0 + next_rhn / constants.von_karman_constant * (alz - psixh)
+    )
+    next_re = next_ren / (
+        1.0 + next_ren / constants.von_karman_constant * (alz - psixh)
+    )
 
     next_ustar = next_rd * vmag
     next_tstar = next_rh * delt
@@ -84,7 +94,7 @@ def _iterate_ocean_exchange(
 
 
 def compute_ocean_surface_fluxes(
-    settings: VercorSettings,
+    constants: PhysicalConstants,
     mask: ArrayLike,
     zbot: ArrayLike,
     ubot: ArrayLike,
@@ -115,8 +125,8 @@ def compute_ocean_surface_fluxes(
     vs_array = as_jax_real_array(vs)
     ts_array = as_jax_real_array(ts)
 
-    zref = 10.0
-    ztref = 2.0
+    zref = constants.reference_height
+    ztref = constants.air_temperature_reference_height
     maxscl = 2.0
     td0 = -10.0
     alpha = 1.4
@@ -127,7 +137,7 @@ def compute_ocean_surface_fluxes(
     al2 = jnp.log(zref / ztref)
 
     vmag = jnp.maximum(
-        settings.umin_ocean,
+        constants.ocean_minimum_wind_speed,
         jnp.sqrt((ubot_array - us_array) ** 2 + (vbot_array - vs_array) ** 2),
     )
     coldair_outbreak_mask = tdiff < td0
@@ -142,7 +152,9 @@ def compute_ocean_surface_fluxes(
     delt = thbot_array - ts_array
     delq = qbot_array - ssq
     alz = jnp.log(zbot_array / zref)
-    cp = settings.cpdair * (1.0 + settings.cpvir * ssq)
+    cp = constants.dry_air_specific_heat * (
+        1.0 + constants.water_vapor_specific_heat_ratio_correction * ssq
+    )
 
     stable0 = 0.5 + 0.5 * jnp.sign(delt)
     rdn0 = jnp.sqrt(cdn(vmag))
@@ -198,7 +210,7 @@ def compute_ocean_surface_fluxes(
             next_tstar,
             next_qstar,
         ) = _iterate_ocean_exchange(
-            settings,
+            constants,
             zbot_array,
             thbot_array,
             qbot_array,
@@ -248,46 +260,54 @@ def compute_ocean_surface_fluxes(
     taux = tau * (ubot_array - us_array) / vmag * mask_array
     tauy = tau * (vbot_array - vs_array) / vmag * mask_array
     sen = cp * tau * tstar / ustar * mask_array
-    lat = settings.latvap * tau * qstar / ustar * mask_array
-    lwup = -settings.stefBoltz * ts_array**4 * mask_array
-    evap = lat / settings.latvap * mask_array
+    lat = constants.latent_heat_of_vaporization * tau * qstar / ustar * mask_array
+    lwup = -constants.stefan_boltzmann_constant * ts_array**4 * mask_array
+    evap = lat / constants.latent_heat_of_vaporization * mask_array
 
     hol_2m = hol * ztref / zbot_array
     xsq = jnp.maximum(1.0, jnp.sqrt(jnp.abs(1.0 - 16.0 * hol_2m)))
     xqq = jnp.sqrt(xsq)
     psix2 = -5.0 * hol_2m * stable + (1.0 - stable) * psixhu(xqq)
-    fac = (rh / settings.karman) * (alz + al2 - psixh + psix2)
+    fac = (rh / constants.von_karman_constant) * (alz + al2 - psixh + psix2)
     tref = (thbot_array - delt * fac - 0.01 * ztref) * mask_array
-    fac = (re / settings.karman) * (alz + al2 - psixh + psix2)
+    fac = (re / constants.von_karman_constant) * (alz + al2 - psixh + psix2)
     qref = qbot_array - delq * fac * mask_array
     duu10n = u10n * u10n * mask_array
 
-    clha = rbot_array * settings.latvap * vmag * re * rd
+    clha = rbot_array * constants.latent_heat_of_vaporization * vmag * re * rd
     devdt = clha * ssq * 2.166847e-3 / (ts_array * ts_array)
-    dflwupdt = -4.0 * settings.ocean_emissivity * settings.stefBoltz * ts_array**3
-    dfshdt = -rbot_array * settings.cpdair * vmag * rh * rd
-    dflhdt = -settings.latvap * devdt
+    dflwupdt = (
+        -4.0
+        * constants.ocean_emissivity
+        * constants.stefan_boltzmann_constant
+        * ts_array**3
+    )
+    dfshdt = -rbot_array * constants.dry_air_specific_heat * vmag * rh * rd
+    dflhdt = -constants.latent_heat_of_vaporization * devdt
     df0dt = dflwupdt + dfshdt + dflhdt * mask_array
 
-    return (
-        sen,
-        lat,
-        lwup,
-        evap,
-        taux,
-        tauy,
-        tref,
-        qref,
-        duu10n,
-        ustar,
-        tstar,
-        qstar,
-        df0dt,
+    return cast(
+        tuple[jax.Array, ...],
+        (
+            sen,
+            lat,
+            lwup,
+            evap,
+            taux,
+            tauy,
+            tref,
+            qref,
+            duu10n,
+            ustar,
+            tstar,
+            qstar,
+            df0dt,
+        ),
     )
 
 
 def shr_flux_atmIce(
-    settings: VercorSettings,
+    constants: PhysicalConstants,
     mask: ArrayLike,
     zbot: ArrayLike,
     ubot: ArrayLike,
@@ -313,20 +333,30 @@ def shr_flux_atmIce(
     rbot_array = as_jax_real_array(rbot)
     ts_array = as_jax_real_array(ts)
 
-    zref = 10.0
-    ztref = 2.0
+    zref = constants.reference_height
+    ztref = constants.air_temperature_reference_height
     zzsice = 0.0005
 
-    vmag = jnp.maximum(settings.umin_ice, jnp.sqrt(ubot_array**2 + vbot_array**2))
-    thvbot = thbot_array * (1.0 + settings.zvir * qbot_array)
+    vmag = jnp.maximum(
+        constants.ice_minimum_wind_speed,
+        jnp.sqrt(ubot_array**2 + vbot_array**2),
+    )
+    thvbot = thbot_array * (
+        1.0 + constants.water_vapor_mass_ratio_correction * qbot_array
+    )
     ssq = qsat(ts_array) / rbot_array
     delt = thbot_array - ts_array
     delq = qbot_array - ssq
     alz = jnp.log(zbot_array / zref)
-    cp = settings.cpdair * (1.0 + settings.cpvir * ssq)
-    ltheat = settings.latvap + settings.latice
+    cp = constants.dry_air_specific_heat * (
+        1.0 + constants.water_vapor_specific_heat_ratio_correction * ssq
+    )
+    ltheat = constants.latent_heat_of_vaporization + constants.ice_latent_heat_of_fusion
 
-    rdn = jnp.full_like(vmag, settings.karman / jnp.log(zref / zzsice))
+    rdn = jnp.full_like(
+        vmag,
+        constants.von_karman_constant / jnp.log(zref / zzsice),
+    )
     rhn = rdn
     ren = rdn
 
@@ -334,23 +364,23 @@ def shr_flux_atmIce(
     tstar = rhn * delt
     qstar = ren * delq
     hol, stable, psimh, psixh = _compute_stability_terms(
-        settings, zbot_array, thvbot, qbot_array, ustar, tstar, qstar
+        constants, zbot_array, thvbot, qbot_array, ustar, tstar, qstar
     )
 
-    rd = rdn / (1.0 + rdn / settings.karman * (alz - psimh))
-    rh = rhn / (1.0 + rhn / settings.karman * (alz - psixh))
-    re = ren / (1.0 + ren / settings.karman * (alz - psixh))
+    rd = rdn / (1.0 + rdn / constants.von_karman_constant * (alz - psimh))
+    rh = rhn / (1.0 + rhn / constants.von_karman_constant * (alz - psixh))
+    re = ren / (1.0 + ren / constants.von_karman_constant * (alz - psixh))
 
     ustar = rd * vmag
     tstar = rh * delt
     qstar = re * delq
     hol, stable, psimh, psixh = _compute_stability_terms(
-        settings, zbot_array, thvbot, qbot_array, ustar, tstar, qstar
+        constants, zbot_array, thvbot, qbot_array, ustar, tstar, qstar
     )
 
-    rd = rdn / (1.0 + rdn / settings.karman * (alz - psimh))
-    rh = rhn / (1.0 + rhn / settings.karman * (alz - psixh))
-    re = ren / (1.0 + ren / settings.karman * (alz - psixh))
+    rd = rdn / (1.0 + rdn / constants.von_karman_constant * (alz - psimh))
+    rh = rhn / (1.0 + rhn / constants.von_karman_constant * (alz - psixh))
+    re = ren / (1.0 + ren / constants.von_karman_constant * (alz - psixh))
 
     ustar = rd * vmag
     tstar = rh * delt
@@ -361,11 +391,11 @@ def shr_flux_atmIce(
     tauy = tau * vbot_array / vmag * mask_array
     sen = cp * tau * tstar / ustar * mask_array
     lat = ltheat * tau * qstar / ustar * mask_array
-    lwup = -settings.stefBoltz * ts_array**4 * mask_array
+    lwup = -constants.stefan_boltzmann_constant * ts_array**4 * mask_array
     evap = lat / ltheat * mask_array
 
-    bn = settings.karman / rdn
-    bh = settings.karman / rh
+    bn = constants.von_karman_constant / rdn
+    bh = constants.von_karman_constant / rh
     ln0 = jnp.log(1.0 + (ztref / zbot_array) * (jnp.exp(bn) - 1.0))
     ln3 = jnp.log(1.0 + (ztref / zbot_array) * (jnp.exp(bn - bh) - 1.0))
     fac = ((ln0 - ztref / zbot_array * (bn - bh)) / bh) * stable + (
@@ -376,4 +406,7 @@ def shr_flux_atmIce(
     tref = ts_array + (thbot_array - ts_array) * fac * mask_array
     qref = qbot_array - delq * fac * mask_array
 
-    return (sen, lat, lwup, evap, taux, tauy, tref, qref, ustar, tstar, qstar)
+    return cast(
+        tuple[jax.Array, ...],
+        (sen, lat, lwup, evap, taux, tauy, tref, qref, ustar, tstar, qstar),
+    )

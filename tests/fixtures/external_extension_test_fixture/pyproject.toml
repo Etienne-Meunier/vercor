@@ -1,0 +1,16 @@
+[build-system]
+requires = ["flit_core<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "external-extension-test-fixture"
+version = "0.1.0"
+description = "Installed test fixture for VerCOR public extension contracts"
+requires-python = ">=3.12"
+dependencies = ["vercor>=0.4.0,<0.5"]
+
+[tool.flit.module]
+name = "external_extension_test_fixture"
+
+[tool.mypy]
+strict = true

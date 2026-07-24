@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import h5netcdf
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -13,30 +12,47 @@ import pytest
 import torch
 import xarray as xr
 
-import vercor.setups.external.camulator_contracts as camulator_contracts_module
-import vercor.setups.external.camulator_fields as camulator_fields_module
-import vercor.setups.external.camulator_forcing as camulator_forcing_module
-import vercor.setups.external.camulator_gcm_state as camulator_gcm_state_module
-import vercor.setups.external.camulator_imports as camulator_imports_module
-import vercor.setups.external.camulator_init as camulator_init_module
-import vercor.setups.external.camulator_land as camulator_land_module
-import vercor.setups.external.camulator_output as camulator_output_module
-import vercor.setups.external.camulator_runtime as camulator_runtime_module
-import vercor.setups.external.camulator_tensors as camulator_tensors_module
-import vercor.setups.external.camulator_wind_filter as camulator_wind_filter_module
+import vercor.setups._external.camulator_contracts as camulator_contracts_module
+import vercor.setups._external.camulator_fields as camulator_fields_module
+import vercor.setups._external.camulator_forcing as camulator_forcing_module
+import vercor.setups._external.camulator_gcm_state as camulator_gcm_state_module
+import vercor.setups._external.camulator_imports as camulator_imports_module
+import vercor.setups._external.camulator_init as camulator_init_module
+import vercor.setups._external.camulator_land as camulator_land_module
+import vercor.setups._external.camulator_output as camulator_output_module
+import vercor.setups._external.camulator_runtime as camulator_runtime_module
+import vercor.setups._external.camulator_tensors as camulator_tensors_module
+import vercor.setups._external.camulator_wind_filter as camulator_wind_filter_module
 from tests._coverage_support import capture_logger_output
 from tests.assertions import assert_allclose_compact
+from vercor.recipes import ATMOSPHERE_TO_LAND_RADIATION_FIELDS
+from vercor._runtime.contracts import build_exchange_contracts
 from vercor.components.contexts import SetupContext, StepContext
-from vercor.output.adapters import ComponentOutputAdapter, component_snapshot_writer
-from vercor.output.variables import OutputVariable
-from vercor.setups.external.camulator import make_camulator_gcm
+from vercor.components import ComponentSpec, DataComponent, StepResult
+from vercor.components._adapter import normalize_component, prepare_component
+from vercor.components.runtime_execution import step_component_runtime_state
+from vercor.dtypes import DTypePolicy
+from vercor.exchanges import Exchange
+from vercor.fields import _flatten_field_items
+from vercor.output import (
+    OutputContext,
+    OutputFrame,
+    OutputSpec,
+    OutputVariable,
+    PeriodOutput,
+    SnapshotContext,
+)
+from vercor.output._session import _OutputAccumulator
+from vercor.setups import CAMulatorConfig
+from vercor.setups._external.camulator import make_camulator_gcm
 from vercor.fluxes.vertical_coordinates import get_altitudes_hybrid_sigma_levels
-from vercor.grid import RectilinearGrid
-from vercor.runtime.contracts import RuntimeComponentContract
-from vercor.runtime.component_state import create_runtime_component_state
-from vercor.runtime.state import RuntimeComponentState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.settings import VercorSettings
+from vercor.physics import PhysicalConstants
+from vercor.grids import RectilinearGrid
+from vercor._runtime.contracts import ExchangeContract
+from vercor._runtime.component_state import create_runtime_component_state
+from vercor._runtime.state import ComponentRuntimeState
+from vercor._runtime.stores import FieldStore
+from vercor._runtime.validation import validate_exchange_fields_declared
 from vercor.jax_logging import DEFAULT_LOGGER_NAME
 
 
@@ -72,19 +88,12 @@ class _RecordingLogger:
 def _runtime_component_state(
     name: str,
     data: dict[str, Any] | None = None,
-) -> RuntimeComponentState:
+) -> ComponentRuntimeState:
     _ = name
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(data or {}),
-        incoming=RuntimeFieldStore.empty(),
-        outgoing=RuntimeFieldStore.empty(),
-    )
-
-
-def _make_camulator_output_adapter() -> ComponentOutputAdapter:
-    return ComponentOutputAdapter(
-        empty_error_message=camulator_output_module.CAMULATOR_AVERAGE_EMPTY_ERROR_MESSAGE,
-        time_dim=camulator_output_module.CAMULATOR_TIME_DIM,
+    return ComponentRuntimeState(
+        fields=FieldStore.from_mapping(data or {}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
     )
 
 
@@ -92,8 +101,7 @@ def _make_coupler(start: datetime) -> SetupContext:
     return SetupContext(
         start=start,
         dt_seconds=21600,
-        run_sequence=(),
-        settings=VercorSettings(),
+        run_order=(),
         logger=cast(Any, _RecordingLogger()),
     )
 
@@ -134,7 +142,7 @@ def test_camulator_wind_filter_facade_exposes_only_runtime_entrypoints() -> None
 
 @pytest.mark.fast_always
 def test_wind_filter_private_owner_returns_shape_stable_artifacts() -> None:
-    import vercor.setups.external._camulator_wind_filtering as wind_filtering
+    import vercor.setups._external._camulator_wind_filtering as wind_filtering
 
     u_wind = torch.zeros(5, 5)
     v_wind = torch.zeros(5, 5)
@@ -325,30 +333,66 @@ def _camulator_prediction(
     ).reshape(1, total_channels, 1, height, width)
 
 
-def test_build_camulator_output_variables_preserves_credit_channel_order() -> None:
-    prediction = _camulator_prediction(total_channels=7)
-    coords, data_vars = camulator_output_module.build_camulator_output_variables(
-        prediction,
-        datetime(2000, 1, 1, 6, 0, 0),
-        latitude=np.asarray([-45.0, 45.0]),
-        longitude=np.asarray([0.0, 90.0]),
-        forecast_hour=12,
-        metadata={
-            "T": {"units": "K"},
-            "latitude": {"units": "degrees_north"},
-        },
-        conf=_camulator_output_conf(diagnostic_variables=[]),
+def _camulator_runtime_payload(
+    *,
+    model_state: torch.Tensor,
+    prediction: torch.Tensor | None = None,
+    prediction_samples: torch.Tensor | None = None,
+) -> Any:
+    return camulator_gcm_state_module.CAMulatorRuntimePayload(
+        model_state=model_state,
+        cursor=camulator_forcing_module.CamulatorRuntimeCursor(),
+        output_prediction=prediction,
+        output_prediction_samples=prediction_samples,
     )
 
-    assert coords["level"].dims == ("level",)
-    assert_allclose_compact(coords["level"].values, np.asarray([10, 20, 30]))
-    assert coords["latitude"].attrs["units"] == "degrees_north"
+
+def test_camulator_prediction_values_normalizes_array_like_tensor_output() -> None:
+    class _ArrayLike:
+        ndim = 4
+        shape = (1, 1, 2, 2)
+
+        def __array__(
+            self,
+            dtype: np.dtype[Any] | None = None,
+            copy: bool | None = None,
+        ) -> np.ndarray:
+            _ = copy
+            return np.ones(self.shape, dtype=dtype)
+
+    class _Prediction:
+        def detach(self) -> _Prediction:
+            return self
+
+        def cpu(self) -> _Prediction:
+            return self
+
+        def numpy(self) -> _ArrayLike:
+            return _ArrayLike()
+
+    values = camulator_output_module._prediction_values(
+        cast(torch.Tensor, cast(object, _Prediction()))
+    )
+
+    assert isinstance(values, np.ndarray)
+    assert values.shape == (1, 1, 2, 2)
+
+
+def test_camulator_native_variables_preserve_credit_channel_order() -> None:
+    prediction = _camulator_prediction(total_channels=7)
+    data_vars = camulator_output_module.camulator_period_output_variables(
+        prediction,
+        metadata={
+            "T": {"units": "K"},
+        },
+        conf=_camulator_output_conf(diagnostic_variables=[]),
+        state_transformer=None,
+    )
+
     assert data_vars["U"].dims == ("time", "level", "latitude", "longitude")
     assert data_vars["T"].dims == ("time", "level", "latitude", "longitude")
     assert data_vars["PS"].dims == ("time", "latitude", "longitude")
-    assert data_vars["forecast_hour"].dims == ()
     assert data_vars["T"].attrs["units"] == "K"
-    assert int(np.asarray(data_vars["forecast_hour"].values)) == 12
     assert_allclose_compact(
         data_vars["U"].values,
         prediction[:, 0:3, 0].reshape(1, 3, 2, 2).numpy(),
@@ -360,238 +404,56 @@ def test_build_camulator_output_variables_preserves_credit_channel_order() -> No
     assert_allclose_compact(data_vars["PS"].values, prediction[:, 6, 0].numpy())
 
 
-def test_build_camulator_output_variables_supports_upper_air_only() -> None:
+def test_camulator_native_variables_support_upper_air_only() -> None:
     prediction = _camulator_prediction(total_channels=6)
 
-    _, data_vars = camulator_output_module.build_camulator_output_variables(
+    data_vars = camulator_output_module.camulator_period_output_variables(
         prediction,
-        datetime(2000, 1, 1),
-        latitude=np.asarray([-45.0, 45.0]),
-        longitude=np.asarray([0.0, 90.0]),
-        forecast_hour=6,
         metadata={},
         conf=_camulator_output_conf(surface_variables=[], diagnostic_variables=[]),
+        state_transformer=None,
     )
 
-    assert tuple(data_vars) == ("U", "T", "forecast_hour")
+    assert tuple(data_vars) == ("U", "T")
 
 
-def test_write_camulator_prediction_output_uses_vercor_h5netcdf_boundary(
-    tmp_path: Path,
-) -> None:
-    class _Transformer:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def inverse_transform(self, prediction: torch.Tensor) -> torch.Tensor:
-            self.calls += 1
-            return prediction + 100.0
-
-    transformer = _Transformer()
-    prediction = _camulator_prediction(total_channels=8)
-    conf = _camulator_output_conf(
-        save_forecast=str(tmp_path),
-        save_vars=["T", "FSNS"],
-        climate_rescale_output=True,
-    )
-    logger = _RecordingLogger()
-
-    camulator_output_module.write_camulator_prediction_output(
+def test_camulator_period_output_variables_reduce_time_axis() -> None:
+    prediction = torch.arange(2 * 8 * 2 * 2, dtype=torch.float32).reshape(2, 8, 1, 2, 2)
+    variables = camulator_output_module.camulator_period_output_variables(
         prediction,
-        datetime(2000, 1, 1, 6, 0, 0),
-        latitude=np.asarray([-45.0, 45.0]),
-        longitude=np.asarray([0.0, 90.0]),
-        init_str="2000-01-01T00Z",
-        lead_time_periods=6,
-        forecast_hour=2,
         metadata={
             "T": {"units": "K"},
             "FSNS": {"long_name": "surface net shortwave flux"},
         },
-        conf=conf,
-        state_transformer=transformer,
-        logger=cast(Any, logger),
+        conf=_camulator_output_conf(save_vars=["T", "FSNS"]),
+        state_transformer=None,
     )
-
-    output = tmp_path / "2000-01-01T00Z" / "pred_2000-01-01T00Z_012.nc"
-    assert logger.messages == [f"Writing output file:  {output}"]
-    assert transformer.calls == 1
-    with h5netcdf.File(output, "r") as actual:
-        assert "U" not in actual.variables
-        assert "PS" not in actual.variables
-        assert actual.variables["T"].dimensions == (
-            "time",
-            "level",
-            "latitude",
-            "longitude",
-        )
-        assert actual.variables["FSNS"].dimensions == (
-            "time",
-            "latitude",
-            "longitude",
-        )
-        assert actual.variables["T"].attrs["units"] == "K"
-        assert (
-            actual.variables["FSNS"].attrs["long_name"] == "surface net shortwave flux"
-        )
-        assert int(actual.variables["forecast_hour"][()]) == 12
-        assert_allclose_compact(
-            actual.variables["level"][:],
-            np.asarray([10, 20, 30]),
-        )
-        assert_allclose_compact(
-            actual.variables["T"][:],
-            (prediction[:, 3:6, 0] + 100.0).reshape(1, 3, 2, 2).numpy(),
-        )
-        assert_allclose_compact(
-            actual.variables["FSNS"][:],
-            (prediction[:, 7, 0] + 100.0).numpy(),
-        )
-
-
-def test_camulator_period_output_variables_reduce_time_axis_with_adapter() -> None:
-    prediction = torch.arange(2 * 8 * 2 * 2, dtype=torch.float32).reshape(2, 8, 1, 2, 2)
-    adapter = _make_camulator_output_adapter()
-
-    adapter.accumulate(
-        camulator_output_module.camulator_period_output_variables(
-            prediction,
-            metadata={
-                "T": {"units": "K"},
-                "FSNS": {"long_name": "surface net shortwave flux"},
-            },
-            conf=_camulator_output_conf(save_vars=["T", "FSNS"]),
-            state_transformer=None,
-        ),
-        summation_dim=camulator_output_module.CAMULATOR_TIME_DIM,
+    frame = OutputFrame(
+        variables,
+        sample_dimension=camulator_output_module.CAMULATOR_TIME_DIM,
     )
+    accumulator = _OutputAccumulator.zeros_from_frame(frame).add_frame(frame)
+    means = accumulator.mean_frame().variables
+    temperature_index = accumulator.names.index("T")
 
-    assert tuple(adapter.variables) == ("T", "FSNS")
-    assert adapter.variables["T"].dims == ("level", "latitude", "longitude")
-    assert adapter.variables["T"].attrs["units"] == "K"
-    assert adapter.variables["FSNS"].attrs["long_name"] == "surface net shortwave flux"
+    assert tuple(accumulator.names) == ("U", "T", "PS", "FSNS")
+    assert means["T"].dims == ("level", "latitude", "longitude")
+    assert means["T"].attrs["units"] == "K"
+    assert means["FSNS"].attrs["long_name"] == "surface net shortwave flux"
     assert_allclose_compact(
-        adapter.variables["T"].counts,
+        accumulator.counts[temperature_index],
         np.full((3, 2, 2), 2),
     )
     assert_allclose_compact(
-        adapter.accumulator.mean_samples()["T"].values,
+        means["T"].values,
         np.mean(prediction[:, 3:6, 0].numpy(), axis=0),
     )
 
 
-def test_camulator_output_adapter_persists_mean_dataset(
+def test_camulator_output_provider_returns_native_frame(
     tmp_path: Path,
 ) -> None:
-    adapter = _make_camulator_output_adapter()
-    first_prediction = _camulator_prediction(total_channels=8)
-    second_prediction = first_prediction + 80.0
-    conf = _camulator_output_conf(save_forecast=str(tmp_path), save_vars=["T", "FSNS"])
-    logger = _RecordingLogger()
-    for prediction in (first_prediction, second_prediction):
-        adapter.accumulate(
-            camulator_output_module.camulator_period_output_variables(
-                prediction,
-                metadata={
-                    "T": {"units": "K"},
-                    "FSNS": {"long_name": "surface net shortwave flux"},
-                },
-                conf=conf,
-                state_transformer=None,
-            ),
-            summation_dim=camulator_output_module.CAMULATOR_TIME_DIM,
-        )
-
-    output_time = datetime(2000, 1, 2, 0, 0, 0)
-    metadata = {
-        "T": {"units": "K"},
-        "FSNS": {"long_name": "surface net shortwave flux"},
-        "latitude": {"units": "degrees_north"},
-    }
-    output = camulator_output_module.camulator_average_output_path(
-        output_time=datetime(2000, 1, 2, 0, 0, 0),
-        init_str="2000-01-01T00Z",
-        conf=conf,
-    )
-    adapter.write_period_average(
-        output,
-        build_coordinate_variables=lambda variables: (
-            camulator_output_module.camulator_average_coordinate_variables(
-                variables,
-                output_time=output_time,
-                latitude=np.asarray([-45.0, 45.0]),
-                longitude=np.asarray([0.0, 90.0]),
-                metadata=metadata,
-                conf=conf,
-            )
-        ),
-        build_data_variables=lambda variables: (
-            camulator_output_module.camulator_average_data_variables(
-                variables,
-                metadata=metadata,
-            )
-        ),
-        logger=cast(Any, logger),
-    )
-
-    assert output == str(
-        tmp_path / "2000-01-01T00Z" / "camulator.averages.2000-01-02.nc"
-    )
-    assert logger.messages == [f"Writing output file:  {output}"]
-    with h5netcdf.File(output, "r") as actual:
-        assert "U" not in actual.variables
-        assert "PS" not in actual.variables
-        assert actual.variables["T"].dimensions == (
-            "time",
-            "level",
-            "latitude",
-            "longitude",
-        )
-        assert actual.variables["FSNS"].dimensions == (
-            "time",
-            "latitude",
-            "longitude",
-        )
-        assert actual.variables["T"].attrs["units"] == "K"
-        assert (
-            actual.variables["FSNS"].attrs["long_name"] == "surface net shortwave flux"
-        )
-        assert actual.variables["latitude"].attrs["units"] == "degrees_north"
-        assert actual.variables["time"].attrs["calendar"] == "proleptic_gregorian"
-        assert_allclose_compact(actual.variables["level"][:], np.asarray([10, 20, 30]))
-        assert_allclose_compact(
-            actual.variables["T"][:],
-            np.mean(
-                np.stack(
-                    [
-                        first_prediction[:, 3:6, 0].reshape(1, 3, 2, 2).numpy(),
-                        second_prediction[:, 3:6, 0].reshape(1, 3, 2, 2).numpy(),
-                    ]
-                ),
-                axis=0,
-            ),
-        )
-        assert_allclose_compact(
-            actual.variables["FSNS"][:],
-            np.mean(
-                np.stack(
-                    [
-                        first_prediction[:, 7, 0].numpy(),
-                        second_prediction[:, 7, 0].numpy(),
-                    ]
-                ),
-                axis=0,
-            ),
-        )
-    assert adapter.empty
-
-
-def test_camulator_record_period_output_accumulates_and_writes_mean_dataset(
-    tmp_path: Path,
-) -> None:
-    adapter = _make_camulator_output_adapter()
-    first_prediction = _camulator_prediction(total_channels=8)
-    second_prediction = first_prediction + 80.0
+    prediction = _camulator_prediction(total_channels=8)
     conf = _camulator_output_conf(save_forecast=str(tmp_path), save_vars=["T", "FSNS"])
     metadata = {
         "T": {"units": "K"},
@@ -599,49 +461,79 @@ def test_camulator_record_period_output_accumulates_and_writes_mean_dataset(
         "latitude": {"units": "degrees_north"},
     }
 
-    first_written = camulator_output_module.record_camulator_period_output(
-        adapter,
-        first_prediction,
-        output_time=datetime(2000, 1, 1, 0, 0, 0),
-        dt=timedelta(hours=1),
-        output_frequency="day",
-        latitude=np.asarray([-45.0, 45.0]),
-        longitude=np.asarray([0.0, 90.0]),
-        init_str="2000-01-01T00Z",
+    resources = SimpleNamespace(
         metadata=metadata,
         conf=conf,
         state_transformer=None,
+        latlons=SimpleNamespace(
+            latitude=SimpleNamespace(values=np.asarray([-45.0, 45.0])),
+            longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
+        ),
     )
-    second_written = camulator_output_module.record_camulator_period_output(
-        adapter,
-        second_prediction,
-        output_time=datetime(2000, 1, 2, 0, 0, 0),
-        dt=timedelta(days=1),
-        output_frequency=None,
-        latitude=np.asarray([-45.0, 45.0]),
-        longitude=np.asarray([0.0, 90.0]),
-        init_str="2000-01-01T00Z",
-        metadata=metadata,
-        conf=conf,
-        state_transformer=None,
+    provider = camulator_output_module.camulator_output_provider(resources)
+
+    frame = provider.sample(
+        OutputContext(
+            component=cast(Any, None),
+            state=cast(Any, None),
+            payload=_camulator_runtime_payload(
+                model_state=torch.zeros_like(prediction),
+                prediction=prediction,
+                prediction_samples=prediction,
+            ),
+            step=0,
+            time=datetime(2000, 1, 2),
+            dt=timedelta(days=1),
+        )
     )
 
-    output = tmp_path / "2000-01-01T00Z" / "camulator.averages.2000-01-02.nc"
-    assert not first_written
-    assert second_written
-    assert adapter.empty
-    with h5netcdf.File(output, "r") as actual:
-        assert actual.variables["T"].dimensions == (
-            "time",
-            "level",
-            "latitude",
-            "longitude",
+    assert tuple(frame.variables) == ("U", "T", "PS", "FSNS")
+    assert frame.variables["T"].dims == (
+        "time",
+        "level",
+        "latitude",
+        "longitude",
+    )
+    assert frame.variables["T"].attrs["units"] == "K"
+    assert frame.variables["FSNS"].attrs["long_name"] == "surface net shortwave flux"
+    assert_allclose_compact(frame.coordinates["latitude"].values, [-45.0, 45.0])
+
+
+def test_camulator_output_provider_preserves_every_model_substep() -> None:
+    predictions = torch.arange(
+        2 * 8 * 2 * 2,
+        dtype=torch.float32,
+    ).reshape(2, 8, 1, 2, 2)
+    resources = SimpleNamespace(
+        metadata={},
+        conf=_camulator_output_conf(save_vars=["T"]),
+        state_transformer=None,
+        latlons=SimpleNamespace(
+            latitude=SimpleNamespace(values=np.asarray([-45.0, 45.0])),
+            longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
+        ),
+    )
+
+    frame = camulator_output_module.camulator_output_provider(resources).sample(
+        OutputContext(
+            component=cast(Any, None),
+            state=cast(Any, None),
+            payload=_camulator_runtime_payload(
+                model_state=torch.zeros_like(predictions[-1:]),
+                prediction=predictions[-1:],
+                prediction_samples=predictions,
+            ),
+            step=0,
+            time=datetime(2000, 1, 2),
+            dt=timedelta(days=1),
         )
-        assert actual.variables["T"].attrs["units"] == "K"
-        assert (
-            actual.variables["FSNS"].attrs["long_name"] == "surface net shortwave flux"
-        )
-        assert_allclose_compact(actual.variables["latitude"][:], [-45.0, 45.0])
+    )
+
+    assert frame.variables["T"].values.shape == (2, 3, 2, 2)
+    assert_allclose_compact(
+        frame.variables["T"].values,
+        predictions[:, 3:6, 0].numpy(),
+    )
 
 
 @pytest.mark.parametrize(
@@ -670,9 +562,8 @@ def test_camulator_record_period_output_accumulates_and_writes_mean_dataset(
 def test_camulator_output_rejects_unsupported_credit_only_options(
     config_update: dict[str, Any],
     message: str,
-    tmp_path: Path,
 ) -> None:
-    conf = _camulator_output_conf(save_forecast=str(tmp_path))
+    conf = _camulator_output_conf()
     for section, value in config_update.items():
         if isinstance(value, dict) and isinstance(conf.get(section), dict):
             conf[section].update(value)
@@ -680,14 +571,8 @@ def test_camulator_output_rejects_unsupported_credit_only_options(
             conf[section] = value
 
     with pytest.raises(ValueError, match=message):
-        camulator_output_module.write_camulator_prediction_output(
+        camulator_output_module.camulator_period_output_variables(
             _camulator_prediction(total_channels=8),
-            datetime(2000, 1, 1),
-            latitude=np.asarray([-45.0, 45.0]),
-            longitude=np.asarray([0.0, 90.0]),
-            init_str="2000-01-01T00Z",
-            lead_time_periods=6,
-            forecast_hour=1,
             metadata={},
             conf=conf,
             state_transformer=None,
@@ -696,15 +581,15 @@ def test_camulator_output_rejects_unsupported_credit_only_options(
 
 def test_camulator_output_wrappers_do_not_import_xarray_or_credit_output() -> None:
     camulator_output_source = Path(
-        "vercor/setups/external/camulator_output.py"
+        "vercor/setups/_external/camulator_output.py"
     ).read_text(encoding="utf-8")
     camulator_runtime_source = Path(
-        "vercor/setups/external/camulator_runtime.py"
+        "vercor/setups/_external/camulator_runtime.py"
     ).read_text(encoding="utf-8")
     camulator_imports_source = Path(
-        "vercor/setups/external/camulator_imports.py"
+        "vercor/setups/_external/camulator_imports.py"
     ).read_text(encoding="utf-8")
-    output_adapters_source = Path("vercor/output/adapters.py").read_text(
+    output_session_source = Path("vercor/output/_session.py").read_text(
         encoding="utf-8"
     )
 
@@ -715,7 +600,8 @@ def test_camulator_output_wrappers_do_not_import_xarray_or_credit_output() -> No
     assert "period_mean_output_variables(" not in camulator_output_source
     assert "write_period_average_netcdf(" not in camulator_output_source
     assert "should_write_period_output(" not in camulator_runtime_source
-    assert "should_write_period_output(" in output_adapters_source
+    assert not Path("vercor/output/_component_adapter.py").exists()
+    assert "should_write_period_output(" in output_session_source
 
 
 def test_load_camulator_output_metadata_reads_explicit_yaml(tmp_path: Path) -> None:
@@ -869,7 +755,7 @@ def test_state_variable_accessor_tensor_access_uses_typed_index_path() -> None:
 
 @pytest.mark.fast_always
 def test_state_variable_accessor_uses_shared_index_map_builders() -> None:
-    source = Path("vercor/setups/external/camulator_tensors.py").read_text(
+    source = Path("vercor/setups/_external/camulator_tensors.py").read_text(
         encoding="utf-8"
     )
 
@@ -882,7 +768,7 @@ def test_state_variable_accessor_uses_shared_index_map_builders() -> None:
 def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions() -> (
     None
 ):
-    settings = VercorSettings()
+    constants = PhysicalConstants()
     hyai = jnp.asarray([0.00, 0.05, 0.10])
     hybi = jnp.asarray([0.00, 0.20, 1.00])
     hyam = jnp.asarray([0.015, 0.025])
@@ -907,15 +793,15 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     surface_pressure = jnp.full((2, 2), 100000.0)
 
     mapped_fields = jax.jit(camulator_fields_module.map_camulator_prediction_arrays)(
-        settings.earth_radius,
-        settings.gravity,
-        settings.rdair,
-        settings.zvir,
-        settings.mwdair,
-        settings.rgas,
-        settings.p0,
-        settings.cappa,
-        settings.stefBoltz,
+        constants.earth_radius,
+        constants.gravity,
+        constants.dry_air_gas_constant,
+        constants.water_vapor_mass_ratio_correction,
+        constants.dry_air_molecular_weight,
+        constants.universal_gas_constant,
+        constants.reference_pressure,
+        constants.dry_air_kappa,
+        constants.stefan_boltzmann_constant,
         100000.0,
         hyai,
         hybi,
@@ -943,7 +829,8 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
     )
     assert_allclose_compact(
         mapped_fields["downward_longwave_radiation_flux"],
-        settings.stefBoltz * np.asarray(surface_temperature) ** 4 - 3.0,
+        constants.stefan_boltzmann_constant * np.asarray(surface_temperature) ** 4
+        - 3.0,
     )
     assert mapped_fields["model_level_height"].shape == (2, 2)
     assert mapped_fields["density"].shape == (2, 2)
@@ -953,7 +840,7 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
         + hybi[:, jnp.newaxis, jnp.newaxis] * surface_pressure[jnp.newaxis, :, :]
     )
     expected_model_level_height = get_altitudes_hybrid_sigma_levels(
-        settings,
+        constants,
         temperature_3d.T,
         specific_humidity_3d.T,
         pressure_interfaces.T,
@@ -967,9 +854,22 @@ def test_map_camulator_prediction_arrays_supports_jit_and_preserves_conventions(
 
 
 def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
+    state_kwargs: dict[str, Any] = {}
+    monkeypatch.setattr(camulator_imports_module, "load_credit_modules", lambda: None)
     latlons = SimpleNamespace(
         longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
         latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
+    )
+
+    class _RecordingState(camulator_gcm_state_module.CAMulatorGCMSetupState):
+        def __init__(self, **kwargs: Any) -> None:
+            state_kwargs.update(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(
+        camulator_gcm_state_module,
+        "CAMulatorGCMSetupState",
+        _RecordingState,
     )
     monkeypatch.setattr(
         camulator_init_module,
@@ -994,30 +894,116 @@ def test_camulator_constructor_builds_jax_backed_grid(monkeypatch: Any) -> None:
     )
 
     component = make_camulator_gcm(
-        config_path="dummy.yaml",
-        device="cpu",
-        output_frequency="month",
+        config=CAMulatorConfig(
+            config_path="dummy.yaml",
+            device="cpu",
+            time_alignment="forcing_start",
+            output=OutputSpec(period=PeriodOutput(frequency="month")),
+        ),
     )
 
     assert isinstance(component.grid.longitude, jax.Array)
     assert isinstance(component.grid.latitude, jax.Array)
     assert isinstance(component.grid.binary_mask, jax.Array)
-    assert component.field_spec.inputs == (
+    assert component.spec.inputs == (
         "sea_surface_temperature",
         "land_surface_temperature",
     )
     assert (
-        component.field_spec.outputs
+        component.spec.outputs
         == camulator_contracts_module.CAMULATOR_RUNTIME_FIELD_NAMES
     )
     assert_allclose_compact(component.grid.binary_mask, np.ones((3, 2)))
-    assert callable(component_snapshot_writer(component))
+    assert callable(component.spec.output.snapshot_writer)
+    assert "spinup_time" not in state_kwargs
+    assert "do_spinup" not in state_kwargs
+    assert state_kwargs["time_alignment"] == "forcing_start"
 
 
-def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None:
+@pytest.mark.fast_always
+def test_camulator_gcm_setup_returns_initial_runtime_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start = datetime(2000, 1, 1)
+    initial_model_state = torch.zeros((1, 2, 1, 2, 2), dtype=torch.float32)
+    dynamic_forcing = xr.Dataset(
+        data_vars={
+            "F1": (
+                ("time", "lat", "lon"),
+                np.ones((1, 2, 2), dtype=np.float32),
+            )
+        },
+        coords={"time": [start]},
+    )
+    physics = xr.Dataset(
+        data_vars={
+            "hyai": (("interface",), np.asarray([0.0, 1.0])),
+            "hyam": (("level",), np.asarray([0.5, 1.0])),
+            "hybi": (("interface",), np.asarray([0.0, 1.0])),
+            "hybm": (("level",), np.asarray([0.5, 1.0])),
+            "LANDM_COSLAT": (
+                ("lat", "lon"),
+                np.zeros((2, 2), dtype=np.float32),
+            ),
+        }
+    )
+    resources = cast(
+        Any,
+        camulator_gcm_state_module.CAMulatorGCMSetupState.__new__(
+            camulator_gcm_state_module.CAMulatorGCMSetupState
+        ),
+    )
+    resources.initial_model_state = initial_model_state
+    resources.init_noise = None
+    resources.stepper = SimpleNamespace(model=lambda value: value)
+    resources.lead_time_periods = 6
+    resources.conf = {
+        "data": {"save_loc_physics": "physics.nc"},
+        "predict": {"start_datetime": start},
+    }
+    resources.forcing_ds_norm = dynamic_forcing
+    resources.df_vars = ["F1"]
+    resources.device = "cpu"
+    resources.time_alignment = "strict"
+
+    monkeypatch.setattr(
+        camulator_gcm_state_module.torch.jit,
+        "trace",
+        lambda model, dummy_input: model,
+    )
+    monkeypatch.setattr(
+        camulator_gcm_state_module.xr,
+        "open_dataset",
+        lambda path: physics,
+    )
+    monkeypatch.setattr(
+        camulator_tensors_module,
+        "StateVariableAccessor",
+        lambda conf, tensor_type: SimpleNamespace(tensor_type=tensor_type),
+    )
+
+    result = resources.setup(cast(Any, None), _make_coupler(start))
+
+    assert isinstance(
+        result.payload, camulator_gcm_state_module.CAMulatorRuntimePayload
+    )
+    assert result.payload.model_state is initial_model_state
+    assert result.payload.forecast_hour == 1
+    assert result.payload.output_prediction is None
+    assert result.payload.output_prediction_samples is None
+    assert result.payload.cursor.start_ix == 0
+    assert result.payload.cursor.model_substeps == 1
+    assert result.payload.cursor.timestep_counter == 0
+
+
+def test_camulator_default_snapshot_uses_native_provider_when_period_provider_is_custom(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(camulator_imports_module, "load_credit_modules", lambda: None)
     latlons = SimpleNamespace(
         longitude=SimpleNamespace(values=np.asarray([0.0, 90.0])),
-        latitude=SimpleNamespace(values=np.asarray([-45.0, 0.0, 45.0])),
+        latitude=SimpleNamespace(values=np.asarray([-45.0, 45.0])),
     )
     monkeypatch.setattr(
         camulator_init_module,
@@ -1028,10 +1014,7 @@ def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None
                     "dynamic_forcing_variables": ["U"],
                     "lead_time_periods": 6,
                 },
-                "predict": {
-                    "save_forecast": "/tmp/camulator-output",
-                    "timesteps_fast_climate": 1,
-                },
+                "predict": {"timesteps_fast_climate": 1},
             },
             "stepper": SimpleNamespace(),
             "forcing_dataset": xr.Dataset(),
@@ -1043,14 +1026,68 @@ def test_camulator_constructor_logs_save_forecast_path(monkeypatch: Any) -> None
             "state_transformer": object(),
         },
     )
-    with capture_logger_output(DEFAULT_LOGGER_NAME) as stream:
-        make_camulator_gcm(
+
+    samples: list[str] = []
+    sample_payloads: list[Any] = []
+
+    class _Provider:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def sample(self, context: OutputContext) -> OutputFrame:
+            samples.append(self.name)
+            sample_payloads.append(context.payload)
+            return OutputFrame({"temperature": OutputVariable((), np.asarray(280.0))})
+
+    custom_provider = _Provider("custom")
+    native_provider = _Provider("native")
+    native_modes: list[bool] = []
+
+    def make_native_provider(state: Any, *, latest_only: bool = False) -> _Provider:
+        _ = state
+        native_modes.append(latest_only)
+        return native_provider
+
+    monkeypatch.setattr(
+        camulator_output_module,
+        "camulator_output_provider",
+        make_native_provider,
+    )
+    monkeypatch.setattr(
+        camulator_output_module,
+        "write_netcdf_dataset",
+        lambda **kwargs: None,
+    )
+
+    component = make_camulator_gcm(
+        config=CAMulatorConfig(
             config_path="dummy.yaml",
             device="cpu",
-            output_subfolder_name="member-001",
+            output=OutputSpec(provider=custom_provider),
         )
+    )
+    writer = cast(Any, component.spec.output.snapshot_writer)
+    prediction = torch.ones((1, 1, 1, 1, 1))
+    payload = _camulator_runtime_payload(
+        model_state=torch.zeros_like(prediction),
+        prediction=prediction,
+        prediction_samples=prediction,
+    )
 
-    assert "Saving outputs to: /tmp/camulator-output/member-001" in stream.getvalue()
+    writer(
+        SnapshotContext(
+            component=component,
+            state=cast(Any, None),
+            payload=payload,
+            output_path=tmp_path / "camulator.snapshot.nc",
+            time=datetime(2000, 1, 2),
+            logger=None,
+        )
+    )
+
+    assert samples == ["native"]
+    assert sample_payloads == [payload]
+    assert native_modes == [True]
 
 
 def test_add_init_noise_logs_through_injected_logger(
@@ -1136,8 +1173,10 @@ def test_initialize_camulator_logs_lifecycle_through_injected_logger(
         camulator_imports_module,
         "load_model_name",
         lambda conf, model_name, load_weights: _Model(),
-        raising=False,
     )
+    assert not hasattr(camulator_imports_module, "distributed_model_wrapper")
+    assert not hasattr(camulator_imports_module, "load_model_state")
+    assert not hasattr(camulator_imports_module, "load_model")
     monkeypatch.setattr(camulator_init_module.os.path, "exists", lambda path: True)
     monkeypatch.setattr(
         camulator_init_module.torch,
@@ -1229,37 +1268,143 @@ def test_camulator_land_stores_jax_runtime_arrays(
         ocn_grid=ocean_grid,
     )
 
-    component.initialize(_make_coupler(start))
-    assert component.field_spec.outputs == ("land_surface_temperature",)
-    assert set(component.field_spec.defaults) == {"land_surface_temperature"}
-    assert isinstance(component.data["land_surface_temperature"], jax.Array)
+    component = prepare_component(
+        normalize_component(component),
+        _make_coupler(start),
+        DTypePolicy.from_jax_config(),
+    )
+    assert component.spec.inputs == (
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+    )
+    assert component.spec.outputs == ("land_surface_temperature",)
+    assert set(component.spec.initial_fields) == {
+        "land_surface_temperature",
+        "net_shortwave_radiation_flux",
+        "downward_longwave_radiation_flux",
+    }
+    assert isinstance(component._data["land_surface_temperature"], jax.Array)
     assert_allclose_compact(
-        component.data["land_surface_temperature"], np.full((2, 2), 283.0)
+        component._data["land_surface_temperature"], np.full((2, 2), 283.0)
     )
 
     coupler = _make_coupler(start)
-    component_state = component.step_host_runtime_state(
-        create_runtime_component_state(
-            component,
-            prefill_missing=True,
-            contract=RuntimeComponentContract(),
-        ),
-        StepContext(
-            dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
-            settings=coupler.settings,
-            time=start,
-            logger=coupler.logger,
-        ),
+    initial_component_state = create_runtime_component_state(
+        component,
+        prefill_missing=True,
+        contract=ExchangeContract(),
     )
-    land_surface_temperature = component_state.data.get("land_surface_temperature")
+    step_context = StepContext(
+        dt_seconds=(datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds(),
+        time=start,
+        logger=coupler.logger,
+    )
+    component_state = step_component_runtime_state(
+        component,
+        initial_component_state,
+        step_context,
+        allow_host_runtime=True,
+    )
+    repeated_component_state = step_component_runtime_state(
+        component,
+        initial_component_state,
+        step_context,
+        allow_host_runtime=True,
+    )
+    land_surface_temperature = component_state.fields.get("land_surface_temperature")
     assert isinstance(land_surface_temperature, jax.Array)
     assert_allclose_compact(
         land_surface_temperature,
         np.asarray([[281.0, 282.0], [283.0, 284.0]]),
     )
+    assert_allclose_compact(
+        repeated_component_state.fields.get("land_surface_temperature"),
+        np.asarray([[281.0, 282.0], [283.0, 284.0]]),
+    )
+    assert isinstance(
+        initial_component_state.payload,
+        camulator_forcing_module.CamulatorRuntimeCursor,
+    )
+    assert isinstance(
+        component_state.payload,
+        camulator_forcing_module.CamulatorRuntimeCursor,
+    )
+    assert isinstance(
+        repeated_component_state.payload,
+        camulator_forcing_module.CamulatorRuntimeCursor,
+    )
+    assert initial_component_state.payload.timestep_counter == 0
+    assert component_state.payload.timestep_counter == 1
+    assert repeated_component_state.payload.timestep_counter == 1
 
 
-def test_camulator_step_uses_jax_prepared_forcing_boundaries(
+@pytest.mark.fast_always
+def test_camulator_land_declares_radiation_exchange_inputs(
+    monkeypatch: Any,
+) -> None:
+    start = datetime(2000, 1, 1, 0, 0, 0)
+    forcing_ds = xr.Dataset(
+        data_vars={
+            "TS": (
+                ("time", "lat", "lon"),
+                np.asarray([[[281.0, 282.0], [283.0, 284.0]]]),
+            )
+        },
+        coords={"time": [start]},
+    )
+    monkeypatch.setattr(
+        camulator_land_module,
+        "create_lnd_mask_from_ocn",
+        lambda **kwargs: (jnp.ones((2, 2)), jnp.zeros((2, 2))),
+    )
+    monkeypatch.setattr(
+        camulator_land_module,
+        "load_camulator_forcing_context",
+        lambda **kwargs: {
+            "conf": {
+                "data": {"lead_time_periods": 6},
+                "predict": {"start_datetime": start},
+            },
+            "forcing_dataset_raw": forcing_ds,
+        },
+    )
+
+    grid = RectilinearGrid(
+        name="grid",
+        longitude=jnp.asarray([0.0, 1.0]),
+        latitude=jnp.asarray([0.0, 1.0]),
+    )
+    radiation_fields = tuple(_flatten_field_items(ATMOSPHERE_TO_LAND_RADIATION_FIELDS))
+    atmosphere = DataComponent(
+        name="ATM",
+        grid=grid,
+        fields={field_name: jnp.zeros(grid.shape) for field_name in radiation_fields},
+        spec=ComponentSpec(outputs=radiation_fields),
+    )
+    land = camulator_land_module.make_camulator_land(
+        config_path="dummy.yaml",
+        camulator_grid=grid,
+        ocn_grid=grid,
+    )
+    components = {"ATM": atmosphere, "LND": land}
+    contracts = build_exchange_contracts(
+        tuple(components),
+        (
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=ATMOSPHERE_TO_LAND_RADIATION_FIELDS,
+            ),
+        ),
+        validate_endpoints=True,
+    )
+
+    assert contracts["LND"].receives == radiation_fields
+    for name, component in components.items():
+        validate_exchange_fields_declared(component, contracts[name])
+
+
+def test_camulator_runtime_step_is_reproducible_from_one_payload(
     monkeypatch: Any,
 ) -> None:
     start = datetime(2000, 1, 1, 0, 0, 0)
@@ -1302,11 +1447,11 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         def shift_state_forward(
             self, state: torch.Tensor, prediction: torch.Tensor
         ) -> torch.Tensor:
-            _ = prediction
-            return state
+            _ = state
+            return prediction
 
         def model(self, model_input: torch.Tensor) -> torch.Tensor:
-            return model_input + 1.0
+            return torch.full_like(model_input, float(model_input.flatten()[0] + 1))
 
         def _apply_postprocessing(
             self,
@@ -1317,12 +1462,11 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
             return prediction
 
     class _StepAccessor:
-        def set_state_var(
-            self, state: torch.Tensor, variable_name: str, value: torch.Tensor
-        ) -> None:
-            _ = state
+        def set_state_var(self, state: Any, variable_name: str, value: Any) -> None:
             assert variable_name == "SST"
             captured["sst"] = value.detach().cpu()
+            first_sst_channel = state.shape[1] - value.shape[1]
+            state[:, first_sst_channel:, ...].copy_(value)
 
     class _OutputAccessor:
         def get_state_var(
@@ -1338,7 +1482,7 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         ),
     )
     component.model_substeps = 2
-    component.runtime_cursor = camulator_forcing_module.CamulatorRuntimeCursor(
+    cursor = camulator_forcing_module.CamulatorRuntimeCursor(
         start_ix=0,
         init_str="2000-01-01T00Z",
         model_substeps=2,
@@ -1348,7 +1492,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     component.device = "cpu"
     component.stepper = _Stepper()
     component.static_forcing = torch.zeros((1, 1, 1, 2, 2))
-    component.state = torch.zeros((1, 6, 1, 2, 2))
     component.LANDM_COSLAT = jnp.asarray([[0.0, 1.0], [0.5, 0.0]])
     component.name = "ATM"
     component.grid = RectilinearGrid(
@@ -1356,13 +1499,13 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         longitude=jnp.asarray([0.0, 1.0]),
         latitude=jnp.asarray([0.0, 1.0]),
     )
-    component.settings = VercorSettings()
-    component.data = camulator_fields_module.initialize_camulator_runtime_fields(
+    component._dtype_policy = DTypePolicy()
+    component._data = camulator_fields_module.initialize_camulator_runtime_fields(
         component.grid.shape,
-        component.settings,
+        component._dtype_policy,
     )
-    component.data["sea_surface_temperature"] = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
-    component.data["land_surface_temperature"] = jnp.asarray(
+    component._data["sea_surface_temperature"] = jnp.asarray([[1.0, 2.0], [3.0, 4.0]])
+    component._data["land_surface_temperature"] = jnp.asarray(
         [[10.0, 20.0], [30.0, 40.0]]
     )
     component.accessor_input = _StepAccessor()
@@ -1378,8 +1521,6 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     )
     component.lead_time_periods = 6
     component.output_frequency = None
-    component.output_adapter = _make_camulator_output_adapter()
-    component.forecast_hour = 1
     component.metadata = {}
     component.state_transformer = SimpleNamespace(
         inverse_transform=lambda prediction: prediction
@@ -1390,38 +1531,53 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
     component.hyam = torch.ones((1, 2, 1, 1))
     component.hybm = torch.ones((1, 2, 1, 1))
 
-    output_calls: dict[str, Any] = {}
+    def map_runtime_fields(*args: Any, **kwargs: Any) -> dict[str, jax.Array]:
+        _ = args
+        captured["runtime_prediction"] = kwargs["prediction"].detach().cpu()
+        return {"temperature": jnp.full((2, 2), 9.0)}
 
-    def fake_write_camulator_prediction_output(*args: Any, **kwargs: Any) -> None:
-        output_calls["args"] = args
-        output_calls["kwargs"] = kwargs
-
-    monkeypatch.setattr(
-        camulator_output_module,
-        "write_camulator_prediction_output",
-        fake_write_camulator_prediction_output,
-    )
     monkeypatch.setattr(
         camulator_fields_module,
-        "map_camulator_prediction_arrays",
-        lambda *args: {"temperature": jnp.full((2, 2), 9.0)},
+        "map_camulator_prediction_to_runtime_fields",
+        map_runtime_fields,
     )
 
-    component_state = _runtime_component_state("ATM", component.data)
+    component_state = _runtime_component_state("ATM", component._data)
     step_context = StepContext(
         dt_seconds=float((datetime(2000, 1, 1, 6, 0, 0) - start).total_seconds()),
-        settings=VercorSettings(),
         time=start,
         logger=cast(Any, _RecordingLogger()),
     )
-    updates = camulator_runtime_module.step_camulator_runtime(
-        component,
-        component_state.data.to_mapping(),
-        step_context,
-        None,
+    initial_payload = camulator_gcm_state_module.CAMulatorRuntimePayload(
+        model_state=torch.zeros((1, 6, 1, 2, 2)),
+        cursor=cursor,
     )
-    component_state = component_state.with_data(component_state.data.set_many(updates))
+    first = camulator_runtime_module.step_camulator_runtime(
+        component,
+        component_state.fields.to_mapping(),
+        step_context,
+        initial_payload,
+    )
+    second = camulator_runtime_module.step_camulator_runtime(
+        component,
+        component_state.fields.to_mapping(),
+        step_context,
+        initial_payload,
+    )
+    component_state = component_state.with_fields(
+        component_state.fields.set_many(first.fields)
+    )
 
+    assert isinstance(first, StepResult)
+    assert isinstance(second, StepResult)
+    assert first.payload.cursor.timestep_counter == 1
+    assert second.payload.cursor.timestep_counter == 1
+    assert initial_payload.cursor.timestep_counter == 0
+    assert torch.count_nonzero(initial_payload.model_state).item() == 0
+    assert torch.equal(
+        first.payload.output_prediction,
+        second.payload.output_prediction,
+    )
     assert captured["dynamic_forcing"].shape == (1, 2, 1, 2, 2)
     assert_allclose_compact(
         captured["dynamic_forcing"][0, :, 0],
@@ -1433,182 +1589,26 @@ def test_camulator_step_uses_jax_prepared_forcing_boundaries(
         ),
     )
     assert captured["sst"].shape == (1, 1, 1, 2, 2)
-    assert isinstance(component_state.data.get("total_surface_temperature"), jax.Array)
+    assert isinstance(
+        component_state.fields.get("total_surface_temperature"), jax.Array
+    )
     assert_allclose_compact(
-        component_state.data.get("total_surface_temperature"),
+        component_state.fields.get("total_surface_temperature"),
         np.asarray([[11.0, 283.0], [33.0, 44.0]]),
     )
     assert_allclose_compact(
-        component_state.data.get("temperature"), np.full((2, 2), 9.0)
+        component_state.fields.get("temperature"), np.full((2, 2), 9.0)
     )
-    assert component.runtime_cursor.timestep_counter == 1
-    assert output_calls["kwargs"]["state_transformer"] is component.state_transformer
-
-
-@pytest.mark.parametrize("output_frequency", [None, "day"])
-def test_record_camulator_output_records_latest_snapshot_in_all_output_modes(
-    monkeypatch: Any,
-    tmp_path: Path,
-    output_frequency: str | None,
-) -> None:
-    component = cast(
-        Any,
-        camulator_gcm_state_module.CAMulatorGCMSetupState.__new__(
-            camulator_gcm_state_module.CAMulatorGCMSetupState
-        ),
-    )
-    component.runtime_cursor = camulator_forcing_module.CamulatorRuntimeCursor(
-        start_ix=0,
-        init_str="2000-01-01T00Z",
-        model_substeps=1,
-        timestep_counter=0,
-    )
-    component.output_frequency = output_frequency
-    component.output_adapter = _make_camulator_output_adapter()
-    component.latlons = SimpleNamespace(
-        latitude=SimpleNamespace(values=np.asarray([0.0, 1.0])),
-        longitude=SimpleNamespace(values=np.asarray([0.0, 1.0])),
-    )
-    component.metadata = {"T": {"units": "K"}}
-    component.conf = _camulator_output_conf(
-        save_forecast=str(tmp_path),
-        save_vars=["T"],
-    )
-    component.state_transformer = None
-    component.lead_time_periods = 6
-    component.forecast_hour = 1
-    prediction = torch.arange(2 * 8 * 1 * 2 * 2, dtype=torch.float32).reshape(
-        2, 8, 1, 2, 2
-    )
-
-    monkeypatch.setattr(
-        camulator_output_module,
-        "write_camulator_prediction_output",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        camulator_output_module,
-        "record_camulator_period_output",
-        lambda *args, **kwargs: False,
-    )
-
-    camulator_runtime_module.record_camulator_prediction_output(
-        component,
-        prediction=prediction,
-        utc_datetime=datetime(2000, 1, 2),
-        logger=cast(Any, _RecordingLogger()),
-    )
-
-    assert not component.output_adapter.snapshot_empty
-    assert component.output_adapter.snapshot_time == datetime(2000, 1, 2)
-    assert tuple(component.output_adapter.snapshot_variables) == ("T",)
-    assert component.output_adapter.snapshot_variables["T"].dims == (
-        "level",
-        "latitude",
-        "longitude",
-    )
-    assert component.output_adapter.snapshot_variables["T"].attrs["units"] == "K"
     assert_allclose_compact(
-        component.output_adapter.snapshot_variables["T"].values,
-        np.mean(prediction[:, 3:6, 0].numpy(), axis=0),
+        first.payload.output_prediction,
+        torch.full_like(first.payload.output_prediction, 2.0),
     )
-
-
-def test_record_camulator_output_averages_when_frequency_is_configured(
-    monkeypatch: Any,
-) -> None:
-    component = cast(
-        Any,
-        camulator_gcm_state_module.CAMulatorGCMSetupState.__new__(
-            camulator_gcm_state_module.CAMulatorGCMSetupState
-        ),
+    assert_allclose_compact(
+        captured["runtime_prediction"],
+        torch.full_like(captured["runtime_prediction"], 2.0),
     )
-    component.runtime_cursor = camulator_forcing_module.CamulatorRuntimeCursor(
-        start_ix=0,
-        init_str="2000-01-01T00Z",
-        model_substeps=1,
-        timestep_counter=0,
+    assert first.payload.output_prediction_samples.shape[0] == 2
+    assert_allclose_compact(
+        first.payload.output_prediction_samples[:, 0, 0, 0, 0],
+        np.asarray([1.0, 2.0]),
     )
-    component.output_frequency = "day"
-    component.output_adapter = _make_camulator_output_adapter()
-    component.latlons = SimpleNamespace(
-        latitude=SimpleNamespace(values=np.asarray([0.0, 1.0])),
-        longitude=SimpleNamespace(values=np.asarray([0.0, 1.0])),
-    )
-    component.metadata = {"T": {"units": "K"}}
-    component.conf = _camulator_output_conf(save_forecast="/tmp/camulator-output")
-    component.state_transformer = object()
-    component.lead_time_periods = 6
-    prediction = torch.ones((1, 8, 1, 2, 2), dtype=torch.float32)
-
-    written: dict[str, Any] = {}
-
-    def fake_record_camulator_period_output(
-        adapter: ComponentOutputAdapter,
-        prediction_arg: torch.Tensor,
-        *,
-        output_time: datetime,
-        dt: timedelta,
-        output_frequency: str | None,
-        latitude: object,
-        longitude: object,
-        init_str: str,
-        metadata: dict[str, Any],
-        conf: dict[str, Any],
-        state_transformer: Any | None,
-        logger: Any | None = None,
-    ) -> bool:
-        _ = logger
-        written["adapter"] = adapter
-        written["prediction"] = prediction_arg
-        written["metadata"] = metadata
-        written["conf"] = conf
-        written["state_transformer"] = state_transformer
-        written["output_time"] = output_time
-        written["dt"] = dt
-        written["output_frequency"] = output_frequency
-        written["latitude"] = latitude
-        written["longitude"] = longitude
-        written["path"] = (
-            f"/tmp/camulator-output/{init_str}/"
-            f"camulator.averages.{output_time.strftime('%Y-%m-%d')}.nc"
-        )
-        adapter.accumulate(
-            {"T": OutputVariable(("time", "x"), np.asarray([[1.0]]))},
-            summation_dim=camulator_output_module.CAMULATOR_TIME_DIM,
-        )
-        written["counts"] = adapter.variables["T"].counts.copy()
-        adapter.reset()
-        return True
-
-    monkeypatch.setattr(
-        camulator_output_module,
-        "write_camulator_prediction_output",
-        lambda *args, **kwargs: pytest.fail("frequency mode must not write increments"),
-    )
-    monkeypatch.setattr(
-        camulator_output_module,
-        "record_camulator_period_output",
-        fake_record_camulator_period_output,
-    )
-
-    camulator_runtime_module.record_camulator_prediction_output(
-        component,
-        prediction=prediction,
-        utc_datetime=datetime(2000, 1, 2),
-        logger=cast(Any, _RecordingLogger()),
-    )
-
-    assert written["adapter"] is component.output_adapter
-    assert written["prediction"] is prediction
-    assert written["metadata"] is component.metadata
-    assert written["conf"] is component.conf
-    assert written["state_transformer"] is component.state_transformer
-    assert_allclose_compact(written["counts"], np.asarray([1]))
-    assert written["output_time"] == datetime(2000, 1, 2)
-    assert written["dt"] == timedelta(hours=6)
-    assert written["output_frequency"] == "day"
-    assert_allclose_compact(written["latitude"], np.asarray([0.0, 1.0]))
-    assert_allclose_compact(written["longitude"], np.asarray([0.0, 1.0]))
-    assert written["path"].endswith("/2000-01-01T00Z/camulator.averages.2000-01-02.nc")
-    assert component.output_adapter.empty

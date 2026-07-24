@@ -4,26 +4,23 @@ from typing import Callable
 
 import jax.numpy as jnp
 
-from vercor.runtime.views import (
-    RuntimeComponentView,
-    RuntimeFieldSource,
-    runtime_field,
-    runtime_field_candidates,
+from vercor.state import (
+    ComponentState,
 )
 from vercor.types import RuntimeArray
 
-ComponentMetric = str | Callable[[RuntimeComponentView], RuntimeArray | float]
+ComponentMetric = str | Callable[[ComponentState], RuntimeArray | float]
 
 
 def component_vector_speed(
-    component_state: RuntimeFieldSource,
+    component_state: ComponentState,
     u_field: str = "u_velocity",
     v_field: str = "v_velocity",
 ) -> RuntimeArray:
     """Return vector speed from a runtime component state."""
 
-    u = jnp.asarray(runtime_field(component_state, u_field))
-    v = jnp.asarray(runtime_field(component_state, v_field))
+    u = jnp.asarray(component_state.field(u_field))
+    v = jnp.asarray(component_state.field(v_field))
     return jnp.sqrt(u**2 + v**2)
 
 
@@ -42,31 +39,31 @@ def combine_surface_temperatures(
     )
 
 
-def total_surface_temperature(component: RuntimeComponentView) -> RuntimeArray:
+def total_surface_temperature(component: ComponentState) -> RuntimeArray:
     """Return combined land and sea surface temperature for diagnostics."""
 
     return combine_surface_temperatures(
-        runtime_field(component, "land_surface_temperature"),
-        runtime_field(component, "sea_surface_temperature"),
+        component.field("land_surface_temperature"),
+        component.field("sea_surface_temperature"),
     )
 
 
-def safe_component_nanmean(component: RuntimeComponentView, field_name: str) -> float:
+def safe_component_nanmean(component: ComponentState, field_name: str) -> float:
     """Return a robust NaN-aware mean for a runtime component view field."""
 
     try:
-        return float(jnp.nanmean(jnp.asarray(runtime_field(component, field_name))))
+        return float(jnp.nanmean(jnp.asarray(component.field(field_name))))
     except Exception:
         return float("nan")
 
 
 def component_plot_field(
-    component: RuntimeComponentView,
+    component: ComponentState,
     field_name: str,
 ) -> RuntimeArray:
     """Return a 2D field suitable for plotting when one is available."""
 
-    candidates = runtime_field_candidates(component, field_name)
+    candidates = _component_field_candidates(component, field_name)
     for candidate in candidates:
         if jnp.asarray(candidate).ndim == 2:
             return candidate
@@ -75,8 +72,21 @@ def component_plot_field(
     raise KeyError(f"Field {field_name!r} not found")
 
 
+def _component_field_candidates(
+    component: ComponentState,
+    field_name: str,
+) -> list[RuntimeArray]:
+    """Return all matching fields in public scope-resolution order."""
+
+    candidates: list[RuntimeArray] = []
+    for _, name, value in component.iter_fields("state", "received", "sent"):
+        if name == field_name:
+            candidates.append(value)
+    return candidates
+
+
 def component_plot_scalar(
-    component: RuntimeComponentView,
+    component: ComponentState,
     scalar: ComponentMetric,
 ) -> RuntimeArray | float:
     """Resolve a field name or callable diagnostic for plotting."""
@@ -87,7 +97,7 @@ def component_plot_scalar(
 
 
 def safe_component_metric_mean(
-    component: RuntimeComponentView,
+    component: ComponentState,
     metric: ComponentMetric,
 ) -> float:
     """Resolve a metric and return a robust mean value as float."""

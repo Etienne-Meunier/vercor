@@ -5,13 +5,18 @@ from typing import Any, cast
 from jax import Array, lax
 import jax.numpy as jnp
 
-from vercor.dtypes import as_jax_real_array, dtype_policy, jax_linspace
-from vercor.grid import RectilinearGrid
-from vercor.types import RuntimeArray
+from vercor.dtypes import (
+    as_jax_real_array as _as_jax_real_array,
+    dtype_policy as _dtype_policy,
+)
+from vercor.grids import RectilinearGrid as _RectilinearGrid
+from vercor.types import RuntimeArray as _RuntimeArray
+
+__all__ = ["centers_to_edges", "grids_identical"]
 
 
-def _coordinate_allclose(values_0: RuntimeArray, values_1: RuntimeArray) -> bool:
-    policy = dtype_policy()
+def _coordinate_allclose(values_0: _RuntimeArray, values_1: _RuntimeArray) -> bool:
+    policy = _dtype_policy()
     dtype = policy.jax_real
     array_0 = jnp.asarray(values_0, dtype=dtype)
     array_1 = jnp.asarray(values_1, dtype=dtype)
@@ -20,7 +25,7 @@ def _coordinate_allclose(values_0: RuntimeArray, values_1: RuntimeArray) -> bool
     return bool(jnp.allclose(array_0, array_1, rtol=rtol, atol=atol))
 
 
-def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
+def grids_identical(g0: _RectilinearGrid, g1: _RectilinearGrid) -> bool:
     """Return whether two rectilinear grids have the same shape and coordinates."""
 
     return (
@@ -30,32 +35,10 @@ def grids_identical(g0: RectilinearGrid, g1: RectilinearGrid) -> bool:
     )
 
 
-def make_rectilinear_grid(
-    name: str,
-    nlon: int,
-    nlat: int,
-    longitude_start: float,
-    longitude_end: float,
-    latitude_start: float,
-    latitude_end: float,
-    mask: Any | None = None,
-) -> RectilinearGrid:
-    """Build a rectilinear grid with equally spaced coordinate centers."""
-
-    longitude = jax_linspace(longitude_start, longitude_end, nlon)
-    latitude = jax_linspace(latitude_start, latitude_end, nlat)
-    return RectilinearGrid(
-        name=name,
-        longitude=longitude,
-        latitude=latitude,
-        binary_mask=mask,
-    )
-
-
 def centers_to_edges(centers: Any, grid_type: str) -> Any:
     """Convert 1D latitude or longitude centers to cell edges."""
 
-    centers = as_jax_real_array(centers)
+    centers = _as_jax_real_array(centers)
 
     if centers.size < 2:
         half_width = 0.5

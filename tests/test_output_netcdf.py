@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import h5netcdf
 
-from vercor.output.netcdf import write_netcdf_dataset
-from vercor.output.variables import OutputVariable
+from vercor.output._netcdf import write_netcdf_dataset
+from vercor.output import OutputVariable
 
 
 class _RecordingLogger:

@@ -3,16 +3,26 @@ from datetime import datetime
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
-from vercor import Clock, Coupler, Exchange
-from vercor.setups import make_jax_gcm
-from vercor.setups import make_slab_land
-from vercor.setups import make_slab_ocean
+from vercor import (
+    Clock,
+    Coupler,
+    Exchange,
+    RectilinearGrid,
+    RuntimeOptions,
+)
+from vercor.setups import (
+    JAXGCMConfig,
+    load_jcm_inputs,
+    make_jax_gcm,
+    make_slab_land,
+    make_slab_ocean,
+)
 from vercor.dtypes import as_jax_real_array
-from vercor import RectilinearGrid
+from vercor.output import OutputTarget
 from vercor.regridding import bilinear, conservative
-from vercor.exchanges import (
-    ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
+from vercor.recipes import (
     ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+    JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
     JCM_LAND_TO_ATMOSPHERE_FIELDS,
     OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
 )
@@ -20,31 +30,35 @@ from vercor.diagnostics import (
     plot_component_scalar_vector_comparison,
     print_component_field_means_table,
 )
-
-from vercor.setups.external.jax_gcm_tools import (
-    generate_jcm_coords_forcing_topography_files,
-)
+from vercor.topology import SurfaceMaskPolicy
 
 if __name__ == "__main__":
 
-    coords, terrain, forcing = generate_jcm_coords_forcing_topography_files()
+    inputs = load_jcm_inputs()
+    coords = inputs.coords
+    terrain = inputs.terrain
+    forcing = inputs.forcing
 
     # Build components
-    atm = make_jax_gcm(coords, terrain, forcing_data=forcing, jitted=True)
+    atm = make_jax_gcm(
+        coords,
+        terrain,
+        config=JAXGCMConfig(forcing_data=forcing, jitted=True),
+    )
 
     ocn_binary_mask = jnp.where(as_jax_real_array(terrain.fmask) < 1, 1, 0).T
     lnd_binary_mask = 1 - ocn_binary_mask
 
     hgrid = coords.horizontal
-    lnd_grid = RectilinearGrid(
-        name="LND",
+    lnd_grid = RectilinearGrid.from_coordinates(
+        "LND",
         longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
         latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=lnd_binary_mask,
     )
 
-    ocn_grid = RectilinearGrid(
-        name="OCN",
+    ocn_grid = RectilinearGrid.from_coordinates(
+        "OCN",
         longitude=jnp.rad2deg(as_jax_real_array(hgrid.longitudes)),
         latitude=jnp.rad2deg(as_jax_real_array(hgrid.latitudes)),
         binary_mask=ocn_binary_mask,
@@ -65,52 +79,48 @@ if __name__ == "__main__":
 
     # Clock and sequence
     clock = Clock(start=datetime(2000, 1, 1, 0, 0, 0), dt_seconds=86400.0, steps=10)
-    run_sequence = ["OCN", "LND", "ATM"]
-
-    # Coupler
-    components = [atm, ocn, lnd]
-    cpl = Coupler.from_components(
-        clock=clock,
-        components=components,
-        run_order=run_sequence,
-    )
+    run_order = ["OCN", "LND", "ATM"]
 
     # Exchanges
     # scalar fields (vector field))
     # ["SHF", "LHF", ("u10m", "v10m")]
-    cpl.add_exchanges(
-        (
-            Exchange(
-                source="ATM",
-                target="OCN",
-                fields=ATMOSPHERE_TO_DATA_OCEAN_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="OCN",
-                target="ATM",
-                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="LND",
-                target="ATM",
-                fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
-                regrid=bilinear,
-            ),
-            Exchange(
-                source="ATM",
-                target="LND",
-                fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
-                regrid=conservative,
-            ),
+    exchanges = (
+        Exchange(
+            source="ATM",
+            target="OCN",
+            fields=JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="OCN",
+            target="ATM",
+            fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="LND",
+            target="ATM",
+            fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
+            regridder_factory=bilinear,
+        ),
+        Exchange(
+            source="ATM",
+            target="LND",
+            fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+            regridder_factory=conservative,
         ),
     )
+    components = [atm, ocn, lnd]
+    cpl = Coupler(
+        clock=clock,
+        components=components,
+        exchanges=exchanges,
+        run_order=run_order,
+        runtime=RuntimeOptions(topology=SurfaceMaskPolicy()),
+    )
 
-    cpl.initialize()
-    final_state = cpl.run()
-    cpl.finalize(final_state)
-    views = cpl.views(final_state, names=("ATM", "OCN", "LND"))
+    final_state = cpl.run(output=OutputTarget("."))
+    views = final_state.components(("ATM", "OCN", "LND"))
 
     # Inspect a few fields in a component-wise table.
     print_component_field_means_table(

@@ -9,14 +9,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import xarray as xr
 
-import vercor.setups.external._jax_gcm_pytree as jax_gcm_pytree_module
-import vercor.setups.external.jax_gcm_tools as jax_gcm_tools_module
-import vercor.setups.external.veros_fluxes as veros_fluxes_module
-import vercor.setups.external.veros_state as veros_state_module
+import vercor.setups._external._jax_gcm_pytree as jax_gcm_pytree_module
+import vercor.setups._external.jax_gcm_tools as jax_gcm_tools_module
+import vercor.setups._external.veros_fluxes as veros_fluxes_module
+import vercor.setups._external.veros_state as veros_state_module
 from tests.assertions import assert_allclose_compact
+from vercor.dtypes import DTypePolicy
 from vercor.fluxes import vertical_coordinates as vertical_coordinates_module
-from vercor.settings import VercorSettings
+from vercor.physics import PhysicalConstants
 
 
 class _FakeVariableStore:
@@ -32,6 +34,7 @@ class _FakeVariableStore:
 class _FakeVerosState:
     def __init__(self, variables: _FakeVariableStore) -> None:
         self.variables = variables
+        self.settings = SimpleNamespace(__fields__=())
 
 
 def test_change_and_get_default_jcm_parameter_values() -> None:
@@ -129,7 +132,7 @@ def test_compute_hybrid_pressure_levels_has_explicit_owner() -> None:
         (Path("/tmp/custom-jcm"), Path("/tmp/custom-jcm")),
     ],
 )
-def test_generate_jcm_coords_forcing_topography_files_uses_expected_paths(
+def test_load_jcm_coords_terrain_forcing_uses_expected_paths(
     monkeypatch: pytest.MonkeyPatch,
     input_data_directory: Path | None,
     expected_root: Path,
@@ -175,7 +178,7 @@ def test_generate_jcm_coords_forcing_topography_files_uses_expected_paths(
     )
 
     actual_coords, terrain, forcing = (
-        jax_gcm_tools_module.generate_jcm_coords_forcing_topography_files(
+        jax_gcm_tools_module.load_jcm_coords_terrain_forcing(
             resolution=21,
             input_data_directory=input_data_directory,
         )
@@ -189,6 +192,101 @@ def test_generate_jcm_coords_forcing_topography_files_uses_expected_paths(
     assert calls["forcing"] == (expected_root / "forcing.nc", coords)
     if input_data_directory is None:
         assert calls["package_name"] == "jcm.data.bc.t30.clim"
+
+
+def test_load_jcm_inputs_scopes_h5netcdf_preference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coords = SimpleNamespace(name="coords")
+    observed_orders: list[tuple[str, ...]] = []
+    options = xr.get_options()
+    if "netcdf_engine_order" not in options:
+        pytest.skip("xarray does not support netcdf_engine_order")
+    original_order = tuple(options["netcdf_engine_order"])
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module,
+        "get_speedy_coords",
+        lambda spectral_truncation: coords,
+    )
+
+    def record_order(path: Path, coords: Any) -> str:
+        _ = path, coords
+        observed_orders.append(tuple(xr.get_options()["netcdf_engine_order"]))
+        return "loaded"
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module.TerrainData,
+        "from_file",
+        staticmethod(record_order),
+    )
+    monkeypatch.setattr(
+        jax_gcm_tools_module.ForcingData,
+        "from_file",
+        staticmethod(record_order),
+    )
+
+    _, terrain, forcing = jax_gcm_tools_module.load_jcm_coords_terrain_forcing(
+        input_data_directory=Path("/tmp/jcm-inputs"),
+    )
+
+    assert terrain == "loaded"
+    assert forcing == "loaded"
+    assert len(observed_orders) == 2
+    assert all(order[0] == "h5netcdf" for order in observed_orders)
+    assert tuple(xr.get_options()["netcdf_engine_order"]) == original_order
+
+
+def test_prefer_h5netcdf_is_noop_without_engine_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(jax_gcm_tools_module.xr, "get_options", lambda: {})
+
+    def fail_if_called(**kwargs: Any) -> Any:
+        pytest.fail(f"set_options must not be called: {kwargs}")
+
+    monkeypatch.setattr(jax_gcm_tools_module.xr, "set_options", fail_if_called)
+
+    with jax_gcm_tools_module._prefer_h5netcdf():
+        pass
+
+
+def test_load_jcm_inputs_restores_custom_engine_order_after_read_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    options = xr.get_options()
+    if "netcdf_engine_order" not in options:
+        pytest.skip("xarray does not support netcdf_engine_order")
+    original_order = tuple(options["netcdf_engine_order"])
+    custom_order = ("scipy", "h5netcdf", "netcdf4")
+    observed_orders: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module,
+        "get_speedy_coords",
+        lambda spectral_truncation: SimpleNamespace(name="coords"),
+    )
+
+    def raise_after_recording_order(path: Path, coords: Any) -> None:
+        _ = path, coords
+        observed_orders.append(tuple(xr.get_options()["netcdf_engine_order"]))
+        raise RuntimeError("terrain read failed")
+
+    monkeypatch.setattr(
+        jax_gcm_tools_module.TerrainData,
+        "from_file",
+        staticmethod(raise_after_recording_order),
+    )
+
+    with xr.set_options(netcdf_engine_order=custom_order):
+        with pytest.raises(RuntimeError, match="terrain read failed"):
+            jax_gcm_tools_module.load_jcm_coords_terrain_forcing(
+                input_data_directory=Path("/tmp/jcm-inputs"),
+            )
+        assert tuple(xr.get_options()["netcdf_engine_order"]) == custom_order
+
+    assert observed_orders == [("h5netcdf", "scipy", "netcdf4")]
+    assert tuple(xr.get_options()["netcdf_engine_order"]) == original_order
 
 
 def test_jax_gcm_tree_helpers_transform_pytrees() -> None:
@@ -279,7 +377,8 @@ def test_veros_compute_fluxes_preserves_sign_conventions(
     taux, tauy, qnet, qnec = veros_fluxes_module.compute_fluxes(
         veros_state=veros_state,  # type: ignore[arg-type]
         runtime_fields=runtime_fields,
-        settings=VercorSettings(),
+        constants=PhysicalConstants(),
+        dtype=DTypePolicy(),
     )
 
     assert_allclose_compact(taux, np.full((4, 4), 5.0))
@@ -302,6 +401,9 @@ def test_veros_state_helpers_cover_non_jitted_paths() -> None:
     state = _FakeVerosState(
         variables=_FakeVariableStore(
             taux=np.zeros((8, 8, 1), dtype=float),
+            tauy=np.zeros((8, 8, 1), dtype=float),
+            qnet=np.zeros((8, 8, 1), dtype=float),
+            qnec=np.zeros((8, 8, 1), dtype=float),
         )
     )
 
@@ -313,20 +415,37 @@ def test_veros_state_helpers_cover_non_jitted_paths() -> None:
         calls["step"] += 1
         current_state.marker = "updated"
 
-    pure_state = veros_state_module.pure(state, jitted=False, step=fake_step)
+    pure_state = veros_state_module.pure(
+        state,
+        jitted=False,
+        step=fake_step,
+        linear_solver=object(),
+    )
     assert pure_state is state
     assert calls["step"] == 1
     assert getattr(state, "marker") == "updated"
 
-    result_state = veros_state_module.set_variable(
+    forcing = veros_state_module.VerosForcingFields(
+        taux=jnp.full((4, 4, 1), 9.0),
+        tauy=jnp.full((4, 4, 1), 8.0),
+        qnet=jnp.full((4, 4, 1), 7.0),
+        qnec=jnp.full((4, 4, 1), 6.0),
+    )
+    result_state = veros_state_module.apply_veros_forcing_fields(
         state,
-        "taux",
-        np.full((4, 4, 1), 9.0),
+        forcing,
         jitted=False,
     )
 
     assert result_state is state
-    assert_allclose_compact(
-        state.variables.taux[2:-2, 2:-2, :], np.full((4, 4, 1), 9.0)
-    )
-    assert_allclose_compact(state.variables.taux[:2, :, :], 0.0)
+    for name, expected in zip(
+        ("taux", "tauy", "qnet", "qnec"),
+        (9.0, 8.0, 7.0, 6.0),
+        strict=True,
+    ):
+        value = getattr(state.variables, name)
+        assert_allclose_compact(
+            value[2:-2, 2:-2, :],
+            np.full((4, 4, 1), expected),
+        )
+        assert_allclose_compact(value[:2, :, :], 0.0)

@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Mapping
+
+import jax
+import jax.numpy as jnp
+
+from vercor._pytree import PyTreeNodeMixin
+from vercor.types import RuntimeArray
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class FieldStore(PyTreeNodeMixin):
+    """Immutable named array store used by the runtime."""
+
+    pytree_children = ("values",)
+    pytree_aux_data = ("field_names",)
+
+    field_names: tuple[str, ...]
+    values: tuple[RuntimeArray, ...]
+    field_indices: dict[str, int] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Build static lookup metadata for name-based runtime access."""
+
+        object.__setattr__(
+            self,
+            "field_indices",
+            {name: index for index, name in enumerate(self.field_names)},
+        )
+
+    def _pytree_post_unflatten(self) -> None:
+        """Restore derived lookup metadata after PyTree unflattening."""
+
+        self.__post_init__()
+
+    @classmethod
+    def empty(cls) -> "FieldStore":
+        """Create an empty field store."""
+
+        return cls(field_names=(), values=())
+
+    @classmethod
+    def from_mapping(cls, fields: Mapping[str, RuntimeArray]) -> "FieldStore":
+        """Create a field store from a mapping while preserving insertion order."""
+
+        return cls(
+            field_names=tuple(fields.keys()),
+            values=tuple(jnp.array(value, copy=True) for value in fields.values()),
+        )
+
+    def __contains__(self, name: object) -> bool:
+        """Return whether ``name`` is present in this store."""
+
+        return isinstance(name, str) and name in self.field_indices
+
+    def to_mapping(self) -> dict[str, RuntimeArray]:
+        """Return this store as a plain name-to-array mapping."""
+
+        return dict(zip(self.field_names, self.values, strict=True))
+
+    def get(self, name: str) -> RuntimeArray:
+        """Return a field by name."""
+
+        try:
+            index = self.field_indices[name]
+        except KeyError as exc:
+            raise KeyError(f"Runtime field {name!r} not found") from exc
+        return self.values[index]
+
+    def set(self, name: str, value: RuntimeArray) -> "FieldStore":
+        """Return a new store with ``name`` replaced or appended."""
+
+        if name not in self:
+            value_array = jnp.array(value, copy=True)
+            return FieldStore(
+                field_names=(*self.field_names, name),
+                values=(*self.values, value_array),
+            )
+
+        return self.replace(name, value)
+
+    def set_many(self, fields: Mapping[str, RuntimeArray]) -> "FieldStore":
+        """Return a new store with multiple fields replaced or appended."""
+
+        if not fields:
+            return self
+
+        values = list(self.values)
+        appended_names: list[str] = []
+        appended_values: list[RuntimeArray] = []
+        for field_name, field_value in fields.items():
+            if field_name in self.field_indices:
+                index = self.field_indices[field_name]
+                current = values[index]
+                values[index] = jnp.array(
+                    field_value,
+                    dtype=jnp.asarray(current).dtype,
+                    copy=True,
+                )
+            else:
+                appended_names.append(field_name)
+                appended_values.append(jnp.array(field_value, copy=True))
+
+        return FieldStore(
+            field_names=(*self.field_names, *appended_names),
+            values=(*values, *appended_values),
+        )
+
+    def replace(self, name: str, value: RuntimeArray) -> "FieldStore":
+        """Return a new store with an existing field replaced."""
+
+        if name not in self:
+            raise KeyError(f"Runtime field {name!r} not found")
+
+        index = self.field_indices[name]
+        values = list(self.values)
+        values[index] = self._replacement_array(name, value, values[index])
+        return FieldStore(field_names=self.field_names, values=tuple(values))
+
+    def replace_many(
+        self,
+        fields: Mapping[str, RuntimeArray],
+    ) -> "FieldStore":
+        """Return a new store with multiple existing fields replaced."""
+
+        if not fields:
+            return self
+
+        for field_name in fields:
+            if field_name not in self:
+                raise KeyError(f"Runtime field {field_name!r} not found")
+
+        values = list(self.values)
+        for field_name, field_value in fields.items():
+            index = self.field_indices[field_name]
+            values[index] = self._replacement_array(
+                field_name,
+                field_value,
+                values[index],
+            )
+        return FieldStore(field_names=self.field_names, values=tuple(values))
+
+    @staticmethod
+    def _replacement_array(
+        name: str,
+        value: RuntimeArray,
+        current: RuntimeArray,
+    ) -> RuntimeArray:
+        """Normalize one replacement while preserving its existing shape and dtype."""
+
+        current_array = jnp.asarray(current)
+        replacement_shape = jnp.asarray(value).shape
+        if replacement_shape != current_array.shape:
+            raise ValueError(
+                f"Runtime field {name!r} replacement has shape {replacement_shape}, "
+                f"but its existing shape {current_array.shape} must be preserved"
+            )
+        return jnp.array(value, dtype=current_array.dtype, copy=True)

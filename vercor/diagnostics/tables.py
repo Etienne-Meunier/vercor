@@ -3,17 +3,26 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from vercor.diagnostics.fields import ComponentMetric, safe_component_metric_mean
-from vercor.runtime.views import RuntimeComponentView
+from vercor._field_names import freeze_name_sequence as _freeze_name_sequence
+from vercor.state import ComponentState
 
 
 def print_component_field_means_table(
-    components: Mapping[str, RuntimeComponentView],
+    components: Mapping[str, ComponentState],
     fields: Sequence[tuple[ComponentMetric, str]],
     component_order: Sequence[str] | None = None,
 ) -> None:
     """Print a means table for component fields with configurable column order."""
 
-    ordered_names = list(component_order or components.keys())
+    normalized_order = (
+        None
+        if component_order is None
+        else _freeze_name_sequence(
+            component_order,
+            label="diagnostic component_order",
+        )
+    )
+    ordered_names = list(normalized_order or components.keys())
     ordered_names = [name for name in ordered_names if name in components]
 
     first_col_width = max(10, max((len(label) for _, label in fields), default=10))

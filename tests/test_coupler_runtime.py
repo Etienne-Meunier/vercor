@@ -8,55 +8,81 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tests._coverage_support import DummyComponent, make_test_grid
+from tests._coverage_support import make_test_grid
 from tests.assertions import assert_allclose_compact
+from vercor.calendar import model_year_seconds, year_type_for_calendar
 from vercor.clock import Clock
 from vercor.components import (
+    CallableComponent,
     Component,
+    TransferPolicy,
+    LifecycleHooks,
     DataComponent,
-    HostComponent,
+    ComponentSpec,
+    StepContext,
+    SetupResult,
+    StepResult,
 )
-from vercor.setups.data.era5_atmosphere import make_era5_atmosphere
-from vercor.setups.data.era5_land import make_era5_land
-from vercor.setups.data.era5_ocean import make_era5_ocean
-from vercor.setups.data.erainterim_ocean import make_erainterim_ocean
-from vercor.setups.data.jcm_land import make_jcm_land
-from vercor.setups.external.jax_gcm_fields import JAXGCM_OUTPUT_GRID_FIELD_NAMES
-import vercor.setups.external.jax_gcm_runtime as jax_gcm_runtime_module
-import vercor.setups.external.jax_gcm_output as jax_gcm_output_module
-import vercor.setups.external.jax_gcm_state as jax_gcm_state_module
-from vercor.output.adapters import ComponentOutputAdapter
-from vercor.setups.external.jax_gcm_state import JCMState
-from vercor.setups.slab.atmosphere import make_slab_atmosphere
-from vercor.setups.slab.land import make_slab_land
-from vercor.setups.slab.ocean import make_slab_ocean
-from vercor.setups.slab.seaice import make_slab_seaice
+from vercor.components.runtime_execution import step_component_runtime_state
+from vercor.setups._data.era5_atmosphere import make_era5_atmosphere
+from vercor.setups._data.era5_land import make_era5_land
+from vercor.setups._data.era5_ocean import make_era5_ocean
+from vercor.setups._data.erainterim_ocean import make_erainterim_ocean
+from vercor.setups._data.jcm_land import make_jcm_land
+from vercor.setups._external.jax_gcm_fields import (
+    JAXGCM_INPUT_GRID_FIELD_NAMES,
+    JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+)
+import vercor.setups._external.jax_gcm_runtime as jax_gcm_runtime_module
+import vercor.setups._external.jax_gcm_state as jax_gcm_state_module
+from vercor.setups._external.jax_gcm_state import JCMState
+from vercor.setups._slab.atmosphere import make_slab_atmosphere
+from vercor.setups._slab.land import make_slab_land
+from vercor.setups._slab.ocean import make_slab_ocean
+from vercor.setups._slab.seaice import make_slab_seaice
 from vercor.coupler import Coupler
+from vercor.dtypes import DTypePolicy
 from vercor.exceptions import ComponentError, CouplerError
-from vercor.exchange import Exchange
+from vercor.exchanges import Exchange
+from vercor.fields import _flatten_field_items
 from vercor.forcing_index import daily_forcing_index
-from vercor.grid import RectilinearGrid
-from vercor.regridders import bilinear, conservative
-from vercor.runtime.state import RuntimeComponentState, RuntimeCouplerState
-from vercor.runtime.stores import RuntimeFieldStore
-from vercor.settings import VercorSettings
+from vercor.grids import RectilinearGrid
+from vercor.regridding import bilinear, conservative
+from vercor.runtime import RuntimeOptions
+from vercor._runtime.state import ComponentRuntimeState
+from vercor.state import RunState
+from vercor._runtime.stores import FieldStore
 from vercor.time_selection import (
     datetime_to_seconds_in_year,
     get_periodic_interval,
 )
-from tests._runtime_helpers import replace_runtime_topology_maps, run_scanned_coupler
+from tests._runtime_helpers import (
+    create_runtime_state_from_coupler,
+    replace_runtime_topology_maps,
+    run_scanned_coupler,
+)
 
 
 class _IdentityRegridder:
-    def __call__(self, *args: Any) -> Any:
-        if len(args) == 1:
-            return jnp.asarray(args[0])
-        return tuple(jnp.asarray(arg) for arg in args)
+    def __init__(
+        self,
+        source_grid: Any = None,
+        target_grid: Any = None,
+    ) -> None:
+        self.source_grid = source_grid
+        self.target_grid = target_grid
+        self.has_identical_grids = source_grid is target_grid
+
+    def regrid(self, field: Any) -> Any:
+        return jnp.asarray(field)
+
+    def regrid_vector(self, u: Any, v: Any) -> tuple[Any, Any]:
+        return jnp.asarray(u), jnp.asarray(v)
 
 
 def _identity_factory(*args: Any, **kwargs: Any) -> _IdentityRegridder:
-    _ = args, kwargs
-    return _IdentityRegridder()
+    _ = kwargs
+    return _IdentityRegridder(*args)
 
 
 class _FakeJCMForcing(NamedTuple):
@@ -112,18 +138,21 @@ def _make_data_component(
     name: str,
     grid: RectilinearGrid,
     data: dict[str, jax.Array],
-    imports: tuple[str, ...] = (),
-    exports: tuple[str, ...] = (),
-    settings: VercorSettings | None = None,
+    receives: tuple[str, ...] = (),
+    sends: tuple[str, ...] = (),
+    transfer: TransferPolicy | None = None,
 ) -> Any:
     _ = component_type
-    component = DataComponent.from_fields(
+    component = DataComponent(
         name=name,
         grid=grid,
         fields=data,
-        settings=settings or VercorSettings(),
+        spec=ComponentSpec(
+            inputs=receives,
+            outputs=sends,
+            transfer=TransferPolicy() if transfer is None else transfer,
+        ),
     )
-    component.declare_fields(inputs=imports, outputs=exports)
     return component
 
 
@@ -192,7 +221,7 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
     )
     state.name = "ATM"
     state.grid = grid
-    state.settings = VercorSettings()
+    state._dtype_policy = DTypePolicy()
     state.data = {
         "sea_surface_temperature": jnp.full(grid.shape, 281.0, dtype=jnp.float64),
         "land_surface_temperature": jnp.full(grid.shape, 3.0, dtype=jnp.float64),
@@ -222,13 +251,7 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
         ),
     )
     state._step_function = _fake_jcm_step
-    state.output_adapter = ComponentOutputAdapter(
-        empty_error_message=jax_gcm_output_module.JAX_GCM_AVERAGE_EMPTY_ERROR_MESSAGE,
-        time_dim=jax_gcm_output_module.JAX_GCM_TIME_DIM,
-        dimension_order=jax_gcm_output_module.JAX_GCM_OUTPUT_DIMENSION_ORDER,
-    )
-    state.output_frequency = None
-    component = Component.from_step(
+    component = CallableComponent(
         name="ATM",
         grid=grid,
         step=(
@@ -241,49 +264,56 @@ def _make_jax_gcm_fixture(grid: RectilinearGrid) -> _JAXGCMFixture:
                 )
             )
         ),
-        inputs=("land_surface_temperature", "sea_surface_temperature"),
-        outputs=(
-            "land_surface_temperature",
-            "sea_surface_temperature",
-            "total_surface_temperature",
-            *JAXGCM_OUTPUT_GRID_FIELD_NAMES,
-            "pressure",
-        ),
-        defaults={
-            field_name: 0.0
-            for field_name in jax_gcm_runtime_module.jax_gcm_default_field_names(
-                include_total_surface_temperature=True
-            )
-        },
-        create_runtime_payload=(
-            lambda component: jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
-                state
-            )
-        ),
-        prefill_runtime_state_fields=(
-            lambda component, data, incoming, outgoing, contract: (
-                jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
-                    state,
-                    component,
-                    data,
-                    incoming,
-                    outgoing,
-                    contract,
-                )
-            )
-        ),
-        validate_runtime_state=(
-            lambda component, component_state, contract: (
-                jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
-                    state,
-                    component,
-                    component_state,
-                    contract,
-                )
-            )
+        spec=ComponentSpec(
+            inputs=JAXGCM_INPUT_GRID_FIELD_NAMES,
+            outputs=(
+                "land_surface_temperature",
+                "sea_surface_temperature",
+                "total_surface_temperature",
+                *JAXGCM_OUTPUT_GRID_FIELD_NAMES,
+                "pressure",
+            ),
+            initial_fields={
+                **{
+                    field_name: 0.0
+                    for field_name in (
+                        jax_gcm_runtime_module.jax_gcm_default_field_names(
+                            include_total_surface_temperature=True
+                        )
+                    )
+                },
+                **state.data,
+                "pressure": jnp.zeros((state.sigma_levels.size, *grid.shape)),
+            },
+            lifecycle=LifecycleHooks(
+                setup=(
+                    lambda component, context: SetupResult(
+                        payload=jax_gcm_runtime_module.create_jax_gcm_runtime_payload(
+                            state
+                        )
+                    )
+                ),
+                prefill=(
+                    lambda component, context: (
+                        jax_gcm_runtime_module.prefill_jax_gcm_runtime_fields(
+                            state,
+                            component,
+                            context,
+                        )
+                    )
+                ),
+                validate=(
+                    lambda component, context: (
+                        jax_gcm_runtime_module.validate_jax_gcm_runtime_state(
+                            state,
+                            component,
+                            context,
+                        )
+                    )
+                ),
+            ),
         ),
     )
-    component.seed_fields(state.data)
     return _JAXGCMFixture(component=component, state=state)
 
 
@@ -294,23 +324,23 @@ def _make_jax_gcm_component(grid: RectilinearGrid) -> Component:
 def _component_state(
     name: str,
     data: dict[str, jax.Array],
-    imports: tuple[str, ...],
-    exports: tuple[str, ...],
-) -> RuntimeComponentState:
+    receives: tuple[str, ...],
+    sends: tuple[str, ...],
+) -> ComponentRuntimeState:
     _ = name
     zeros = jnp.zeros((2, 2), dtype=jnp.float64)
-    return RuntimeComponentState(
-        data=RuntimeFieldStore.from_mapping(
+    return ComponentRuntimeState(
+        fields=FieldStore.from_mapping(
             {
                 field: data.get(field, zeros)
-                for field in sorted(set(data) | set(imports) | set(exports))
+                for field in sorted(set(data) | set(receives) | set(sends))
             }
         ),
-        incoming=RuntimeFieldStore.from_mapping(
-            {field: data.get(field, zeros) for field in imports}
+        received=FieldStore.from_mapping(
+            {field: data.get(field, zeros) for field in receives}
         ),
-        outgoing=RuntimeFieldStore.from_mapping(
-            {field: data.get(field, zeros) for field in exports}
+        sent=FieldStore.from_mapping(
+            {field: data.get(field, zeros) for field in sends}
         ),
     )
 
@@ -318,54 +348,54 @@ def _component_state(
 def _make_coupler(steps: int) -> Coupler:
     grid = make_test_grid(name="slab")
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=(
+            make_slab_atmosphere(grid),
+            make_slab_ocean(grid),
+            make_slab_land(grid),
+            make_slab_seaice(grid),
+        ),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=["sensible_heat_flux", "latent_heat_flux"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=["latent_heat_flux"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+            Exchange(
+                source="OCN",
+                target="ICE",
+                fields=["sea_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "ATM",
+            "OCN",
+            "LND",
+            "ICE",
+        ),
     )
-    coupler.components = {
-        "ATM": make_slab_atmosphere(grid),
-        "OCN": make_slab_ocean(grid),
-        "LND": make_slab_land(grid),
-        "ICE": make_slab_seaice(grid),
-    }
-    coupler.run_sequence = (
-        "ATM",
-        "OCN",
-        "LND",
-        "ICE",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="ATM",
-            target="OCN",
-            fields=["sensible_heat_flux", "latent_heat_flux"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="ATM",
-            target="LND",
-            fields=["latent_heat_flux"],
-            regrid=cast(Any, _identity_factory),
-        ),
-        Exchange(
-            source="OCN",
-            target="ICE",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        ),
-    ]
-    key = ("OCN", "ATM", "_identity_factory")
+    key = "OCN->ATM"
     regridders = cast(
         Any,
         {
             key: _IdentityRegridder(),
-            ("ATM", "OCN", "_identity_factory"): _IdentityRegridder(),
-            ("ATM", "LND", "_identity_factory"): _IdentityRegridder(),
-            ("OCN", "ICE", "_identity_factory"): _IdentityRegridder(),
+            "ATM->OCN": _IdentityRegridder(),
+            "ATM->LND": _IdentityRegridder(),
+            "OCN->ICE": _IdentityRegridder(),
         },
     )
     replace_runtime_topology_maps(
@@ -405,83 +435,70 @@ def _make_initialized_slab_coupler(steps: int) -> Coupler:
         latitude=latitude,
     )
 
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+    components = (
+        make_slab_atmosphere(atmosphere_grid),
+        make_slab_ocean(ocean_grid),
+        make_slab_land(land_grid),
+        make_slab_seaice(ice_grid),
     )
-    coupler.add_component(make_slab_atmosphere(atmosphere_grid))
-    coupler.add_component(make_slab_ocean(ocean_grid))
-    coupler.add_component(make_slab_land(land_grid))
-    coupler.add_component(make_slab_seaice(ice_grid))
-    coupler.add_exchange(
+    exchanges = (
         Exchange(
             source="OCN",
             target="ATM",
             fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["land_surface_temperature"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="ICE",
             target="ATM",
             fields=["ice_fraction"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="ATM",
             target="OCN",
             fields=["sensible_heat_flux", "latent_heat_flux"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="ATM",
             target="LND",
             fields=["latent_heat_flux"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="OCN",
             target="ICE",
             fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
+            regridder_factory=bilinear,
+        ),
     )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-            "LND",
-            "ICE",
-        )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=components,
+        exchanges=exchanges,
+        run_order=("ATM", "OCN", "LND", "ICE"),
     )
-    coupler.initialize()
+    coupler._initialize_runtime()
     return coupler
 
 
 def test_coupler_initialize_cascades_float32_precision_to_component_arrays() -> None:
     coupler = _make_initialized_slab_coupler(steps=1)
 
-    for component in coupler.components.values():
-        assert component.settings.enable_x64 is False
+    for component in coupler._ensure_prepared().components.values():
+        assert component._dtype_policy.enable_x64 is False
         assert component.grid.longitude.dtype == jnp.float32
         assert component.grid.latitude.dtype == jnp.float32
         if component.grid.binary_mask is not None:
             assert component.grid.binary_mask.dtype == jnp.float32
-        for field_value in component.data.values():
+        for field_value in component._data.values():
             assert jnp.asarray(field_value).dtype == jnp.float32
 
 
@@ -528,74 +545,64 @@ def _make_initialized_mixed_grid_slab_coupler(steps: int) -> Coupler:
         latitude_edges=ocean_latitude_edges,
     )
 
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps)
+    components = (
+        make_slab_atmosphere(atmosphere_grid),
+        make_slab_ocean(ocean_grid),
+        make_slab_land(land_grid),
+        make_slab_seaice(ice_grid),
     )
-    coupler.add_component(make_slab_atmosphere(atmosphere_grid))
-    coupler.add_component(make_slab_ocean(ocean_grid))
-    coupler.add_component(make_slab_land(land_grid))
-    coupler.add_component(make_slab_seaice(ice_grid))
-    coupler.add_exchange(
+    exchanges = (
         Exchange(
             source="OCN",
             target="ATM",
             fields=["sea_surface_temperature"],
-            regrid=conservative,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=conservative,
+        ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["land_surface_temperature"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="ICE",
             target="ATM",
             fields=["ice_fraction"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="ATM",
             target="OCN",
             fields=["sensible_heat_flux", "latent_heat_flux"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="ATM",
             target="LND",
             fields=["latent_heat_flux"],
-            regrid=bilinear,
-        )
-    )
-    coupler.add_exchange(
+            regridder_factory=bilinear,
+        ),
         Exchange(
             source="OCN",
             target="ICE",
             fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
+            regridder_factory=bilinear,
+        ),
     )
-    coupler.set_run_order(
-        (
-            "ATM",
-            "OCN",
-            "LND",
-            "ICE",
-        )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=steps),
+        components=components,
+        exchanges=exchanges,
+        run_order=("ATM", "OCN", "LND", "ICE"),
     )
-    coupler.initialize()
+    coupler._initialize_runtime()
     return coupler
 
 
-def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerState:
+def _make_initial_state(
+    coupler: Coupler,
+    sea_surface_temperature: jax.Array,
+) -> RunState:
     zeros = jnp.zeros_like(sea_surface_temperature)
     temperature_2m = jnp.full_like(sea_surface_temperature, 288.15)
     components = (
@@ -608,9 +615,12 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
                 "u_velocity_10m": zeros,
                 "v_velocity_10m": zeros,
                 "sea_surface_temperature": sea_surface_temperature,
+                "land_surface_temperature": temperature_2m,
+                "soil_moisture": zeros,
+                "ice_fraction": zeros,
             },
-            imports=("sea_surface_temperature",),
-            exports=(
+            receives=("sea_surface_temperature",),
+            sends=(
                 "temperature_2m",
                 "sensible_heat_flux",
                 "latent_heat_flux",
@@ -624,9 +634,19 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
                 "sea_surface_temperature": sea_surface_temperature,
                 "sensible_heat_flux": zeros,
                 "latent_heat_flux": zeros,
+                "u_velocity_10m": zeros,
+                "v_velocity_10m": zeros,
+                "u_velocity": zeros,
+                "v_velocity": zeros,
+                "specific_humidity": zeros,
+                "temperature": zeros,
+                "model_level_height": zeros,
+                "net_shortwave_radiation_flux": zeros,
+                "downward_longwave_radiation_flux": zeros,
+                "ice_fraction": zeros,
             },
-            imports=("sensible_heat_flux", "latent_heat_flux"),
-            exports=("sea_surface_temperature",),
+            receives=("sensible_heat_flux", "latent_heat_flux"),
+            sends=("sea_surface_temperature",),
         ),
         _component_state(
             "LND",
@@ -634,9 +654,10 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
                 "soil_moisture": jnp.full_like(sea_surface_temperature, 0.3),
                 "land_surface_temperature": temperature_2m,
                 "latent_heat_flux": zeros,
+                "sensible_heat_flux": zeros,
             },
-            imports=("latent_heat_flux",),
-            exports=("soil_moisture", "land_surface_temperature"),
+            receives=("latent_heat_flux",),
+            sends=("soil_moisture", "land_surface_temperature"),
         ),
         _component_state(
             "ICE",
@@ -644,41 +665,61 @@ def _make_initial_state(sea_surface_temperature: jax.Array) -> RuntimeCouplerSta
                 "ice_fraction": zeros,
                 "sea_surface_temperature": sea_surface_temperature,
             },
-            imports=("sea_surface_temperature",),
-            exports=("ice_fraction",),
+            receives=("sea_surface_temperature",),
+            sends=("ice_fraction",),
         ),
     )
-    return RuntimeCouplerState(
-        component_names=("ATM", "OCN", "LND", "ICE"),
-        components=components,
-        fractional_masks=RuntimeFieldStore.from_mapping(
-            {
-                "OCN|ATM|_identity_factory": jnp.ones_like(sea_surface_temperature),
-                "ATM|OCN|_identity_factory": jnp.ones_like(sea_surface_temperature),
-                "ATM|LND|_identity_factory": jnp.ones_like(sea_surface_temperature),
-                "OCN|ICE|_identity_factory": jnp.ones_like(sea_surface_temperature),
-            }
-        ),
+    state = coupler.initial_state()
+    for component_name, desired in zip(
+        ("ATM", "OCN", "LND", "ICE"),
+        components,
+        strict=True,
+    ):
+        current = state._component_state(component_name)
+        current = current.with_fields(
+            current.fields.replace_many(
+                {
+                    name: desired.fields.get(name)
+                    for name in current.fields.field_names
+                    if name in desired.fields
+                }
+            )
+        )
+        current = current.with_received(
+            current.received.replace_many(
+                {
+                    name: desired.received.get(name)
+                    for name in current.received.field_names
+                    if name in desired.received
+                }
+            )
+        )
+        current = current.with_sent(
+            current.sent.replace_many(
+                {
+                    name: desired.sent.get(name)
+                    for name in current.sent.field_names
+                    if name in desired.sent
+                }
+            )
+        )
+        state = state._with_component_state(component_name, current)
+    return state
+
+
+def _with_ocean_sst(state: RunState, sea_surface_temperature: jax.Array) -> RunState:
+    ocean = state._component_state("OCN")
+    ocean = ocean.with_fields(
+        ocean.fields.set("sea_surface_temperature", sea_surface_temperature)
     )
-
-
-def _with_ocean_sst(
-    state: RuntimeCouplerState, sea_surface_temperature: jax.Array
-) -> RuntimeCouplerState:
-    ocean = state.get_component_state("OCN")
-    ocean = ocean.with_data(
-        ocean.data.set("sea_surface_temperature", sea_surface_temperature)
+    ocean = ocean.with_sent(
+        ocean.sent.set("sea_surface_temperature", sea_surface_temperature)
     )
-    ocean = ocean.with_outgoing(
-        ocean.outgoing.set("sea_surface_temperature", sea_surface_temperature)
-    )
-    return state.set_component_state("OCN", ocean)
+    return state._with_component_state("OCN", ocean)
 
 
-def _without_store_field(
-    store: RuntimeFieldStore, field_name: str
-) -> RuntimeFieldStore:
-    return RuntimeFieldStore.from_mapping(
+def _without_store_field(store: FieldStore, field_name: str) -> FieldStore:
+    return FieldStore.from_mapping(
         {
             name: value
             for name, value in zip(store.field_names, store.values)
@@ -690,12 +731,12 @@ def _without_store_field(
 def test_run_supports_jit_grad_and_jvp() -> None:
     coupler = _make_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
-    initial_state = _make_initial_state(initial_sst)
+    initial_state = _make_initial_state(coupler, initial_sst)
 
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    ocean_sst = final_state.get_component_state("OCN").data.get(
+    ocean_sst = final_state._component_state("OCN").fields.get(
         "sea_surface_temperature"
     )
 
@@ -703,10 +744,10 @@ def test_run_supports_jit_grad_and_jvp() -> None:
     assert np.all(np.isfinite(np.asarray(ocean_sst)))
 
     def loss(sst: jax.Array) -> jax.Array:
-        state = _make_initial_state(sst)
+        state = _make_initial_state(coupler, sst)
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("OCN").data.get("sea_surface_temperature")
+            result._component_state("OCN").fields.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(initial_sst)
@@ -719,9 +760,12 @@ def test_run_supports_jit_grad_and_jvp() -> None:
 def test_run_matches_one_step_closed_form_for_slab_ocean() -> None:
     coupler = _make_coupler(steps=1)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
-    final_state = run_scanned_coupler(coupler, _make_initial_state(initial_sst))
+    final_state = run_scanned_coupler(
+        coupler,
+        _make_initial_state(coupler, initial_sst),
+    )
 
-    ocean_sst = final_state.get_component_state("OCN").data.get(
+    ocean_sst = final_state._component_state("OCN").fields.get(
         "sea_surface_temperature"
     )
     sensible = -10.0 * (288.15 - 286.15)
@@ -738,19 +782,19 @@ def test_run_matches_one_step_closed_form_for_slab_ocean() -> None:
 def test_initialized_slab_coupler_creates_jittable_runtime_state() -> None:
     coupler = _make_initialized_slab_coupler(steps=2)
     initial_sst = jnp.full((2, 2), 286.15, dtype=jnp.float64)
-    canonical_state = coupler.state()
-    runtime_state_copy = coupler.state()
-    assert runtime_state_copy.component_names == canonical_state.component_names
+    canonical_state = coupler.initial_state()
+    runtime_state_copy = coupler.initial_state()
+    assert tuple(runtime_state_copy.components()) == tuple(canonical_state.components())
     initial_state = _with_ocean_sst(canonical_state, initial_sst)
 
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    ocean_sst = final_state.get_component_state("OCN").data.get(
+    ocean_sst = final_state._component_state("OCN").fields.get(
         "sea_surface_temperature"
     )
 
-    assert final_state.component_names == ("ATM", "OCN", "LND", "ICE")
+    assert tuple(final_state.components()) == ("ATM", "OCN", "LND", "ICE")
     assert ocean_sst.shape == (2, 2)
     assert isinstance(ocean_sst, jax.Array)
     assert np.all(np.isfinite(np.asarray(ocean_sst)))
@@ -759,7 +803,7 @@ def test_initialized_slab_coupler_creates_jittable_runtime_state() -> None:
         state = _with_ocean_sst(initial_state, sea_surface_temperature)
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("OCN").data.get("sea_surface_temperature")
+            result._component_state("OCN").fields.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(initial_sst)
@@ -769,34 +813,137 @@ def test_initialized_slab_coupler_creates_jittable_runtime_state() -> None:
 
 def test_initialized_slab_coupler_run_prefills_missing_imports() -> None:
     coupler = _make_initialized_slab_coupler(steps=1)
-    ocean = coupler.components["OCN"]
+    ocean = coupler._runtime_components["OCN"]
 
     final_state = coupler.run()
-    ocean_state = final_state.get_component_state("OCN")
+    ocean_state = final_state._component_state("OCN")
 
-    assert final_state.component_names == ("ATM", "OCN", "LND", "ICE")
-    assert ocean_state.incoming.get("sensible_heat_flux").shape == ocean.grid.shape
-    assert ocean_state.incoming.get("latent_heat_flux").shape == ocean.grid.shape
+    assert tuple(final_state.components()) == ("ATM", "OCN", "LND", "ICE")
+    assert ocean_state.received.get("sensible_heat_flux").shape == ocean.grid.shape
+    assert ocean_state.received.get("latent_heat_flux").shape == ocean.grid.shape
+
+
+def test_jcm_slab_ocean_exchange_recipe_prefills_required_flux_imports() -> None:
+    from vercor.recipes import (
+        ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+        JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+        JCM_LAND_TO_ATMOSPHERE_FIELDS,
+        OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+    )
+
+    longitude = np.asarray([0.0, 1.0], dtype=float)
+    latitude = np.asarray([-1.0, 1.0], dtype=float)
+    ocean_mask = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float)
+    land_mask = 1.0 - ocean_mask
+    atmosphere_grid = make_test_grid(
+        name="ATM",
+        longitude=longitude,
+        latitude=latitude,
+    )
+    ocean_grid = make_test_grid(
+        name="OCN",
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=ocean_mask,
+    )
+    land_grid = make_test_grid(
+        name="LND",
+        longitude=longitude,
+        latitude=latitude,
+        binary_mask=land_mask,
+    )
+    zeros = jnp.zeros(atmosphere_grid.shape)
+    atmosphere_exports = tuple(
+        _flatten_field_items(
+            (
+                *JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+                *ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+            )
+        )
+    )
+    atmosphere = _make_data_component(
+        DataComponent,
+        name="ATM",
+        grid=atmosphere_grid,
+        data={field_name: zeros for field_name in atmosphere_exports},
+        receives=tuple(
+            _flatten_field_items(
+                (
+                    *OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+                    *JCM_LAND_TO_ATMOSPHERE_FIELDS,
+                )
+            )
+        ),
+        sends=atmosphere_exports,
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(
+            atmosphere,
+            make_slab_ocean(ocean_grid),
+            make_slab_land(land_grid),
+        ),
+        exchanges=(
+            Exchange(
+                source="ATM",
+                target="OCN",
+                fields=JCM_ATMOSPHERE_TO_SLAB_OCEAN_FIELDS,
+                regridder_factory=bilinear,
+            ),
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=OCEAN_TO_ATMOSPHERE_SURFACE_FIELDS,
+                regridder_factory=bilinear,
+            ),
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=JCM_LAND_TO_ATMOSPHERE_FIELDS,
+                regridder_factory=bilinear,
+            ),
+            Exchange(
+                source="ATM",
+                target="LND",
+                fields=ATMOSPHERE_TO_JCM_LAND_FLUX_FIELDS,
+                regridder_factory=bilinear,
+            ),
+        ),
+        run_order=("OCN", "LND", "ATM"),
+    )
+    coupler._initialize_runtime()
+
+    final_state = coupler.run()
+    ocean_state = final_state._component_state("OCN")
+
+    for field_name in (
+        "sensible_heat_flux",
+        "latent_heat_flux",
+        "u_velocity",
+        "v_velocity",
+    ):
+        assert ocean_state.received.get(field_name).shape == ocean_grid.shape
+        assert ocean_state.fields.get(field_name).shape == ocean_grid.shape
 
 
 def test_scanned_runtime_state_uses_runtime_field_stores() -> None:
     coupler = _make_initialized_slab_coupler(steps=1)
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
 
     assert all(
-        isinstance(component_state.data, RuntimeFieldStore)
-        and isinstance(component_state.incoming, RuntimeFieldStore)
-        and isinstance(component_state.outgoing, RuntimeFieldStore)
-        for component_state in initial_state.components
+        isinstance(component_state.fields, FieldStore)
+        and isinstance(component_state.received, FieldStore)
+        and isinstance(component_state.sent, FieldStore)
+        for component_state in initial_state._components
     )
 
     final_state = run_scanned_coupler(coupler, initial_state)
 
     assert all(
-        isinstance(component_state.data, RuntimeFieldStore)
-        and isinstance(component_state.incoming, RuntimeFieldStore)
-        and isinstance(component_state.outgoing, RuntimeFieldStore)
-        for component_state in final_state.components
+        isinstance(component_state.fields, FieldStore)
+        and isinstance(component_state.received, FieldStore)
+        and isinstance(component_state.sent, FieldStore)
+        for component_state in final_state._components
     )
 
 
@@ -804,7 +951,7 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
     None
 ):
     coupler = _make_initialized_mixed_grid_slab_coupler(steps=2)
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     initial_sst = jnp.linspace(285.15, 287.15, 9, dtype=jnp.float64).reshape((3, 3))
     initial_state = _with_ocean_sst(initial_state, initial_sst)
 
@@ -812,12 +959,12 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
         initial_state
     )
 
-    atmosphere = final_state.get_component_state("ATM")
-    ocean = final_state.get_component_state("OCN")
-    ice = final_state.get_component_state("ICE")
-    atmosphere_sst = atmosphere.incoming.get("sea_surface_temperature")
-    ocean_sst = ocean.data.get("sea_surface_temperature")
-    ice_sst = ice.incoming.get("sea_surface_temperature")
+    atmosphere = final_state._component_state("ATM")
+    ocean = final_state._component_state("OCN")
+    ice = final_state._component_state("ICE")
+    atmosphere_sst = atmosphere.received.get("sea_surface_temperature")
+    ocean_sst = ocean.fields.get("sea_surface_temperature")
+    ice_sst = ice.received.get("sea_surface_temperature")
 
     assert atmosphere_sst.shape == (2, 2)
     assert ocean_sst.shape == (3, 3)
@@ -833,7 +980,7 @@ def test_mixed_grid_slab_coupler_runs_with_real_regridders_under_jit_grad_and_jv
         state = _with_ocean_sst(initial_state, sea_surface_temperature)
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("OCN").data.get("sea_surface_temperature")
+            result._component_state("OCN").fields.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(initial_sst)
@@ -854,62 +1001,61 @@ def test_data_forcing_components_run_inside_runtime() -> None:
     monthly_land = monthly_land.at[0].set(
         jnp.asarray([[285.0, 286.0], [287.0, 288.0]], dtype=jnp.float64)
     )
-    coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+    ocean = _make_data_component(
+        make_era5_ocean,
+        name="OCN",
+        grid=grid,
+        data={"sea_surface_temperature": monthly_ocean},
+        sends=("sea_surface_temperature",),
+        transfer=TransferPolicy("linear"),
     )
-    coupler.settings.year_in_seconds = 12.0
-    coupler.components = {
-        "OCN": _make_data_component(
-            make_era5_ocean,
-            name="OCN",
-            grid=grid,
-            data={"sea_surface_temperature": monthly_ocean},
-            exports=("sea_surface_temperature",),
-            settings=VercorSettings(apply_time_interpolation=True),
-        ),
-        "LND": _make_data_component(
-            make_era5_land,
-            name="LND",
-            grid=grid,
-            data={"land_surface_temperature": monthly_land},
-            exports=("land_surface_temperature",),
-            settings=VercorSettings(apply_time_interpolation=True),
-        ),
-        "ATM": _make_data_component(
-            make_era5_atmosphere,
-            name="ATM",
-            grid=grid,
-            data={
-                "sea_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
-                "land_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
-            },
-            imports=("sea_surface_temperature", "land_surface_temperature"),
-        ),
-    }
-    coupler.run_sequence = (
-        "OCN",
-        "LND",
-        "ATM",
+    land = _make_data_component(
+        make_era5_land,
+        name="LND",
+        grid=grid,
+        data={"land_surface_temperature": monthly_land},
+        sends=("land_surface_temperature",),
+        transfer=TransferPolicy("linear"),
     )
-    coupler.exchanges = [
+    atmosphere = _make_data_component(
+        make_era5_atmosphere,
+        name="ATM",
+        grid=grid,
+        data={
+            "sea_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
+            "land_surface_temperature": jnp.zeros((2, 2), dtype=jnp.float64),
+        },
+        receives=("sea_surface_temperature", "land_surface_temperature"),
+    )
+    exchanges = (
         Exchange(
             source="OCN",
             target="ATM",
             fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
+            regridder_factory=cast(Any, _identity_factory),
         ),
         Exchange(
             source="LND",
             target="ATM",
             fields=["land_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
+            regridder_factory=cast(Any, _identity_factory),
         ),
-    ]
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, land, atmosphere),
+        exchanges=exchanges,
+        run_order=(
+            "OCN",
+            "LND",
+            "ATM",
+        ),
+    )
     regridders = cast(
         Any,
         {
-            ("OCN", "ATM", "_identity_factory"): _IdentityRegridder(),
-            ("LND", "ATM", "_identity_factory"): _IdentityRegridder(),
+            "OCN->ATM": _IdentityRegridder(),
+            "LND->ATM": _IdentityRegridder(),
         },
     )
     replace_runtime_topology_maps(
@@ -920,33 +1066,35 @@ def test_data_forcing_components_run_inside_runtime() -> None:
         },
     )
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere = final_state.get_component_state("ATM")
-    received_ocean = atmosphere.incoming.get("sea_surface_temperature")
-    received_land = atmosphere.incoming.get("land_surface_temperature")
+    atmosphere = final_state._component_state("ATM")
+    received_ocean = atmosphere.received.get("sea_surface_temperature")
+    received_land = atmosphere.received.get("land_surface_temperature")
     expected_ocean = np.asarray(monthly_ocean[0])
     expected_land = np.asarray(monthly_land[0])
 
     assert received_ocean.shape == grid.shape
     assert received_land.shape == grid.shape
-    assert "total_surface_temperature" not in atmosphere.data.field_names
+    assert "total_surface_temperature" not in atmosphere.fields.field_names
     assert isinstance(received_ocean, jax.Array)
     assert isinstance(received_land, jax.Array)
     assert_allclose_compact(received_ocean, expected_ocean)
     assert_allclose_compact(received_land, expected_land)
 
     def loss(ocean_forcing: jax.Array) -> jax.Array:
-        ocean = initial_state.get_component_state("OCN")
-        state = initial_state.set_component_state(
+        ocean = initial_state._component_state("OCN")
+        state = initial_state._with_component_state(
             "OCN",
-            ocean.with_data(ocean.data.set("sea_surface_temperature", ocean_forcing)),
+            ocean.with_fields(
+                ocean.fields.set("sea_surface_temperature", ocean_forcing)
+            ),
         )
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("ATM").incoming.get("sea_surface_temperature")
+            result._component_state("ATM").received.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(monthly_ocean)
@@ -965,50 +1113,51 @@ def test_public_data_component_monthly_output_validates_and_sends_runtime_slice(
         dtype=jnp.float64,
     )
     monthly_ocean = monthly_ocean.at[0].set(first_month)
-    ocean = DataComponent.from_fields(
+    ocean = DataComponent(
         name="OCN",
         grid=grid,
         fields={"sea_surface_temperature": monthly_ocean},
-        settings=VercorSettings(apply_time_interpolation=True),
+        spec=ComponentSpec(transfer=TransferPolicy("linear")),
     )
     atmosphere = make_slab_atmosphere(grid)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.settings.year_in_seconds = 12.0
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
-    key = ("OCN", "ATM", "_identity_factory")
+    key = "OCN->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: _IdentityRegridder()}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
 
-    initial_state = coupler.state()
-    ocean_state = initial_state.get_component_state("OCN")
-    assert ocean_state.data.get("sea_surface_temperature").shape == monthly_ocean.shape
-    assert ocean_state.outgoing.get("sea_surface_temperature").shape == grid.shape
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
+    ocean_state = initial_state._component_state("OCN")
+    assert (
+        ocean_state.fields.get("sea_surface_temperature").shape == monthly_ocean.shape
+    )
+    assert ocean_state.sent.get("sea_surface_temperature").shape == grid.shape
     assert_allclose_compact(
-        ocean_state.outgoing.get("sea_surface_temperature"),
+        ocean_state.sent.get("sea_surface_temperature"),
         np.asarray(first_month),
     )
 
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    received_sst = final_state.get_component_state("ATM").incoming.get(
+    received_sst = final_state._component_state("ATM").received.get(
         "sea_surface_temperature"
     )
 
@@ -1028,47 +1177,38 @@ def test_daily_data_forcing_sends_time_slice_to_slab_component_with_real_regridd
         name="OCN",
         grid=grid,
         data={"sea_surface_temperature": forcing},
-        exports=("sea_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        sends=("sea_surface_temperature",),
+        transfer=TransferPolicy("daily"),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 2), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 2), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regridder_factory=bilinear,
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
-    ]
-    key = ("OCN", "ATM", "bilinear")
+    key = "OCN->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: bilinear(grid, grid)}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
-    atmosphere.data = {
-        "temperature_2m": jnp.full(grid.shape, 288.15, dtype=jnp.float64),
-        "sensible_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "latent_heat_flux": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "u_velocity_10m": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "v_velocity_10m": jnp.zeros(grid.shape, dtype=jnp.float64),
-        "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
-    }
-
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    received_sst = atmosphere_state.incoming.get("sea_surface_temperature")
-    sensible_heat_flux = atmosphere_state.data.get("sensible_heat_flux")
+    atmosphere_state = final_state._component_state("ATM")
+    received_sst = atmosphere_state.received.get("sea_surface_temperature")
+    sensible_heat_flux = atmosphere_state.fields.get("sensible_heat_flux")
 
     assert_allclose_compact(received_sst, np.asarray(forcing[1]))
     assert sensible_heat_flux.shape == grid.shape
@@ -1101,34 +1241,28 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         name="OCN",
         grid=ocean_grid,
         data={"sea_surface_temperature": monthly_ocean},
-        exports=("sea_surface_temperature",),
-        settings=VercorSettings(apply_time_interpolation=True),
+        sends=("sea_surface_temperature",),
+        transfer=TransferPolicy("linear"),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regridder_factory=bilinear,
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.settings.year_in_seconds = 12.0
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=bilinear,
-        )
-    ]
-    key = ("OCN", "ATM", "bilinear")
+    key = "OCN->ATM"
     regridder = bilinear(ocean_grid, atmosphere_grid)
-    replace_runtime_topology_maps(
-        coupler,
-        regridders=cast(Any, {key: regridder}),
-        fractional_masks={key: jnp.ones(atmosphere_grid.shape)},
-    )
-    atmosphere.data = {
+    cast(Any, atmosphere)._data = {
         "temperature_2m": jnp.full(atmosphere_grid.shape, 288.15, dtype=jnp.float64),
         "sensible_heat_flux": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
         "latent_heat_flux": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
@@ -1136,16 +1270,21 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
         "v_velocity_10m": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
         "sea_surface_temperature": jnp.zeros(atmosphere_grid.shape, dtype=jnp.float64),
     }
+    replace_runtime_topology_maps(
+        coupler,
+        regridders=cast(Any, {key: regridder}),
+        fractional_masks={key: jnp.ones(atmosphere_grid.shape)},
+    )
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    received_sst = atmosphere_state.incoming.get("sea_surface_temperature")
-    sensible_heat_flux = atmosphere_state.data.get("sensible_heat_flux")
+    atmosphere_state = final_state._component_state("ATM")
+    received_sst = atmosphere_state.received.get("sea_surface_temperature")
+    sensible_heat_flux = atmosphere_state.fields.get("sensible_heat_flux")
     expected_source = np.asarray(first_month)
-    expected_received = regridder(expected_source)
+    expected_received = regridder.regrid(expected_source)
 
     assert received_sst.shape == atmosphere_grid.shape
     assert sensible_heat_flux.shape == atmosphere_grid.shape
@@ -1155,16 +1294,16 @@ def test_erainterim_ocean_monthly_forcing_replays_to_slab_atmosphere_with_real_r
     assert np.all(np.isfinite(np.asarray(sensible_heat_flux)))
 
     def loss(ocean_forcing: jax.Array) -> jax.Array:
-        ocean_state = initial_state.get_component_state("OCN")
-        state = initial_state.set_component_state(
+        ocean_state = initial_state._component_state("OCN")
+        state = initial_state._with_component_state(
             "OCN",
-            ocean_state.with_data(
-                ocean_state.data.set("sea_surface_temperature", ocean_forcing)
+            ocean_state.with_fields(
+                ocean_state.fields.set("sea_surface_temperature", ocean_forcing)
             ),
         )
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("ATM").incoming.get("sea_surface_temperature")
+            result._component_state("ATM").received.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(monthly_ocean)
@@ -1182,8 +1321,8 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
         name="LND",
         grid=grid,
         data={"land_surface_temperature": forcing},
-        exports=("land_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        sends=("land_surface_temperature",),
+        transfer=TransferPolicy("daily"),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1193,54 +1332,54 @@ def test_jcm_land_daily_forcing_replays_to_data_atmosphere_under_jit_and_grad() 
             "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
             "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
         },
-        imports=("land_surface_temperature",),
+        receives=("land_surface_temperature",),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 3), dt_seconds=3600.0, steps=1),
+        components=(land, atmosphere),
+        exchanges=(
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=["land_surface_temperature"],
+                regridder_factory=bilinear,
+            ),
+        ),
+        run_order=(
+            "LND",
+            "ATM",
+        ),
     )
-    coupler.components = {"LND": land, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "LND",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="LND",
-            target="ATM",
-            fields=["land_surface_temperature"],
-            regrid=bilinear,
-        )
-    ]
-    key = ("LND", "ATM", "bilinear")
+    key = "LND->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: bilinear(grid, grid)}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    received_temperature = atmosphere_state.incoming.get("land_surface_temperature")
+    atmosphere_state = final_state._component_state("ATM")
+    received_temperature = atmosphere_state.received.get("land_surface_temperature")
 
     assert received_temperature.shape == grid.shape
-    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert "total_surface_temperature" not in atmosphere_state.fields.field_names
     assert isinstance(received_temperature, jax.Array)
     assert_allclose_compact(received_temperature, np.asarray(forcing[2]))
 
     def loss(land_forcing: jax.Array) -> jax.Array:
-        land_state = initial_state.get_component_state("LND")
-        state = initial_state.set_component_state(
+        land_state = initial_state._component_state("LND")
+        state = initial_state._with_component_state(
             "LND",
-            land_state.with_data(
-                land_state.data.set("land_surface_temperature", land_forcing)
+            land_state.with_fields(
+                land_state.fields.set("land_surface_temperature", land_forcing)
             ),
         )
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("ATM").incoming.get("land_surface_temperature")
+            result._component_state("ATM").received.get("land_surface_temperature")
         )
 
     gradient = jax.grad(loss)(forcing)
@@ -1258,8 +1397,8 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
         name="LND",
         grid=grid,
         data={"land_surface_temperature": forcing},
-        exports=("land_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        sends=("land_surface_temperature",),
+        transfer=TransferPolicy("daily"),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1269,57 +1408,57 @@ def test_noleap_daily_forcing_replays_calendar_slice_under_jit_and_grad() -> Non
             "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
             "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
         },
-        imports=("land_surface_temperature",),
+        receives=("land_surface_temperature",),
     )
     coupler = Coupler(
         clock=Clock(
             start=datetime(2024, 3, 1),
             dt_seconds=3600.0,
             steps=1,
-            year_type="noleap",
-        )
+            calendar="noleap",
+        ),
+        components=(land, atmosphere),
+        exchanges=(
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=["land_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "LND",
+            "ATM",
+        ),
     )
-    coupler.components = {"LND": land, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "LND",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="LND",
-            target="ATM",
-            fields=["land_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
-    key = ("LND", "ATM", "_identity_factory")
+    key = "LND->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: _IdentityRegridder()}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    received_temperature = atmosphere_state.incoming.get("land_surface_temperature")
+    atmosphere_state = final_state._component_state("ATM")
+    received_temperature = atmosphere_state.received.get("land_surface_temperature")
 
-    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert "total_surface_temperature" not in atmosphere_state.fields.field_names
     assert_allclose_compact(received_temperature, np.asarray(forcing[59]))
 
     def loss(land_forcing: jax.Array) -> jax.Array:
-        land_state = initial_state.get_component_state("LND")
-        state = initial_state.set_component_state(
+        land_state = initial_state._component_state("LND")
+        state = initial_state._with_component_state(
             "LND",
-            land_state.with_data(
-                land_state.data.set("land_surface_temperature", land_forcing)
+            land_state.with_fields(
+                land_state.fields.set("land_surface_temperature", land_forcing)
             ),
         )
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("ATM").incoming.get("land_surface_temperature")
+            result._component_state("ATM").received.get("land_surface_temperature")
         )
 
     gradient = jax.grad(loss)(forcing)
@@ -1338,8 +1477,8 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
         name="LND",
         grid=grid,
         data={"land_surface_temperature": forcing},
-        exports=("land_surface_temperature",),
-        settings=VercorSettings(apply_daily_time_selection=True),
+        sends=("land_surface_temperature",),
+        transfer=TransferPolicy("daily"),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1349,30 +1488,30 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
             "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
             "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
         },
-        imports=("land_surface_temperature",),
+        receives=("land_surface_temperature",),
     )
     coupler = Coupler(
         clock=Clock(
             start=datetime(2001, 2, 28),
             dt_seconds=3600.0,
             steps=1,
-            year_type="360",
-        )
+            calendar="360_day",
+        ),
+        components=(land, atmosphere),
+        exchanges=(
+            Exchange(
+                source="LND",
+                target="ATM",
+                fields=["land_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "LND",
+            "ATM",
+        ),
     )
-    coupler.components = {"LND": land, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "LND",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="LND",
-            target="ATM",
-            fields=["land_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
-    key = ("LND", "ATM", "_identity_factory")
+    key = "LND->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: _IdentityRegridder()}),
@@ -1381,34 +1520,37 @@ def test_360_day_daily_forcing_matches_host_calendar_mapping_under_jit_and_grad(
     _, runtime_time, _ = next(coupler.clock.iter())
     expected_index = daily_forcing_index(
         runtime_time,
-        year_type=coupler.clock.year_type,
+        year_type=year_type_for_calendar(
+            coupler.clock.calendar,
+            runtime_time.year,
+        ),
         no_leap=True,
     )
     expected_slice = forcing[expected_index]
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    received_temperature = atmosphere_state.incoming.get("land_surface_temperature")
+    atmosphere_state = final_state._component_state("ATM")
+    received_temperature = atmosphere_state.received.get("land_surface_temperature")
 
     assert expected_index == 56
     assert_allclose_compact(expected_slice, np.asarray(forcing[56]))
-    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert "total_surface_temperature" not in atmosphere_state.fields.field_names
     assert_allclose_compact(received_temperature, expected_slice)
 
     def loss(land_forcing: jax.Array) -> jax.Array:
-        land_state = initial_state.get_component_state("LND")
-        state = initial_state.set_component_state(
+        land_state = initial_state._component_state("LND")
+        state = initial_state._with_component_state(
             "LND",
-            land_state.with_data(
-                land_state.data.set("land_surface_temperature", land_forcing)
+            land_state.with_fields(
+                land_state.fields.set("land_surface_temperature", land_forcing)
             ),
         )
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("ATM").incoming.get("land_surface_temperature")
+            result._component_state("ATM").received.get("land_surface_temperature")
         )
 
     gradient = jax.grad(loss)(forcing)
@@ -1429,8 +1571,8 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
         name="OCN",
         grid=grid,
         data={"sea_surface_temperature": monthly_ocean},
-        exports=("sea_surface_temperature",),
-        settings=VercorSettings(apply_time_interpolation=True),
+        sends=("sea_surface_temperature",),
+        transfer=TransferPolicy("linear"),
     )
     atmosphere = _make_data_component(
         make_era5_atmosphere,
@@ -1440,43 +1582,48 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
             "sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
             "land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64),
         },
-        imports=("sea_surface_temperature",),
+        receives=("sea_surface_temperature",),
     )
     coupler = Coupler(
-        clock=Clock(start=datetime(2001, 12, 31, 12), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2001, 12, 31, 12), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
-    key = ("OCN", "ATM", "_identity_factory")
+    key = "OCN->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: _IdentityRegridder()}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
+    year_type = year_type_for_calendar(
+        coupler.clock.calendar,
+        coupler.clock.start.year,
+    )
+    year_seconds = model_year_seconds(year_type)
     (left_index, left_weight), (right_index, right_weight) = get_periodic_interval(
         current_time=datetime_to_seconds_in_year(coupler.clock.start),
-        cycle_length=coupler.settings.year_in_seconds,
-        rec_spacing=coupler.settings.year_in_seconds / 12.0,
+        cycle_length=year_seconds,
+        rec_spacing=year_seconds / 12.0,
         n_rec=12,
     )
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    received_ocean = atmosphere_state.incoming.get("sea_surface_temperature")
+    atmosphere_state = final_state._component_state("ATM")
+    received_ocean = atmosphere_state.received.get("sea_surface_temperature")
     expected = np.asarray(
         left_weight * monthly_ocean[left_index]
         + right_weight * monthly_ocean[right_index]
@@ -1484,20 +1631,20 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
 
     assert (left_index, right_index) == (11, 0)
     assert received_ocean.shape == grid.shape
-    assert "total_surface_temperature" not in atmosphere_state.data.field_names
+    assert "total_surface_temperature" not in atmosphere_state.fields.field_names
     assert_allclose_compact(received_ocean, expected)
 
     def loss(ocean_forcing: jax.Array) -> jax.Array:
-        ocean_state = initial_state.get_component_state("OCN")
-        state = initial_state.set_component_state(
+        ocean_state = initial_state._component_state("OCN")
+        state = initial_state._with_component_state(
             "OCN",
-            ocean_state.with_data(
-                ocean_state.data.set("sea_surface_temperature", ocean_forcing)
+            ocean_state.with_fields(
+                ocean_state.fields.set("sea_surface_temperature", ocean_forcing)
             ),
         )
         result = run_scanned_coupler(coupler, state)
         return jnp.sum(
-            result.get_component_state("ATM").incoming.get("sea_surface_temperature")
+            result._component_state("ATM").received.get("sea_surface_temperature")
         )
 
     gradient = jax.grad(loss)(monthly_ocean)
@@ -1506,25 +1653,31 @@ def test_monthly_forcing_wraps_year_boundary_under_jit_and_grad() -> None:
     assert_allclose_compact(gradient[1:11], np.zeros((10, 2, 2)))
 
 
+@pytest.mark.filterwarnings(
+    "error:scatter inputs have incompatible types:FutureWarning"
+)
 def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
+    jax.config.update("jax_enable_x64", True)
     grid = make_test_grid(name="jcm-runtime")
     fixture = _make_jax_gcm_fixture(grid)
     component = fixture.component
     original_state = fixture.state._state
     original_forcing = fixture.state.forcing
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
+    initial_payload = initial_state._component_state("ATM").payload
+    assert initial_payload is not None
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    temperature = atmosphere_state.data.get("temperature")
-    sensible_heat_flux = atmosphere_state.data.get("sensible_heat_flux")
+    atmosphere_state = final_state._component_state("ATM")
+    temperature = atmosphere_state.fields.get("temperature")
+    sensible_heat_flux = atmosphere_state.fields.get("sensible_heat_flux")
 
     assert fixture.state._state is original_state
     assert fixture.state.forcing is original_forcing
@@ -1534,23 +1687,40 @@ def test_jax_gcm_runs_inside_runtime_under_jit_and_grad() -> None:
     assert isinstance(sensible_heat_flux, jax.Array)
     assert np.all(np.isfinite(np.asarray(temperature)))
     assert np.all(np.isfinite(np.asarray(sensible_heat_flux)))
-    assert atmosphere_state.runtime_payload is not None
+    mapped_float_dtypes = {
+        atmosphere_state.fields.get(field_name).dtype
+        for field_name in (*JAXGCM_OUTPUT_GRID_FIELD_NAMES, "pressure")
+    }
+    assert mapped_float_dtypes == {jnp.dtype(jnp.float32)}
+    assert atmosphere_state.payload is not None
+    initial_float_dtypes = tuple(
+        jnp.asarray(leaf).dtype
+        for leaf in jax.tree_util.tree_leaves(initial_payload)
+        if jnp.issubdtype(jnp.asarray(leaf).dtype, jnp.floating)
+    )
+    final_float_dtypes = tuple(
+        jnp.asarray(leaf).dtype
+        for leaf in jax.tree_util.tree_leaves(atmosphere_state.payload)
+        if jnp.issubdtype(jnp.asarray(leaf).dtype, jnp.floating)
+    )
+    assert set(initial_float_dtypes) == {jnp.dtype(jnp.float32)}
+    assert final_float_dtypes == initial_float_dtypes
 
     def loss(sea_surface_temperature: jax.Array) -> jax.Array:
-        atmosphere = initial_state.get_component_state("ATM")
-        state = initial_state.set_component_state(
+        atmosphere = initial_state._component_state("ATM")
+        state = initial_state._with_component_state(
             "ATM",
-            atmosphere.with_data(
-                atmosphere.data.set(
+            atmosphere.with_fields(
+                atmosphere.fields.set(
                     "sea_surface_temperature",
                     sea_surface_temperature,
                 )
             ),
         )
         result = run_scanned_coupler(coupler, state)
-        return jnp.sum(result.get_component_state("ATM").data.get("temperature"))
+        return jnp.sum(result._component_state("ATM").fields.get("temperature"))
 
-    gradient = jax.grad(loss)(jnp.full(grid.shape, 281.0, dtype=jnp.float64))
+    gradient = jax.grad(loss)(jnp.full(grid.shape, 281.0, dtype=jnp.float32))
     assert gradient.shape == grid.shape
     assert np.all(np.isfinite(np.asarray(gradient)))
     assert np.any(np.asarray(gradient) != 0.0)
@@ -1566,25 +1736,61 @@ def test_jax_gcm_runtime_keeps_time_dependent_forcing_payload_shape_stable() -> 
     )
     fixture.state.forcing = forcing_template
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    payload = atmosphere_state.runtime_payload
+    atmosphere_state = final_state._component_state("ATM")
+    payload = atmosphere_state.payload
 
-    assert atmosphere_state.data.get("temperature").shape == grid.shape
+    assert atmosphere_state.fields.get("temperature").shape == grid.shape
     assert payload is not None
     assert payload.forcing.stl_am.shape == forcing_template.stl_am.shape
     assert (
         payload.forcing.sea_surface_temperature.shape
         == forcing_template.sea_surface_temperature.shape
     )
+
+
+def test_real_jax_gcm_initial_payload_seeds_speedy_coords(
+    fast_mode: bool,
+) -> None:
+    if fast_mode:
+        pytest.skip("Real JCM payload structure regression runs outside --fast")
+
+    from vercor.setups import JAXGCMConfig, load_jcm_inputs, make_jax_gcm
+
+    inputs = load_jcm_inputs()
+    component = make_jax_gcm(
+        inputs.coords,
+        inputs.terrain,
+        config=JAXGCMConfig(
+            forcing_data=inputs.forcing,
+            jitted=True,
+        ),
+    )
+    coupler = Coupler(
+        Clock(datetime(2000, 1, 1), 86400.0, 1),
+        components=(component,),
+        run_order=("ATM",),
+        runtime=RuntimeOptions(topology=None),
+    )
+    state = coupler.initial_state()
+    setup_hook = component.spec.lifecycle.setup
+    assert setup_hook is not None
+    setup_state = cast(Any, setup_hook).__self__
+
+    payload = state._component_state("ATM").payload
+    assert payload is not None
+    assert payload.jcm_state.phydata.speedy_coords is not None
+    assert str(
+        jax.tree_util.tree_structure(payload.jcm_state.phydata.speedy_coords)
+    ) == str(jax.tree_util.tree_structure(setup_state.model.physics.cached_coords))
 
 
 def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> None:
@@ -1597,39 +1803,39 @@ def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> N
         name="OCN",
         grid=grid,
         data={"sea_surface_temperature": sea_surface_temperature},
-        exports=("sea_surface_temperature",),
+        sends=("sea_surface_temperature",),
     )
     atmosphere = _make_jax_gcm_component(grid)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(ocean, atmosphere),
+        exchanges=(
+            Exchange(
+                source="OCN",
+                target="ATM",
+                fields=["sea_surface_temperature"],
+                regridder_factory=cast(Any, _identity_factory),
+            ),
+        ),
+        run_order=(
+            "OCN",
+            "ATM",
+        ),
     )
-    coupler.components = {"OCN": ocean, "ATM": atmosphere}
-    coupler.run_sequence = (
-        "OCN",
-        "ATM",
-    )
-    coupler.exchanges = [
-        Exchange(
-            source="OCN",
-            target="ATM",
-            fields=["sea_surface_temperature"],
-            regrid=cast(Any, _identity_factory),
-        )
-    ]
-    key = ("OCN", "ATM", "_identity_factory")
+    key = "OCN->ATM"
     replace_runtime_topology_maps(
         coupler,
         regridders=cast(Any, {key: _IdentityRegridder()}),
         fractional_masks={key: jnp.ones(grid.shape, dtype=jnp.float64)},
     )
 
-    initial_state = coupler.state()
+    initial_state = create_runtime_state_from_coupler(coupler, prefill_missing=True)
     final_state = jax.jit(lambda state: run_scanned_coupler(coupler, state))(
         initial_state
     )
-    atmosphere_state = final_state.get_component_state("ATM")
-    temperature = atmosphere_state.data.get("temperature")
-    received_sst = atmosphere_state.incoming.get("sea_surface_temperature")
+    atmosphere_state = final_state._component_state("ATM")
+    temperature = atmosphere_state.fields.get("temperature")
+    received_sst = atmosphere_state.received.get("sea_surface_temperature")
 
     assert temperature.shape == grid.shape
     assert received_sst.shape == grid.shape
@@ -1639,15 +1845,15 @@ def test_data_forcing_replays_into_jax_gcm_runtime_under_jit_grad_and_jvp() -> N
     assert np.all(np.isfinite(np.asarray(temperature)))
 
     def loss(forcing: jax.Array) -> jax.Array:
-        ocean_state = initial_state.get_component_state("OCN")
-        state = initial_state.set_component_state(
+        ocean_state = initial_state._component_state("OCN")
+        state = initial_state._with_component_state(
             "OCN",
-            ocean_state.with_data(
-                ocean_state.data.set("sea_surface_temperature", forcing)
+            ocean_state.with_fields(
+                ocean_state.fields.set("sea_surface_temperature", forcing)
             ),
         )
         result = run_scanned_coupler(coupler, state)
-        return jnp.sum(result.get_component_state("ATM").data.get("temperature"))
+        return jnp.sum(result._component_state("ATM").fields.get("temperature"))
 
     gradient = jax.grad(loss)(sea_surface_temperature)
     _, tangent = jax.jvp(
@@ -1668,128 +1874,163 @@ def test_jax_gcm_runtime_requires_initialized_payload() -> None:
     component = fixture.component
     del fixture.state._state
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
 
     with pytest.raises(ComponentError, match="component initialization"):
         run_scanned_coupler(coupler)
 
     component = _make_jax_gcm_component(grid)
-    coupler.components = {"ATM": component}
-    state = coupler.state()
-    atmosphere = state.get_component_state("ATM").with_runtime_payload(None)
-    state = state.set_component_state("ATM", atmosphere)
+    payload_coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
+    )
+    state = payload_coupler.initial_state()
+    atmosphere = state._component_state("ATM").with_payload(None)
+    state = state._with_component_state("ATM", atmosphere)
 
-    with pytest.raises(ComponentError, match="runtime payload"):
-        run_scanned_coupler(coupler, state)
+    with pytest.raises(CouplerError, match="runtime payload.*PyTree structure"):
+        run_scanned_coupler(payload_coupler, state)
 
 
-def test_run_validates_missing_run_sequence() -> None:
+def test_run_accepts_empty_constructor_configuration() -> None:
     coupler = Coupler(
         clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
     )
 
-    with pytest.raises(CouplerError, match="run sequence"):
-        run_scanned_coupler(coupler)
+    final_state = run_scanned_coupler(coupler)
+
+    assert tuple(final_state.components()) == ()
 
 
 def test_run_accepts_default_runtime_component() -> None:
     grid = make_test_grid(name="dummy")
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(
+            cast(
+                Any,
+                DataComponent(
+                    name="ATM",
+                    grid=grid,
+                    fields={"temperature": 0.0},
+                ),
+            ),
+        ),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": cast(Any, DummyComponent("ATM", grid))}
-    coupler.run_sequence = ("ATM",)
 
     final_state = run_scanned_coupler(coupler)
 
-    assert final_state.component_names == ("ATM",)
+    assert tuple(final_state.components()) == ("ATM",)
 
 
 def test_scanned_runtime_rejects_camulator_land_runtime_boundary() -> None:
     grid = make_test_grid(name="camulator")
-    camulator_land = HostComponent.from_step(
+    camulator_land = CallableComponent(
         name="LND",
         grid=grid,
         step=lambda fields, context, payload: {},
-        outputs=("land_surface_temperature",),
-        defaults={"land_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64)},
+        spec=ComponentSpec(
+            outputs=("land_surface_temperature",),
+            initial_fields={
+                "land_surface_temperature": jnp.zeros(
+                    grid.shape,
+                    dtype=jnp.float64,
+                )
+            },
+            execution="host",
+        ),
     )
-    camulator_land.seed_declared_defaults()
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, camulator_land),),
+        run_order=("LND",),
     )
-    coupler.components = {"LND": cast(Any, camulator_land)}
-    coupler.run_sequence = ("LND",)
 
-    assert isinstance(camulator_land.data["land_surface_temperature"], jax.Array)
-    state = coupler.state()
+    state = coupler.initial_state()
+    assert isinstance(
+        state.component("LND").field("land_surface_temperature"), jax.Array
+    )
 
-    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+    with pytest.raises(ComponentError, match="backend='jax'.*host-backed"):
         run_scanned_coupler(coupler, state)
 
 
 def test_scanned_runtime_rejects_camulator_gcm_runtime_boundary() -> None:
     grid = make_test_grid(name="camulator-gcm")
-    camulator = HostComponent.from_step(
+    camulator = CallableComponent(
         name="ATM",
         grid=grid,
         step=lambda fields, context, payload: {},
-        outputs=("temperature",),
-        defaults={"temperature": jnp.ones(grid.shape, dtype=jnp.float64)},
+        spec=ComponentSpec(
+            outputs=("temperature",),
+            initial_fields={"temperature": jnp.ones(grid.shape, dtype=jnp.float64)},
+            execution="host",
+        ),
     )
-    camulator.seed_declared_defaults()
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, camulator),),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": cast(Any, camulator)}
-    coupler.run_sequence = ("ATM",)
 
-    assert isinstance(camulator.data["temperature"], jax.Array)
-    state = coupler.state()
+    state = coupler.initial_state()
+    assert isinstance(state.component("ATM").field("temperature"), jax.Array)
 
-    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+    with pytest.raises(ComponentError, match="backend='jax'.*host-backed"):
         run_scanned_coupler(coupler, state)
 
 
 def test_scanned_runtime_rejects_veros_runtime_boundary() -> None:
     grid = make_test_grid(name="veros")
-    veros = HostComponent.from_step(
+    veros = CallableComponent(
         name="OCN",
         grid=grid,
         step=lambda fields, context, payload: {},
-        outputs=("sea_surface_temperature",),
-        defaults={"sea_surface_temperature": jnp.zeros(grid.shape, dtype=jnp.float64)},
+        spec=ComponentSpec(
+            outputs=("sea_surface_temperature",),
+            initial_fields={
+                "sea_surface_temperature": jnp.zeros(
+                    grid.shape,
+                    dtype=jnp.float64,
+                )
+            },
+            execution="host",
+        ),
     )
-    veros.seed_declared_defaults()
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(cast(Any, veros),),
+        run_order=("OCN",),
     )
-    coupler.components = {"OCN": cast(Any, veros)}
-    coupler.run_sequence = ("OCN",)
 
-    assert isinstance(veros.data["sea_surface_temperature"], jax.Array)
-    state = coupler.state()
+    state = coupler.initial_state()
+    assert isinstance(
+        state.component("OCN").field("sea_surface_temperature"), jax.Array
+    )
 
-    with pytest.raises(ComponentError, match="host-backed.*Coupler.run"):
+    with pytest.raises(ComponentError, match="backend='jax'.*host-backed"):
         run_scanned_coupler(coupler, state)
 
 
 def test_run_validates_regridders_and_fractional_masks() -> None:
     coupler = _make_coupler(steps=1)
-    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    state = _make_initial_state(coupler, jnp.full((2, 2), 286.15, dtype=jnp.float64))
     replace_runtime_topology_maps(coupler, regridders={})
 
     with pytest.raises(CouplerError, match="initialized regridder"):
         run_scanned_coupler(coupler, state)
 
     coupler = _make_coupler(steps=1)
-    state = RuntimeCouplerState(
-        component_names=state.component_names,
-        components=state.components,
-        fractional_masks=RuntimeFieldStore.empty(),
+    state = RunState._from_runtime(
+        component_names=state._component_names,
+        component_grids=state._component_grids,
+        components=state._components,
+        fractional_masks=FieldStore.empty(),
     )
 
     with pytest.raises(CouplerError, match="fractional mask"):
@@ -1798,51 +2039,53 @@ def test_run_validates_regridders_and_fractional_masks() -> None:
 
 def test_run_validates_missing_source_fields_before_scan() -> None:
     coupler = _make_coupler(steps=1)
-    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    ocean = state.get_component_state("OCN").with_outgoing(RuntimeFieldStore.empty())
-    state = state.set_component_state("OCN", ocean)
+    state = _make_initial_state(coupler, jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    ocean = state._component_state("OCN").with_sent(FieldStore.empty())
+    state = state._with_component_state("OCN", ocean)
 
-    with pytest.raises(CouplerError, match="source field"):
+    with pytest.raises(CouplerError, match="runtime sent names"):
         run_scanned_coupler(coupler, state)
 
 
 def test_run_validates_missing_slab_required_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
-    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    atmosphere = state.get_component_state("ATM")
-    atmosphere = atmosphere.with_data(
-        _without_store_field(atmosphere.data, "temperature_2m")
+    state = _make_initial_state(coupler, jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    atmosphere = state._component_state("ATM")
+    atmosphere = atmosphere.with_fields(
+        _without_store_field(atmosphere.fields, "temperature_2m")
     )
-    state = state.set_component_state("ATM", atmosphere)
+    state = state._with_component_state("ATM", atmosphere)
 
-    with pytest.raises(CouplerError, match="required data field 'temperature_2m'"):
+    with pytest.raises(CouplerError, match="runtime fields names.*temperature_2m"):
         run_scanned_coupler(coupler, state)
 
 
 def test_run_validates_missing_import_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
-    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    atmosphere = state.get_component_state("ATM")
-    atmosphere = atmosphere.with_data(
-        _without_store_field(atmosphere.data, "sea_surface_temperature")
+    state = _make_initial_state(coupler, jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    atmosphere = state._component_state("ATM")
+    atmosphere = atmosphere.with_fields(
+        _without_store_field(atmosphere.fields, "sea_surface_temperature")
     )
-    state = state.set_component_state("ATM", atmosphere)
+    state = state._with_component_state("ATM", atmosphere)
 
     with pytest.raises(
-        CouplerError, match="required data field 'sea_surface_temperature'"
+        CouplerError, match="runtime fields names.*sea_surface_temperature"
     ):
         run_scanned_coupler(coupler, state)
 
 
 def test_run_validates_missing_export_data_before_scan() -> None:
     coupler = _make_coupler(steps=1)
-    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    ocean = state.get_component_state("OCN")
-    ocean = ocean.with_data(_without_store_field(ocean.data, "sea_surface_temperature"))
-    state = state.set_component_state("OCN", ocean)
+    state = _make_initial_state(coupler, jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    ocean = state._component_state("OCN")
+    ocean = ocean.with_fields(
+        _without_store_field(ocean.fields, "sea_surface_temperature")
+    )
+    state = state._with_component_state("OCN", ocean)
 
     with pytest.raises(
-        CouplerError, match="required data field 'sea_surface_temperature'"
+        CouplerError, match="runtime fields names.*sea_surface_temperature"
     ):
         run_scanned_coupler(coupler, state)
 
@@ -1851,34 +2094,271 @@ def test_run_validates_missing_jax_gcm_preseed_before_scan() -> None:
     grid = make_test_grid(name="jcm-missing-preseed")
     component = _make_jax_gcm_component(grid)
     coupler = Coupler(
-        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1)
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=3600.0, steps=1),
+        components=(component,),
+        run_order=("ATM",),
     )
-    coupler.components = {"ATM": component}
-    coupler.run_sequence = ("ATM",)
-    state = coupler.state()
-    atmosphere = state.get_component_state("ATM")
-    atmosphere = atmosphere.with_data(_without_store_field(atmosphere.data, "pressure"))
-    state = state.set_component_state("ATM", atmosphere)
+    state = coupler.initial_state()
+    atmosphere = state._component_state("ATM")
+    atmosphere = atmosphere.with_fields(
+        _without_store_field(atmosphere.fields, "pressure")
+    )
+    state = state._with_component_state("ATM", atmosphere)
 
-    with pytest.raises(CouplerError, match="required data field 'pressure'"):
+    with pytest.raises(CouplerError, match="runtime fields names.*pressure"):
         run_scanned_coupler(coupler, state)
 
 
 def test_run_validates_fractional_mask_shape_before_scan() -> None:
     coupler = _make_coupler(steps=1)
-    state = _make_initial_state(jnp.full((2, 2), 286.15, dtype=jnp.float64))
-    state = RuntimeCouplerState(
-        component_names=state.component_names,
-        components=state.components,
-        fractional_masks=RuntimeFieldStore.from_mapping(
+    state = _make_initial_state(coupler, jnp.full((2, 2), 286.15, dtype=jnp.float64))
+    state = RunState._from_runtime(
+        component_names=state._component_names,
+        component_grids=state._component_grids,
+        components=state._components,
+        fractional_masks=FieldStore.from_mapping(
             {
-                "OCN|ATM|_identity_factory": jnp.ones((1, 1), dtype=jnp.float64),
-                "ATM|OCN|_identity_factory": jnp.ones((2, 2), dtype=jnp.float64),
-                "ATM|LND|_identity_factory": jnp.ones((2, 2), dtype=jnp.float64),
-                "OCN|ICE|_identity_factory": jnp.ones((2, 2), dtype=jnp.float64),
+                "OCN->ATM": jnp.ones((1, 1), dtype=jnp.float64),
+                "ATM->OCN": jnp.ones((2, 2), dtype=jnp.float64),
+                "ATM->LND": jnp.ones((2, 2), dtype=jnp.float64),
+                "OCN->ICE": jnp.ones((2, 2), dtype=jnp.float64),
             }
         ),
     )
 
     with pytest.raises(CouplerError, match="fractional mask.*shape"):
         run_scanned_coupler(coupler, state)
+
+
+@pytest.mark.fast_always
+def test_field_store_replacements_reject_shape_changes() -> None:
+    store = FieldStore.from_mapping(
+        {
+            "temperature": jnp.zeros((2, 2)),
+            "humidity": jnp.ones((2, 2)),
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"temperature.*shape \(1, 2\).*existing shape \(2, 2\)",
+    ):
+        store.replace("temperature", jnp.ones((1, 2)))
+    with pytest.raises(
+        ValueError,
+        match=r"humidity.*shape \(2, 1\).*existing shape \(2, 2\)",
+    ):
+        store.replace_many({"humidity": jnp.ones((2, 1))})
+
+
+@pytest.mark.fast_always
+def test_public_run_state_replace_fields_rejects_shape_changes() -> None:
+    grid = make_test_grid(name="public-replace-shape")
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(DataComponent("MODEL", grid, {"value": 1.0}),),
+        run_order=("MODEL",),
+    )
+    state = coupler.initial_state()
+
+    with pytest.raises(
+        ValueError,
+        match=r"value.*shape \(1, 2\).*existing shape \(2, 2\)",
+    ):
+        state.replace_fields("MODEL", {"value": jnp.ones((1, 2))})
+
+
+@pytest.mark.fast_always
+def test_component_step_shape_changes_raise_component_error() -> None:
+    grid = make_test_grid(name="component-step-shape")
+    component = CallableComponent(
+        "MODEL",
+        grid,
+        lambda fields: {"value": jnp.ones((1, 2))},
+        spec=ComponentSpec(
+            outputs=("value",), initial_fields={"value": 1.0}, execution="host"
+        ),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(backend="host"),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match=r"MODEL.*value.*shape \(1, 2\).*existing shape \(2, 2\)",
+    ):
+        coupler.run()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("returned", "actual_type"),
+    (
+        pytest.param(7, "int", id="integer"),
+        pytest.param(["value"], "list", id="list"),
+        pytest.param(None, "NoneType", id="none"),
+    ),
+)
+def test_component_step_rejects_non_mapping_non_step_result_returns(
+    returned: object,
+    actual_type: str,
+) -> None:
+    grid = make_test_grid(name=f"malformed-step-{actual_type}")
+    component = CallableComponent(
+        "MODEL",
+        grid,
+        lambda fields: cast(Any, returned),
+        spec=ComponentSpec(
+            outputs=("value",), initial_fields={"value": 1.0}, execution="host"
+        ),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(backend="host"),
+    )
+
+    with pytest.raises(
+        ComponentError,
+        match=rf"Component 'MODEL'.*mapping or StepResult.*{actual_type}",
+    ):
+        coupler.run()
+
+
+@pytest.mark.fast_always
+def test_component_step_rejects_step_result_with_non_mapping_fields() -> None:
+    grid = make_test_grid(name="malformed-step-result-fields")
+    component = CallableComponent(
+        "MODEL",
+        grid,
+        lambda fields: StepResult(fields=cast(Any, ["value"])),
+        spec=ComponentSpec(
+            outputs=("value",), initial_fields={"value": 1.0}, execution="host"
+        ),
+    )
+    coupler = Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(component,),
+        run_order=("MODEL",),
+        runtime=RuntimeOptions(backend="host"),
+    )
+
+    with pytest.raises(
+        TypeError,
+        match=r"StepResult.fields.*mapping.*list",
+    ):
+        coupler.run()
+
+
+def _state_validation_coupler(
+    *,
+    dormant_lifecycle: LifecycleHooks | None = None,
+) -> Coupler:
+    grid = make_test_grid(name="exact-state-components")
+    active = DataComponent("ACTIVE", grid, {"value": 1.0})
+    dormant = CallableComponent(
+        "DORMANT",
+        grid,
+        lambda fields: {"value": fields["value"]},
+        spec=ComponentSpec(
+            outputs=("value",),
+            initial_fields={"value": 2.0},
+            lifecycle=dormant_lifecycle,
+        ),
+    )
+    return Coupler(
+        clock=Clock(start=datetime(2000, 1, 1), dt_seconds=60.0, steps=1),
+        components=(active, dormant),
+        run_order=("ACTIVE",),
+        runtime=RuntimeOptions(topology=None),
+    )
+
+
+@pytest.mark.fast_always
+def test_runtime_state_requires_exact_registered_component_names() -> None:
+    coupler = _state_validation_coupler()
+    state = coupler.initial_state()
+    missing = RunState._from_runtime(
+        component_names=("ACTIVE",),
+        components=(state._component_state("ACTIVE"),),
+        fractional_masks=state._fractional_masks,
+        component_grids=(state._component_grids[state._component_index("ACTIVE")],),
+    )
+    extra = RunState._from_runtime(
+        component_names=(*state._component_names, "EXTRA"),
+        components=(*state._components, state._component_state("ACTIVE")),
+        fractional_masks=state._fractional_masks,
+        component_grids=(*state._component_grids, state._component_grids[0]),
+    )
+
+    with pytest.raises(CouplerError, match="component.*missing.*DORMANT"):
+        coupler.run(missing)
+    with pytest.raises(CouplerError, match="component.*extra.*EXTRA"):
+        coupler.run(extra)
+
+
+@pytest.mark.fast_always
+def test_runtime_state_validates_declared_fields_outside_run_order() -> None:
+    coupler = _state_validation_coupler()
+    state = coupler.initial_state()
+    dormant = state._component_state("DORMANT").with_fields(
+        FieldStore.from_mapping({"value": jnp.ones((1, 2))})
+    )
+    malformed = state._with_component_state("DORMANT", dormant)
+
+    with pytest.raises(
+        CouplerError,
+        match=r"DORMANT.*value.*shape \(1, 2\).*expected.*grid shape \(2, 2\)",
+    ):
+        coupler.run(malformed)
+
+
+@pytest.mark.fast_always
+def test_runtime_state_runs_validation_hooks_outside_run_order() -> None:
+    validated: list[str] = []
+
+    def validate(component: Component, context: Any) -> None:
+        _ = context
+        validated.append(component.name)
+
+    coupler = _state_validation_coupler(
+        dormant_lifecycle=LifecycleHooks(validate=validate)
+    )
+
+    coupler.initial_state()
+
+    assert validated == ["DORMANT"]
+
+
+@pytest.mark.fast_always
+def test_gradient_flows_through_component_payload() -> None:
+    grid = make_test_grid(name="payload-gradient")
+    component = CallableComponent(
+        "MODEL",
+        grid,
+        lambda fields, context, payload: {"value": fields["value"] * payload},
+        spec=ComponentSpec(outputs=("value",), initial_fields={"value": 2.0}),
+    )
+    state = ComponentRuntimeState(
+        fields=FieldStore.from_mapping({"value": jnp.full(grid.shape, 2.0)}),
+        received=FieldStore.empty(),
+        sent=FieldStore.empty(),
+    )
+    context = StepContext(dt_seconds=60.0)
+
+    def loss(payload: jax.Array) -> jax.Array:
+        result = step_component_runtime_state(
+            component,
+            state.with_payload(payload),
+            context,
+            allow_host_runtime=False,
+        )
+        return jnp.sum(result.fields.get("value"))
+
+    gradient = jax.grad(loss)(jnp.asarray(3.0))
+
+    assert_allclose_compact(gradient, np.asarray(8.0))
