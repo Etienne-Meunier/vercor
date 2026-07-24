@@ -132,7 +132,11 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     pypi_publish = next(
         step
         for step in publish["steps"]
-        if step.get("uses") == "pypa/gh-action-pypi-publish@release/v1"
+        if step.get("uses")
+        == (
+            "pypa/gh-action-pypi-publish@"
+            "ba38be9e461d3875417946c167d0b5f3d385a247"
+        )
     )
     assert pypi_publish["with"] == {
         "user": "__token__",
@@ -198,7 +202,11 @@ publish_commands = "\n".join(
 publish_action_index = next(
     index
     for index, step in enumerate(publish_steps)
-    if step.get("uses") == "pypa/gh-action-pypi-publish@release/v1"
+    if step.get("uses")
+    == (
+        "pypa/gh-action-pypi-publish@"
+        "ba38be9e461d3875417946c167d0b5f3d385a247"
+    )
 )
 github_release_index = next(
     index
@@ -326,7 +334,7 @@ Append this job after `quality`:
           echo "RELEASE_WHEEL=${WHEEL}" >> "$GITHUB_ENV"
           echo "RELEASE_SDIST=${SDIST}" >> "$GITHUB_ENV"
       - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}

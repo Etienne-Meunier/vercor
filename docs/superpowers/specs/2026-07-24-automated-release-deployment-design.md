@@ -62,8 +62,8 @@ The job will:
 4. Verify the tag/version relationship and exact two-file inventory.
 5. Run distribution metadata checks.
 6. Fail closed unless both the PyPI version and GitHub Release are absent.
-7. Publish both distributions through
-   `pypa/gh-action-pypi-publish@release/v1`, authenticating as `__token__`
+7. Publish both distributions through the PyPA publish action pinned at commit
+   `ba38be9e461d3875417946c167d0b5f3d385a247`, authenticating as `__token__`
    with `secrets.PYPI_API_TOKEN`.
 8. Revalidate the local artifact inventory.
 9. Create the GitHub Release with `gh release create`, the version-specific
