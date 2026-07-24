@@ -40,7 +40,6 @@ EXTERNAL_EXTENSION_FIXTURE_ROOT = (
     PROJECT_ROOT / "tests" / "fixtures" / "external_extension_test_fixture"
 )
 RELEASING_PATH = PROJECT_ROOT / "docs" / "releasing.md"
-EXPECTED_PLUGIN_WHEEL_NAME = "vercor_public_plugin-0.1.0-py3-none-any.whl"
 EXPECTED_INSTALLED_ROOT = (
     "Clock",
     "Coupler",
@@ -260,7 +259,9 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     jobs = workflow["jobs"]
     build_job = jobs["build-artifacts"]
     installed_job = jobs["installed-artifact-tests"]
-    plugin_job = jobs["plugin-contract-tests"]
+    assert "plugin-contract-tests" not in jobs
+    assert "external-extension-contract-tests" in jobs
+    extension_job = jobs["external-extension-contract-tests"]
     macos_job = jobs["macos-smoke"]
 
     build_steps = build_job["steps"]
@@ -268,10 +269,8 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         step.get("run", "") for step in build_steps if isinstance(step, dict)
     )
     assert "python -m build --outdir dist" in build_commands
-    assert (
-        "python -m build --wheel --outdir dist tests/fixtures/public_plugin"
-        in build_commands
-    )
+    assert "tests/fixtures/external_extension_test_fixture" not in build_commands
+    assert "external_extension_test_fixture" not in build_commands
     upload_step = next(
         step for step in build_steps if step.get("uses") == "actions/upload-artifact@v4"
     )
@@ -314,7 +313,9 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert EXPECTED_WHEEL_NAME in installed_commands
     assert EXPECTED_SDIST_NAME in installed_commands
     assert "vercor-0.3.0-py3-none-any.whl" not in installed_commands
-    assert "tests/fixtures/public_plugin/src" not in installed_commands
+    assert (
+        "tests/fixtures/external_extension_test_fixture/src" not in installed_commands
+    )
     assert "pip install ." not in installed_commands
     install_tools_line = next(
         line.strip()
@@ -325,56 +326,55 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert {"build", "flit_core<4"}.issubset(installed_tools)
     assert "pytest-xdist>=3.7" in installed_tools
 
-    assert plugin_job["strategy"]["matrix"] == {
+    assert extension_job["strategy"]["matrix"] == {
         "python-version": ["3.12", "3.13"],
     }
-    plugin_commands = "\n".join(
-        step.get("run", "") for step in plugin_job["steps"] if isinstance(step, dict)
-    )
-    assert "vercor_public_plugin.smoke" in plugin_commands
-    assert "MYPYPATH" not in plugin_commands
-    assert "PACKAGE_ROOT=$(" not in plugin_commands
-    assert "tests/fixtures/public_plugin/src" not in plugin_commands
-    assert "PLUGIN_PACKAGE_DIR=$(" in plugin_commands
-    assert (
-        'cp -R "$PLUGIN_PACKAGE_DIR" "$RUNNER_TEMP/plugin-typecheck/'
-        'vercor_public_plugin"' in plugin_commands
+    extension_commands = "\n".join(
+        step.get("run", "") for step in extension_job["steps"] if isinstance(step, dict)
     )
     assert (
-        'python -P -m mypy --strict "$RUNNER_TEMP/plugin-typecheck/'
-        'vercor_public_plugin" public_plugin_use_site.py' in plugin_commands
+        'python -m build --wheel --outdir "$RUNNER_TEMP/'
+        'external-extension-fixture-dist" '
+        "tests/fixtures/external_extension_test_fixture"
+    ) in extension_commands
+    assert EXPECTED_EXTENSION_FIXTURE_WHEEL_NAME in extension_commands
+    assert "external_extension_test_fixture.smoke" in extension_commands
+    assert (
+        'python -P -m mypy --strict "$RUNNER_TEMP/extension-typecheck/'
+        'external_extension_test_fixture" external_extension_use_site.py'
+        in extension_commands
     )
-    plugin_install_line = next(
-        line
-        for line in plugin_commands.splitlines()
-        if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
-    )
-    assert "--no-deps" not in plugin_install_line
 
     assert macos_job["runs-on"] == "macos-latest"
     macos_commands = "\n".join(
         step.get("run", "") for step in macos_job["steps"] if isinstance(step, dict)
     )
     assert EXPECTED_WHEEL_NAME in macos_commands
-    assert "vercor_public_plugin.smoke" in macos_commands
-    macos_plugin_install_line = next(
-        line
-        for line in macos_commands.splitlines()
-        if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
+    assert "external_extension_test_fixture.smoke" in macos_commands
+    assert "tests/fixtures/external_extension_test_fixture" in macos_commands
+    macos_checkout = next(
+        step for step in macos_job["steps"] if step.get("uses") == "actions/checkout@v4"
     )
-    assert "--no-deps" not in macos_plugin_install_line
+    assert (
+        macos_checkout["with"]["ref"]
+        == "${{ github.event.pull_request.head.sha || github.sha }}"
+    )
 
 
 @pytest.mark.fast_always
-def test_release_guide_resolves_installed_plugin_dependencies() -> None:
+def test_release_bundle_contains_only_vercor_distributions() -> None:
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
-    plugin_install_line = next(
-        line
+    checksum_line = next(
+        line.strip()
         for line in releasing.splitlines()
-        if EXPECTED_PLUGIN_WHEEL_NAME in line and "pip install" in line
+        if line.strip().startswith("shasum -a 256 vercor-")
     )
 
-    assert "--no-deps" not in plugin_install_line
+    assert checksum_line == (
+        "shasum -a 256 vercor-0.4.0-py3-none-any.whl "
+        "vercor-0.4.0.tar.gz > SHA256SUMS"
+    )
+    assert "dist/external_extension_test_fixture" not in releasing
 
 
 @pytest.mark.fast_always

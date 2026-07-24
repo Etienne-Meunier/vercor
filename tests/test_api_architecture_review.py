@@ -462,7 +462,7 @@ def test_release_files_and_metadata_describe_the_stable_release() -> None:
         "VERCOR_ARTIFACT_DIR",
         "tests/test_distribution_boundaries.py",
         "test_output_free_workflow_preserves_jvp_and_reverse_mode_gradients",
-        "python -m vercor_public_plugin.smoke",
+        "python -m external_extension_test_fixture.smoke",
         "shasum -a 256",
         "git diff --check",
     ):
@@ -473,7 +473,6 @@ def test_release_files_and_metadata_describe_the_stable_release() -> None:
     for artifact in (
         "vercor-0.4.0-py3-none-any.whl",
         "vercor-0.4.0.tar.gz",
-        "vercor_public_plugin-0.1.0-py3-none-any.whl",
     ):
         assert artifact in commands
 
@@ -535,7 +534,7 @@ def test_release_workflow_checks_out_the_exact_triggering_commit() -> None:
         for step in job["steps"]
         if step.get("uses") == "actions/checkout@v4"
     )
-    assert len(checkout_steps) == 4
+    assert len(checkout_steps) == 5
     for step in checkout_steps:
         assert step.get("with", {}).get("ref") == (
             "${{ github.event.pull_request.head.sha || github.sha }}"

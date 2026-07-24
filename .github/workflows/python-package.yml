@@ -16,11 +16,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build VerCOR and plugin evidence once
+      - name: Build VerCOR distributions once
         run: |
           python -m pip install --upgrade pip build
           python -m build --outdir dist
-          python -m build --wheel --outdir dist tests/fixtures/public_plugin
       - uses: actions/upload-artifact@v4
         with:
           name: vercor-distributions
@@ -104,7 +103,7 @@ jobs:
           PYTHONSAFEPATH: "1"
         run: python -P -m pytest --import-mode=importlib ${{ matrix.pytest-target }} -q --tb=short
 
-  plugin-contract-tests:
+  external-extension-contract-tests:
     needs: build-artifacts
     runs-on: ubuntu-latest
     strategy:
@@ -122,23 +121,27 @@ jobs:
         with:
           name: vercor-distributions
           path: dist/
-      - name: Run installed native v0.4 plugin
+      - name: Run installed external extension contract
         run: |
-          python -m pip install --upgrade pip mypy
+          python -m pip install --upgrade pip build mypy
+          python -m build --wheel --outdir "$RUNNER_TEMP/external-extension-fixture-dist" tests/fixtures/external_extension_test_fixture
           python -m pip install "${GITHUB_WORKSPACE}/dist/vercor-0.4.0-py3-none-any.whl"
-          python -m pip install "${GITHUB_WORKSPACE}/dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+          python -m pip install "$RUNNER_TEMP/external-extension-fixture-dist/external_extension_test_fixture-0.1.0-py3-none-any.whl"
           cd "$RUNNER_TEMP"
-          python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
-          cp "$GITHUB_WORKSPACE/tests/fixtures/public_plugin/use_site.py" public_plugin_use_site.py
-          PLUGIN_PACKAGE_DIR=$(python -c 'import pathlib, vercor_public_plugin; print(pathlib.Path(vercor_public_plugin.__file__).parent)')
-          mkdir -p "$RUNNER_TEMP/plugin-typecheck"
-          cp -R "$PLUGIN_PACKAGE_DIR" "$RUNNER_TEMP/plugin-typecheck/vercor_public_plugin"
-          python -P -m mypy --strict "$RUNNER_TEMP/plugin-typecheck/vercor_public_plugin" public_plugin_use_site.py
+          python -m external_extension_test_fixture.smoke --output-dir "$RUNNER_TEMP/extension-output"
+          cp "$GITHUB_WORKSPACE/tests/fixtures/external_extension_test_fixture/use_site.py" external_extension_use_site.py
+          EXTENSION_PACKAGE_DIR=$(python -c 'import pathlib, external_extension_test_fixture; print(pathlib.Path(external_extension_test_fixture.__file__).parent)')
+          mkdir -p "$RUNNER_TEMP/extension-typecheck"
+          cp -R "$EXTENSION_PACKAGE_DIR" "$RUNNER_TEMP/extension-typecheck/external_extension_test_fixture"
+          python -P -m mypy --strict "$RUNNER_TEMP/extension-typecheck/external_extension_test_fixture" external_extension_use_site.py
 
   macos-smoke:
     needs: build-artifacts
     runs-on: macos-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -146,12 +149,14 @@ jobs:
         with:
           name: vercor-distributions
           path: dist/
-      - name: Run installed macOS public smoke
+      - name: Run installed macOS external extension smoke
         run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir "$RUNNER_TEMP/external-extension-fixture-dist" tests/fixtures/external_extension_test_fixture
           python -m pip install "dist/vercor-0.4.0-py3-none-any.whl"
-          python -m pip install "dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+          python -m pip install "$RUNNER_TEMP/external-extension-fixture-dist/external_extension_test_fixture-0.1.0-py3-none-any.whl"
           cd "$RUNNER_TEMP"
-          python -m vercor_public_plugin.smoke --output-dir "$RUNNER_TEMP/plugin-output"
+          python -m external_extension_test_fixture.smoke --output-dir "$RUNNER_TEMP/extension-output"
 
   quality:
     needs: build-artifacts

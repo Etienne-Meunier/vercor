@@ -75,9 +75,8 @@ inspect ignored `dist/` bytes; the checksum manifest below protects those.
 
 ## 3. Build once and create the checksum manifest
 
-Build VerCOR and the native public-plugin evidence wheel from the exact clean
-release commit, inspect the bundle, run its executable boundary, and create the
-ignored `dist/SHA256SUMS` manifest:
+Build the two publishable VerCOR distributions from the exact clean release
+commit, inspect the bundle, and create the ignored `dist/SHA256SUMS` manifest:
 
 ```bash
 set -euo pipefail
@@ -85,14 +84,13 @@ test -n "${RELEASE_COMMIT:-}"
 test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 test -z "$(git status --porcelain --untracked-files=all)"
 python -m build --outdir dist
-python -m build --wheel --outdir dist tests/fixtures/public_plugin
 unzip -p dist/vercor-0.4.0-py3-none-any.whl vercor-0.4.0.dist-info/METADATA
 tar -xOf dist/vercor-0.4.0.tar.gz vercor-0.4.0/PKG-INFO
 python -m twine check dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz
 VERCOR_ARTIFACT_DIR="$(pwd)/dist" python -m pytest tests/test_distribution_boundaries.py -q --tb=short
 (
   cd dist
-  shasum -a 256 vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz vercor_public_plugin-0.1.0-py3-none-any.whl > SHA256SUMS
+  shasum -a 256 vercor-0.4.0-py3-none-any.whl vercor-0.4.0.tar.gz > SHA256SUMS
   shasum -a 256 -c SHA256SUMS
 )
 python -c 'import importlib.metadata as m; print("JCM", m.version("jcm")); print("Veros", m.version("veros"))'
@@ -117,16 +115,23 @@ python -m pytest tests/test_setup_lifecycle_helpers.py::test_make_jcm_land_atmos
 python -m pytest tests/test_v0_4_workflow_execution.py::test_output_free_workflow_preserves_jvp_and_reverse_mode_gradients tests/test_v0_4_workflow_execution.py::test_payload_dependent_multi_step_scan_preserves_treedef_jvp_and_grad tests/test_v0_4_output_providers.py::test_all_disabled_target_remains_jit_and_gradient_compatible -q --tb=short
 (
   smoke_dir="$(mktemp -d)"
+  external_extension_fixture_dir="$(mktemp -d)"
+  python -m build --wheel \
+    --outdir "$external_extension_fixture_dir" \
+    tests/fixtures/external_extension_test_fixture
   python -m pip install --target "$smoke_dir/site" "dist/vercor-0.4.0-py3-none-any.whl"
-  python -m pip install --target "$smoke_dir/site" "dist/vercor_public_plugin-0.1.0-py3-none-any.whl"
+  python -m pip install --target "$smoke_dir/site" \
+    "$external_extension_fixture_dir/external_extension_test_fixture-0.1.0-py3-none-any.whl"
   cd "$smoke_dir"
-  PYTHONPATH="$smoke_dir/site" python -m vercor_public_plugin.smoke --output-dir "$smoke_dir/plugin-output"
+  PYTHONPATH="$smoke_dir/site" \
+    python -m external_extension_test_fixture.smoke \
+    --output-dir "$smoke_dir/extension-output"
 )
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
-The hosted workflow repeats base, JCM, Veros, wheel/sdist, public-plugin, mypy,
-and macOS lanes on its configured Python matrix.
+The hosted workflow repeats base, JCM, Veros, wheel/sdist, external-extension,
+mypy, and macOS lanes on its configured Python matrix.
 
 ## 5. Prepare the required release pull request
 
@@ -286,8 +291,8 @@ test "$RELEASE_STATUS" = "404"
 gh release create v0.4.0 --repo nutrik/vercor --title "VerCOR 0.4.0" --notes-file docs/release-notes-0.4.0.md dist/vercor-0.4.0-py3-none-any.whl dist/vercor-0.4.0.tar.gz
 ```
 
-The public-plugin wheel is evidence recorded in `SHA256SUMS`; it is not uploaded
-to the VerCOR package index or hosted release.
+The temporary external-extension fixture wheel is neither checksummed nor
+published to the VerCOR package index or hosted release.
 
 ## 8. Verify the published package and hosted release
 
