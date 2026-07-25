@@ -3,6 +3,21 @@
 All notable changes to VerCOR are recorded here. The project follows semantic
 versioning; pre-releases may still refine new contracts.
 
+## [0.4.3] - 2026-07-25
+
+### Fixed
+
+- Replaced the invalid `License :: OSI Approved :: Apache-2.0` classifier
+  that caused PyPI to reject the immutable `v0.4.2` release attempt with the
+  canonical Apache Software License classifier.
+- Enforced exactly one canonical license classifier in distribution
+  metadata.
+
+### Changed
+
+- GitHub Actions now derives the package version, artifact names, tag guard,
+  release-notes path, and publication inventory from `pyproject.toml`.
+
 ## [0.4.2] - 2026-07-25
 
 ### Fixed
@@ -100,6 +115,7 @@ versioning; pre-releases may still refine new contracts.
 This alpha does not ship legacy adapters. Follow
 `docs/migration-0.3-to-0.4.md` to migrate 0.3-only workflows directly.
 
+[0.4.3]: https://github.com/nutrik/vercor/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/nutrik/vercor/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/nutrik/vercor/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/nutrik/vercor/compare/v0.4.0a1...v0.4.0
