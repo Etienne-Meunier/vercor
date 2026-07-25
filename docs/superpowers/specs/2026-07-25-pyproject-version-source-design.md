@@ -80,10 +80,9 @@ Test-driven implementation begins with regression tests that fail against the
 current repository:
 
 1. metadata validation requires the exact Apache Software License classifier;
-2. workflow validation requires a project-metadata output step, exposed job
-   outputs, and downstream consumption of those outputs; and
-3. a source-boundary check rejects the current VerCOR version as a literal in
-   Python tests or GitHub workflow YAML.
+2. workflow validation executes a project-metadata output step against a
+   synthetic project version and requires exposed job outputs plus downstream
+   consumption of those outputs.
 
 After the RED evidence is recorded:
 
@@ -96,9 +95,9 @@ After the RED evidence is recorded:
 - retain meaningful checks for stable classifiers, dependencies, artifact
   contents, release safety, and installed metadata.
 
-The literal-boundary regression reads the current project version at runtime.
-It does not contain that version itself, so each future version becomes the
-value protected against duplication.
+The final verification uses `rg` to prove that Python tests and GitHub workflow
+YAML contain no literal copy of the current project version. This remains a
+verification gate rather than a source-text unit test.
 
 ## Error Handling
 

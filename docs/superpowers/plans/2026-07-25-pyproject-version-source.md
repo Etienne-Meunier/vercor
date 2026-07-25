@@ -131,40 +131,7 @@ In `test_runtime_metadata_separates_test_and_development_dependencies`, remove
 the literal `project["version"]` equality assertion. Preserve all dependency,
 coverage, and license assertions.
 
-- [ ] **Step 2: Add a boundary test that rejects duplicated current versions**
-
-Add this test to `tests/test_distribution_boundaries.py`:
-
-```python
-@pytest.mark.fast_always
-def test_active_tests_and_workflows_do_not_duplicate_project_version() -> None:
-    """Keep pyproject.toml as the only executable package-version owner."""
-
-    workflow_paths = tuple(
-        sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yml"))
-    ) + tuple(sorted((PROJECT_ROOT / ".github" / "workflows").glob("*.yaml")))
-    active_paths = (
-        tuple(sorted((PROJECT_ROOT / "tests").rglob("*.py"))) + workflow_paths
-    )
-    violations = {
-        str(path.relative_to(PROJECT_ROOT)): tuple(
-            line_number
-            for line_number, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(),
-                start=1,
-            )
-            if EXPECTED_VERSION in line
-        )
-        for path in active_paths
-    }
-
-    assert {path: lines for path, lines in violations.items() if lines} == {}
-```
-
-The production mutation caught by this test is reintroducing the current
-package version as a test or workflow literal.
-
-- [ ] **Step 3: Add an executable CI metadata contract**
+- [ ] **Step 2: Add an executable CI metadata contract**
 
 Add this test to `tests/test_distribution_boundaries.py`:
 
@@ -218,7 +185,7 @@ def test_ci_project_metadata_step_derives_outputs_from_pyproject(
 This test executes the real workflow shell block. It fails if the metadata step
 uses a literal version or derives the wrong artifact names.
 
-- [ ] **Step 4: Convert existing test expectations to derived metadata**
+- [ ] **Step 3: Convert existing test expectations to derived metadata**
 
 In `tests/test_api_architecture_review.py`, import:
 
@@ -289,7 +256,7 @@ and require downstream step environments to reference:
 Do not weaken assertions for exact inventory size, checksums, immutable action
 pins, installed-artifact origins, release-tag matching, or publication state.
 
-- [ ] **Step 5: Run the versioning contracts and record RED**
+- [ ] **Step 4: Run the versioning contracts and record RED**
 
 Run:
 
@@ -301,10 +268,10 @@ CONDA_NO_PLUGINS=true conda run -n scipy pytest \
   -q -n0 --tb=short
 ```
 
-Expected: FAIL because `build-artifacts` has no metadata outputs and the
-workflow still contains literal artifact names. The license test remains green.
+Expected: FAIL because `build-artifacts` has no metadata outputs. The license
+test remains green.
 
-- [ ] **Step 6: Add the build-job metadata outputs**
+- [ ] **Step 5: Add the build-job metadata outputs**
 
 Add this mapping to `build-artifacts`:
 
@@ -335,7 +302,7 @@ Add this step immediately after Python setup:
 This step exits nonzero for missing or malformed project metadata because the
 shell uses `set -euo pipefail` and Python exceptions are not suppressed.
 
-- [ ] **Step 7: Make build and tag validation consume the metadata step**
+- [ ] **Step 6: Make build and tag validation consume the metadata step**
 
 Give `Reject mismatched release tag`:
 
@@ -376,7 +343,7 @@ Set the distribution upload paths to:
             dist/${{ steps.project-metadata.outputs.sdist_name }}
 ```
 
-- [ ] **Step 8: Propagate exact artifact outputs to downstream jobs**
+- [ ] **Step 7: Propagate exact artifact outputs to downstream jobs**
 
 On the installed-artifact install step, add:
 
@@ -410,7 +377,7 @@ python -m pip install "dist/${WHEEL_NAME}"
 Do not change the independent external extension fixture artifact name or
 version.
 
-- [ ] **Step 9: Reverify publish metadata against pyproject**
+- [ ] **Step 8: Reverify publish metadata against pyproject**
 
 Give `Verify CI-produced release inventory`:
 
@@ -438,14 +405,14 @@ Remove duplicate assignments that synthesize `WHEEL_NAME` or `SDIST_NAME`
 inside this step. Preserve manifest validation, exact inventory, release-note
 existence, tag/SHA checks, and all exported release environment variables.
 
-- [ ] **Step 10: Run focused GREEN**
+- [ ] **Step 9: Run focused GREEN**
 
 Run the Step 5 command again.
 
 Expected: all selected tests pass with no VerCOR package-version literal in
 tests or workflow YAML.
 
-- [ ] **Step 11: Validate YAML and every Bash block**
+- [ ] **Step 10: Validate YAML and every Bash block**
 
 Run:
 
@@ -461,7 +428,7 @@ CONDA_NO_PLUGINS=true conda run -n scipy pytest \
 
 Expected: YAML parses and all three executable workflow contracts pass.
 
-- [ ] **Step 12: Run static, fast, and full gates**
+- [ ] **Step 11: Run static, fast, full, and literal-absence gates**
 
 Run:
 
@@ -472,13 +439,16 @@ CONDA_NO_PLUGINS=true conda run -n scipy mypy vercor examples tests
 CONDA_NO_PLUGINS=true conda run -n scipy python -m compileall -q vercor examples tests
 CONDA_NO_PLUGINS=true conda run -n scipy pytest tests/ -q --fast --tb=short
 CONDA_NO_PLUGINS=true conda run -n scipy pytest tests/ -q --tb=short
+project_version="$(CONDA_NO_PLUGINS=true conda run -n scipy python -c \
+  'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])')"
+! rg -n --fixed-strings "$project_version" tests .github/workflows
 git diff --check
 ```
 
-Expected: every command exits zero. Only already-known third-party warnings may
-remain.
+Expected: every command exits zero, `rg` prints no matches, and only
+already-known third-party warnings may remain.
 
-- [ ] **Step 13: Commit the single-source refactor**
+- [ ] **Step 12: Commit the single-source refactor**
 
 ```bash
 git add .github/workflows/python-package.yml \
