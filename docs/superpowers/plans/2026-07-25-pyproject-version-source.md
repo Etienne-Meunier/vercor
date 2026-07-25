@@ -407,7 +407,7 @@ existence, tag/SHA checks, and all exported release environment variables.
 
 - [ ] **Step 9: Run focused GREEN**
 
-Run the Step 5 command again.
+Run the Step 4 command again.
 
 Expected: all selected tests pass with no VerCOR package-version literal in
 tests or workflow YAML.
