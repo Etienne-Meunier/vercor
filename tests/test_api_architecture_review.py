@@ -680,7 +680,7 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
     assert "tools/validate_release_state.py github-releases" in publish_commands
     assert publish_commands.count("--allow-state absent") >= 2
     assert "--allow-state absent draft" not in publish_commands
-    assert "--allow-state published" in publish_commands
+    assert "--target-state published" in publish_commands
     assert "PYPI_UPLOAD_REQUIRED" not in publish_commands
     assert "if" not in publish_action_steps[0][1]
     assert publish_action_index < github_release_index
@@ -1013,6 +1013,7 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         )
 
     github = _section(guide, "### Resume an exact GitHub draft")
+    normalized_github = " ".join(github.split())
     for required in (
         'test -n "${RELEASE_COMMIT:-}"',
         'test -n "${RELEASE_RUN_ID:-}"',
@@ -1021,8 +1022,6 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         'gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100"',
         "tools/validate_release_state.py github-releases",
         "--allow-state absent draft",
-        "--allow-state draft",
-        "--allow-state published",
         f"gh release create {expected_tag}",
         "--draft",
         "tools/validate_release_state.py github-upload-url",
@@ -1032,9 +1031,24 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
     ):
         assert required in github
     assert github.count("tools/validate_release_state.py github-upload-url") == 2
+    assert github.count("tools/wait_for_github_release_state.py") == 4
+    for visibility_contract in (
+        "--target-state draft --target-present "
+        "--transitional-state absent --transitional-present",
+        f"--target-state draft --target-present {EXPECTED_WHEEL_NAME} "
+        "--transitional-state draft --transitional-present",
+        f"--target-state draft --target-present {EXPECTED_WHEEL_NAME} "
+        f"{EXPECTED_SDIST_NAME} --transitional-state draft "
+        f"--transitional-present {EXPECTED_WHEEL_NAME}",
+        f"--target-state published --target-present {EXPECTED_WHEEL_NAME} "
+        f"{EXPECTED_SDIST_NAME} --transitional-state draft "
+        f"--transitional-present {EXPECTED_WHEEL_NAME} {EXPECTED_SDIST_NAME}",
+    ):
+        assert visibility_contract in normalized_github
+    assert normalized_github.count("--attempts 12 --interval-seconds 2") == 4
     assert github.count("https://uploads.github.com/repos/nutrik/vercor/releases/") == 2
     assert "--hostname uploads.github.com" not in github
-    assert github.count("tools/validate_release_state.py github-releases") >= 4
+    assert github.count("tools/validate_release_state.py github-releases") == 1
     assert 'test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"' in github
     assert github.count("check_tag_binding") >= 5
 

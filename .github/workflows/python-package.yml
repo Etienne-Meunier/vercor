@@ -479,22 +479,26 @@ jobs:
             --draft \
             --title "VerCOR ${RELEASE_VERSION}" \
             --notes-file "docs/release-notes-${RELEASE_VERSION}.md"
-          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
-          python tools/validate_release_state.py github-releases \
-            --json "$STATE_DIR/releases.json" \
+          python tools/wait_for_github_release_state.py \
+            --repository "$GITHUB_REPOSITORY" \
             --manifest "$RELEASE_MANIFEST" \
             --tag "$GITHUB_REF_NAME" \
             --title "VerCOR ${RELEASE_VERSION}" \
             --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
             --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
-            --allow-state draft \
+            --target-state draft \
+            --target-present \
+            --transitional-state absent \
+            --transitional-present \
+            --attempts 12 \
+            --interval-seconds 2 \
             --state-output "$STATE_DIR/release-state.json"
           PRESENT_COUNT="$(python -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))["present"]))' "$STATE_DIR/release-state.json")"
           test "$PRESENT_COUNT" -eq 0
+          RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$STATE_DIR/release-state.json")"
 
           WHEEL_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$STATE_DIR/release-state.json" "$RELEASE_WHEEL_NAME")"
           if [ "$WHEEL_MISSING" = "True" ]; then
-            RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$STATE_DIR/release-state.json")"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
             REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
             test -n "${REMOTE_TAG_COMMIT:-}"
@@ -508,21 +512,25 @@ jobs:
               -H "Content-Type: application/octet-stream" \
               "$WHEEL_UPLOAD_URL" \
               --input "$RELEASE_WHEEL" > "$STATE_DIR/upload-wheel.json"
-            gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
-            python tools/validate_release_state.py github-releases \
-              --json "$STATE_DIR/releases.json" \
+            python tools/wait_for_github_release_state.py \
+              --repository "$GITHUB_REPOSITORY" \
               --manifest "$RELEASE_MANIFEST" \
               --tag "$GITHUB_REF_NAME" \
               --title "VerCOR ${RELEASE_VERSION}" \
               --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
               --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
-              --allow-state draft \
+              --target-state draft \
+              --target-present "$RELEASE_WHEEL_NAME" \
+              --transitional-state draft \
+              --transitional-present \
+              --release-id "$RELEASE_ID" \
+              --attempts 12 \
+              --interval-seconds 2 \
               --state-output "$STATE_DIR/release-state.json"
           fi
 
           SDIST_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$STATE_DIR/release-state.json" "$RELEASE_SDIST_NAME")"
           if [ "$SDIST_MISSING" = "True" ]; then
-            RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$STATE_DIR/release-state.json")"
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
             REMOTE_TAG_COMMIT="$(git ls-remote origin "refs/tags/${GITHUB_REF_NAME}^{}" | awk '{print $1}')"
             test -n "${REMOTE_TAG_COMMIT:-}"
@@ -536,28 +544,23 @@ jobs:
               -H "Content-Type: application/octet-stream" \
               "$SDIST_UPLOAD_URL" \
               --input "$RELEASE_SDIST" > "$STATE_DIR/upload-sdist.json"
-            gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
-            python tools/validate_release_state.py github-releases \
-              --json "$STATE_DIR/releases.json" \
+            python tools/wait_for_github_release_state.py \
+              --repository "$GITHUB_REPOSITORY" \
               --manifest "$RELEASE_MANIFEST" \
               --tag "$GITHUB_REF_NAME" \
               --title "VerCOR ${RELEASE_VERSION}" \
               --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
               --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
-              --allow-state draft \
+              --target-state draft \
+              --target-present "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+              --transitional-state draft \
+              --transitional-present "$RELEASE_WHEEL_NAME" \
+              --release-id "$RELEASE_ID" \
+              --attempts 12 \
+              --interval-seconds 2 \
               --state-output "$STATE_DIR/release-state.json"
           fi
 
-          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
-          python tools/validate_release_state.py github-releases \
-            --json "$STATE_DIR/releases.json" \
-            --manifest "$RELEASE_MANIFEST" \
-            --tag "$GITHUB_REF_NAME" \
-            --title "VerCOR ${RELEASE_VERSION}" \
-            --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
-            --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
-            --allow-state draft \
-            --state-output "$STATE_DIR/release-state.json"
           MISSING_COUNT="$(python -c 'import json,sys; print(len(json.load(open(sys.argv[1], encoding="utf-8"))["missing"]))' "$STATE_DIR/release-state.json")"
           test "$MISSING_COUNT" -eq 0
           python tools/validate_release_state.py files \
@@ -571,13 +574,18 @@ jobs:
           gh release edit "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false
-          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "$STATE_DIR/releases.json"
-          python tools/validate_release_state.py github-releases \
-            --json "$STATE_DIR/releases.json" \
+          python tools/wait_for_github_release_state.py \
+            --repository "$GITHUB_REPOSITORY" \
             --manifest "$RELEASE_MANIFEST" \
             --tag "$GITHUB_REF_NAME" \
             --title "VerCOR ${RELEASE_VERSION}" \
             --notes-file "docs/release-notes-${RELEASE_VERSION}.md" \
             --expect "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
-            --allow-state published \
+            --target-state published \
+            --target-present "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --transitional-state draft \
+            --transitional-present "$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" \
+            --release-id "$RELEASE_ID" \
+            --attempts 12 \
+            --interval-seconds 2 \
             --state-output "$STATE_DIR/release-state.json"

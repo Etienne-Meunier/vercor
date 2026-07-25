@@ -640,6 +640,7 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         if isinstance(step, dict) and "run" in step
     )
     commands = "\n".join(command for _, command in run_steps)
+    normalized_commands = " ".join(commands.replace("\\\n", " ").split())
     inventory_step = next(
         step
         for step in publish["steps"]
@@ -684,7 +685,6 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         '--input "$RELEASE_SDIST"',
         'gh release edit "$GITHUB_REF_NAME"',
         "--draft=false",
-        "--allow-state published",
     ):
         assert required in commands
 
@@ -801,7 +801,24 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         if 'gh release edit "$GITHUB_REF_NAME"' in command
     )
     assert pypi_publish_index < post_pypi_index < github_release_index
-    assert commands.count("tools/validate_release_state.py github-releases") >= 4
+    assert commands.count("tools/validate_release_state.py github-releases") == 3
+    assert commands.count("tools/wait_for_github_release_state.py") == 4
+    for visibility_contract in (
+        "--target-state draft --target-present "
+        "--transitional-state absent --transitional-present",
+        '--target-state draft --target-present "$RELEASE_WHEEL_NAME" '
+        "--transitional-state draft --transitional-present",
+        "--target-state draft --target-present "
+        '"$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" '
+        "--transitional-state draft --transitional-present "
+        '"$RELEASE_WHEEL_NAME"',
+        "--target-state published --target-present "
+        '"$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME" '
+        "--transitional-state draft --transitional-present "
+        '"$RELEASE_WHEEL_NAME" "$RELEASE_SDIST_NAME"',
+    ):
+        assert visibility_contract in normalized_commands
+    assert normalized_commands.count("--attempts 12 --interval-seconds 2") == 4
     assert commands.count("tools/validate_release_state.py github-upload-url") == 2
     assert (
         commands.count(
