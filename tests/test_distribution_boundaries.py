@@ -186,14 +186,14 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     for tool in ("black", "build", "flake8", "mypy"):
         assert any(dependency.lower().startswith(tool) for dependency in extras["dev"])
 
-    license_classifiers = {
+    license_classifiers = tuple(
         classifier
         for classifier in project["classifiers"]
         if classifier.startswith("License ::")
-    }
-    assert license_classifiers == {
-        "License :: OSI Approved :: Apache Software License"
-    }
+    )
+    assert license_classifiers == (
+        "License :: OSI Approved :: Apache Software License",
+    )
 
     coverage = metadata["tool"]["coverage"]
     assert coverage["run"]["branch"] is True
