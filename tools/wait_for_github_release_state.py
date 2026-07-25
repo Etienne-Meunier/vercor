@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -40,6 +41,16 @@ def _parser() -> argparse.ArgumentParser:
 def _validate_arguments(arguments: argparse.Namespace) -> None:
     """Reject ambiguous targets before querying GitHub."""
 
+    repository_parts = arguments.repository.split("/")
+    if (
+        len(repository_parts) != 2
+        or any(not part for part in repository_parts)
+        or any(
+            not all(character.isalnum() or character in "._-" for character in part)
+            for part in repository_parts
+        )
+    ):
+        raise ValueError("repository must be OWNER/REPOSITORY")
     expected = arguments.expect
     if len(expected) != len(set(expected)):
         raise ValueError("expected asset names must be unique")
@@ -69,6 +80,8 @@ def _validate_arguments(arguments: argparse.Namespace) -> None:
         raise ValueError("release id must be positive")
     if arguments.attempts <= 0:
         raise ValueError("attempts must be positive")
+    if not math.isfinite(arguments.interval_seconds):
+        raise ValueError("interval seconds must be finite")
     if arguments.interval_seconds < 0:
         raise ValueError("interval seconds must not be negative")
 

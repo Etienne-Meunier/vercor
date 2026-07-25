@@ -628,14 +628,18 @@ if [ "$RELEASE_STATE" = "absent" ]; then
 fi
 RELEASE_ID="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$GITHUB_RECOVERY_DIR/release-state.json")"
 WHEEL_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$GITHUB_RECOVERY_DIR/release-state.json" vercor-0.4.3-py3-none-any.whl)"
+SDIST_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$GITHUB_RECOVERY_DIR/release-state.json" vercor-0.4.3.tar.gz)"
 if [ "$WHEEL_MISSING" = "True" ]; then
   check_tag_binding
   WHEEL_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url --repository nutrik/vercor --release-id "$RELEASE_ID" --name vercor-0.4.3-py3-none-any.whl)"
   test "$WHEEL_UPLOAD_URL" = "https://uploads.github.com/repos/nutrik/vercor/releases/${RELEASE_ID}/assets?name=vercor-0.4.3-py3-none-any.whl"
   gh api --method POST -H "Content-Type: application/octet-stream" "$WHEEL_UPLOAD_URL" --input "$CI_DIST_DIR/vercor-0.4.3-py3-none-any.whl" > "$GITHUB_RECOVERY_DIR/upload-wheel.json"
-  python tools/wait_for_github_release_state.py --repository nutrik/vercor --manifest "$CI_MANIFEST" --tag v0.4.3 --title "VerCOR 0.4.3" --notes-file docs/release-notes-0.4.3.md --expect vercor-0.4.3-py3-none-any.whl vercor-0.4.3.tar.gz --target-state draft --target-present vercor-0.4.3-py3-none-any.whl --transitional-state draft --transitional-present --release-id "$RELEASE_ID" --attempts 12 --interval-seconds 2 --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+  if [ "$SDIST_MISSING" = "True" ]; then
+    python tools/wait_for_github_release_state.py --repository nutrik/vercor --manifest "$CI_MANIFEST" --tag v0.4.3 --title "VerCOR 0.4.3" --notes-file docs/release-notes-0.4.3.md --expect vercor-0.4.3-py3-none-any.whl vercor-0.4.3.tar.gz --target-state draft --target-present vercor-0.4.3-py3-none-any.whl --transitional-state draft --transitional-present --release-id "$RELEASE_ID" --attempts 12 --interval-seconds 2 --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+  else
+    python tools/wait_for_github_release_state.py --repository nutrik/vercor --manifest "$CI_MANIFEST" --tag v0.4.3 --title "VerCOR 0.4.3" --notes-file docs/release-notes-0.4.3.md --expect vercor-0.4.3-py3-none-any.whl vercor-0.4.3.tar.gz --target-state draft --target-present vercor-0.4.3-py3-none-any.whl vercor-0.4.3.tar.gz --transitional-state draft --transitional-present vercor-0.4.3.tar.gz --release-id "$RELEASE_ID" --attempts 12 --interval-seconds 2 --state-output "$GITHUB_RECOVERY_DIR/release-state.json"
+  fi
 fi
-SDIST_MISSING="$(python -c 'import json,sys; print(sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8"))["missing"])' "$GITHUB_RECOVERY_DIR/release-state.json" vercor-0.4.3.tar.gz)"
 if [ "$SDIST_MISSING" = "True" ]; then
   check_tag_binding
   SDIST_UPLOAD_URL="$(python tools/validate_release_state.py github-upload-url --repository nutrik/vercor --release-id "$RELEASE_ID" --name vercor-0.4.3.tar.gz)"

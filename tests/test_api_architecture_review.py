@@ -1031,7 +1031,7 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
     ):
         assert required in github
     assert github.count("tools/validate_release_state.py github-upload-url") == 2
-    assert github.count("tools/wait_for_github_release_state.py") == 4
+    assert github.count("tools/wait_for_github_release_state.py") == 5
     for visibility_contract in (
         "--target-state draft --target-present "
         "--transitional-state absent --transitional-present",
@@ -1040,12 +1040,15 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         f"--target-state draft --target-present {EXPECTED_WHEEL_NAME} "
         f"{EXPECTED_SDIST_NAME} --transitional-state draft "
         f"--transitional-present {EXPECTED_WHEEL_NAME}",
+        f"--target-state draft --target-present {EXPECTED_WHEEL_NAME} "
+        f"{EXPECTED_SDIST_NAME} --transitional-state draft "
+        f"--transitional-present {EXPECTED_SDIST_NAME}",
         f"--target-state published --target-present {EXPECTED_WHEEL_NAME} "
         f"{EXPECTED_SDIST_NAME} --transitional-state draft "
         f"--transitional-present {EXPECTED_WHEEL_NAME} {EXPECTED_SDIST_NAME}",
     ):
         assert visibility_contract in normalized_github
-    assert normalized_github.count("--attempts 12 --interval-seconds 2") == 4
+    assert normalized_github.count("--attempts 12 --interval-seconds 2") == 5
     assert github.count("https://uploads.github.com/repos/nutrik/vercor/releases/") == 2
     assert "--hostname uploads.github.com" not in github
     assert github.count("tools/validate_release_state.py github-releases") == 1

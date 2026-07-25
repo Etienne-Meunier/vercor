@@ -63,6 +63,8 @@ def _run_poller(
     transitional_present: tuple[str, ...],
     attempts: int = 3,
     release_id: int | None = None,
+    repository: str = "example/vercor",
+    interval_seconds: str = "0",
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     """Run the real poller against a deterministic fake GitHub CLI."""
 
@@ -88,7 +90,7 @@ expected = [
     "api",
     "--paginate",
     "--slurp",
-    "repos/example/vercor/releases?per_page=100",
+    f"repos/{os.environ['FAKE_GH_REPOSITORY']}/releases?per_page=100",
 ]
 if sys.argv[1:] != expected:
     raise SystemExit(f"unexpected gh arguments: {sys.argv[1:]!r}")
@@ -116,7 +118,7 @@ sys.stdout.write(selected.read_text(encoding="utf-8"))
         sys.executable,
         str(POLLER_PATH),
         "--repository",
-        "example/vercor",
+        repository,
         "--manifest",
         str(manifest),
         "--tag",
@@ -139,7 +141,7 @@ sys.stdout.write(selected.read_text(encoding="utf-8"))
         "--attempts",
         str(attempts),
         "--interval-seconds",
-        "0",
+        interval_seconds,
         "--state-output",
         str(state_output),
     ]
@@ -152,6 +154,7 @@ sys.stdout.write(selected.read_text(encoding="utf-8"))
             **os.environ,
             "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
             "FAKE_GH_COUNTER": str(counter_path),
+            "FAKE_GH_REPOSITORY": repository,
             "FAKE_GH_SEQUENCE": str(sequence_dir),
         },
         text=True,
@@ -200,6 +203,17 @@ sys.stdout.write(selected.read_text(encoding="utf-8"))
             (EXPECTED_WHEEL_NAME, EXPECTED_SDIST_NAME),
             "draft",
             (EXPECTED_WHEEL_NAME,),
+            42,
+        ),
+        (
+            [
+                _release_fixture((EXPECTED_SDIST_NAME,)),
+                _release_fixture((EXPECTED_WHEEL_NAME, EXPECTED_SDIST_NAME)),
+            ],
+            "draft",
+            (EXPECTED_WHEEL_NAME, EXPECTED_SDIST_NAME),
+            "draft",
+            (EXPECTED_SDIST_NAME,),
             42,
         ),
         (
@@ -320,4 +334,37 @@ def test_poller_times_out_bounded_transition(tmp_path: Path) -> None:
     assert completed.returncode != 0
     assert "timed out after 3 attempts" in completed.stderr
     assert int(counter_path.read_text(encoding="utf-8")) == 3
+    assert not state_output.exists()
+
+
+@pytest.mark.fast_always
+@pytest.mark.parametrize(
+    ("repository", "interval_seconds", "error"),
+    [
+        ("example/vercor/extra", "0", "repository must be OWNER/REPOSITORY"),
+        ("example/vercor", "inf", "interval seconds must be finite"),
+    ],
+)
+def test_poller_rejects_invalid_arguments_before_listing(
+    tmp_path: Path,
+    repository: str,
+    interval_seconds: str,
+    error: str,
+) -> None:
+    """Reject malformed repository and non-finite interval before external I/O."""
+
+    completed, state_output, counter_path = _run_poller(
+        tmp_path,
+        [_release_fixture()],
+        target_state="draft",
+        target_present=(),
+        transitional_state="absent",
+        transitional_present=(),
+        repository=repository,
+        interval_seconds=interval_seconds,
+    )
+
+    assert completed.returncode != 0
+    assert error in completed.stderr
+    assert int(counter_path.read_text(encoding="utf-8")) == 0
     assert not state_output.exists()
