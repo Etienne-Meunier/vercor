@@ -1,6 +1,7 @@
 # VerCOR Progress
 
 This is the bounded orientation log for active development. Detailed history is preserved in `docs/progress-archive-2026-04-23-to-2026-05-15.md`, `docs/progress-archive-2026-05-16-to-2026-07-14.md`, and `docs/progress-archive-2026-07-22.md`.
+
 ## Current Status
 
 - Release-ready package-version evidence completed locally (2026-07-25): the sole license classifier is now `License :: OSI Approved :: Apache Software License`; `pyproject.toml` is the only executable VerCOR version owner. The CI build job reads that version and emits `version`, `wheel_name`, and `sdist_name`, which the build, upload, installed-artifact, external-extension, macOS, tag-guard, and publish-inventory paths consume. TDD recorded the intended old-`Apache-2.0` and duplicate-classifier failures, then four intended version-source RED failures (the missing build-output mapping and tag-guard `VERSION`); focused GREEN passed 195/195. Static gates on the final implementation passed: Black left 237 files unchanged with its Python 3.13/target-Python-3.15 safety-parse advisory, flake8 reported 0, mypy reported no issues in 237 files, and compileall succeeded. Fresh final verification passed 195/195 focused contracts, 711/711 fast tests (four known Flax/JAX `jax.core.Effect` deprecation warnings), and 1,349/1,349 full tests (those four plus one JCM/xarray `compat` future warning); `git diff --check` was clean. No tag, push, publication, release, or remote mutation occurred.
@@ -145,8 +146,7 @@ This is the bounded orientation log for active development. Detailed history is 
 - One output coordinator owns all enabled provider selection, accumulation,
   cadence, host transfer, paths, period files, final fields, and snapshots.
   `output=None` performs no I/O and remains differentiable.
-- JCM, Veros, and CAMulator imports remain lazy. CAMulator is not installed or
-  pinned.
+- JCM, Veros, and CAMulator imports remain lazy. CAMulator is not installed or pinned.
 
 ## Release Candidate Handoff
 
