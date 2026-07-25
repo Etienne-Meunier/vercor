@@ -466,16 +466,19 @@ def test_release_files_and_metadata_describe_the_stable_release() -> None:
         changelog,
         re.MULTILINE,
     )
+    assert re.search(r"^## \[0\.4\.2\] - 2026-07-25$", changelog, re.MULTILINE)
     assert re.search(r"^## \[0\.4\.1\] - 2026-07-24$", changelog, re.MULTILINE)
     release_notes_path = PROJECT_ROOT / expected_release_notes
     assert release_notes_path.is_file()
     release_notes = release_notes_path.read_text(encoding="utf-8")
     for required in (
-        "`v0.4.1`",
-        "stale commit",
-        "failed before publication",
+        "`v0.4.2`",
+        "invalid license classifier",
+        "PyPI",
+        "GitHub Release",
         "remains immutable",
-        f"superseded by the {EXPECTED_VERSION} candidate",
+        "Apache Software License",
+        "`pyproject.toml`",
     ):
         assert required in release_notes
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
@@ -727,7 +730,8 @@ def test_release_pr_transcript_uses_release_branch_and_draft_metadata() -> None:
     exact_title = f'--title "Release {expected_title}"'
     exact_body = (
         f'--body "Prepare the immutable {expected_title} recovery release. The '
-        'stale v0.4.1 tag failed before publication and remains unchanged."'
+        "v0.4.2 workflow failed because PyPI rejected its invalid license "
+        'classifier; v0.4.2 remains unchanged."'
     )
 
     assert "refactor" not in guide
