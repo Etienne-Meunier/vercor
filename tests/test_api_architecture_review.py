@@ -17,6 +17,11 @@ from typing import Any, cast, get_type_hints
 import pytest
 import yaml
 
+from tests._distribution_support import (
+    EXPECTED_SDIST_NAME,
+    EXPECTED_VERSION,
+    EXPECTED_WHEEL_NAME,
+)
 from tests._signature_support import canonicalize_external_typing_aliases
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -447,18 +452,22 @@ def test_migration_v0_4_snippet_runs_without_private_or_compat_imports(
 def test_release_files_and_metadata_describe_the_stable_release() -> None:
     """Bind release documentation to installed project metadata and artifact names."""
 
+    expected_release_notes = f"docs/release-notes-{EXPECTED_VERSION}.md"
     project = tomllib.loads(
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]
-    assert project["version"] == "0.4.2"
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
     assert "Development Status :: 3 - Alpha" not in project["classifiers"]
     assert "Development Status :: 4 - Beta" not in project["classifiers"]
 
     changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
-    assert re.search(r"^## \[0\.4\.2\] - 2026-07-25$", changelog, re.MULTILINE)
+    assert re.search(
+        rf"^## \[{re.escape(EXPECTED_VERSION)}\] - 2026-07-25$",
+        changelog,
+        re.MULTILINE,
+    )
     assert re.search(r"^## \[0\.4\.1\] - 2026-07-24$", changelog, re.MULTILINE)
-    release_notes_path = PROJECT_ROOT / "docs" / "release-notes-0.4.2.md"
+    release_notes_path = PROJECT_ROOT / expected_release_notes
     assert release_notes_path.is_file()
     release_notes = release_notes_path.read_text(encoding="utf-8")
     for required in (
@@ -466,7 +475,7 @@ def test_release_files_and_metadata_describe_the_stable_release() -> None:
         "stale commit",
         "failed before publication",
         "remains immutable",
-        "superseded by the 0.4.2 candidate",
+        f"superseded by the {EXPECTED_VERSION} candidate",
     ):
         assert required in release_notes
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
@@ -486,10 +495,7 @@ def test_release_files_and_metadata_describe_the_stable_release() -> None:
     assert "git push" not in commands
     assert "twine upload" not in commands
 
-    for artifact in (
-        "vercor-0.4.2-py3-none-any.whl",
-        "vercor-0.4.2.tar.gz",
-    ):
+    for artifact in (EXPECTED_WHEEL_NAME, EXPECTED_SDIST_NAME):
         assert artifact in commands
 
 
@@ -581,14 +587,15 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
     prepare = _section(guide, "## 5. Prepare the required release pull request")
     tag = _section(guide, "## 6. Create and verify the annotated tag")
     repo_url = "https://api.github.com/repos/nutrik/vercor"
-    published_only_release_url = f"{repo_url}/releases/tags/v0.4.2"
+    expected_tag = f"v{EXPECTED_VERSION}"
+    published_only_release_url = f"{repo_url}/releases/tags/{expected_tag}"
     release_enumeration = (
         'gh api --paginate --slurp "repos/nutrik/vercor/releases?per_page=100"'
     )
     capability_probe = (
         "gh api --method POST repos/nutrik/vercor/releases/generate-notes"
     )
-    pypi_url = "https://pypi.org/pypi/vercor/0.4.2/json"
+    pypi_url = f"https://pypi.org/pypi/vercor/{EXPECTED_VERSION}/json"
     ancestry_check = 'git merge-base --is-ancestor "$MAIN_COMMIT" "$RELEASE_COMMIT"'
     exact_main_check = 'test "$MAIN_COMMIT" = "$RELEASE_COMMIT"'
 
@@ -597,12 +604,12 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
         assert 'MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"' in section
         assert 'GH_TOKEN="$(gh auth token)"' in section
         assert capability_probe in section
-        assert "-f tag_name=v0.4.2" in section
+        assert f"-f tag_name={expected_tag}" in section
         assert '-f target_commitish="$RELEASE_COMMIT"' in section
         assert "release-capability.json" in section
         assert release_enumeration in section
         assert "tools/validate_release_state.py github-tag-absent" in section
-        assert "--tag v0.4.2" in section
+        assert f"--tag {expected_tag}" in section
         assert published_only_release_url not in section
         assert "RELEASE_STATUS" not in section
         assert pypi_url in section
@@ -626,10 +633,10 @@ def test_release_publication_preflights_are_authenticated_and_fail_closed() -> N
     ) < tag.index(ancestry_check)
     assert tag.index(ancestry_check) < tag.index(exact_main_check)
     assert tag.index(exact_main_check) < tag.index("git tag -a")
-    local_tag_absence = 'test -z "$(git tag --list v0.4.2)"'
+    local_tag_absence = f'test -z "$(git tag --list {expected_tag})"'
     remote_tag_query = (
         'REMOTE_TAG_PRECHECK="$(git ls-remote --tags origin '
-        "refs/tags/v0.4.2 'refs/tags/v0.4.2^{}')\""
+        f"refs/tags/{expected_tag} 'refs/tags/{expected_tag}^{{}}')\""
     )
     remote_tag_absence = 'test -z "$REMOTE_TAG_PRECHECK"'
     for required in (local_tag_absence, remote_tag_query, remote_tag_absence):
@@ -714,11 +721,12 @@ def test_release_pr_transcript_uses_release_branch_and_draft_metadata() -> None:
 
     guide = RELEASING_PATH.read_text(encoding="utf-8")
     prepare = _section(guide, "## 5. Prepare the required release pull request")
-    release_branch = "release/vercor-0.4.2"
-    branch_assignment = f'RELEASE_BRANCH="{release_branch}"'
-    exact_title = '--title "Release VerCOR 0.4.2"'
+    expected_branch = f"release/vercor-{EXPECTED_VERSION}"
+    expected_title = f"VerCOR {EXPECTED_VERSION}"
+    branch_assignment = f'RELEASE_BRANCH="{expected_branch}"'
+    exact_title = f'--title "Release {expected_title}"'
     exact_body = (
-        '--body "Prepare the immutable VerCOR 0.4.2 recovery release. The '
+        f'--body "Prepare the immutable {expected_title} recovery release. The '
         'stale v0.4.1 tag failed before publication and remains unchanged."'
     )
 
@@ -764,6 +772,7 @@ def test_release_pr_pushes_exact_branch_before_github_preflights() -> None:
 
     guide = RELEASING_PATH.read_text(encoding="utf-8")
     prepare = _section(guide, "## 5. Prepare the required release pull request")
+    expected_branch = f"release/vercor-{EXPECTED_VERSION}"
     transcripts = tuple(
         source
         for language, source in _markdown_fences(prepare, owner="release PR section")
@@ -787,7 +796,7 @@ def test_release_pr_pushes_exact_branch_before_github_preflights() -> None:
     )
 
     for required in (
-        'RELEASE_BRANCH="release/vercor-0.4.2"',
+        f'RELEASE_BRANCH="{expected_branch}"',
         'test "$(git branch --show-current)" = "$RELEASE_BRANCH"',
         'test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"',
         'git merge-base --is-ancestor "$MAIN_COMMIT" "$RELEASE_COMMIT"',
@@ -902,6 +911,7 @@ def test_release_recovery_preflight_proves_capability_before_enumerating() -> No
     """Keep exact-state recovery bound to the non-mutating capability probe."""
 
     guide = RELEASING_PATH.read_text(encoding="utf-8")
+    expected_tag = f"v{EXPECTED_VERSION}"
     recovery_state = _section(guide, "## 9. Query exact public state before recovery")
     normalized_lines = tuple(
         line.strip() for line in recovery_state.splitlines() if line.strip()
@@ -914,7 +924,7 @@ def test_release_recovery_preflight_proves_capability_before_enumerating() -> No
 
     for required in (
         "gh api --method POST repos/nutrik/vercor/releases/generate-notes",
-        "-f tag_name=v0.4.2",
+        f"-f tag_name={expected_tag}",
         '-f target_commitish="$RELEASE_COMMIT"',
         capability_output,
         release_enumeration,
@@ -954,6 +964,7 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
     """Bind every recovery mutation to one exact CI run and verified bytes."""
 
     guide = RELEASING_PATH.read_text(encoding="utf-8")
+    expected_tag = f"v{EXPECTED_VERSION}"
     recovery = _section(guide, "## 10. Safe recovery")
     for required in (
         'test -n "${RELEASE_RUN_ID:-}"',
@@ -967,8 +978,8 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         'CI_DIST_DIR="$CI_RECOVERY_ROOT/dist"',
         'CI_MANIFEST="$CI_RECOVERY_ROOT/manifest/SHA256SUMS"',
         "tools/validate_release_state.py files",
-        "vercor-0.4.2-py3-none-any.whl",
-        "vercor-0.4.2.tar.gz",
+        EXPECTED_WHEEL_NAME,
+        EXPECTED_SDIST_NAME,
     ):
         assert required in recovery
     assert "The local `dist/SHA256SUMS` is not authoritative" in guide
@@ -979,7 +990,7 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         assert 'test -n "${RELEASE_RUN_ID:-}"' in section
         assert "$CI_MANIFEST" in section
         assert "$CI_DIST_DIR" in section
-        assert "https://pypi.org/pypi/vercor/0.4.2/json" in section
+        assert f"https://pypi.org/pypi/vercor/{EXPECTED_VERSION}/json" in section
         assert section.count("tools/validate_release_state.py pypi") == 3
         assert "for attempt in {1..12}" in section
         assert 'case "$FINAL_PYPI_STATUS" in' in section
@@ -987,7 +998,7 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         assert 'test "$PYPI_RECOVERY_VERIFIED" = "true"' in section
         assert (
             'REMOTE_TAG_COMMIT="$(git ls-remote origin '
-            "'refs/tags/v0.4.2^{}' | awk '{print $1}')\""
+            f"'refs/tags/{expected_tag}^{{}}' | awk '{{print $1}}')\""
         ) in section
         assert 'test "$REMOTE_TAG_COMMIT" = "$RELEASE_COMMIT"' in section
         assert (
@@ -1008,11 +1019,11 @@ def test_release_recovery_commands_verify_exact_state_before_mutation() -> None:
         "--allow-state absent draft",
         "--allow-state draft",
         "--allow-state published",
-        "gh release create v0.4.2",
+        f"gh release create {expected_tag}",
         "--draft",
         "tools/validate_release_state.py github-upload-url",
         "https://uploads.github.com/repos/nutrik/vercor/releases/",
-        "gh release edit v0.4.2",
+        f"gh release edit {expected_tag}",
         "--draft=false",
     ):
         assert required in github
