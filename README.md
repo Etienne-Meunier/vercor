@@ -1,6 +1,13 @@
 # VerCOR
 
-[![codecov](https://codecov.io/github/nutrik/vercor/graph/badge.svg?token=A960MY4GXH)](https://codecov.io/github/nutrik/vercor)
+<p align="center">
+  <a href="https://github.com/nutrik/vercor/actions/workflows/python-package.yml">
+    <img src="https://github.com/nutrik/vercor/actions/workflows/python-package.yml/badge.svg" alt="Test status">
+  </a>
+  <a href="https://codecov.io/github/nutrik/vercor">
+    <img src="https://codecov.io/github/nutrik/vercor/graph/badge.svg?token=A960MY4GXH" alt="Code Coverage">
+  </a>
+</p>
 
 Versatile Earth system COupleR (VerCOR) connects atmosphere, ocean, sea-ice,
 land, and forcing-data components in one simulation. It is designed for Earth
