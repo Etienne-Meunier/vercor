@@ -101,7 +101,7 @@ def test_active_sources_do_not_use_retired_public_plugin_fixture_name() -> None:
         PROJECT_ROOT / "DESIGN.md",
         PROJECT_ROOT / "DEPENDENCIES.md",
         PROJECT_ROOT / "CHANGELOG.md",
-        PROJECT_ROOT / "docs" / "release-notes-0.4.2.md",
+        *sorted((PROJECT_ROOT / "docs").glob("release-notes-*.md")),
         PROJECT_ROOT / "docs" / "plugin-authoring.md",
         PROJECT_ROOT / "docs" / "api-architecture-review.md",
         PROJECT_ROOT / "docs" / "releasing.md",
@@ -169,7 +169,6 @@ def test_runtime_metadata_separates_test_and_development_dependencies() -> None:
     runtime_dependencies = tuple(project["dependencies"])
     extras = project["optional-dependencies"]
 
-    assert project["version"] == "0.4.2"
     assert not any(
         dependency.lower().startswith("pytest") for dependency in runtime_dependencies
     )
@@ -327,16 +326,21 @@ def test_tag_release_rejects_version_mismatch_before_build() -> None:
     )
     assert guard_index < build_index
     assert guard["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert guard["env"]["VERSION"] == ("${{ steps.project-metadata.outputs.version }}")
 
-    version = tomllib.loads(
-        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]["version"]
-    for tag, returncode in ((f"v{version}", 0), ("v0.4.0", 1)):
+    for tag, returncode in (
+        (f"v{EXPECTED_VERSION}", 0),
+        (f"v{EXPECTED_VERSION}-mismatch", 1),
+    ):
         completed = subprocess.run(
             ["bash"],
             input=guard["run"],
             cwd=PROJECT_ROOT,
-            env={**os.environ, "GITHUB_REF_NAME": tag},
+            env={
+                **os.environ,
+                "GITHUB_REF_NAME": tag,
+                "VERSION": EXPECTED_VERSION,
+            },
             text=True,
             capture_output=True,
             check=False,
@@ -344,7 +348,51 @@ def test_tag_release_rejects_version_mismatch_before_build() -> None:
         assert completed.returncode == returncode
         if returncode:
             assert "Release tag/version mismatch" in completed.stdout
-            assert f"package version {version}" in completed.stdout
+            assert f"package version {EXPECTED_VERSION}" in completed.stdout
+
+
+@pytest.mark.fast_always
+def test_ci_project_metadata_step_derives_outputs_from_pyproject(
+    tmp_path: Path,
+) -> None:
+    """Execute metadata extraction against a non-repository project version."""
+
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github/workflows/python-package.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    build_job = workflow["jobs"]["build-artifacts"]
+    assert build_job["outputs"] == {
+        "version": "${{ steps.project-metadata.outputs.version }}",
+        "wheel_name": "${{ steps.project-metadata.outputs.wheel_name }}",
+        "sdist_name": "${{ steps.project-metadata.outputs.sdist_name }}",
+    }
+    metadata_step = next(
+        step for step in build_job["steps"] if step.get("id") == "project-metadata"
+    )
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "vercor"\nversion = "9.8.7"\n',
+        encoding="utf-8",
+    )
+    github_output = tmp_path / "github-output"
+    completed = subprocess.run(
+        ["bash"],
+        input=metadata_step["run"],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_OUTPUT": str(github_output)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert github_output.read_text(encoding="utf-8").splitlines() == [
+        "version=9.8.7",
+        "wheel_name=vercor-9.8.7-py3-none-any.whl",
+        "sdist_name=vercor-9.8.7.tar.gz",
+    ]
 
 
 @pytest.mark.fast_always
@@ -358,6 +406,12 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "external-extension-contract-tests" in jobs
     extension_job = jobs["external-extension-contract-tests"]
     macos_job = jobs["macos-smoke"]
+    expected_outputs = {
+        "version": "${{ steps.project-metadata.outputs.version }}",
+        "wheel_name": "${{ steps.project-metadata.outputs.wheel_name }}",
+        "sdist_name": "${{ steps.project-metadata.outputs.sdist_name }}",
+    }
+    assert build_job["outputs"] == expected_outputs
 
     build_steps = build_job["steps"]
     build_commands = "\n".join(
@@ -367,8 +421,8 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "shopt -s nullglob dotglob" in build_commands
     assert "DIST_ARTIFACTS=(dist/*)" in build_commands
     assert 'test "${#DIST_ARTIFACTS[@]}" -eq 2' in build_commands
-    assert f"test -f dist/{EXPECTED_WHEEL_NAME}" in build_commands
-    assert f"test -f dist/{EXPECTED_SDIST_NAME}" in build_commands
+    assert 'test -f "dist/${WHEEL_NAME}"' in build_commands
+    assert 'test -f "dist/${SDIST_NAME}"' in build_commands
     assert "tests/fixtures/external_extension_test_fixture" not in build_commands
     assert "external_extension_test_fixture" not in build_commands
     upload_steps = {
@@ -381,16 +435,15 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         "vercor-release-manifest",
     }
     assert set(upload_steps["vercor-distributions"]["with"]["path"].splitlines()) == {
-        f"dist/{EXPECTED_WHEEL_NAME}",
-        f"dist/{EXPECTED_SDIST_NAME}",
+        "dist/${{ steps.project-metadata.outputs.wheel_name }}",
+        "dist/${{ steps.project-metadata.outputs.sdist_name }}",
     }
     assert (
         upload_steps["vercor-release-manifest"]["with"]["path"]
         == "release-manifest/SHA256SUMS"
     )
     assert (
-        f"sha256sum {EXPECTED_WHEEL_NAME} {EXPECTED_SDIST_NAME} "
-        "> ../release-manifest/SHA256SUMS"
+        'sha256sum "$WHEEL_NAME" "$SDIST_NAME" ' "> ../release-manifest/SHA256SUMS"
     ) in build_commands
 
     matrix = installed_job["strategy"]["matrix"]
@@ -425,8 +478,17 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     assert "python -m build" not in installed_commands
     assert "VERCOR_ARTIFACT_DIR" in installed_commands
     assert "VERCOR_TEST_PACKAGE_ROOT" in installed_commands
-    assert EXPECTED_WHEEL_NAME in installed_commands
-    assert EXPECTED_SDIST_NAME in installed_commands
+    installed_step = next(
+        step
+        for step in installed_steps
+        if step.get("name") == "Install selected artifact environment"
+    )
+    assert installed_step["env"] == {
+        "WHEEL_NAME": "${{ needs.build-artifacts.outputs.wheel_name }}",
+        "SDIST_NAME": "${{ needs.build-artifacts.outputs.sdist_name }}",
+    }
+    assert 'WHEEL_PATH="${GITHUB_WORKSPACE}/dist/${WHEEL_NAME}"' in installed_commands
+    assert 'SDIST_PATH="${GITHUB_WORKSPACE}/dist/${SDIST_NAME}"' in installed_commands
     assert "vercor-0.3.0-py3-none-any.whl" not in installed_commands
     assert (
         "tests/fixtures/external_extension_test_fixture/src" not in installed_commands
@@ -453,6 +515,18 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
         "tests/fixtures/external_extension_test_fixture"
     ) in extension_commands
     assert EXPECTED_EXTENSION_FIXTURE_WHEEL_NAME in extension_commands
+    extension_step = next(
+        step
+        for step in extension_job["steps"]
+        if step.get("name") == "Run installed external extension contract"
+    )
+    assert extension_step["env"] == {
+        "WHEEL_NAME": "${{ needs.build-artifacts.outputs.wheel_name }}",
+    }
+    assert (
+        'python -m pip install "${GITHUB_WORKSPACE}/dist/${WHEEL_NAME}"'
+        in extension_commands
+    )
     assert "external_extension_test_fixture.smoke" in extension_commands
     assert (
         'python -P -m mypy --strict "$RUNNER_TEMP/extension-typecheck/'
@@ -464,7 +538,15 @@ def test_ci_validates_installed_artifacts_across_supported_environments() -> Non
     macos_commands = "\n".join(
         step.get("run", "") for step in macos_job["steps"] if isinstance(step, dict)
     )
-    assert EXPECTED_WHEEL_NAME in macos_commands
+    macos_step = next(
+        step
+        for step in macos_job["steps"]
+        if step.get("name") == "Run installed macOS external extension smoke"
+    )
+    assert macos_step["env"] == {
+        "WHEEL_NAME": "${{ needs.build-artifacts.outputs.wheel_name }}",
+    }
+    assert 'python -m pip install "dist/${WHEEL_NAME}"' in macos_commands
     assert "external_extension_test_fixture.smoke" in macos_commands
     assert "tests/fixtures/external_extension_test_fixture" in macos_commands
     macos_checkout = next(
@@ -483,6 +565,11 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     workflow = yaml.safe_load(workflow_source)
     triggers = workflow[True]
     publish = workflow["jobs"]["publish-release"]
+    expected_outputs = {
+        "version": "${{ steps.project-metadata.outputs.version }}",
+        "wheel_name": "${{ steps.project-metadata.outputs.wheel_name }}",
+        "sdist_name": "${{ steps.project-metadata.outputs.sdist_name }}",
+    }
 
     assert triggers["push"] == {
         "branches": ["main"],
@@ -509,6 +596,7 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     }
     assert workflow["permissions"] == {"contents": "read"}
     assert publish["permissions"] == {"contents": "write"}
+    assert workflow["jobs"]["build-artifacts"]["outputs"] == expected_outputs
     permission_owners = (
         ("workflow", workflow.get("permissions", {})),
         *workflow["jobs"].items(),
@@ -552,14 +640,27 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
         if isinstance(step, dict) and "run" in step
     )
     commands = "\n".join(command for _, command in run_steps)
+    inventory_step = next(
+        step
+        for step in publish["steps"]
+        if step.get("name") == "Verify CI-produced release inventory"
+    )
+    assert inventory_step["env"] == {
+        "PROJECT_VERSION": "${{ needs.build-artifacts.outputs.version }}",
+        "WHEEL_NAME": "${{ needs.build-artifacts.outputs.wheel_name }}",
+        "SDIST_NAME": "${{ needs.build-artifacts.outputs.sdist_name }}",
+    }
     for required in (
         'test "$GITHUB_REF_TYPE" = "tag"',
+        'test "$PROJECT_VERSION" = "$VERSION"',
+        'test "$WHEEL_NAME" = "vercor-${VERSION}-py3-none-any.whl"',
+        'test "$SDIST_NAME" = "vercor-${VERSION}.tar.gz"',
         'test "$GITHUB_REF_NAME" = "v${VERSION}"',
         'test -f "docs/release-notes-${VERSION}.md"',
         "DIST_ARTIFACTS=(dist/*)",
         'test "${#DIST_ARTIFACTS[@]}" -eq 2',
-        'WHEEL="dist/vercor-${VERSION}-py3-none-any.whl"',
-        'SDIST="dist/vercor-${VERSION}.tar.gz"',
+        'WHEEL="dist/${WHEEL_NAME}"',
+        'SDIST="dist/${SDIST_NAME}"',
         'python -m twine check "$WHEEL" "$SDIST"',
         "release-manifest/SHA256SUMS",
         "tools/validate_release_state.py files",
@@ -616,8 +717,7 @@ def test_version_tag_deploys_exact_tested_distributions() -> None:
     assert any(index < twine_install_index for index in manifest_verification_indices)
     assert any(index > twine_install_index for index in manifest_verification_indices)
     producer_manifest = (
-        f"sha256sum {EXPECTED_WHEEL_NAME} {EXPECTED_SDIST_NAME} "
-        "> ../release-manifest/SHA256SUMS"
+        'sha256sum "$WHEEL_NAME" "$SDIST_NAME" ' "> ../release-manifest/SHA256SUMS"
     )
     assert workflow_source.count(producer_manifest) == 1
     assert producer_manifest not in commands
@@ -832,6 +932,7 @@ def test_release_design_and_plan_describe_the_final_review_state_machine() -> No
 
 @pytest.mark.fast_always
 def test_release_bundle_contains_only_vercor_distributions() -> None:
+    expected_tag = f"v{EXPECTED_VERSION}"
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
     checksum_line = next(
         line.strip()
@@ -840,8 +941,7 @@ def test_release_bundle_contains_only_vercor_distributions() -> None:
     )
 
     assert checksum_line == (
-        "shasum -a 256 vercor-0.4.2-py3-none-any.whl "
-        "vercor-0.4.2.tar.gz > SHA256SUMS"
+        f"shasum -a 256 {EXPECTED_WHEEL_NAME} " f"{EXPECTED_SDIST_NAME} > SHA256SUMS"
     )
     assert "shopt -s nullglob dotglob" in releasing
     assert "DIST_ARTIFACTS=(dist/*)" in releasing
@@ -853,7 +953,7 @@ def test_release_bundle_contains_only_vercor_distributions() -> None:
         releasing,
         "## 7. Publish packages and create the hosted release",
     )
-    assert "Pushing the annotated `v0.4.2` tag" in publish
+    assert f"Pushing the annotated `{expected_tag}` tag" in publish
     assert "`PYPI_API_TOKEN`" in publish
     assert "python-package.yml" in publish
     assert "gh run watch" in publish
@@ -868,18 +968,21 @@ def test_progress_records_refreshed_corrected_release_artifacts() -> None:
 
     progress = (PROJECT_ROOT / "PROGRESS.md").read_text(encoding="utf-8")
     current_status = _section(progress, "## Current Status")
-    current_entry = re.search(
-        r"^- .*?(?=^- |\Z)",
-        current_status,
-        flags=re.MULTILINE | re.DOTALL,
+    marker = "evidence was refreshed after the README and release-runbook corrections"
+    evidence = next(
+        (
+            entry.group()
+            for entry in re.finditer(
+                r"^- .*?(?=^- |\Z)",
+                current_status,
+                flags=re.MULTILINE | re.DOTALL,
+            )
+            if marker in entry.group()
+        ),
+        None,
     )
-    assert current_entry is not None
-    evidence = current_entry.group()
-
-    assert (
-        "evidence was refreshed after the README and release-runbook corrections"
-        in evidence
-    )
+    assert evidence is not None
+    assert marker in evidence
     assert "commit `32b8276`" not in evidence
     for artifact in (EXPECTED_WHEEL_NAME, EXPECTED_SDIST_NAME):
         assert re.search(
@@ -899,6 +1002,8 @@ def test_release_guide_binds_tag_authority_workflow_selection_and_hosted_state()
 ):
     """Require the ordinary tagged-release handoff to remain fail-closed."""
 
+    expected_tag = f"v{EXPECTED_VERSION}"
+    expected_title = f"VerCOR {EXPECTED_VERSION}"
     releasing = RELEASING_PATH.read_text(encoding="utf-8")
     deployment = _section(releasing, "## Repository deployment configuration")
     prepare = _section(releasing, "## 5. Prepare the required release pull request")
@@ -929,16 +1034,19 @@ def test_release_guide_binds_tag_authority_workflow_selection_and_hosted_state()
         assert required in prepare_text
 
     authority = "explicit tag-push and package-publication authority"
-    tag_push = "git push origin refs/tags/v0.4.2"
+    tag_push = f"git push origin refs/tags/{expected_tag}"
     assert authority in tag_text
     assert tag_text.index(authority) < tag_text.index(tag_push)
-    assert "Pushing the annotated `v0.4.2` tag starts `python-package.yml`." in tag_text
+    assert (
+        f"Pushing the annotated `{expected_tag}` tag starts `python-package.yml`."
+        in tag_text
+    )
     assert tag_text.count("Never overwrite or repoint a published release tag.") == 1
 
     for required in (
         '--event push --commit "$RELEASE_COMMIT"',
         '.event == "push"',
-        '.headBranch == "v0.4.2"',
+        f'.headBranch == "{expected_tag}"',
         ".headSha == env.RELEASE_COMMIT",
         'gh run watch "$RELEASE_RUN_ID" --repo nutrik/vercor --exit-status',
         "--json headSha --jq .headSha)",
@@ -960,11 +1068,11 @@ def test_release_guide_binds_tag_authority_workflow_selection_and_hosted_state()
         "name",
         "isDraft",
         "isPrerelease",
-        '"v0.4.2"',
-        '"VerCOR 0.4.2"',
+        f'"{expected_tag}"',
+        f'"{expected_title}"',
         "tools/validate_release_state.py assets",
-        "vercor-0.4.2-py3-none-any.whl",
-        "vercor-0.4.2.tar.gz",
+        EXPECTED_WHEEL_NAME,
+        EXPECTED_SDIST_NAME,
     ):
         assert required in verify
 
