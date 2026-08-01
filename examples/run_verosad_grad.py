@@ -21,8 +21,9 @@ import sys
 import jax
 import jax.numpy as jnp
 
-sys.path.insert(0, "/Users/emeunier/Desktop/Projets/Veros-Autodiff/veros")  # use veros-ad instead of pip veros
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root, for `import vercor`
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "veros"))  # veros-ad submodule instead of pip veros
+sys.path.insert(0, _REPO_ROOT)  # repo root, for `import vercor`
 
 from datetime import datetime
 
