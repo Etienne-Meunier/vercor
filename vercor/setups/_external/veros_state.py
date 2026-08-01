@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from copy import deepcopy
 from typing import Any, Callable, NamedTuple, cast
 
 import jax
@@ -43,8 +42,9 @@ def prepare_surface_forcing_fields(
     restore_to_climatology_jax = jnp.asarray(restore_to_climatology, dtype=bool)
 
     def _prepare(field: object) -> jax.Array:
+        # Dropped nan_to_num: forcings must already be NaN-free here (see compute_fluxes).
         field_jax = as_jax_real_array(field)
-        return jnp.nan_to_num(field_jax.T[..., jnp.newaxis])
+        return field_jax.T[..., jnp.newaxis]
 
     taux_prepared = _prepare(taux)
     tauy_prepared = _prepare(tauy)
@@ -73,33 +73,52 @@ def extract_surface_temperature(
 
 
 def copy_state(tree: VerosState, jitted: bool = True) -> VerosState:
-    """Return a copy of a Veros state suitable for copy-before-mutate stepping."""
+    """Return a copy of a Veros state suitable for copy-before-mutate stepping.
 
-    if jitted:
-        dimensions = deepcopy(tree._dimensions)
-        settings_meta = deepcopy(tree.settings.__metadata__)
-        plugin_interfaces = deepcopy(tree._plugin_interfaces)
-        var_meta = deepcopy(tree._var_meta)
+    Uses ``VerosState.copy()`` (a ``tree_map`` over the state's own pytree
+    registration) rather than rebuilding a ``VerosState`` via its constructor.
+    The constructor allocates a fresh ``VerosSettings``/``var_meta``, which
+    have no value-based ``__eq__``, so every rebuild produced a PyTreeDef that
+    compared unequal to the state it was copied from and tripped the
+    differentiable scanned runtime's payload-structure guard. ``.copy()``
+    keeps the same settings/var_meta/dimensions/diagnostics objects by
+    reference and only actually copies the array leaves.
+    """
 
-        state_copy = VerosState(
-            var_meta, settings_meta, dimensions, plugin_interfaces=plugin_interfaces
-        )
+    state_copy = tree.copy() if jitted else tree
 
-        with state_copy.settings.unlock():
-            for k, v in tree.settings.items():
-                state_copy.settings.__setattr__(k, v)
-
-        state_copy._variables = deepcopy(tree._variables)
-        state_copy.timers = deepcopy(tree.timers)
-        state_copy.profile_timers = deepcopy(tree.profile_timers)
-    else:
-        state_copy = tree
-
-    object.__setattr__(
+    """     object.__setattr__(
         state_copy.settings,
         "__fields__",
         tuple(state_copy.settings.__fields__),
+    ) """ # -> I think it's useledd with the current version of copy
+    
+    return state_copy
+
+
+def set_veros_variable(
+    state: VerosState,
+    name: str,
+    value: object,
+) -> VerosState:
+    """Return a copy of ``state`` with one ``variables.<name>`` replaced.
+
+    A scalar ``value`` fills the existing variable's full shape (same
+    convention as ``Veros-Autodiff``'s notebook ``set_var`` helper); an
+    array-shaped ``value`` replaces the variable as-is.
+    """
+
+    state_copy = copy_state(state, jitted=True)
+    variables = state_copy.variables
+    current = getattr(variables, name)
+    value_array = jnp.asarray(value)
+    new_value = (
+        jnp.full_like(jnp.asarray(current), value_array)
+        if value_array.ndim == 0 and jnp.ndim(current) > 0
+        else value_array
     )
+    with variables.unlock():
+        setattr(variables, name, new_value)
     return state_copy
 
 
@@ -190,7 +209,13 @@ def apply_veros_forcing_fields(
         ):
             current = getattr(variables, variable_name)
             updated = update_veros_interior(current, variable_value)
-            setattr(variables, variable_name, runtime_array_to_host(updated))
+            setattr(
+                variables,
+                variable_name,
+                updated
+                if isinstance(updated, jax.core.Tracer)
+                else runtime_array_to_host(updated),
+            )
     return updated_state
 
 
@@ -219,6 +244,7 @@ __all__ = [
     "extract_veros_runtime_sst",
     "get_component_linear_solver",
     "prepare_surface_forcing_fields",
+    "set_veros_variable",
     "update_veros_interior",
     "copy_state",
     "pure",

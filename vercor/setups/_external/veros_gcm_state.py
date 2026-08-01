@@ -7,6 +7,7 @@ from datetime import timedelta
 from functools import partial
 from typing import Any, cast
 
+import jax
 import jax.numpy as jnp
 
 from vercor.components import (
@@ -20,8 +21,16 @@ from vercor.setups._time_helpers import (
     run_logged_spinup,
 )
 import vercor.setups._external.veros_setup as _veros_setup
+import vercor.setups._external.veros_setup_acc as _veros_setup_acc
+import vercor.setups._external.veros_setup_global4deg_learning as _veros_setup_global4deg_learning
 import vercor.setups._external.veros_state as _veros_state
 from vercor.types import RuntimeArray
+
+VEROS_SETUP_FACTORIES: dict[str, type] = {
+    "global_4deg": _veros_setup.CustomGlobalFourDegree,
+    "acc": _veros_setup_acc.ACCSetup,
+    "global_4deg_learning": _veros_setup_global4deg_learning.GlobalFourDegreeLearningSetup,
+}
 
 VEROS_INPUT_FIELD_NAMES = (
     "model_level_height",
@@ -51,6 +60,8 @@ class VerosGCMSetupState:
     def __init__(
         self,
         name: str = "OCN",
+        setup: str = "global_4deg",
+        uses_atmosphere_forcing: bool = True,
         spinup_time: timedelta = timedelta(days=2),
         custom_parameters: Mapping[str, Any] | None = None,
         restore_to_climatology: bool = False,
@@ -62,14 +73,22 @@ class VerosGCMSetupState:
         self.name = name
         override = custom_parameters or {}
 
-        self.model = _veros_setup.CustomGlobalFourDegree(override=override)
+        try:
+            setup_cls = VEROS_SETUP_FACTORIES[setup]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown Veros setup {setup!r}; expected one of "
+                f"{tuple(VEROS_SETUP_FACTORIES)}"
+            ) from exc
+        self.uses_atmosphere_forcing = uses_atmosphere_forcing
+        self.model = setup_cls(override=override)
         self.model.setup()
         self._linear_solver = _veros_state.get_component_linear_solver(self.model.state)
         self._veros_state = _veros_state.copy_state(
             self.model.state,
             jitted=jitted,
         )
-        self._step_function = cast(
+        step_function = cast(
             Callable[[Any], Any],
             partial(
                 _veros_state.pure,
@@ -78,6 +97,7 @@ class VerosGCMSetupState:
                 linear_solver=self._linear_solver,
             ),
         )
+        self._step_function = jax.jit(step_function) if jitted else step_function
 
         self.do_spinup = do_spinup
         self.spinup_time = spinup_time

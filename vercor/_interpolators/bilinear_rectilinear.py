@@ -257,10 +257,15 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
     def apply_scalar(self, src: Any) -> Any:
         out, _ = self._apply_bilinear_scalar(src)
         need = ~jnp.isfinite(out)
+        # dtype must match between branches explicitly: both jax_full()'s
+        # config-derived dtype and _extrapolate_scalar's internal geometry
+        # math (great-circle distances etc.) can independently drift from
+        # `out`'s actual dtype and trip lax.cond's "branches must have equal
+        # output types" check, so cast both sides to `out.dtype` explicitly.
         ext = lax.cond(
             jnp.any(need),
-            lambda _: self._extrapolate_scalar(src, self.src_mask),
-            lambda _: jax_full(self.tshape, self.fill_value),
+            lambda _: self._extrapolate_scalar(src, self.src_mask).astype(out.dtype),
+            lambda _: jnp.full(self.tshape, self.fill_value, dtype=out.dtype),
             operand=None,
         )
         out = jnp.where(need, ext, out)
@@ -327,13 +332,16 @@ class BilinearRectilinearInterpolator(PyTreeNodeMixin):
         v_t = jnp.sum(vt3 * self._e_north_t, axis=-1)
 
         def apply_vector_extrapolation(_: None) -> tuple[Array, Array]:
-            u_fill = self._extrapolate_scalar(u_src_array, valid)
-            v_fill = self._extrapolate_scalar(v_src_array, valid)
+            # explicit dtype cast -- see the comment in apply_scalar for why
+            # _extrapolate_scalar's internal geometry math can drift dtype.
+            u_fill = self._extrapolate_scalar(u_src_array, valid).astype(u_t.dtype)
+            v_fill = self._extrapolate_scalar(v_src_array, valid).astype(v_t.dtype)
             return u_fill, v_fill
 
         def no_vector_extrapolation(_: None) -> tuple[Array, Array]:
-            fill = jax_full(self.tshape, self.fill_value)
-            return fill, fill
+            fill_u = jnp.full(self.tshape, self.fill_value, dtype=u_t.dtype)
+            fill_v = jnp.full(self.tshape, self.fill_value, dtype=v_t.dtype)
+            return fill_u, fill_v
 
         u_fill, v_fill = lax.cond(
             jnp.any(need),

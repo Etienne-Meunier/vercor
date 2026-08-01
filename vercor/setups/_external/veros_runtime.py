@@ -27,25 +27,22 @@ def step_veros_runtime(
     native_state = payload
     if not resources.jitted:
         native_state = _veros_state.copy_state(native_state, jitted=True)
-    time = context.time
-    if time is None:
-        return StepResult(payload=native_state)
 
-    taux, tauy, qnet, qnec = _veros_fluxes.compute_fluxes(
-        native_state,
-        fields,
-        context.constants,
-        context.dtype,
-    )
-    forcing_fields = _veros_state.prepare_surface_forcing_fields(
-        taux, tauy, qnet, qnec, resources.restore_to_climatology
-    )
-
-    native_state = _veros_state.apply_veros_forcing_fields(
-        native_state,
-        forcing_fields,
-        jitted=resources.jitted,
-    )
+    if resources.uses_atmosphere_forcing:
+        taux, tauy, qnet, qnec = _veros_fluxes.compute_fluxes(
+            native_state,
+            fields,
+            context.constants,
+            context.dtype,
+        )
+        forcing_fields = _veros_state.prepare_surface_forcing_fields(
+            taux, tauy, qnet, qnec, resources.restore_to_climatology
+        )
+        native_state = _veros_state.apply_veros_forcing_fields(
+            native_state,
+            forcing_fields,
+            jitted=resources.jitted,
+        )
     native_state = _veros_state.advance_veros_substeps(
         native_state,
         step_function=resources._step_function,

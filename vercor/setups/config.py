@@ -44,14 +44,23 @@ class JAXGCMConfig:
 
 @dataclass(frozen=True)
 class VerosConfig:
-    """Configuration for the bundled Veros ocean setup factory."""
+    """Configuration for the bundled Veros ocean setup factory.
+
+    ``uses_atmosphere_forcing`` selects whether the ERA5 forcing bridge writes
+    fluxes into this setup's taux/tauy/qnet/qnec climatology variables each
+    step. Only ``"global_4deg"`` declares those variables; setups that force
+    themselves internally (e.g. ``"acc"``) must set this to ``False``, or the
+    bridge will error trying to write into attributes that don't exist.
+    """
 
     name: str = "OCN"
+    setup: Literal["global_4deg", "acc", "global_4deg_learning"] = "global_4deg"
+    uses_atmosphere_forcing: bool = True
     custom_parameters: Mapping[str, Any] | None = None
     restore_to_climatology: bool = False
     spinup: Spinup = field(default_factory=Spinup)
     output: OutputSpec = field(default_factory=OutputSpec)
-    jitted: bool = False
+    execution: Literal["jax", "host"] = "jax"
 
     def __post_init__(self) -> None:
         """Copy mutable caller-provided mappings into owned config state."""

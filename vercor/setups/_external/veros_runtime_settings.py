@@ -21,6 +21,7 @@ def configure_veros_runtime() -> None:
 
     from veros import runtime_settings  # type: ignore[import]
 
-    _set_runtime_setting(runtime_settings, "backend", "numpy")
+    _set_runtime_setting(runtime_settings, "backend", "jax")
     _set_runtime_setting(runtime_settings, "force_overwrite", True)
     _set_runtime_setting(runtime_settings, "diskless_mode", True)
+    _set_runtime_setting(runtime_settings, 'linear_solver', 'scipy_jax')

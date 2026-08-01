@@ -5,7 +5,7 @@ from jax.typing import ArrayLike
 from typing import cast
 
 from vercor.dtypes import as_jax_real_array
-from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat
+from vercor.fluxes.utilities import cdn, psimhu, psixhu, qsat, safe_sqrt
 from vercor.physics import PhysicalConstants
 
 
@@ -30,8 +30,8 @@ def _compute_stability_terms(
     )
     hol = jnp.minimum(jnp.abs(hol), 10.0) * jnp.sign(hol)
     stable = 0.5 + 0.5 * jnp.sign(hol)
-    xsq = jnp.maximum(jnp.sqrt(jnp.abs(1.0 - 16.0 * hol)), 1.0)
-    xqq = jnp.sqrt(xsq)
+    xsq = jnp.maximum(safe_sqrt(jnp.abs(1.0 - 16.0 * hol)), 1.0)
+    xqq = safe_sqrt(xsq)
     psimh = -5.0 * hol * stable + (1.0 - stable) * psimhu(xqq)
     psixh = -5.0 * hol * stable + (1.0 - stable) * psixhu(xqq)
     return (hol, stable, psimh, psixh)
@@ -60,7 +60,7 @@ def _iterate_ocean_exchange(
     rd = rdn / (1.0 + rdn / constants.von_karman_constant * (alz - psimh))
     u10n = vmag * rd / rdn
 
-    next_rdn = jnp.sqrt(cdn(u10n))
+    next_rdn = safe_sqrt(cdn(u10n))
     next_ren = jnp.full_like(next_rdn, 0.0346)
     next_rhn = (1.0 - stable) * 0.0327 + stable * 0.018
 
@@ -138,7 +138,7 @@ def compute_ocean_surface_fluxes(
 
     vmag = jnp.maximum(
         constants.ocean_minimum_wind_speed,
-        jnp.sqrt((ubot_array - us_array) ** 2 + (vbot_array - vs_array) ** 2),
+        safe_sqrt((ubot_array - us_array) ** 2 + (vbot_array - vs_array) ** 2),
     )
     coldair_outbreak_mask = tdiff < td0
     vscl = jnp.minimum(
@@ -157,7 +157,7 @@ def compute_ocean_surface_fluxes(
     )
 
     stable0 = 0.5 + 0.5 * jnp.sign(delt)
-    rdn0 = jnp.sqrt(cdn(vmag))
+    rdn0 = safe_sqrt(cdn(vmag))
     rhn0 = (1.0 - stable0) * 0.0327 + stable0 * 0.018
     ren0 = jnp.full_like(rdn0, 0.0346)
     ustar0 = rdn0 * vmag
@@ -265,8 +265,8 @@ def compute_ocean_surface_fluxes(
     evap = lat / constants.latent_heat_of_vaporization * mask_array
 
     hol_2m = hol * ztref / zbot_array
-    xsq = jnp.maximum(1.0, jnp.sqrt(jnp.abs(1.0 - 16.0 * hol_2m)))
-    xqq = jnp.sqrt(xsq)
+    xsq = jnp.maximum(1.0, safe_sqrt(jnp.abs(1.0 - 16.0 * hol_2m)))
+    xqq = safe_sqrt(xsq)
     psix2 = -5.0 * hol_2m * stable + (1.0 - stable) * psixhu(xqq)
     fac = (rh / constants.von_karman_constant) * (alz + al2 - psixh + psix2)
     tref = (thbot_array - delt * fac - 0.01 * ztref) * mask_array
@@ -339,7 +339,7 @@ def shr_flux_atmIce(
 
     vmag = jnp.maximum(
         constants.ice_minimum_wind_speed,
-        jnp.sqrt(ubot_array**2 + vbot_array**2),
+        safe_sqrt(ubot_array**2 + vbot_array**2),
     )
     thvbot = thbot_array * (
         1.0 + constants.water_vapor_mass_ratio_correction * qbot_array
