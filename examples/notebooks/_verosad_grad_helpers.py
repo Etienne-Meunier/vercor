@@ -95,6 +95,8 @@ def build_coupler(
             uses_atmosphere_forcing=True,
             restore_to_climatology=True,
             output=output,
+            jitted=True,
+            execution="jax",
         ),
     )
     lnd = make_era5_land()

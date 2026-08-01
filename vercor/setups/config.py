@@ -51,6 +51,14 @@ class VerosConfig:
     step. Only ``"global_4deg"`` declares those variables; setups that force
     themselves internally (e.g. ``"acc"``) must set this to ``False``, or the
     bridge will error trying to write into attributes that don't exist.
+
+    ``jitted`` and ``execution`` are independent: ``jitted`` controls whether
+    the Veros step copies state before mutating it and gets ``jax.jit``-wrapped
+    internally; ``execution`` controls whether the coupler runs this component
+    inside its traced/scanned path (``"jax"``) or an ordinary host loop
+    (``"host"``). Differentiating through a rollout needs both set together
+    (``jitted=True, execution="jax"``) -- ``execution="jax"`` with
+    ``jitted=False`` is known to hang.
     """
 
     name: str = "OCN"
@@ -60,7 +68,8 @@ class VerosConfig:
     restore_to_climatology: bool = False
     spinup: Spinup = field(default_factory=Spinup)
     output: OutputSpec = field(default_factory=OutputSpec)
-    execution: Literal["jax", "host"] = "jax"
+    jitted: bool = False
+    execution: Literal["jax", "host"] = "host"
 
     def __post_init__(self) -> None:
         """Copy mutable caller-provided mappings into owned config state."""

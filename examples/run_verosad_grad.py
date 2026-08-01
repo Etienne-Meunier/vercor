@@ -36,7 +36,9 @@ if __name__ == "__main__":
     ocn = make_veros_gcm(
         config=VerosConfig(
             setup="acc",
-            uses_atmosphere_forcing=False))
+            uses_atmosphere_forcing=False,
+            jitted=True,
+            execution="jax"))
 
     clock = Clock(
         start=datetime(2000, 1, 1, 0, 0, 0),

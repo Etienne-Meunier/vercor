@@ -29,6 +29,8 @@ if __name__ == "__main__":
             setup="global_4deg_learning",
             uses_atmosphere_forcing=True,
             restore_to_climatology=True,
+            jitted=True,
+            execution="jax",
         ),
     )
     lnd = make_era5_land()
